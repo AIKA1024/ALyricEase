@@ -1,0 +1,126 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:PlaylistViewModel"
+             mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.PlaylistView">
+    <UserControl.Styles>
+        <Style Selector="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Margin" Value="0,1" />
+        </Style>
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+    </UserControl.Styles>
+    <Grid>
+        <!-- 登录卡片 -->
+        <Border IsVisible="{Binding ShowLogin}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="{DynamicResource AppSurface}" CornerRadius="8" Padding="28"
+                BoxShadow="0 8 40 #33000000">
+            <StackPanel Spacing="14" Width="420">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="♫" FontSize="24" Foreground="{DynamicResource SystemAccentColor}" />
+                    <TextBlock Text="登录 LyricEase" FontSize="20" FontWeight="SemiBold" LetterSpacing="-0.02"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                </StackPanel>
+                <TextBlock Text="在浏览器打开 music.163.com,按 F12 → 应用 → Cookie → 找到 MUSIC_U,复制它的值(或整段 Cookie)粘贴到下面,即可同步歌单。"
+                           TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" FontSize="13" />
+                <TextBox Text="{Binding MusicUInput}" PlaceholderText="粘贴 MUSIC_U 或整段 Cookie"
+                         FontSize="13" Height="88" TextWrapping="Wrap" VerticalContentAlignment="Top" />
+                <Grid ColumnDefinitions="Auto,*">
+                    <Button Content="登录" Command="{Binding LoginCommand}" MinWidth="96" Height="36"
+                            CornerRadius="8" Background="{DynamicResource SystemAccentColor}"
+                            Foreground="White" BorderThickness="0" />
+                    <ProgressBar Grid.Column="1" Width="120" Height="3" IsIndeterminate="True"
+                                 IsVisible="{Binding IsBusy}" Margin="16,0,0,0" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource SystemAccentColor}" />
+                </Grid>
+                <TextBlock Text="{Binding Message}" Foreground="{DynamicResource SystemAccentColor}"
+                           TextWrapping="Wrap" FontSize="13" />
+            </StackPanel>
+        </Border>
+
+        <!-- 已登录:用户条 + 歌单/曲目 -->
+        <Grid IsVisible="{Binding IsLoggedIn}" RowDefinitions="Auto,*" Margin="28,18,24,12">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,14">
+                <Border Width="36" Height="36" CornerRadius="18" Background="{DynamicResource ArtFallback}"
+                        ClipToBounds="True">
+                    <Image Source="{Binding AvatarImage}" Stretch="UniformToFill" />
+                </Border>
+                <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding UserName}" FontSize="16" FontWeight="SemiBold" LetterSpacing="-0.02"
+                               Foreground="{DynamicResource TextPrimary}" />
+                </StackPanel>
+                <Button Grid.Column="2" Content="退出登录" Command="{Binding LogoutCommand}" Height="32"
+                        CornerRadius="8" />
+            </Grid>
+
+            <Grid Grid.Row="1" ColumnDefinitions="300,*">
+                <!-- 歌单列表 -->
+                <ListBox Grid.Column="0" ItemsSource="{Binding Playlists}"
+                         SelectedItem="{Binding SelectedPlaylist}"
+                         Background="Transparent" DoubleTapped="OnPlaylistDoubleTapped"
+                         PreparingContainer="OnPlaylistContainerPreparing">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+                            <Grid ColumnDefinitions="52,*" Height="60">
+                                <Border Width="48" Height="48" CornerRadius="6"
+                                        Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                                    <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextPrimary}" />
+                                    <TextBlock Text="{Binding TrackCount} 首" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- 选中歌单曲目 -->
+                <Grid Grid.Column="1" Margin="20,0,0,0" RowDefinitions="Auto,*">
+                    <TextBlock Grid.Row="0" Text="{Binding PlaylistTitle}" FontSize="18" FontWeight="SemiBold"
+                               LetterSpacing="-0.02" Margin="0,0,0,8"
+                               Foreground="{DynamicResource TextPrimary}" />
+                    <ListBox x:Name="TracksList" Grid.Row="1" ItemsSource="{Binding Tracks}"
+                             SelectedItem="{Binding SelectedTrack}"
+                             Background="Transparent" DoubleTapped="OnTracksDoubleTapped"
+                             PreparingContainer="OnTrackContainerPreparing">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SongItemViewModel">
+                                <Grid ColumnDefinitions="56,*,Auto" Height="60">
+                                    <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6"
+                                            Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
+                                                   LetterSpacing="-0.02" TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource TextPrimary}" />
+                                        <TextBlock Text="{Binding Artist}" FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondary}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}"
+                                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

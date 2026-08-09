@@ -1,0 +1,135 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:SearchViewModel"
+             mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.SearchView">
+    <UserControl.Styles>
+        <!-- 热门关键词 chip -->
+        <Style Selector="Button.chip">
+            <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.chip:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <!-- 结果行:选中/悬停浮底 -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Margin" Value="0,1" />
+        </Style>
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+    </UserControl.Styles>
+    <Grid>
+        <!-- 登录页:大标题 + 搜索框 + 热门关键词 -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="560"
+                    IsVisible="{Binding ShowLanding}" Spacing="24" Margin="32">
+            <TextBlock Text="LyricEase" FontSize="40" FontWeight="Bold" LetterSpacing="-0.02"
+                       HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+            <Border CornerRadius="10" Background="{DynamicResource AppSurface}"
+                    BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" Height="46">
+                <Grid ColumnDefinitions="Auto,*" Margin="14,0">
+                    <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
+                               Width="18" Height="18" Foreground="{DynamicResource TextSecondary}" />
+                    <TextBox Grid.Column="1" Text="{Binding Keyword}" PlaceholderText="搜索歌曲 / 歌手"
+                             Background="Transparent" BorderThickness="0" FontSize="15"
+                             VerticalContentAlignment="Center" Margin="10,0,0,0"
+                             KeyDown="OnSearchKeyDown" />
+                </Grid>
+            </Border>
+            <StackPanel Spacing="10">
+                <TextBlock Text="热门搜索" FontSize="20" FontWeight="Bold" LetterSpacing="-0.02"
+                           Foreground="{DynamicResource TextPrimary}" />
+                <ItemsControl ItemsSource="{Binding TrendingKeywords}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <Button Classes="chip" Margin="0,0,8,8"
+                                    Click="OnChipClick" Content="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- 结果页:搜索框 + 列表 -->
+        <Grid IsVisible="{Binding ShowResults}" Margin="28,16,24,12" RowDefinitions="Auto,Auto,Auto,*">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+                <Button Classes="chip" Command="{Binding BackToLandingCommand}" Padding="8,4"
+                        ToolTip.Tip="返回">
+                    <PathIcon Data="M 11,3 L 4,10 L 11,17 L 12.4,15.6 L 7,10 L 12.4,4.4 Z"
+                              Width="16" Height="16" Foreground="{DynamicResource TextPrimary}" />
+                </Button>
+                <Border Grid.Column="1" CornerRadius="10" Background="{DynamicResource AppSurface}"
+                        BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" Height="40"
+                        Margin="10,0">
+                    <Grid ColumnDefinitions="Auto,*" Margin="12,0">
+                        <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
+                                   Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
+                        <TextBox Grid.Column="1" Text="{Binding Keyword}" PlaceholderText="搜索歌曲 / 歌手"
+                                 Background="Transparent" BorderThickness="0" FontSize="14"
+                                 VerticalContentAlignment="Center" Margin="10,0,0,0"
+                                 KeyDown="OnSearchKeyDown" />
+                    </Grid>
+                </Border>
+                <Button Grid.Column="2" Content="搜索" Command="{Binding SearchCommand}"
+                        MinWidth="64" Margin="10,0,0,0" Height="40" CornerRadius="10"
+                        Background="{DynamicResource SystemAccentColor}" Foreground="White" BorderThickness="0" />
+            </Grid>
+
+            <ProgressBar Grid.Row="1" Height="3" IsIndeterminate="True"
+                         IsVisible="{Binding IsSearching}" Margin="0,10,0,0"
+                         Foreground="{DynamicResource SystemAccentColor}" />
+            <TextBlock Grid.Row="2" Text="{Binding Message}" Foreground="{DynamicResource SystemAccentColor}"
+                       TextWrapping="Wrap" Margin="0,10,0,4" />
+
+            <ListBox Grid.Row="3" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedItem}"
+                     Background="Transparent" DoubleTapped="OnListDoubleTapped" Margin="0,6,0,0"
+                     PreparingContainer="OnResultContainerPreparing">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SongItemViewModel">
+                        <Grid ColumnDefinitions="56,*,Auto" Height="60">
+                            <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6"
+                                    Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"
+                                           LetterSpacing="-0.02" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextPrimary}" />
+                                <TextBlock Text="{Binding Artist}" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondary}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2" Margin="0,0,8,0">
+                                <TextBlock Text="{Binding DurationText}" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondary}"
+                                           HorizontalAlignment="Right" />
+                                <TextBlock Text="VIP" FontSize="10" Foreground="{DynamicResource SystemAccentColor}"
+                                           HorizontalAlignment="Right" IsVisible="{Binding IsVip}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+    </Grid>
+</UserControl>

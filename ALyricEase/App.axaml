@@ -1,0 +1,70 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ALyricEase.App"
+             RequestedThemeVariant="Default">
+             <!-- 跟随系统深浅色 -->
+
+    <!-- Windows 11 Fluent 色板(对应 AppFill/LayerFill/TextFill/ControlStroke 系统 token) -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="AppBackground" Color="#F3F3F3" />
+                    <SolidColorBrush x:Key="AppSurface" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="AppSurfaceElevated" Color="#F7F7F7" />
+                    <SolidColorBrush x:Key="AppSurfaceHover" Color="#0D000000" />
+                    <SolidColorBrush x:Key="AppSurfaceSelected" Color="#15000000" />
+                    <SolidColorBrush x:Key="TextPrimary" Color="#1B1B1B" />
+                    <SolidColorBrush x:Key="TextSecondary" Color="#5D5D5D" />
+                    <SolidColorBrush x:Key="TextTertiary" Color="#9D9D9D" />
+                    <SolidColorBrush x:Key="AppBorder" Color="#10000000" />
+                    <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="AppBackground" Color="#202020" />
+                    <SolidColorBrush x:Key="AppSurface" Color="#2B2B2B" />
+                    <SolidColorBrush x:Key="AppSurfaceElevated" Color="#333333" />
+                    <SolidColorBrush x:Key="AppSurfaceHover" Color="#12FFFFFF" />
+                    <SolidColorBrush x:Key="AppSurfaceSelected" Color="#1AFFFFFF" />
+                    <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="TextSecondary" Color="#C2C2C2" />
+                    <SolidColorBrush x:Key="TextTertiary" Color="#7A7A7A" />
+                    <SolidColorBrush x:Key="AppBorder" Color="#14FFFFFF" />
+                    <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- 圆形播放控制按钮(底部播放条) -->
+        <Style Selector="Button.playerctl">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="1000" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.playerctl:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+
+        <!-- 导航页底部按钮(账号/设置) -->
+        <Style Selector="Button.navctl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Margin" Value="8,2" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.navctl:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+    </Application.Styles>
+</Application>

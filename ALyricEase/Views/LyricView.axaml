@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:models="using:ALyricEase.Models"
+             x:DataType="vm:LyricViewModel"
+             mc:Ignorable="d" d:DesignWidth="660" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.LyricView">
+    <UserControl.Styles>
+        <!-- 歌词行:普通行灰/半透明,当前句(:selected)白/加粗,苹果音乐式 -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="20,7" />
+            <Setter Property="Opacity" Value="0.32" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="Normal" />
+        </Style>
+        <Style Selector="ListBoxItem:selected">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Styles>
+    <Grid>
+        <!-- 滚动歌词:当前句高亮,代码后置 SelectionChanged 居中滚动 -->
+        <ListBox x:Name="LyricList" ItemsSource="{Binding Lines}"
+                 SelectedIndex="{Binding CurrentIndex, Mode=OneWay}"
+                 IsVisible="{Binding HasLyric}"
+                 Background="Transparent" BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 SelectionChanged="OnSelectionChanged">
+            <ListBox.ItemTemplate>
+                <!-- LyricView 仅用于正在播放页(深色模糊底),文字固定浅色 -->
+                <DataTemplate x:DataType="models:LyricLine">
+                    <StackPanel MaxWidth="620">
+                        <TextBlock Text="{Binding Original}" TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   Foreground="#F5F5F7" />
+                        <TextBlock Text="{Binding Translation}" TextAlignment="Center"
+                                   TextWrapping="Wrap" FontSize="12" Opacity="0.6"
+                                   Foreground="#C7C7CC"
+                                   IsVisible="{Binding HasTranslation}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- 空态/加载提示 -->
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" TextAlignment="Center"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="#9A9AA0" IsVisible="{Binding ShowEmpty}" />
+    </Grid>
+</UserControl>

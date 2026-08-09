@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:PlayerViewModel"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="96"
+             x:Class="ALyricEase.Views.PlayerBarView">
+    <!-- LyricEase 式底部播放条:60px 封面 + 圆形控制 + 底部细进度(浮层色) -->
+    <Border Background="{DynamicResource AppSurface}" BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource AppBorder}">
+        <Grid RowDefinitions="*,Auto">
+            <Grid Grid.Row="0" ColumnDefinitions="70,*,Auto" Margin="0,6,16,4">
+                <!-- 封面 + 曲目:点击打开正在播放页 -->
+                <Grid Grid.Column="0" Grid.ColumnSpan="2" Background="Transparent"
+                      Cursor="Hand" PointerPressed="OnTrackAreaPressed">
+                    <Border Width="54" Height="54" CornerRadius="6" ClipToBounds="True"
+                            Background="{DynamicResource ArtFallback}"
+                            HorizontalAlignment="Left" VerticalAlignment="Center" Margin="8,0">
+                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                    </Border>
+                    <StackPanel Margin="72,0,0,0" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15"
+                                   LetterSpacing="-0.02" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextPrimary}" />
+                        <TextBlock Text="{Binding Artist}" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 控制:上一首/播放/下一首/音量 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Button Classes="playerctl" Width="40" Height="40" CornerRadius="20" IsEnabled="False"
+                            ToolTip.Tip="上一首">
+                        <PathIcon Data="M 4,2 L 9,2 L 9,14 L 4,14 Z M 11,2 L 13.5,2 L 13.5,14 L 11,14 Z"
+                                  Width="16" Height="16" Foreground="{DynamicResource TextPrimary}" />
+                    </Button>
+                    <Button Classes="playerctl" Command="{Binding TogglePlayPauseCommand}"
+                            Width="48" Height="48" CornerRadius="24">
+                        <Grid>
+                            <PathIcon IsVisible="{Binding ShowLoadingIcon}" Width="22" Height="22"
+                                      Foreground="{DynamicResource TextPrimary}"
+                                      Data="M 4,2 L 10,5 L 10,11 L 4,14 Z M 12,2 L 12,14" />
+                            <PathIcon IsVisible="{Binding ShowPauseIcon}" Width="22" Height="22"
+                                      Foreground="{DynamicResource TextPrimary}"
+                                      Data="M 3,2 L 6,2 L 6,14 L 3,14 Z M 10,2 L 13,2 L 13,14 L 10,14 Z" />
+                            <PathIcon IsVisible="{Binding ShowPlayIcon}" Width="22" Height="22"
+                                      Foreground="{DynamicResource TextPrimary}"
+                                      Data="M 4,1 L 14,7 L 4,13 Z" />
+                        </Grid>
+                    </Button>
+                    <Button Classes="playerctl" Width="40" Height="40" CornerRadius="20" IsEnabled="False"
+                            ToolTip.Tip="下一首">
+                        <PathIcon Data="M 13,2 L 18,2 L 18,14 L 13,14 Z M 6,2 L 8.5,2 L 8.5,14 L 6,14 Z"
+                                  Width="16" Height="16" Foreground="{DynamicResource TextPrimary}" />
+                    </Button>
+                    <Slider x:Name="VolumeSlider" Value="{Binding Volume}" Minimum="0" Maximum="100" Width="86"
+                            VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+            </Grid>
+
+            <!-- 底部细进度条 -->
+            <Slider Grid.Row="1" Minimum="0" Maximum="{Binding ProgressMaximum}"
+                    Value="{Binding PositionMs}" Height="18" Padding="0"
+                    IsEnabled="{Binding HasProgress}"
+                    Margin="0,-4,0,0"
+                    PointerPressed="OnSliderPointerPressed"
+                    PointerReleased="OnSliderPointerReleased" />
+        </Grid>
+    </Border>
+</UserControl>

@@ -7,7 +7,8 @@
         x:DataType="vm:MainViewModel"
         mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="680"
         x:Class="ALyricEase.MainWindow"
-        Title="LyricEase" Width="1000" Height="680"
+        Title="ALyricEase" Width="1000" Height="680"
+        Icon="/Assets/app.ico"
         Background="{DynamicResource AppBackground}">
 
     <Window.Styles>

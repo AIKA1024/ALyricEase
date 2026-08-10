@@ -344,6 +344,60 @@ public sealed class NetEaseApiClient
         return resp.Result.Tracks.Select(MapLegacySong).ToList();
     }
 
+    // ---------- 首页推荐(明文 GET,匿名可用) ----------
+
+    /// <summary>推荐歌单(personalized/playlist)。</summary>
+    public async Task<List<RecommendItem>> GetPersonalizedPlaylistsAsync(int limit = 6, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync<RecommendListResponse>($"{BaseUrl}/api/personalized/playlist?limit={limit}", ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.Result is null) return new();
+        return resp.Result.Select(MapPlaylistCard).ToList();
+    }
+
+    /// <summary>猜你喜欢 / 新歌推荐(personalized/newsong)。</summary>
+    public async Task<List<RecommendItem>> GetNewSongsAsync(int limit = 6, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync<RecommendListResponse>($"{BaseUrl}/api/personalized/newsong?limit={limit}", ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.Result is null) return new();
+        return resp.Result.Select(MapSongCard).ToList();
+    }
+
+    /// <summary>每日推荐(需登录;未登录接口返回 code 301 → 空列表,由调用方隐藏该区块)。</summary>
+    public async Task<List<RecommendItem>> GetDailyRecommendAsync(CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync<RecommendResourceResponse>($"{BaseUrl}/api/v1/discovery/recommend/resource", ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.Recommend is null) return new();
+        return resp.Recommend.Select(MapPlaylistCard).ToList();
+    }
+
+    private static RecommendItem MapPlaylistCard(RecommendItemDto d)
+    {
+        var subtitle = string.IsNullOrEmpty(d.Copywriter) ? FormatPlayCount(d.PlayCount) : d.Copywriter;
+        return new RecommendItem(d.Id, d.Name, subtitle, d.PicUrl);
+    }
+
+    private static RecommendItem MapSongCard(RecommendItemDto d)
+    {
+        var name = d.Song?.Name is { Length: > 0 } n ? n : d.Name;
+        var artists = d.Song?.Artists is { Count: > 0 } ? string.Join("/", d.Song.Artists.Select(a => a.Name)) : "";
+        return new RecommendItem(d.Id, name, artists, d.PicUrl);
+    }
+
+    private static string FormatPlayCount(double count)
+    {
+        if (count >= 1e8) return $"{count / 1e8:0.#}亿播放";
+        if (count >= 1e4) return $"{count / 1e4:0.#}万播放";
+        return $"{count:0}播放";
+    }
+
+    private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct) where T : class
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        return doc.RootElement.Deserialize<T>(JsonOpts);
+    }
+
 
     private HttpRequestMessage CreateWeapiRequest(string apiPath, IReadOnlyDictionary<string, object?> payload, bool includeRealIp)
     {

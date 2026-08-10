@@ -1,4 +1,6 @@
+using System.Threading;
 using Avalonia;
+using Avalonia.Threading;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services.Audio;
 using ALyricEase.Services.Auth;
@@ -6,7 +8,6 @@ using ALyricEase.Services.Crypto;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.Smtc;
 using ALyricEase.ViewModels;
-using LibVLCSharp.Shared;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ALyricEase;
@@ -19,10 +20,7 @@ class Program
   [STAThread]
   public static void Main(string[] args)
   {
-    // LibVLC 原生库必须最先加载
-    Core.Initialize();
-
-    // selftest(无 UI)模式下:先在主线程钉住 UIThread,避免被 libvlc 后台线程抢绑
+    // selftest(无 UI)模式下:先在主线程钉住 UIThread,保证 DispatcherService.Post 能排队
     _ = Avalonia.Threading.Dispatcher.UIThread;
 
     if (args.Length > 0 && args[0] == "--selftest-leak")
@@ -33,7 +31,16 @@ class Program
 
     if (args.Length > 0 && args[0] == "--selftest-play")
     {
-      SelfTest.RunPlayAsync().GetAwaiter().GetResult();
+      var task = SelfTest.RunPlayAsync();
+      // 播放事件经 DispatcherService.Post 排入 UIThread 队列;selftest 体跑在线程池,
+      // 只能由属主线程(主线程)泵 RunJobs——否则 DispatcherOperation.Execute 里的
+      // AvaloniaSynchronizationContext.Ensure 线程校验会抛 InvalidOperationException。
+      while (!task.IsCompleted)
+      {
+        Dispatcher.UIThread.RunJobs();
+        Thread.Sleep(5);
+      }
+      task.GetAwaiter().GetResult();
       return;
     }
 
@@ -55,12 +62,13 @@ class Program
     services.AddSingleton<CnIpPool>();
     services.AddSingleton<CryptoService>();
     services.AddSingleton<NetEaseApiClient>();
-    services.AddSingleton<IAudioPlayer, LibVlcAudioPlayer>();
+    services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
     services.AddSingleton<SmtcService>();
     services.AddSingleton<LyricViewModel>();
     services.AddSingleton<PlayerViewModel>();
     services.AddSingleton<SearchViewModel>();
     services.AddSingleton<PlaylistViewModel>();
+    services.AddSingleton<RecommendViewModel>();
     services.AddSingleton<MainViewModel>();
     ServiceLocator.Provider = services.BuildServiceProvider();
 

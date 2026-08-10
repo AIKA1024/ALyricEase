@@ -12,7 +12,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace ALyricEase.ViewModels;
 
 /// <summary>播放器 VM:状态机(Idle→Loading→Playing/Paused)、进度/音量、
-/// 播放/暂停控制。事件均已在 UI 线程(见 LibVlcAudioPlayer),可直接更新可观察属性。</summary>
+/// 播放/暂停控制。事件均已在 UI 线程(见 IAudioPlayer 契约),可直接更新可观察属性。</summary>
 public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 {
     private readonly IAudioPlayer _player;

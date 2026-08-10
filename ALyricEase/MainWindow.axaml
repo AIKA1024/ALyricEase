@@ -5,116 +5,154 @@
         xmlns:views="using:ALyricEase.Views"
         xmlns:vm="using:ALyricEase.ViewModels"
         x:DataType="vm:MainViewModel"
-        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="680"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
         x:Class="ALyricEase.MainWindow"
-        Title="ALyricEase" Width="1000" Height="680"
+        Title="ALyricEase" Width="1200" Height="720"
         Icon="/Assets/app.ico"
-        Background="{DynamicResource AppBackground}">
+        Background="Transparent" TransparencyLevelHint="AcrylicBlur">
+
+    <!-- 内容页按 VM 类型选模板(TransitioningContentControl 走祖先 DataTemplates) -->
+    <Window.DataTemplates>
+        <DataTemplate DataType="vm:RecommendViewModel">
+            <views:RecommendView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:SearchViewModel">
+            <views:SearchView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:PlaylistViewModel">
+            <views:PlaylistView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:PlaceholderViewModel">
+            <views:PlaceholderView />
+        </DataTemplate>
+    </Window.DataTemplates>
 
     <Window.Styles>
-        <!-- 左导航项 -->
+        <!-- 左导航项:Height 40, Margin 4,8, CornerRadius 8, Padding 12(规格 Prompt 1) -->
         <Style Selector="ListBox.navlist > ListBoxItem">
-            <Setter Property="Padding" Value="10,0" />
             <Setter Property="Height" Value="40" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Margin" Value="8,1" />
+            <Setter Property="Margin" Value="4,8" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="ListBox.navlist > ListBoxItem:pointerover">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
         <Style Selector="ListBox.navlist > ListBoxItem:selected">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+            <Setter Property="Background" Value="{DynamicResource NavSelected}" />
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="*,Auto">
-        <Grid Grid.Row="0" ColumnDefinitions="230,*">
-            <!-- 左导航栏 -->
-            <Border Grid.Column="0" Background="{DynamicResource AppSurface}"
-                    BorderThickness="0,0,1,0" BorderBrush="{DynamicResource AppBorder}">
-                <DockPanel>
-                    <!-- 顶部 logo -->
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="18,14,16,8">
-                        <TextBlock Text="♫" FontSize="20" Foreground="{DynamicResource SystemAccentColor}" />
-                        <TextBlock Text="LyricEase" FontWeight="SemiBold" FontSize="16" LetterSpacing="-0.02"
-                                   VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                    </StackPanel>
+    <!-- 窗口级 Fluent Acrylic(不透明兜底 = FallbackColor,平台不支持时退化为纯色) -->
+    <ExperimentalAcrylicBorder Material="{DynamicResource AppAcrylicMaterial}">
+      <Grid>
 
-                    <!-- 底部:账号 / 设置 -->
-                    <StackPanel DockPanel.Dock="Bottom" Margin="8,0,8,10">
-                        <Button Classes="navctl" Command="{Binding GoAccountCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <PathIcon Data="M 12,12 C 14.761,12 17,9.761 17,7 C 17,4.239 14.761,2 12,2 C 9.239,2 7,4.239 7,7 C 7,9.761 9.239,12 12,12 Z M 12,14 C 7.582,14 4,16.239 4,19 L 4,22 L 20,22 L 20,19 C 20,16.239 16.418,14 12,14 Z"
-                                          Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
-                                <TextBlock Grid.Column="1" Text="账号" Margin="10,0,0,0" FontSize="14"
-                                           VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                            </Grid>
-                        </Button>
-                        <Button Classes="navctl" Command="{Binding GoSettingsCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <PathIcon Data="M 12,8 C 9.791,8 8,9.791 8,12 C 8,14.209 9.791,16 12,16 C 14.209,16 16,14.209 16,12 C 16,9.791 14.209,8 12,8 Z M 19.4,13 C 19.467,12.672 19.5,12.337 19.5,12 C 19.5,11.663 19.467,11.328 19.4,11 L 21.6,9.5 C 21.8,9.3 21.8,9 21.6,8.7 L 19.8,5.6 C 19.7,5.4 19.4,5.3 19.2,5.4 L 16.6,6.3 C 16.1,5.9 15.5,5.6 14.9,5.4 L 14.5,2.7 C 14.5,2.4 14.2,2.2 13.9,2.2 L 10.1,2.2 C 9.8,2.2 9.5,2.4 9.5,2.7 L 9.1,5.4 C 8.5,5.6 7.9,5.9 7.4,6.3 L 4.8,5.4 C 4.6,5.3 4.3,5.4 4.2,5.6 L 2.4,8.7 C 2.2,9 2.3,9.3 2.4,9.5 L 4.6,11 C 4.533,11.328 4.5,11.663 4.5,12 C 4.5,12.337 4.533,12.672 4.6,13 L 2.4,14.5 C 2.2,14.7 2.2,15 2.4,15.3 L 4.2,18.4 C 4.3,18.6 4.6,18.7 4.8,18.6 L 7.4,17.7 C 7.9,18.1 8.5,18.4 9.1,18.6 L 9.5,21.3 C 9.5,21.6 9.8,21.8 10.1,21.8 L 13.9,21.8 C 14.2,21.8 14.5,21.6 14.5,21.3 L 14.9,18.6 C 15.5,18.4 16.1,18.1 16.6,17.7 L 19.2,18.6 C 19.4,18.7 19.7,18.6 19.8,18.4 L 21.6,15.3 C 21.8,15 21.7,14.7 21.6,14.5 Z"
-                                          Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
-                                <TextBlock Grid.Column="1" Text="设置" Margin="10,0,0,0" FontSize="14"
-                                           VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                            </Grid>
-                        </Button>
-                    </StackPanel>
+        <Grid RowDefinitions="*,100">
 
-                    <!-- 导航项(分组头 + 项) -->
-                    <ListBox Classes="navlist" ItemsSource="{Binding NavItems}"
-                             SelectedItem="{Binding SelectedNav}"
-                             Background="Transparent" BorderThickness="0" Margin="0,6,0,8"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:NavItemViewModel">
-                                <Grid>
-                                    <TextBlock Text="{Binding Label}" FontSize="12" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextTertiary}" Margin="4,2,0,0"
-                                               IsVisible="{Binding IsHeader}" />
-                                    <Grid IsVisible="{Binding IsItem}">
-                                        <Grid ColumnDefinitions="Auto,*">
-                                            <PathIcon Data="{Binding IconData}" Width="18" Height="18"
-                                                      Foreground="{DynamicResource TextPrimary}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Label}" Margin="10,0,0,0"
-                                                       FontSize="14" VerticalAlignment="Center"
-                                                       Foreground="{DynamicResource TextPrimary}" />
-                                        </Grid>
-                                    </Grid>
+            <!-- 上:导航(240px) + 内容 -->
+            <Grid Grid.Row="0" ColumnDefinitions="240,*">
+                <!-- 左侧导航:类似 Windows 11 设置应用侧边栏 -->
+                <Border Grid.Column="0" BorderThickness="0,0,1,0" BorderBrush="{DynamicResource AppBorder}">
+                    <DockPanel>
+                        <!-- 顶部 Logo -->
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="20,16,16,12">
+                            <TextBlock Text="♫" FontSize="22" Foreground="{DynamicResource SystemAccentColor}" />
+                            <TextBlock Text="LyricEase" FontWeight="SemiBold" FontSize="16" LetterSpacing="-0.02"
+                                       VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                        </StackPanel>
+
+                        <!-- 底部 Footer:账号 / 设置 -->
+                        <StackPanel DockPanel.Dock="Bottom" Margin="4,0,4,10">
+                            <Button Classes="navctl" Command="{Binding GoAccountCommand}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M 12,12 C 14.761,12 17,9.761 17,7 C 17,4.239 14.761,2 12,2 C 9.239,2 7,4.239 7,7 C 7,9.761 9.239,12 12,12 Z M 12,14 C 7.582,14 4,16.239 4,19 L 4,22 L 20,22 L 20,19 C 20,16.239 16.418,14 12,14 Z"
+                                              Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
+                                    <TextBlock Grid.Column="1" Text="账号" Margin="10,0,0,0" FontSize="14"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
                                 </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
-            </Border>
+                            </Button>
+                            <Button Classes="navctl" Command="{Binding GoSettingsCommand}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M 12,8 C 9.791,8 8,9.791 8,12 C 8,14.209 9.791,16 12,16 C 14.209,16 16,14.209 16,12 C 16,9.791 14.209,8 12,8 Z M 19.4,13 C 19.467,12.672 19.5,12.337 19.5,12 C 19.5,11.663 19.467,11.328 19.4,11 L 21.6,9.5 C 21.8,9.3 21.8,9 21.6,8.7 L 19.8,5.6 C 19.7,5.4 19.4,5.3 19.2,5.4 L 16.6,6.3 C 16.1,5.9 15.5,5.6 14.9,5.4 L 14.5,2.7 C 14.5,2.4 14.2,2.2 13.9,2.2 L 10.1,2.2 C 9.8,2.2 9.5,2.4 9.5,2.7 L 9.1,5.4 C 8.5,5.6 7.9,5.9 7.4,6.3 L 4.8,5.4 C 4.6,5.3 4.3,5.4 4.2,5.6 L 2.4,8.7 C 2.2,9 2.3,9.3 2.4,9.5 L 4.6,11 C 4.533,11.328 4.5,11.663 4.5,12 C 4.5,12.337 4.533,12.672 4.6,13 L 2.4,14.5 C 2.2,14.7 2.2,15 2.4,15.3 L 4.2,18.4 C 4.3,18.6 4.6,18.7 4.8,18.6 L 7.4,17.7 C 7.9,18.1 8.5,18.4 9.1,18.6 L 9.5,21.3 C 9.5,21.6 9.8,21.8 10.1,21.8 L 13.9,21.8 C 14.2,21.8 14.5,21.6 14.5,21.3 L 14.9,18.6 C 15.5,18.4 16.1,18.1 16.6,17.7 L 19.2,18.6 C 19.4,18.7 19.7,18.6 19.8,18.4 L 21.6,15.3 C 21.8,15 21.7,14.7 21.6,14.5 Z"
+                                              Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
+                                    <TextBlock Grid.Column="1" Text="设置" Margin="10,0,0,0" FontSize="14"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                                </Grid>
+                            </Button>
+                        </StackPanel>
 
-            <!-- 内容区 -->
-            <Grid Grid.Column="1">
-                <Grid IsVisible="{Binding ShowSearch}">
-                    <views:SearchView DataContext="{Binding Search}" />
-                </Grid>
-                <Grid IsVisible="{Binding ShowPlaylist}">
-                    <views:PlaylistView DataContext="{Binding Playlist}" />
-                </Grid>
-                <Grid IsVisible="{Binding ShowPlaceholder}">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
-                        <TextBlock Text="{Binding PlaceholderTitle}" FontSize="20" FontWeight="SemiBold"
-                                   HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                        <TextBlock Text="功能开发中" HorizontalAlignment="Center"
-                                   Foreground="{DynamicResource TextTertiary}" />
-                    </StackPanel>
+                        <!-- 导航项(规格五项:首页/推荐/我的音乐/播放记录/收藏歌曲) -->
+                        <ListBox Classes="navlist" ItemsSource="{Binding NavItems}"
+                                 SelectedItem="{Binding SelectedNav}"
+                                 Background="Transparent" BorderThickness="0" Margin="4,6,4,8"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:NavItemViewModel">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <PathIcon Data="{Binding IconData}" Width="20" Height="20"
+                                                  VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Label}" Margin="10,0,0,0"
+                                                   FontSize="14" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextPrimary}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+
+                <!-- 内容区:顶部 48px 预留(右上搜索图标)+ 页面切换 -->
+                <Grid Grid.Column="1" RowDefinitions="48,*">
+                    <Button Grid.Row="0" Classes="iconbtn" Width="40" Height="40" CornerRadius="20"
+                            Command="{Binding GoSearchCommand}" ToolTip.Tip="搜索"
+                            HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
+                                  Width="20" Height="20" Foreground="{DynamicResource TextPrimary}" />
+                    </Button>
+
+                    <!-- 页面切换:Fade + Slide 300ms -->
+                    <TransitioningContentControl Grid.Row="1" Content="{Binding CurrentContent}">
+                        <TransitioningContentControl.PageTransition>
+                            <CompositePageTransition>
+                                <CompositePageTransition.PageTransitions>
+                                    <PageSlide Orientation="Horizontal" Duration="0:0:0.3" />
+                                    <CrossFade Duration="0:0:0.3" />
+                                </CompositePageTransition.PageTransitions>
+                            </CompositePageTransition>
+                        </TransitioningContentControl.PageTransition>
+                    </TransitioningContentControl>
                 </Grid>
             </Grid>
+
+            <!-- 底部播放条(100px) -->
+            <views:PlayerBarView Grid.Row="1" DataContext="{Binding Player}" />
         </Grid>
 
-        <!-- 底部播放条 -->
-        <views:PlayerBarView Grid.Row="1" DataContext="{Binding Player}" />
+        <!-- 正在播放全屏覆盖层(Fade 过渡),铺满整窗(含播放条)。
+             IsVisible 显式门控:Avalonia 对 Content=null + ContentTemplate 仍会实例化模板(DataContext=null),
+             若不隐藏,启动即显示且返回按钮因 DataContext 为 null 失效。 -->
+        <TransitioningContentControl Content="{Binding NowPlayingContent}"
+                                     IsVisible="{Binding ShowNowPlaying}"
+                                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                     ZIndex="100">
+            <TransitioningContentControl.ContentTemplate>
+                <DataTemplate>
+                    <views:NowPlayingView DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </DataTemplate>
+            </TransitioningContentControl.ContentTemplate>
+            <TransitioningContentControl.PageTransition>
+                <CompositePageTransition>
+                    <CompositePageTransition.PageTransitions>
+                        <CrossFade Duration="0:0:0.25" />
+                    </CompositePageTransition.PageTransitions>
+                </CompositePageTransition>
+            </TransitioningContentControl.PageTransition>
+        </TransitioningContentControl>
 
-        <!-- 正在播放全屏覆盖层 -->
-        <Grid Grid.RowSpan="2" IsVisible="{Binding ShowNowPlaying}" ZIndex="100">
-            <views:NowPlayingView />
-        </Grid>
-    </Grid>
+      </Grid>
+    </ExperimentalAcrylicBorder>
 </Window>

@@ -12,6 +12,11 @@ public partial class App : Application
   public override void Initialize()
   {
     AvaloniaXamlLoader.Load(this);
+
+#if DEBUG
+    // Avalonia 12 Developer Tools:按 F12 连接独立的 avdt 调试进程
+    this.AttachDeveloperTools();
+#endif
   }
 
   public override void OnFrameworkInitializationCompleted()

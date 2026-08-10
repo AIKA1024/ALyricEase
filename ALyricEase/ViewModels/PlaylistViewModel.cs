@@ -97,6 +97,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private async Task OpenPlaylistAsync(PlaylistItemViewModel? playlist)
     {
         if (playlist is null) return;
+        SelectedPlaylist = playlist;
+        playlist.EnsureCoverLoaded(); // 头部大封面
         Tracks.Clear();
         PlaylistTitle = playlist.Name;
         IsBusy = true;
@@ -128,7 +130,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         var end = Math.Min(_materialized + MaterializeBatch, _allTracks.Count);
         for (; _materialized < end; _materialized++)
-            Tracks.Add(new SongItemViewModel(_allTracks[_materialized], _player.PlayAsync));
+            Tracks.Add(new SongItemViewModel(_allTracks[_materialized], _player.PlayAsync, _materialized + 1));
+    }
+
+    /// <summary>头部「播放全部」:从第一首开始播放(后续可扩展为顺序队列)。</summary>
+    [RelayCommand]
+    private async Task PlayAllAsync()
+    {
+        if (Tracks.Count == 0) return;
+        await Tracks[0].PlayCommand.ExecuteAsync(null);
     }
 
     private async Task LoadProfileAndPlaylistsAsync()

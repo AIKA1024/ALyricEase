@@ -2,24 +2,37 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:PlaylistViewModel"
              mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
              x:Class="ALyricEase.Views.PlaylistView">
     <UserControl.Styles>
-        <Style Selector="ListBoxItem">
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="CornerRadius" Value="8" />
+        <!-- 左歌单列表项 -->
+        <Style Selector="ListBox.playlists > ListBoxItem">
+            <Setter Property="Height" Value="60" />
             <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Margin" Value="0,1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         </Style>
-        <Style Selector="ListBoxItem:selected">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+        <!-- 曲目列表项(56px,交给 TrackListItem) -->
+        <Style Selector="ListBox.tracks > ListBoxItem">
+            <Setter Property="Height" Value="56" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
-        <Style Selector="ListBoxItem:pointerover">
+        <Style Selector="ListBox > ListBoxItem:pointerover">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
+        <Style Selector="ListBox > ListBoxItem:selected">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+        </Style>
     </UserControl.Styles>
+
     <Grid>
         <!-- 登录卡片 -->
         <Border IsVisible="{Binding ShowLogin}" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -48,8 +61,8 @@
             </StackPanel>
         </Border>
 
-        <!-- 已登录:用户条 + 歌单/曲目 -->
-        <Grid IsVisible="{Binding IsLoggedIn}" RowDefinitions="Auto,*" Margin="28,18,24,12">
+        <!-- 已登录:用户条 + 歌单/曲目详情 -->
+        <Grid IsVisible="{Binding IsLoggedIn}" RowDefinitions="Auto,*" Margin="28,16,24,12">
             <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,14">
                 <Border Width="36" Height="36" CornerRadius="18" Background="{DynamicResource ArtFallback}"
                         ClipToBounds="True">
@@ -65,13 +78,13 @@
 
             <Grid Grid.Row="1" ColumnDefinitions="300,*">
                 <!-- 歌单列表 -->
-                <ListBox Grid.Column="0" ItemsSource="{Binding Playlists}"
+                <ListBox Classes="playlists" Grid.Column="0" ItemsSource="{Binding Playlists}"
                          SelectedItem="{Binding SelectedPlaylist}"
                          Background="Transparent" DoubleTapped="OnPlaylistDoubleTapped"
                          PreparingContainer="OnPlaylistContainerPreparing">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-                            <Grid ColumnDefinitions="52,*" Height="60">
+                            <Grid ColumnDefinitions="52,*">
                                 <Border Width="48" Height="48" CornerRadius="6"
                                         Background="{DynamicResource ArtFallback}" ClipToBounds="True">
                                     <Image Source="{Binding Cover}" Stretch="UniformToFill" />
@@ -80,7 +93,7 @@
                                     <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
                                                TextTrimming="CharacterEllipsis"
                                                Foreground="{DynamicResource TextPrimary}" />
-                                    <TextBlock Text="{Binding TrackCount} 首" FontSize="12"
+                                    <TextBlock Text="{Binding TrackCountText}" FontSize="12"
                                                Foreground="{DynamicResource TextSecondary}" />
                                 </StackPanel>
                             </Grid>
@@ -88,37 +101,68 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <!-- 选中歌单曲目 -->
-                <Grid Grid.Column="1" Margin="20,0,0,0" RowDefinitions="Auto,*">
-                    <TextBlock Grid.Row="0" Text="{Binding PlaylistTitle}" FontSize="18" FontWeight="SemiBold"
-                               LetterSpacing="-0.02" Margin="0,0,0,8"
-                               Foreground="{DynamicResource TextPrimary}" />
-                    <ListBox x:Name="TracksList" Grid.Row="1" ItemsSource="{Binding Tracks}"
-                             SelectedItem="{Binding SelectedTrack}"
-                             Background="Transparent" DoubleTapped="OnTracksDoubleTapped"
-                             PreparingContainer="OnTrackContainerPreparing">
+                <!-- 歌单详情:头部 260 + 列头 + 曲目表 -->
+                <Grid Grid.Column="1" Margin="24,0,0,0" RowDefinitions="Auto,Auto,*">
+                    <!-- 头部 260px:封面 200x200 圆8 + 信息 -->
+                    <Grid Grid.Row="0" Height="260" ColumnDefinitions="220,*">
+                        <Border Grid.Column="0" Width="200" Height="200" CornerRadius="8"
+                                Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <Image Source="{Binding SelectedPlaylist.Cover}" Stretch="UniformToFill" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="8">
+                            <TextBlock Text="{Binding SelectedPlaylist.Name}" FontSize="32" FontWeight="Bold"
+                                       TextTrimming="CharacterEllipsis" MaxLines="1"
+                                       Foreground="{DynamicResource TextPrimary}" />
+                            <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="13"
+                                       TextWrapping="Wrap" MaxLines="2"
+                                       IsVisible="{Binding SelectedPlaylist.HasDescription}"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                            <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="13"
+                                       Foreground="{DynamicResource TextTertiary}" />
+                            <Button Classes="primary" Content="播放全部" Command="{Binding PlayAllCommand}"
+                                    Width="120" Height="40" CornerRadius="20" HorizontalAlignment="Left"
+                                    Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 列头:序号 / 歌曲名+歌手 / 专辑 / 时长(Wide 显示,窄窗隐藏后两列) -->
+                    <Grid Grid.Row="1" x:Name="TrackHeader" Margin="8,2,8,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="40" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="100" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="序号" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextTertiary}" />
+                        <TextBlock Grid.Column="1" Text="歌曲名 / 歌手" FontSize="12" Margin="12,0,0,0"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+                        <TextBlock x:Name="HeaderAlbum" Grid.Column="2" Text="专辑" FontSize="12"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+                        <TextBlock x:Name="HeaderDuration" Grid.Column="3" Text="时长" FontSize="12"
+                                   HorizontalAlignment="Right" Margin="0,0,8,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextTertiary}" />
+                    </Grid>
+
+                    <!-- 曲目表(双击在 TrackListItem 内处理) -->
+                    <ListBox Grid.Row="2" x:Name="TracksList" Classes="tracks"
+                             ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack}"
+                             Background="Transparent" Margin="8,4,8,0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:SongItemViewModel">
-                                <Grid ColumnDefinitions="56,*,Auto" Height="60">
-                                    <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6"
-                                            Background="{DynamicResource ArtFallback}" ClipToBounds="True">
-                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
-                                    </Border>
-                                    <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Spacing="2">
-                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
-                                                   LetterSpacing="-0.02" TextTrimming="CharacterEllipsis"
-                                                   Foreground="{DynamicResource TextPrimary}" />
-                                        <TextBlock Text="{Binding Artist}" FontSize="12"
-                                                   Foreground="{DynamicResource TextSecondary}"
-                                                   TextTrimming="CharacterEllipsis" />
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}"
-                                               VerticalAlignment="Center" Margin="0,0,8,0" />
-                                </Grid>
+                                <views:TrackListItem />
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+
+                    <!-- 未选中歌单的空态 -->
+                    <TextBlock Grid.Row="0" Grid.RowSpan="3" Text="请选择左侧歌单查看曲目" FontSize="16"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               IsVisible="{Binding SelectedPlaylist, Converter={x:Static ObjectConverters.IsNull}}"
+                               Foreground="{DynamicResource TextTertiary}" />
                 </Grid>
             </Grid>
         </Grid>

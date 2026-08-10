@@ -15,10 +15,11 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     private bool _coverRequested;
 
-    public SongItemViewModel(Song song, Func<Song, Task> playSong)
+    public SongItemViewModel(Song song, Func<Song, Task> playSong, int index = 0)
     {
         Song = song;
         _playSong = playSong;
+        Index = index;
         // 封面懒加载:列表项可见(容器 realized)时才拉,配合虚拟化,避免上千首并发下载
     }
 
@@ -35,6 +36,13 @@ public sealed partial class SongItemViewModel : ViewModelBase
     public string Name => Song.Name;
 
     public string Artist => Song.Artist;
+
+    public string Album => Song.Album;
+
+    /// <summary>歌单内序号(1 起);非歌单场景为 0。</summary>
+    public int Index { get; }
+
+    public string DisplayIndex => Index > 0 ? Index.ToString() : "";
 
     public string DurationText => FormatDuration(Song.DurationMs);
 

@@ -5,21 +5,21 @@
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:models="using:ALyricEase.Models"
              x:DataType="vm:LyricViewModel"
-             mc:Ignorable="d" d:DesignWidth="660" d:DesignHeight="600"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="320"
              x:Class="ALyricEase.Views.LyricView">
     <UserControl.Styles>
-        <!-- 歌词行:普通行灰/半透明,当前句(:selected)白/加粗,苹果音乐式 -->
+        <!-- 滚动歌词:当前句(:selected) 28px 白,其他 16px 半透明;居中 -->
         <Style Selector="ListBoxItem">
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="20,7" />
-            <Setter Property="Opacity" Value="0.32" />
-            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Opacity" Value="0.35" />
+            <Setter Property="FontSize" Value="16" />
             <Setter Property="FontWeight" Value="Normal" />
         </Style>
         <Style Selector="ListBoxItem:selected">
             <Setter Property="Opacity" Value="1" />
-            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontSize" Value="28" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
     </UserControl.Styles>
@@ -35,12 +35,12 @@
             <ListBox.ItemTemplate>
                 <!-- LyricView 仅用于正在播放页(深色模糊底),文字固定浅色 -->
                 <DataTemplate x:DataType="models:LyricLine">
-                    <StackPanel MaxWidth="620">
+                    <StackPanel MaxWidth="380">
                         <TextBlock Text="{Binding Original}" TextAlignment="Center"
                                    TextWrapping="Wrap"
                                    Foreground="#F5F5F7" />
                         <TextBlock Text="{Binding Translation}" TextAlignment="Center"
-                                   TextWrapping="Wrap" FontSize="12" Opacity="0.6"
+                                   TextWrapping="Wrap" FontSize="14" Opacity="0.55"
                                    Foreground="#C7C7CC"
                                    IsVisible="{Binding HasTranslation}" />
                     </StackPanel>

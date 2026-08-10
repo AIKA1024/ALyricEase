@@ -8,7 +8,7 @@ namespace ALyricEase.Views;
 
 public partial class PlayerBarView : UserControl
 {
-    private const double VolumeVisibleThreshold = 520;
+    private const double RightVisibleThreshold = 760;
 
     public PlayerBarView()
     {
@@ -25,9 +25,9 @@ public partial class PlayerBarView : UserControl
 
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
-        // 窄窗隐藏音量滑块,避免挤占曲目区
-        var show = e.NewSize.Width >= VolumeVisibleThreshold;
-        if (VolumeSlider.IsVisible != show) VolumeSlider.IsVisible = show;
+        // 窄窗隐藏右侧按钮组(喜欢/播放模式/音量/播放列表),避免挤占中间控制区
+        var show = e.NewSize.Width >= RightVisibleThreshold;
+        if (RightButtons.IsVisible != show) RightButtons.IsVisible = show;
     }
 
     private void OnSliderPointerPressed(object? sender, PointerPressedEventArgs e)

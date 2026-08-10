@@ -43,13 +43,23 @@ public sealed partial class SearchViewModel : ViewModelBase
     public bool ShowLanding => !HasSearched && !IsSearching;
     public bool ShowResults => HasSearched;
 
+    /// <summary>结果页空态/错误:显示居中大号 Message(没有搜索结果 20px)。</summary>
+    public bool ShowEmpty => HasSearched && !IsSearching && Message is not null;
+
     partial void OnHasSearchedChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowLanding));
         OnPropertyChanged(nameof(ShowResults));
+        OnPropertyChanged(nameof(ShowEmpty));
     }
 
-    partial void OnIsSearchingChanged(bool value) => OnPropertyChanged(nameof(ShowLanding));
+    partial void OnIsSearchingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowLanding));
+        OnPropertyChanged(nameof(ShowEmpty));
+    }
+
+    partial void OnMessageChanged(string? value) => OnPropertyChanged(nameof(ShowEmpty));
 
     [RelayCommand]
     private void SearchKeyword(string? keyword)
@@ -85,7 +95,7 @@ public sealed partial class SearchViewModel : ViewModelBase
             foreach (var song in songs)
                 Results.Add(new SongItemViewModel(song, _player.PlayAsync));
             if (songs.Count == 0)
-                Message = "未找到相关歌曲";
+                Message = "没有搜索结果";
         }
         catch (ApiException ex)
         {

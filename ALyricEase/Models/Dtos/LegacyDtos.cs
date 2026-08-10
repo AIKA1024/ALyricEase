@@ -83,3 +83,49 @@ public sealed record LegacyPlaylistResult
     /// <summary>歌单曲目:字段是 artists/album/duration(与明文搜索一致),复用 LegacySearchSong。</summary>
     public List<LegacySearchSong>? Tracks { get; init; }
 }
+
+// ---------- 首页推荐(明文 GET) ----------
+
+/// <summary>personalized/playlist、personalized/newsong、discovery/recommend/resource 的通用封面项。
+/// PlayCount 用 double:接口返回科学计数法(如 6.3607476E7),long 反序列化会抛异常。
+/// 不要加 [JsonPropertyName("playCount")]:每日推荐返回小写 playcount,显式名字会盖掉大小写不敏感匹配。</summary>
+public sealed record RecommendItemDto
+{
+    public long Id { get; init; }
+
+    public string Name { get; init; } = "";
+
+    public string Copywriter { get; init; } = "";
+
+    public string PicUrl { get; init; } = "";
+
+    public double PlayCount { get; init; }
+
+    public int TrackCount { get; init; }
+
+    /// <summary>newsong 的真实曲目嵌套在 song 下(artists 数组)。</summary>
+    public RecommendSongDto? Song { get; init; }
+}
+
+public sealed record RecommendSongDto
+{
+    public string Name { get; init; } = "";
+
+    public List<SearchArtist>? Artists { get; init; }
+}
+
+/// <summary>personalized/playlist、personalized/newsong 的响应(result 数组)。</summary>
+public sealed record RecommendListResponse
+{
+    public int Code { get; init; }
+
+    public List<RecommendItemDto>? Result { get; init; }
+}
+
+/// <summary>discovery/recommend/resource(每日推荐,登录后才有数据;匿名返回 code 301)。</summary>
+public sealed record RecommendResourceResponse
+{
+    public int Code { get; init; }
+
+    public List<RecommendItemDto>? Recommend { get; init; }
+}

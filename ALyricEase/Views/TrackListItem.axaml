@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:SongItemViewModel"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="56"
+             x:Class="ALyricEase.Views.TrackListItem"
+             DoubleTapped="OnDoubleTapped">
+    <!-- 规格 Prompt 4:56px 行,列 40/*/180/100 = 序号/歌曲信息/专辑/时间 -->
+    <UserControl.Styles>
+        <!-- 右侧更多按钮:默认隐藏,悬停时显示(代码后置 PointerEntered/Exited 切换) -->
+        <Style Selector="Button.more">
+            <Setter Property="IsVisible" Value="False" />
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.more:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid x:Name="RootGrid">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="40" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="180" />
+            <ColumnDefinition Width="100" />
+        </Grid.ColumnDefinitions>
+
+        <!-- 序号 -->
+        <TextBlock Grid.Column="0" Text="{Binding DisplayIndex}" FontSize="13"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextTertiary}" />
+
+        <!-- 歌曲信息:歌名 + 歌手 -->
+        <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="1">
+            <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextPrimary}" />
+            <TextBlock Text="{Binding Artist}" FontSize="12" TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextSecondary}" />
+        </StackPanel>
+
+        <!-- 专辑 -->
+        <TextBlock Grid.Column="2" x:Name="AlbumText" Text="{Binding Album}" FontSize="13"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                   Foreground="{DynamicResource TextSecondary}" />
+
+        <!-- 时长 + 更多按钮 -->
+        <Grid Grid.Column="3" VerticalAlignment="Center">
+            <TextBlock x:Name="DurText" Text="{Binding DurationText}" FontSize="12"
+                       HorizontalAlignment="Right" Margin="0,0,8,0"
+                       Foreground="{DynamicResource TextSecondary}" />
+            <Button x:Name="MoreButton" Classes="more" HorizontalAlignment="Right" Margin="0,0,4,0">
+                <PathIcon Data="M 6,10 C 7.104,10 8,10.896 8,12 C 8,13.104 7.104,14 6,14 C 4.896,14 4,13.104 4,12 C 4,10.896 4.896,10 6,10 Z M 12,10 C 13.104,10 14,10.896 14,12 C 14,13.104 13.104,14 12,14 C 10.896,14 10,13.104 10,12 C 10,10.896 10.896,10 12,10 Z M 18,10 C 19.104,10 20,10.896 20,12 C 20,13.104 19.104,14 18,14 C 16.896,14 16,13.104 16,12 C 16,10.896 16.896,10 18,10 Z"
+                          Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

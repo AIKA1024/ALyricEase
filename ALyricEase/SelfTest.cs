@@ -6,7 +6,6 @@ using ALyricEase.Services.Crypto;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.Smtc;
 using ALyricEase.ViewModels;
-using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ALyricEase;
@@ -24,11 +23,11 @@ internal static class SelfTest
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
         services.AddSingleton<NetEaseApiClient>();
-        services.AddSingleton<IAudioPlayer, LibVlcAudioPlayer>();
+        services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
         services.AddSingleton<SmtcService>();
         services.AddSingleton<LyricViewModel>();
         services.AddSingleton<PlayerViewModel>();
-        await using var sp = services.BuildServiceProvider();
+        var sp = services.BuildServiceProvider(); // 无头 selftest:不 DisposeAsync(WinRT MediaPlayer 无泵 Dispose 会挂)
 
         var api = sp.GetRequiredService<NetEaseApiClient>();
         var player = sp.GetRequiredService<PlayerViewModel>();
@@ -95,11 +94,11 @@ internal static class SelfTest
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
         services.AddSingleton<NetEaseApiClient>();
-        services.AddSingleton<IAudioPlayer, LibVlcAudioPlayer>();
+        services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
         services.AddSingleton<SmtcService>();
         services.AddSingleton<LyricViewModel>();
         services.AddSingleton<PlayerViewModel>();
-        await using var sp = services.BuildServiceProvider();
+        var sp = services.BuildServiceProvider(); // 无头 selftest:不 DisposeAsync(WinRT MediaPlayer 在无泵线程 Dispose 会挂)
 
         var api = sp.GetRequiredService<NetEaseApiClient>();
         var player = sp.GetRequiredService<PlayerViewModel>();
@@ -109,6 +108,7 @@ internal static class SelfTest
         try
         {
             Console.WriteLine("[play] 搜索:优先选「有时间轴歌词 + 可播放」的歌...");
+            Console.Out.Flush();
             var songs = await api.SearchAsync("周杰伦 晴天", 10);
             if (songs.Count == 0) { Console.WriteLine("[play] FAIL 无搜索结果"); return; }
 
@@ -123,28 +123,26 @@ internal static class SelfTest
             }
             var song = lyricSong ?? songs[0];
             Console.WriteLine($"[play] 播放: {song.Id} {song.Name} - {song.Artist}");
+            Console.Out.Flush();
 
             await player.PlayAsync(song);
             for (var i = 0; i < 40; i++)
             {
                 await Task.Delay(250);
-                Dispatcher.UIThread.RunJobs(); // 泵出 LibVLC 事件(State/Position)
+                // 事件泵在 Program.Main 的主线程 RunJobs 循环里完成,selftest 体只轮询属性。
                 if (player.IsPlaying && player.PositionMs > 0 && player.DurationMs > 0)
                 {
                     Console.WriteLine($"[play] OK 正在播放 pos={player.PositionMs}ms dur={player.DurationMs}ms");
                     player.TogglePlayPauseCommand.Execute(null); // 暂停
                     await Task.Delay(500);
-                    Dispatcher.UIThread.RunJobs();
                     Console.WriteLine($"[play] 暂停后 IsPlaying={player.IsPlaying} pos={player.PositionMs}ms");
                     player.TogglePlayPauseCommand.Execute(null); // 恢复
                     await Task.Delay(500);
-                    Dispatcher.UIThread.RunJobs();
                     Console.WriteLine($"[play] 恢复后 IsPlaying={player.IsPlaying}");
 
                     // 音量:VM 写入 → 音频层生效
                     player.Volume = 50;
                     await Task.Delay(200);
-                    Dispatcher.UIThread.RunJobs();
                     Console.WriteLine($"[play] 音量 VM={player.Volume} 底层={audio.Volume} " +
                                       $"{(audio.Volume == 50 ? "OK" : "FAIL")}");
 
@@ -153,7 +151,6 @@ internal static class SelfTest
                     player.BeginScrub();
                     player.EndScrub();
                     await Task.Delay(800);
-                    Dispatcher.UIThread.RunJobs();
                     var seekOk = audio.PositionMs >= 25000;
                     Console.WriteLine($"[play] 拖动后底层 pos={audio.PositionMs}ms {(seekOk ? "OK" : "FAIL")}");
 
@@ -161,7 +158,6 @@ internal static class SelfTest
                     for (var w = 0; w < 16 && !lyric.HasLyric; w++)
                     {
                         await Task.Delay(250);
-                        Dispatcher.UIThread.RunJobs();
                     }
                     var lyricOk = lyricSong is not null && lyric.HasLyric && lyric.Lines.Count > 0
                                   && lyric.CurrentIndex >= 0;
@@ -171,15 +167,18 @@ internal static class SelfTest
                     Console.WriteLine(seekOk && audio.Volume == 50 && lyricOk
                         ? "[play] M2+M3 全链路验证通过"
                         : "[play] 部分验证未通过");
+                    Console.Out.Flush();
                     return;
                 }
                 if (player.Message is { } msg && !player.IsLoading)
                 {
                     Console.WriteLine($"[play] FAIL 播放失败: {msg}");
+                    Console.Out.Flush();
                     return;
                 }
             }
             Console.WriteLine($"[play] FAIL 10s 内未进入播放 state 消息={player.Message}");
+            Console.Out.Flush();
         }
         finally
         {
@@ -287,6 +286,17 @@ internal static class SelfTest
             {
                 Console.WriteLine($"[profile] 符合预期: {ex.Message}");
             }
+
+            // ---- 首页推荐(明文 GET) ----
+            Console.WriteLine("[recommend] 首页推荐区块(每日/推荐歌单/热门/猜你喜欢)...");
+            var rPl = await api.GetPersonalizedPlaylistsAsync(3);
+            Console.WriteLine($"[recommend] 推荐歌单 {rPl.Count} 个, 首 [{rPl.FirstOrDefault()?.Title}] [{rPl.FirstOrDefault()?.Subtitle}] cover={rPl.FirstOrDefault()?.CoverUrl}");
+            var rHot = await api.GetPlaylistDetailAsync(3778678);
+            Console.WriteLine($"[recommend] 热歌榜 {rHot.Count} 首, 首 [{rHot.FirstOrDefault()?.Name} - {rHot.FirstOrDefault()?.Artist}] cover={rHot.FirstOrDefault()?.CoverUrl}");
+            var rNew = await api.GetNewSongsAsync(3);
+            Console.WriteLine($"[recommend] 猜你喜欢 {rNew.Count} 个, 首 [{rNew.FirstOrDefault()?.Title}] [{rNew.FirstOrDefault()?.Subtitle}] cover={rNew.FirstOrDefault()?.CoverUrl}");
+            var rDaily = await api.GetDailyRecommendAsync();
+            Console.WriteLine($"[recommend] 每日推荐(未登录应空) {rDaily.Count} 个");
         }
         catch (Exception ex)
         {

@@ -4,22 +4,12 @@ using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
-/// <summary>LyricEase/Apple Music 式正在播放页。响应式:宽窗封面左歌词右,窄窗封面在上歌词在下。</summary>
+/// <summary>LyricEase 式正在播放页:暗色模糊封面背景 + 居中封面/歌名/歌手 + 滚动歌词。</summary>
 public partial class NowPlayingView : UserControl
 {
-    private const double WideLayoutThreshold = 840;
-
     public NowPlayingView()
     {
         InitializeComponent();
-        SizeChanged += OnSizeChanged;
-    }
-
-    private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
-    {
-        var narrow = e.NewSize.Width < WideLayoutThreshold;
-        if (NarrowLayout.IsVisible != narrow) NarrowLayout.IsVisible = narrow;
-        if (WideLayout.IsVisible == narrow) WideLayout.IsVisible = !narrow;
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)

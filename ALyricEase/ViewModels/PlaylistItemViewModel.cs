@@ -31,7 +31,14 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
 
     public string Name => Playlist.Name;
 
+    public string Description => Playlist.Description;
+
+    /// <summary>有简介才显示(API 多数歌单无简介)。</summary>
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
     public int TrackCount => Playlist.TrackCount;
+
+    public string TrackCountText => $"{TrackCount} 首";
 
     [ObservableProperty] private IImage? _cover;
 

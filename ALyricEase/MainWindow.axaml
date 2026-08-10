@@ -8,7 +8,7 @@
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
         x:Class="ALyricEase.MainWindow"
         Title="ALyricEase" Width="1200" Height="720" MinWidth="360" MinHeight="560"
-        Icon="/Assets/app.ico" Background="Transparent" TransparencyLevelHint="Transparent"
+        Icon="/Assets/app.ico" Background="Transparent" TransparencyLevelHint="AcrylicBlur"
         WindowDecorations="BorderOnly"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="48">

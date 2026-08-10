@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
@@ -22,6 +24,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private bool _scrubbing;
 
+    // 播放队列:下一曲/上一曲用。PlayAsync 播放时若来自列表(歌单/搜索)会带上来源,否则单曲。
+    private List<Song> _queue = new();
+    private int _queueIndex = -1;
+
     public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, LyricViewModel lyric, SmtcService smtc)
     {
         _player = player;
@@ -30,6 +36,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _smtc = smtc;
         _smtc.PlayPauseRequested += OnSmtcPlayPause;
         _smtc.SeekRequested += OnSmtcSeek;
+        _smtc.NextRequested += OnSmtcNext;
+        _smtc.PreviousRequested += OnSmtcPrevious;
         _player.Volume = 80;
         _player.StateChanged += OnStateChanged;
         _player.PositionChanged += OnPositionChanged;
@@ -88,7 +96,24 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// <summary>一首歌开始加载/播放(UI 线程),供主窗口导航切到正在播放页。</summary>
     public event Action? SongStarted;
 
-    /// <summary>播放一首歌:查播放地址(higher→standard 自动降级),null 提示 VIP/不可播。</summary>
+    /// <summary>设置播放队列 + 定位当前曲目。播放来自歌单/搜索前调用,使下一曲/上一曲可用。</summary>
+    public void SetQueue(IReadOnlyList<Song> queue, Song current)
+    {
+        if (queue is not { Count: > 0 }) return;
+        _queue = queue.ToList();
+        _queueIndex = _queue.FindIndex(s => s.Id == current.Id);
+        if (_queueIndex < 0) { _queue.Insert(0, current); _queueIndex = 0; }
+    }
+
+    /// <summary>从列表播放:先记录队列,再播当前曲。供 SongItemViewModel 的队列播放回调使用。</summary>
+    public Task PlayFromList(Song song, IReadOnlyList<Song>? queue)
+    {
+        if (queue is { Count: > 0 }) SetQueue(queue, song);
+        return PlayAsync(song);
+    }
+
+    /// <summary>播放一首歌:查播放地址(higher→standard 自动降级),null 提示 VIP/不可播。
+    /// 队列在 SongItemViewModel 播放前经 SetQueue 注入,这里只播单曲。</summary>
     [RelayCommand]
     public async Task PlayAsync(Song? song)
     {
@@ -148,6 +173,32 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     }
 
     private void OnSmtcPlayPause() => TogglePlayPauseCommand.Execute(null);
+
+    private void OnSmtcNext() => _ = PlayNextAsync();
+
+    private void OnSmtcPrevious() => _ = PlayPreviousAsync();
+
+    /// <summary>播放队列中的下一首(无队列/已到末尾则忽略)。</summary>
+    [RelayCommand]
+    public async Task PlayNextAsync()
+    {
+        if (_queue.Count == 0) return;
+        var idx = _queueIndex + 1;
+        if (idx >= _queue.Count) return; // 末尾不循环
+        _queueIndex = idx;
+        await PlayAsync(_queue[idx]);
+    }
+
+    /// <summary>播放队列中的上一首(无队列/已到开头则忽略)。</summary>
+    [RelayCommand]
+    public async Task PlayPreviousAsync()
+    {
+        if (_queue.Count == 0) return;
+        var idx = _queueIndex - 1;
+        if (idx < 0) return;
+        _queueIndex = idx;
+        await PlayAsync(_queue[idx]);
+    }
 
     private void OnSmtcSeek(long ms)
     {

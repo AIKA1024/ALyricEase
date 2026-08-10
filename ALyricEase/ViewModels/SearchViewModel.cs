@@ -93,7 +93,7 @@ public sealed partial class SearchViewModel : ViewModelBase
             var songs = await _api.SearchAsync(keyword, 30);
             Results.Clear();
             foreach (var song in songs)
-                Results.Add(new SongItemViewModel(song, _player.PlayAsync));
+                Results.Add(new SongItemViewModel(song, _player.PlayFromList, queue: songs));
             if (songs.Count == 0)
                 Message = "没有搜索结果";
         }

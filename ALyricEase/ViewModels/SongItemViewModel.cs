@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
@@ -11,14 +12,19 @@ namespace ALyricEase.ViewModels;
 /// <summary>搜索结果单行:展示歌曲信息 + 双击播放。封面后台加载。</summary>
 public sealed partial class SongItemViewModel : ViewModelBase
 {
-    private readonly Func<Song, Task> _playSong;
+    private readonly Func<Song, IReadOnlyList<Song>?, Task> _playSong;
+    private readonly IReadOnlyList<Song>? _queue;
 
     private bool _coverRequested;
 
     public SongItemViewModel(Song song, Func<Song, Task> playSong, int index = 0)
+        : this(song, (s, _) => playSong(s), index) { }
+
+    public SongItemViewModel(Song song, Func<Song, IReadOnlyList<Song>?, Task> playSong, int index = 0, IReadOnlyList<Song>? queue = null)
     {
         Song = song;
         _playSong = playSong;
+        _queue = queue;
         Index = index;
         // 封面懒加载:列表项可见(容器 realized)时才拉,配合虚拟化,避免上千首并发下载
     }
@@ -53,7 +59,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private IImage? _cover;
 
     [RelayCommand]
-    private async Task PlayAsync() => await _playSong(Song);
+    private async Task PlayAsync() => await _playSong(Song, _queue);
 
     private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(Song.CoverUrl, 100);
 

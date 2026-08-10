@@ -35,6 +35,12 @@ public sealed class SmtcService : IDisposable
     /// <summary>SMTC 按钮(播放/暂停)按下 → UI 线程。</summary>
     public event Action? PlayPauseRequested;
 
+    /// <summary>SMTC 下一曲 → UI 线程。</summary>
+    public event Action? NextRequested;
+
+    /// <summary>SMTC 上一曲 → UI 线程。</summary>
+    public event Action? PreviousRequested;
+
     /// <summary>系统进度条拖动 → 目标毫秒(UI 线程)。</summary>
     public event Action<long>? SeekRequested;
 
@@ -57,8 +63,8 @@ public sealed class SmtcService : IDisposable
             _controls.IsEnabled = true;
             _controls.IsPlayEnabled = true;
             _controls.IsPauseEnabled = true;
-            _controls.IsNextEnabled = false;  // 尚无队列
-            _controls.IsPreviousEnabled = false;
+            _controls.IsNextEnabled = true;
+            _controls.IsPreviousEnabled = true;
             _controls.ButtonPressed += OnButtonPressed;
             _controls.PlaybackPositionChangeRequested += OnPositionChangeRequested;
 
@@ -154,8 +160,19 @@ public sealed class SmtcService : IDisposable
 
     private void OnButtonPressed(SystemMediaTransportControls sender, SystemMediaTransportControlsButtonPressedEventArgs args)
     {
-        if (args.Button is SystemMediaTransportControlsButton.Play or SystemMediaTransportControlsButton.Pause)
-            _dispatcher.Post(() => PlayPauseRequested?.Invoke());
+        switch (args.Button)
+        {
+            case SystemMediaTransportControlsButton.Play:
+            case SystemMediaTransportControlsButton.Pause:
+                _dispatcher.Post(() => PlayPauseRequested?.Invoke());
+                break;
+            case SystemMediaTransportControlsButton.Next:
+                _dispatcher.Post(() => NextRequested?.Invoke());
+                break;
+            case SystemMediaTransportControlsButton.Previous:
+                _dispatcher.Post(() => PreviousRequested?.Invoke());
+                break;
+        }
     }
 
     private void OnPositionChangeRequested(SystemMediaTransportControls sender, PlaybackPositionChangeRequestedEventArgs args)

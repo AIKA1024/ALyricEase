@@ -131,7 +131,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         var end = Math.Min(_materialized + MaterializeBatch, _allTracks.Count);
         for (; _materialized < end; _materialized++)
-            Tracks.Add(new SongItemViewModel(_allTracks[_materialized], _player.PlayAsync, _materialized + 1));
+            Tracks.Add(new SongItemViewModel(_allTracks[_materialized], _player.PlayFromList, _materialized + 1, _allTracks));
 
         // 物化后立即预取前 40 首封面,避免首屏/近屏全默认图;
         // 其余仍走容器 realized 懒加载(不并发拉全量)。

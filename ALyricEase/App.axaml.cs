@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services.Smtc;
+using ALyricEase.Services.Taskbar;
 using ALyricEase.ViewModels;
 
 namespace ALyricEase;
@@ -32,11 +33,53 @@ public partial class App : Application
       var hwnd = desktop.MainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
       ServiceLocator.Get<SmtcService>().Initialize(hwnd);
 
+      // 任务栏缩略图工具栏:须窗口已显示(关联任务栏按钮)后再注册 → 挂 Opened
+      desktop.MainWindow.Opened += (_, _) => InitTaskbarThumbButtons(desktop.MainWindow, hwnd);
+
       // 后台恢复登录态(已存 MUSIC_U 则拉资料+歌单),不阻塞 UI
       _ = RestoreLoginAsync();
     }
 
     base.OnFrameworkInitializationCompleted();
+  }
+
+  private void InitTaskbarThumbButtons(Avalonia.Controls.Window window, IntPtr hwnd)
+  {
+    try
+    {
+      var tb = new TaskbarThumbButtons(hwnd);
+      if (!tb.Initialize())
+      {
+        tb.Dispose();
+        return;
+      }
+      var player = ServiceLocator.Get<PlayerViewModel>();
+      // 播放状态变化 → 更新播放/暂停按钮图标
+      player.PropertyChanged += (_, e) =>
+      {
+        if (e.PropertyName == nameof(PlayerViewModel.IsPlaying))
+          tb.SetPlaying(player.IsPlaying);
+      };
+      tb.ButtonClicked += id =>
+      {
+        switch (id)
+        {
+          case TaskbarThumbButtons.IdPlayPause:
+            player.TogglePlayPauseCommand.Execute(null);
+            break;
+          case TaskbarThumbButtons.IdNext:
+            _ = player.PlayNextAsync();
+            break;
+          case TaskbarThumbButtons.IdPrevious:
+            _ = player.PlayPreviousAsync();
+            break;
+        }
+      };
+    }
+    catch
+    {
+      // 缩略图工具栏失败 → 静默降级
+    }
   }
 
   private static async Task RestoreLoginAsync()

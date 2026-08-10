@@ -1,0 +1,25 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Style Selector="Slider.player-progress">
+        <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+        <Setter Property="Background" Value="#7F8A8A8A" />
+        <Setter Property="MinHeight" Value="4" />
+    </Style>
+
+    <Style Selector="ListBoxItem.lyric-nav-item">
+        <Setter Property="Height" Value="40" />
+        <Setter Property="Margin" Value="4,0" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="ListBoxItem.lyric-nav-item:pointerover">
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="ListBoxItem.lyric-nav-item:selected">
+        <Setter Property="Background" Value="{DynamicResource NavigationSelected}" />
+    </Style>
+</Styles>

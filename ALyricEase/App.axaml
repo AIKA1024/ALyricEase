@@ -2,109 +2,20 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ALyricEase.App"
              RequestedThemeVariant="Default">
-             <!-- 跟随系统深浅色 -->
-
-    <!-- Windows 11 Fluent 色板(对应 AppFill/LayerFill/TextFill/ControlStroke 系统 token)+ Fluent Acrylic 材质 -->
     <Application.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="AppBackground" Color="#F3F3F3" />
-                    <SolidColorBrush x:Key="AppSurface" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="AppSurfaceElevated" Color="#F7F7F7" />
-                    <SolidColorBrush x:Key="AppSurfaceHover" Color="#0D000000" />
-                    <SolidColorBrush x:Key="AppSurfaceSelected" Color="#15000000" />
-                    <SolidColorBrush x:Key="TextPrimary" Color="#1B1B1B" />
-                    <SolidColorBrush x:Key="TextSecondary" Color="#5D5D5D" />
-                    <SolidColorBrush x:Key="TextTertiary" Color="#9D9D9D" />
-                    <SolidColorBrush x:Key="AppBorder" Color="#10000000" />
-                    <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
-                    <!-- 底部播放条:0.85 不透明度表层(窗口丙烯酸之上) -->
-                    <SolidColorBrush x:Key="PlayerBarBackground" Color="#D9FFFFFF" />
-                    <!-- 导航选中:AccentColor 半透明 -->
-                    <SolidColorBrush x:Key="NavSelected" Color="#2E1B6CA8" />
-                    <!-- 窗口级 Fluent Acrylic 材质 -->
-                    <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
-                        BackgroundSource="Digger" TintColor="#F3F3F3" TintOpacity="0.75"
-                        MaterialOpacity="0.85" FallbackColor="#F3F3F3" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="AppBackground" Color="#202020" />
-                    <SolidColorBrush x:Key="AppSurface" Color="#2B2B2B" />
-                    <SolidColorBrush x:Key="AppSurfaceElevated" Color="#333333" />
-                    <SolidColorBrush x:Key="AppSurfaceHover" Color="#12FFFFFF" />
-                    <SolidColorBrush x:Key="AppSurfaceSelected" Color="#1AFFFFFF" />
-                    <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="TextSecondary" Color="#C2C2C2" />
-                    <SolidColorBrush x:Key="TextTertiary" Color="#7A7A7A" />
-                    <SolidColorBrush x:Key="AppBorder" Color="#14FFFFFF" />
-                    <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />
-                    <SolidColorBrush x:Key="PlayerBarBackground" Color="#D92B2B2B" />
-                    <SolidColorBrush x:Key="NavSelected" Color="#3D4CC2FF" />
-                    <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
-                        BackgroundSource="Digger" TintColor="#202020" TintOpacity="0.75"
-                        MaterialOpacity="0.85" FallbackColor="#202020" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Colors.axaml" />
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Dimensions.axaml" />
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Icons.axaml" />
+            </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />
-
-        <!-- 圆形播放控制按钮(底部播放条 / 全屏播放页) -->
-        <Style Selector="Button.playerctl">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="1000" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Cursor" Value="Hand" />
-        </Style>
-        <Style Selector="Button.playerctl:pointerover">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
-        </Style>
-
-        <!-- 导航页底部按钮(账号/设置) -->
-        <Style Selector="Button.navctl">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Height" Value="40" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Margin" Value="8,2" />
-            <Setter Property="Padding" Value="8,0" />
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="Cursor" Value="Hand" />
-        </Style>
-        <Style Selector="Button.navctl:pointerover">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
-        </Style>
-
-        <!-- 图标按钮(搜索/喜欢/播放模式/音量/播放列表) -->
-        <Style Selector="Button.iconbtn">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="1000" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Cursor" Value="Hand" />
-        </Style>
-        <Style Selector="Button.iconbtn:pointerover">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
-        </Style>
-
-        <!-- 主操作按钮(播放全部等):Accent 圆角胶囊 -->
-        <Style Selector="Button.primary">
-            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="20" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Cursor" Value="Hand" />
-        </Style>
-        <Style Selector="Button.primary:pointerover">
-            <Setter Property="Opacity" Value="0.9" />
-        </Style>
+        <StyleInclude Source="avares://ALyricEase/Styles/Foundation/Typography.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/Buttons.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/Common.axaml" />
     </Application.Styles>
 </Application>

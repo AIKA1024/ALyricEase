@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -19,6 +21,9 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist = playlist;
         Recommend = recommend;
         _playlist = playlist;
+        RebuildShellNavigation();
+        Playlist.Playlists.CollectionChanged += OnPlaylistsChanged;
+        _selectedNav = ShellNavItems.First(item => item.Key == _activePage);
         Player.SongStarted += OnSongStarted;
         _ = Recommend.EnsureLoadedAsync(); // 启动即拉首页区块(幂等,失败静默)
     }
@@ -31,28 +36,54 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
-    /// <summary>左侧导航(规格 Prompt 1 五项)。</summary>
+    /// <summary>原版导航结构；首阶段未实现的页面仍进入明确占位页。</summary>
     public IReadOnlyList<NavItemViewModel> NavItems { get; } =
     [
-        new("Home", "首页", "M 12,3 L 22,12 L 19.5,12 L 19.5,21 L 14,21 L 14,15 L 10,15 L 10,21 L 4.5,21 L 4.5,12 L 2,12 Z"),
-        new("Recommend", "推荐", "M 12,2 L 14.4,8.2 L 21,9 L 16,13.4 L 17.8,20 L 12,16.4 L 6.2,20 L 8,13.4 L 3,9 L 9.6,8.2 Z"),
-        new("Library", "我的音乐", "M 12,3 L 12,12.5 C 11.4,12.2 10.7,12 10,12 C 8.3,12 7,13.3 7,15 C 7,16.7 8.3,18 10,18 C 11.7,18 13,16.7 13,15 L 13,5 L 19,4 L 19,12.5 C 18.4,12.2 17.7,12 17,12 C 15.3,12 14,13.3 14,15 C 14,16.7 15.3,18 17,18 C 18.7,18 20,16.7 20,15 L 20,3 Z"),
-        new("Recents", "播放记录", "M 12,2 C 6.477,2 2,6.477 2,12 C 2,17.523 6.477,22 12,22 C 17.523,22 22,17.523 22,12 C 22,6.477 17.523,2 12,2 Z M 11,6 L 13,6 L 13,12.4 L 16.5,14.5 L 15.5,16.2 L 11,13.4 Z"),
-        new("Favorites", "收藏歌曲", "M 12,20.5 C 12,20.5 2.5,15 2.5,8.5 C 2.5,5.5 4.8,3.5 7.5,3.5 C 9.3,3.5 11,4.5 12,6 C 13,4.5 14.7,3.5 16.5,3.5 C 19.2,3.5 21.5,5.5 21.5,8.5 C 21.5,15 12,20.5 12,20.5 Z"),
+        new("DiscoverHeader", "发现", isHeader: true),
+        new("Search", "搜索", ""),
+        new("Recommend", "个性推荐", ""),
+        new("Browse", "浏览", ""),
+        new("PersonalStation", "私人FM", ""),
+        new("MyMusicHeader", "我的音乐", isHeader: true),
+        new("Library", "我的收藏", ""),
+        new("CloudDrive", "音乐云盘", ""),
+        new("Recents", "最近播放", ""),
+        new("PlaylistsHeader", "我的歌单", isHeader: true),
     ];
 
+    public ObservableCollection<NavItemViewModel> ShellNavItems { get; } = new();
+
+    /// <summary>手机底部导航仅保留最常用入口，其他入口在抽屉中。</summary>
+    public IReadOnlyList<NavItemViewModel> PrimaryNavItems =>
+        ShellNavItems.Where(item => item.Key is "Search" or "Recommend" or "Library" or "Recents").ToArray();
+
     /// <summary>当前导航页键(Home/Recommend/Library/Recents/Favorites/Search/Account/Settings)。</summary>
-    [ObservableProperty] private string _activePage = "Home";
+    [ObservableProperty] private string _activePage = "Recommend";
 
     /// <summary>正在播放全屏覆盖层。</summary>
     [ObservableProperty] private bool _showNowPlaying;
 
+    /// <summary>桌面/中屏侧栏是否完整展开；汉堡按钮在完整栏和图标栏之间切换。</summary>
+    [ObservableProperty] private bool _isNavigationExpanded = true;
+
+    public bool IsNavigationCompact => !IsNavigationExpanded;
+
+    partial void OnIsNavigationExpandedChanged(bool value) => OnPropertyChanged(nameof(IsNavigationCompact));
+
+    /// <summary>预留给后续 Android/触控抽屉的状态；当前小尺寸仍遵循原版图标栏。</summary>
+    [ObservableProperty] private bool _isNavigationDrawerOpen;
+
+    private readonly Stack<string> _navigationHistory = new();
+    private string _lastPage = "Recommend";
+    private bool _isGoingBack;
+
+
     /// <summary>内容区当前页(TransitioningContentControl 按 VM 类型选模板)。</summary>
     public object? CurrentContent => ActivePage switch
     {
-        "Home" => Recommend,
+        "Recommend" => Recommend,
         "Search" => Search,
-        "Library" => Playlist,
+        "Favorites" => Playlist,
         _ => Placeholder,
     };
 
@@ -65,32 +96,50 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnActivePageChanged(string value)
     {
+        if (!_isGoingBack && !string.Equals(_lastPage, value, StringComparison.Ordinal))
+            _navigationHistory.Push(_lastPage);
+        _lastPage = value;
+        OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(CurrentContent));
 
-        // 占位页标题(推荐/播放记录/收藏歌曲/账号/设置)
-        if (value is "Recommend" or "Recents" or "Favorites" or "Account" or "Settings")
+        // 未完成页面使用明确占位，不伪装为可用功能。
+        if (value is "Browse" or "PersonalStation" or "CloudDrive" or "Recents" or "Account" or "Settings")
         {
             (Placeholder.Title, Placeholder.Description) = value switch
             {
-                "Recommend" => ("推荐", "为你推荐的新歌与热门内容"),
-                "Recents" => ("播放记录", "近期播放过的歌曲"),
-                "Favorites" => ("收藏歌曲", "你喜欢的歌曲"),
+                "Browse" => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
+                "PersonalStation" => ("私人FM", "播放队列能力完成后接入私人FM"),
+                "CloudDrive" => ("音乐云盘", "网易云盘接口将在后续阶段接入"),
+                "Recents" => ("最近播放", "本地播放历史将在下一阶段接入"),
+                "Favorites" => ("我喜欢的音乐", "喜欢列表与收藏操作将在队列阶段接入"),
                 "Account" => ("账号", "登录与账户信息"),
-                _ => ("设置", "应用设置"),
+                _ => ("设置", "应用设置将在下一阶段接入"),
             };
         }
 
-        if (value == "Home")
-            _ = Recommend.EnsureLoadedAsync(); // 回到首页时刷新(登录态变化也会触发)
+        if (value == "Recommend")
+            _ = Recommend.EnsureLoadedAsync();
 
-        if (value == "Library")
-            _ = _playlist.EnsureLoadedAsync(); // 已存 MUSIC_U 则恢复登录态
+        if (value == "Favorites")
+            _ = _playlist.EnsureLoadedAsync(); // 已存 MUSIC_U 则恢复并打开“我喜欢的音乐”
 
         // 从搜索/占位页切回导航项时同步选中;非导航页(搜索/账号/设置)清除选中
-        SelectedNav = IsNavItem(value) ? NavItems.FirstOrDefault(n => n.Key == value) : null;
+        SelectedNav = IsNavItem(value) ? ShellNavItems.FirstOrDefault(n => n.Key == value) : null;
     }
 
-    private static bool IsNavItem(string page) => page is "Home" or "Recommend" or "Library" or "Recents" or "Favorites";
+    private static bool IsNavItem(string page) => page is "Search" or "Recommend" or "Browse" or "PersonalStation" or "Library" or "CloudDrive" or "Recents" or "Favorites";
+
+    private void OnPlaylistsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildShellNavigation();
+
+    private void RebuildShellNavigation()
+    {
+        ShellNavItems.Clear();
+        foreach (var item in NavItems)
+            ShellNavItems.Add(item);
+
+        foreach (var playlist in Playlist.Playlists)
+            ShellNavItems.Add(new NavItemViewModel($"Playlist:{playlist.Id}", playlist.Name, "", playlist: playlist));
+    }
 
     /// <summary>当前选中导航项(ListBox 双向)。</summary>
     [ObservableProperty] private NavItemViewModel? _selectedNav;
@@ -98,11 +147,56 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnSelectedNavChanged(NavItemViewModel? value)
     {
         if (value is null || value.IsHeader) return;
+        if (value.Playlist is { } playlist)
+        {
+            OpenShellPlaylistCommand.Execute(playlist);
+            return;
+        }
+
         ActivePage = value.Key;
+        IsNavigationDrawerOpen = false;
+    }
+
+    public bool CanGoBack => _navigationHistory.Count > 0;
+
+    [RelayCommand]
+    private void GoBack()
+    {
+        if (_navigationHistory.Count == 0) return;
+        _isGoingBack = true;
+        try
+        {
+            ActivePage = _navigationHistory.Pop();
+        }
+        finally
+        {
+            _isGoingBack = false;
+            OnPropertyChanged(nameof(CanGoBack));
+        }
     }
 
     /// <summary>内容区右上搜索图标。</summary>
     [RelayCommand] private void GoSearch() => ActivePage = "Search";
+
+    [RelayCommand]
+    private void OpenShellPlaylist(PlaylistItemViewModel? playlist)
+    {
+        if (playlist is null) return;
+        ActivePage = "Favorites";
+        Playlist.OpenPlaylistCommand.Execute(playlist);
+    }
+
+    [RelayCommand] private void ToggleNavigationExpanded() => IsNavigationExpanded = !IsNavigationExpanded;
+
+    [RelayCommand] private void ToggleNavigationDrawer() => IsNavigationDrawerOpen = !IsNavigationDrawerOpen;
+
+    [RelayCommand] private void CloseNavigationDrawer() => IsNavigationDrawerOpen = false;
+
+    [RelayCommand]
+    private void NavigateCompact(NavItemViewModel? item)
+    {
+        if (item is { IsItem: true }) SelectedNav = item;
+    }
 
     [RelayCommand] private void GoAccount()
     {

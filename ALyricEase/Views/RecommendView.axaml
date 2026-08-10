@@ -6,74 +6,52 @@
              x:DataType="vm:RecommendViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecommendView">
-    <!-- 规格 Prompt 7:ScrollViewer + 多 Section,每 Section 横向 Card 列表(160x200,封面 120x120,圆12,悬停放大) -->
     <UserControl.Styles>
-        <!-- 悬停轻微放大:静态替换 RenderTransform(Avalonia KeyFrame 不支持动画 RenderTransform) -->
-        <Style Selector="Border.card">
-            <Setter Property="RenderTransformOrigin" Value="50%,50%" />
-            <Setter Property="RenderTransform" Value="scale(1,1)" />
-        </Style>
-        <Style Selector="Border.card:pointerover">
-            <Setter Property="RenderTransform" Value="scale(1.04,1.04)" />
-        </Style>
+        <Style Selector="StackPanel#PageContent"><Setter Property="Margin" Value="48,0,32,80" /></Style>
+        <Style Selector="Border.card"><Setter Property="Width" Value="200" /><Setter Property="Height" Value="250" /><Setter Property="RenderTransformOrigin" Value="50%,50%" /><Setter Property="RenderTransform" Value="scale(1,1)" /></Style>
+        <Style Selector="Border.card:pointerover"><Setter Property="RenderTransform" Value="scale(1.02,1.02)" /></Style>
+        <Style Selector="Border.card-art"><Setter Property="Width" Value="200" /><Setter Property="Height" Value="200" /></Style>
+        <Style Selector="UserControl.compact StackPanel#PageContent"><Setter Property="Margin" Value="28,0,24,80" /></Style>
+        <Style Selector="UserControl.compact Border.card"><Setter Property="Width" Value="168" /><Setter Property="Height" Value="218" /></Style>
+        <Style Selector="UserControl.compact Border.card-art"><Setter Property="Width" Value="168" /><Setter Property="Height" Value="168" /></Style>
+        <Style Selector="UserControl.narrow StackPanel#PageContent"><Setter Property="Margin" Value="16,0,12,20" /></Style>
+        <Style Selector="UserControl.narrow Border.card"><Setter Property="Width" Value="156" /><Setter Property="Height" Value="206" /></Style>
+        <Style Selector="UserControl.narrow Border.card-art"><Setter Property="Width" Value="156" /><Setter Property="Height" Value="156" /></Style>
     </UserControl.Styles>
-
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="28,20,24,20" Spacing="28">
-            <ItemsControl ItemsSource="{Binding Sections}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:RecommendSectionViewModel">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextPrimary}" />
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                          VerticalScrollBarVisibility="Disabled">
-                                <ItemsControl ItemsSource="{Binding Cards}"
-                                              ContainerPrepared="OnCardContainerPrepared">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" Spacing="14" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:RecommendCardViewModel">
-                                            <!-- 卡片:160x200,封面 120x120,圆 12 -->
-                                            <Border Classes="card" Width="160" Height="200" CornerRadius="12"
-                                                    Background="{DynamicResource AppSurface}"
-                                                    BorderThickness="1" BorderBrush="{DynamicResource AppBorder}"
-                                                    ClipToBounds="True" HorizontalAlignment="Left">
-                                                <StackPanel Spacing="4">
-                                                    <Border Width="120" Height="120" CornerRadius="12"
-                                                            Background="{DynamicResource ArtFallback}"
-                                                            ClipToBounds="True" Margin="0,18,0,0"
-                                                            HorizontalAlignment="Center">
-                                                        <Grid>
-                                                            <TextBlock Text="♫" FontSize="34"
-                                                                       Foreground="{DynamicResource TextTertiary}"
-                                                                       HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center" />
-                                                            <Image Source="{Binding Cover}" Stretch="UniformToFill"
-                                                                   IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                                        </Grid>
-                                                    </Border>
-                                                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
-                                                               TextTrimming="CharacterEllipsis" MaxLines="1"
-                                                               Margin="14,6,14,0"
-                                                               Foreground="{DynamicResource TextPrimary}" />
-                                                    <TextBlock Text="{Binding Subtitle}" FontSize="12"
-                                                               TextTrimming="CharacterEllipsis" MaxLines="1"
-                                                               Margin="14,0"
-                                                               Foreground="{DynamicResource TextSecondary}" />
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
-    </ScrollViewer>
+    <Grid RowDefinitions="96,*">
+        <Grid Grid.Row="0" Margin="48,0,32,0"><TextBlock Text="个性推荐" Classes="page-title" VerticalAlignment="Center" /></Grid>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="PageContent" Spacing="34">
+                <ItemsControl ItemsSource="{Binding Sections}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:RecommendSectionViewModel">
+                            <StackPanel Spacing="12" Margin="0,0,0,28">
+                                <TextBlock Text="{Binding Title}" Classes="section-title" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="14" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:RecommendCardViewModel">
+                                                <Border Classes="card" Background="Transparent" CornerRadius="8" ClipToBounds="True" Cursor="Hand">
+                                                    <Grid RowDefinitions="Auto,50">
+                                                        <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                                                            <Grid><Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" /><Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" /></Grid>
+                                                        </Border>
+                                                        <StackPanel Grid.Row="1" Margin="4,6,4,0" Spacing="1">
+                                                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                            <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </UserControl>

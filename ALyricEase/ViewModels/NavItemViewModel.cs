@@ -1,22 +1,24 @@
-using Avalonia.Media;
-
 namespace ALyricEase.ViewModels;
 
-/// <summary>左侧导航项:图标 + 文字。IsHeader 为分组标题(不可点选)。</summary>
+/// <summary>左侧导航项:原版 Fluent 图标字形 + 文字。IsHeader 为分组标题(不可点选)。</summary>
 public sealed class NavItemViewModel
 {
-    public NavItemViewModel(string key, string label, string? iconPath = null, bool isHeader = false)
+    public NavItemViewModel(string key, string label, string? iconGlyph = null, bool isHeader = false, bool isAccent = false, PlaylistItemViewModel? playlist = null)
     {
         Key = key;
         Label = label;
-        IconData = iconPath is null ? null : StreamGeometry.Parse(iconPath);
+        IconGlyph = iconGlyph;
         IsHeader = isHeader;
+        IsAccent = isAccent;
+        Playlist = playlist;
     }
 
     public string Key { get; }
     public string Label { get; }
-    public Geometry? IconData { get; }
+    public string? IconGlyph { get; }
     public bool IsHeader { get; }
+    public bool IsAccent { get; }
+    public PlaylistItemViewModel? Playlist { get; }
 
     public bool IsItem => !IsHeader;
 }

@@ -99,6 +99,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         if (playlist is null) return;
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded(); // 头部大封面
+        _ = playlist.EnsureLargeCoverLoadedAsync(); // 600px 大图,保证头部 200px 显示清晰
         Tracks.Clear();
         PlaylistTitle = playlist.Name;
         IsBusy = true;
@@ -131,6 +132,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         var end = Math.Min(_materialized + MaterializeBatch, _allTracks.Count);
         for (; _materialized < end; _materialized++)
             Tracks.Add(new SongItemViewModel(_allTracks[_materialized], _player.PlayAsync, _materialized + 1));
+
+        // 物化后立即预取前 40 首封面,避免首屏/近屏全默认图;
+        // 其余仍走容器 realized 懒加载(不并发拉全量)。
+        const int prefetch = 40;
+        for (var i = 0; i < Tracks.Count && i < prefetch; i++)
+            Tracks[i].EnsureCoverLoaded();
     }
 
     /// <summary>头部「播放全部」:从第一首开始播放(后续可扩展为顺序队列)。</summary>
@@ -157,6 +164,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Playlists.Clear();
             foreach (var p in playlists)
                 Playlists.Add(new PlaylistItemViewModel(p));
+
+            // 网易云通常把“我喜欢的音乐”放在首位；自动打开它，使该入口直接呈现可用的歌单详情。
+            if (Playlists.Count > 0)
+                await OpenPlaylistAsync(Playlists[0]);
         }
         catch (ApiException ex)
         {

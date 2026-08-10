@@ -7,164 +7,139 @@
              x:DataType="vm:PlaylistViewModel"
              mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
              x:Class="ALyricEase.Views.PlaylistView">
-    <UserControl.Styles>
-        <!-- 左歌单列表项 -->
-        <Style Selector="ListBox.playlists > ListBoxItem">
-            <Setter Property="Height" Value="60" />
-            <Setter Property="Padding" Value="8,4" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Margin" Value="0,1" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        </Style>
-        <!-- 曲目列表项(56px,交给 TrackListItem) -->
-        <Style Selector="ListBox.tracks > ListBoxItem">
-            <Setter Property="Height" Value="56" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Margin" Value="0,1" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
-        <Style Selector="ListBox > ListBoxItem:pointerover">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
-        </Style>
-        <Style Selector="ListBox > ListBoxItem:selected">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
-        </Style>
-    </UserControl.Styles>
-
-    <Grid>
-        <!-- 登录卡片 -->
-        <Border IsVisible="{Binding ShowLogin}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                Background="{DynamicResource AppSurface}" CornerRadius="8" Padding="28"
-                BoxShadow="0 8 40 #33000000">
-            <StackPanel Spacing="14" Width="420">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="♫" FontSize="24" Foreground="{DynamicResource SystemAccentColor}" />
-                    <TextBlock Text="登录 LyricEase" FontSize="20" FontWeight="SemiBold" LetterSpacing="-0.02"
-                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                </StackPanel>
-                <TextBlock Text="在浏览器打开 music.163.com,按 F12 → 应用 → Cookie → 找到 MUSIC_U,复制它的值(或整段 Cookie)粘贴到下面,即可同步歌单。"
-                           TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" FontSize="13" />
-                <TextBox Text="{Binding MusicUInput}" PlaceholderText="粘贴 MUSIC_U 或整段 Cookie"
-                         FontSize="13" Height="88" TextWrapping="Wrap" VerticalContentAlignment="Top" />
-                <Grid ColumnDefinitions="Auto,*">
-                    <Button Content="登录" Command="{Binding LoginCommand}" MinWidth="96" Height="36"
-                            CornerRadius="8" Background="{DynamicResource SystemAccentColor}"
-                            Foreground="White" BorderThickness="0" />
-                    <ProgressBar Grid.Column="1" Width="120" Height="3" IsIndeterminate="True"
-                                 IsVisible="{Binding IsBusy}" Margin="16,0,0,0" VerticalAlignment="Center"
-                                 Foreground="{DynamicResource SystemAccentColor}" />
-                </Grid>
-                <TextBlock Text="{Binding Message}" Foreground="{DynamicResource SystemAccentColor}"
-                           TextWrapping="Wrap" FontSize="13" />
-            </StackPanel>
-        </Border>
-
-        <!-- 已登录:用户条 + 歌单/曲目详情 -->
-        <Grid IsVisible="{Binding IsLoggedIn}" RowDefinitions="Auto,*" Margin="28,16,24,12">
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,14">
-                <Border Width="36" Height="36" CornerRadius="18" Background="{DynamicResource ArtFallback}"
-                        ClipToBounds="True">
-                    <Image Source="{Binding AvatarImage}" Stretch="UniformToFill" />
-                </Border>
-                <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding UserName}" FontSize="16" FontWeight="SemiBold" LetterSpacing="-0.02"
-                               Foreground="{DynamicResource TextPrimary}" />
-                </StackPanel>
-                <Button Grid.Column="2" Content="退出登录" Command="{Binding LogoutCommand}" Height="32"
-                        CornerRadius="8" />
-            </Grid>
-
-            <Grid Grid.Row="1" ColumnDefinitions="300,*">
-                <!-- 歌单列表 -->
-                <ListBox Classes="playlists" Grid.Column="0" ItemsSource="{Binding Playlists}"
-                         SelectedItem="{Binding SelectedPlaylist}"
-                         Background="Transparent" DoubleTapped="OnPlaylistDoubleTapped"
-                         PreparingContainer="OnPlaylistContainerPreparing">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-                            <Grid ColumnDefinitions="52,*">
-                                <Border Width="48" Height="48" CornerRadius="6"
-                                        Background="{DynamicResource ArtFallback}" ClipToBounds="True">
-                                    <Image Source="{Binding Cover}" Stretch="UniformToFill" />
-                                </Border>
-                                <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
-                                               TextTrimming="CharacterEllipsis"
-                                               Foreground="{DynamicResource TextPrimary}" />
-                                    <TextBlock Text="{Binding TrackCountText}" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}" />
-                                </StackPanel>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <!-- 歌单详情:头部 260 + 列头 + 曲目表 -->
-                <Grid Grid.Column="1" Margin="24,0,0,0" RowDefinitions="Auto,Auto,*">
-                    <!-- 头部 260px:封面 200x200 圆8 + 信息 -->
-                    <Grid Grid.Row="0" Height="260" ColumnDefinitions="220,*">
-                        <Border Grid.Column="0" Width="200" Height="200" CornerRadius="8"
-                                Background="{DynamicResource ArtFallback}" ClipToBounds="True"
-                                HorizontalAlignment="Left" VerticalAlignment="Center">
-                            <Image Source="{Binding SelectedPlaylist.Cover}" Stretch="UniformToFill" />
-                        </Border>
-                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="8">
-                            <TextBlock Text="{Binding SelectedPlaylist.Name}" FontSize="32" FontWeight="Bold"
-                                       TextTrimming="CharacterEllipsis" MaxLines="1"
-                                       Foreground="{DynamicResource TextPrimary}" />
-                            <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="13"
-                                       TextWrapping="Wrap" MaxLines="2"
-                                       IsVisible="{Binding SelectedPlaylist.HasDescription}"
-                                       Foreground="{DynamicResource TextSecondary}" />
-                            <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="13"
-                                       Foreground="{DynamicResource TextTertiary}" />
-                            <Button Classes="primary" Content="播放全部" Command="{Binding PlayAllCommand}"
-                                    Width="120" Height="40" CornerRadius="20" HorizontalAlignment="Left"
-                                    Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- 列头:序号 / 歌曲名+歌手 / 专辑 / 时长(Wide 显示,窄窗隐藏后两列) -->
-                    <Grid Grid.Row="1" x:Name="TrackHeader" Margin="8,2,8,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="40" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="180" />
-                            <ColumnDefinition Width="100" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="序号" FontSize="12"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource TextTertiary}" />
-                        <TextBlock Grid.Column="1" Text="歌曲名 / 歌手" FontSize="12" Margin="12,0,0,0"
-                                   VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
-                        <TextBlock x:Name="HeaderAlbum" Grid.Column="2" Text="专辑" FontSize="12"
-                                   VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
-                        <TextBlock x:Name="HeaderDuration" Grid.Column="3" Text="时长" FontSize="12"
-                                   HorizontalAlignment="Right" Margin="0,0,8,0" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource TextTertiary}" />
-                    </Grid>
-
-                    <!-- 曲目表(双击在 TrackListItem 内处理) -->
-                    <ListBox Grid.Row="2" x:Name="TracksList" Classes="tracks"
-                             ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack}"
-                             Background="Transparent" Margin="8,4,8,0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:SongItemViewModel">
-                                <views:TrackListItem />
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-
-                    <!-- 未选中歌单的空态 -->
-                    <TextBlock Grid.Row="0" Grid.RowSpan="3" Text="请选择左侧歌单查看曲目" FontSize="16"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               IsVisible="{Binding SelectedPlaylist, Converter={x:Static ObjectConverters.IsNull}}"
-                               Foreground="{DynamicResource TextTertiary}" />
-                </Grid>
-            </Grid>
+  <UserControl.Styles>
+    <Style Selector="Border.login-card">
+      <Setter Property="MaxWidth" Value="600" /><Setter Property="MinWidth" Value="400" />
+    </Style>
+    <Style Selector="UserControl.narrow Border.login-card">
+      <Setter Property="MinWidth" Value="0" /><Setter Property="Width" Value="320" />
+    </Style>
+    <Style Selector="Grid.detail-shell">
+      <Setter Property="Margin" Value="10,16,16,0" />
+    </Style>
+    <Style Selector="Border.playlist-hero">
+      <Setter Property="Height" Value="300" />
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+      <Setter Property="CornerRadius" Value="8" /><Setter Property="Padding" Value="20" />
+    </Style>
+    <Style Selector="UserControl.compact Border.playlist-hero">
+      <Setter Property="Height" Value="300" /><Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0,20" />
+    </Style>
+    <Style Selector="UserControl.compact Border.hero-art">
+      <Setter Property="Width" Value="300" /><Setter Property="Height" Value="300" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="UserControl.compact StackPanel.hero-copy">
+      <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="Margin" Value="0,18,0,0" />
+    </Style>
+    <Style Selector="UserControl.compact TextBlock.hero-title">
+      <Setter Property="TextAlignment" Value="Center" /><Setter Property="FontSize" Value="28" />
+    </Style>
+    <Style Selector="UserControl.compact Button.hero-creator">
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="UserControl.compact StackPanel.hero-actions">
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="UserControl.narrow Grid.detail-shell">
+      <Setter Property="Margin" Value="0,0,0,0" />
+    </Style>
+    <Style Selector="UserControl.narrow Border.playlist-hero">
+      <Setter Property="Padding" Value="0,14" />
+    </Style>
+    <Style Selector="UserControl.narrow Border.hero-art">
+      <Setter Property="Width" Value="300" /><Setter Property="Height" Value="300" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ItemsControl.tracks > ContentPresenter">
+      <Setter Property="Margin" Value="0,1" /><Setter Property="CornerRadius" Value="6" />
+    </Style>
+  </UserControl.Styles>
+  <Grid>
+    <Border Classes="login-card" IsVisible="{Binding ShowLogin}" HorizontalAlignment="Center"
+            VerticalAlignment="Center" Background="{DynamicResource AppSurfaceElevated}" CornerRadius="8" Padding="28"
+            BoxShadow="0 10 60 #55000000">
+      <StackPanel Spacing="16">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" />
+          <TextBlock Text="登录 ALyricEase" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Text="在浏览器复制 MUSIC_U Cookie，即可同步网易云歌单。" TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextSecondary}" FontSize="13" />
+        <TextBox Text="{Binding MusicUInput}" PlaceholderText="粘贴 MUSIC_U 或整段 Cookie" Height="88" TextWrapping="Wrap"
+                 VerticalContentAlignment="Top" />
+        <Grid ColumnDefinitions="Auto,*">
+          <Button Content="登录" Command="{Binding LoginCommand}" MinWidth="96" Height="40" Classes="primary" />
+          <ProgressBar Grid.Column="1" Width="120" Height="3" IsIndeterminate="True" IsVisible="{Binding IsBusy}"
+                       Margin="16,0,0,0" VerticalAlignment="Center" />
         </Grid>
+        <TextBlock Text="{Binding Message}" Foreground="{DynamicResource LyricEaseRed}" TextWrapping="Wrap"
+                   FontSize="13" />
+      </StackPanel>
+    </Border>
+    <Grid Classes="detail-shell" IsVisible="{Binding IsLoggedIn}">
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="12">
+          <Border Classes="playlist-hero">
+            <Grid Classes="hero-layout" ColumnDefinitions="260,*">
+              <Border Classes="hero-art" Grid.Column="0" Width="260" Height="260" CornerRadius="8" ClipToBounds="True"
+                      Background="{DynamicResource ArtFallback}" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <Image Source="{Binding SelectedPlaylist.LargeCover}" Stretch="UniformToFill" />
+              </Border>
+              <StackPanel Classes="hero-copy" Grid.Column="1" Margin="20,0,10,0" VerticalAlignment="Center" Spacing="8">
+                <TextBlock Classes="hero-title" Text="{Binding SelectedPlaylist.Name}" FontSize="28" FontWeight="Bold"
+                           TextTrimming="CharacterEllipsis" MaxLines="2" />
+                <Button Classes="hero-creator" Content="{Binding UserName}" HorizontalAlignment="Left"
+                        Background="Transparent" BorderThickness="0" Padding="0"
+                        Foreground="{DynamicResource LyricEaseTeal}" FontSize="18" ToolTip.Tip="打开用户页（后续接入）" />
+                <TextBlock Text="创建于网易云 · {Binding SelectedPlaylist.TrackCountText}" FontSize="16"
+                           FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" />
+                <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="14"
+                           Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" MaxLines="3"
+                           IsVisible="{Binding SelectedPlaylist.HasDescription}" />
+                <StackPanel Classes="hero-actions" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                  <Button Classes="primary" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" Height="40"
+                          Padding="18,0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                  <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
+                          CornerRadius="4" Height="40" Padding="14,0" IsEnabled="False" ToolTip.Tip="心动模式将在播放队列阶段接入"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="♥" FontSize="17" /><TextBlock Text="心动模式" />
+                    </StackPanel>
+                  </Button>
+                  <Button Width="40" Height="40" Padding="0" Background="{DynamicResource AppSurface}"
+                          BorderThickness="1" BorderBrush="{DynamicResource AppBorder}" CornerRadius="4"
+                          IsEnabled="False" ToolTip.Tip="更多操作将在后续阶段接入"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <TextBlock Text="•••" LetterSpacing="2" />
+                  </Button>
+                </StackPanel>
+              </StackPanel>
+            </Grid>
+          </Border>
+          <Border Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}"
+                  BorderThickness="1" CornerRadius="8" Padding="8,6">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl Classes="tracks" ItemsSource="{Binding Tracks}" ContainerPrepared="OnTrackContainerPreparing">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel />  
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SongItemViewModel">
+                    <views:TrackListItem />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+      <TextBlock Text="请选择左侧歌单查看曲目" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 IsVisible="{Binding SelectedPlaylist, Converter={x:Static ObjectConverters.IsNull}}"
+                 Foreground="{DynamicResource TextTertiary}" />
     </Grid>
+  </Grid>
 </UserControl>

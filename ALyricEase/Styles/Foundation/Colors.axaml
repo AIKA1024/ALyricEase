@@ -1,0 +1,80 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="AppBackground" Color="#F3F3F3" />
+            <SolidColorBrush x:Key="AppSurface" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="AppSurfaceElevated" Color="#F7F7F7" />
+            <SolidColorBrush x:Key="AppSurfaceHover" Color="#0D000000" />
+            <SolidColorBrush x:Key="AppSurfacePressed" Color="#18000000" />
+            <SolidColorBrush x:Key="AppSurfaceSelected" Color="#15000000" />
+            <SolidColorBrush x:Key="AppListBackground" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="TextPrimary" Color="#1B1B1B" />
+            <SolidColorBrush x:Key="TextSecondary" Color="#5D5D5D" />
+            <SolidColorBrush x:Key="TextTertiary" Color="#808080" />
+            <SolidColorBrush x:Key="TextDisabled" Color="#707070" />
+            <SolidColorBrush x:Key="AppBorder" Color="#12000000" />
+            <SolidColorBrush x:Key="AppBorderStrong" Color="#24000000" />
+            <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
+            <SolidColorBrush x:Key="NavigationPaneBackground" Color="#C8F3F3F3" />
+            <SolidColorBrush x:Key="NavigationSelected" Color="#10000000" />
+            <SolidColorBrush x:Key="PlayerBarBackground" Color="#E6FFFFFF" />
+            <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5F3F3F3" />
+            <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
+                                         BackgroundSource="Digger"
+                                         TintColor="#F3F3F3"
+                                         TintOpacity="0.72"
+                                         MaterialOpacity="0.88"
+                                         FallbackColor="#F3F3F3" />
+            <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
+                                         BackgroundSource="Digger"
+                                         TintColor="#5A5A5A"
+                                         TintOpacity="0.90"
+                                         MaterialOpacity="0.55"
+                                         FallbackColor="#5A5A5A" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="AppBackground" Color="#141516" />
+            <SolidColorBrush x:Key="AppSurface" Color="#242424" />
+            <SolidColorBrush x:Key="AppSurfaceElevated" Color="#2B2B2B" />
+            <SolidColorBrush x:Key="AppSurfaceHover" Color="#12FFFFFF" />
+            <SolidColorBrush x:Key="AppSurfacePressed" Color="#1FFFFFFF" />
+            <SolidColorBrush x:Key="AppSurfaceSelected" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="AppListBackground" Color="#0DFFFFFF" />
+            <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="TextSecondary" Color="#C2C2C2" />
+            <SolidColorBrush x:Key="TextTertiary" Color="#858585" />
+            <SolidColorBrush x:Key="TextDisabled" Color="#777777" />
+            <SolidColorBrush x:Key="AppBorder" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="AppBorderStrong" Color="#28FFFFFF" />
+            <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />
+            <SolidColorBrush x:Key="NavigationPaneBackground" Color="#D0181818" />
+            <SolidColorBrush x:Key="NavigationSelected" Color="#12FFFFFF" />
+            <SolidColorBrush x:Key="PlayerBarBackground" Color="#EB333333" />
+            <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5202020" />
+            <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
+                                         BackgroundSource="Digger"
+                                         TintColor="#141516"
+                                         TintOpacity="1.0"
+                                         MaterialOpacity="0.85"
+                                         FallbackColor="#141516" />
+            <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
+                                         BackgroundSource="Digger"
+                                         TintColor="#5A5A5A"
+                                         TintOpacity="0.90"
+                                         MaterialOpacity="0.55"
+                                         FallbackColor="#5A5A5A" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
+    <Color x:Key="LyricEaseRedColor">#EC4141</Color>
+    <Color x:Key="LyricEaseRedHoverColor">#CF3131</Color>
+    <Color x:Key="LyricEaseRedPressedColor">#B22222</Color>
+    <Color x:Key="LyricEaseTealColor">#64A8A1</Color>
+    <SolidColorBrush x:Key="LyricEaseRed" Color="{StaticResource LyricEaseRedColor}" />
+    <SolidColorBrush x:Key="LyricEaseRedHover" Color="{StaticResource LyricEaseRedHoverColor}" />
+    <SolidColorBrush x:Key="LyricEaseRedPressed" Color="{StaticResource LyricEaseRedPressedColor}" />
+    <SolidColorBrush x:Key="LyricEaseTeal" Color="{StaticResource LyricEaseTealColor}" />
+    <SolidColorBrush x:Key="LyricEaseTealDim" Color="#8064A8A1" />
+    <SolidColorBrush x:Key="PlaybackOverlay" Color="#CC000000" />
+</ResourceDictionary>

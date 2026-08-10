@@ -1,21 +1,39 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
-/// <summary>LyricEase 式正在播放页:暗色模糊封面背景 + 居中封面/歌名/歌手 + 滚动歌词。</summary>
+/// <summary>LyricEase 式正在播放页；同一视图覆盖桌面、平板与手机窄屏布局。</summary>
 public partial class NowPlayingView : UserControl
 {
     public NowPlayingView()
     {
         InitializeComponent();
+        SizeChanged += OnSizeChanged;
+        AttachedToVisualTree += (_, _) =>
+        {
+            ResponsiveClasses.Apply(this, Bounds.Width);
+            Focus();
+        };
     }
+
+    private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
+        => ResponsiveClasses.Apply(this, e.NewSize.Width);
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape && DataContext is MainViewModel vm)
             vm.CloseNowPlayingCommand.Execute(null);
+    }
+
+    /// <summary>顶部拖拽条:按下并拖动时移动窗口(播放详情页盖住标题栏,靠这里拖)。</summary>
+    private void OnTitleDragPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && TopLevel.GetTopLevel(this) is Window w)
+            w.BeginMoveDrag(e);
     }
 
     private void OnTimelinePointerPressed(object? sender, PointerPressedEventArgs e)

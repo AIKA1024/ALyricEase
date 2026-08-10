@@ -4,97 +4,94 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:PlayerViewModel"
-             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="100"
+             mc:Ignorable="d"
+             d:DesignWidth="1200" d:DesignHeight="100"
              x:Class="ALyricEase.Views.PlayerBarView">
-    <!-- 规格 Prompt 2:100px 三列播放条,Acrylic 0.85 + 顶部 1px 分割线 -->
-    <Border Background="{DynamicResource PlayerBarBackground}" BorderThickness="0,1,0,0"
-            BorderBrush="{DynamicResource AppBorder}">
-        <Grid RowDefinitions="*,Auto" Margin="16,8,16,6">
-            <!-- 第一行:左(曲目 300px) | 中(控制) | 右(32x32 按钮组) -->
-            <Grid Grid.Row="0" ColumnDefinitions="300,*,Auto">
-                <!-- 左:封面 48x48 圆6 + 标题/歌手,点击打开正在播放页 -->
-                <Grid Grid.Column="0" Background="Transparent" Cursor="Hand"
-                      PointerPressed="OnTrackAreaPressed">
-                    <Border Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
-                            Background="{DynamicResource ArtFallback}"
-                            HorizontalAlignment="Left" VerticalAlignment="Center">
-                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
-                    </Border>
-                    <StackPanel Margin="58,0,8,0" VerticalAlignment="Center" Spacing="1">
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14"
-                                   TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource TextPrimary}" />
-                        <TextBlock Text="{Binding Artist}" FontSize="12"
-                                   Foreground="{DynamicResource TextSecondary}"
-                                   TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
+    <UserControl.Styles>
+        <Style Selector="Grid#WidePlayer"><Setter Property="IsVisible" Value="True" /></Style>
+        <Style Selector="Grid#CompactPlayer"><Setter Property="IsVisible" Value="False" /></Style>
+        <Style Selector="UserControl.compact Grid#WidePlayer"><Setter Property="IsVisible" Value="False" /></Style>
+        <Style Selector="UserControl.compact Grid#CompactPlayer"><Setter Property="IsVisible" Value="True" /></Style>
+        <Style Selector="UserControl.narrow Grid#WidePlayer"><Setter Property="IsVisible" Value="False" /></Style>
+        <Style Selector="UserControl.narrow Grid#CompactPlayer"><Setter Property="IsVisible" Value="True" /></Style>
+    </UserControl.Styles>
+
+    <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}">
+        <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}">
+            <Grid>
+                <Grid x:Name="WidePlayer" RowDefinitions="20,80">
+                    <Slider Classes="player-progress" Grid.Row="0"
+                            Minimum="0" Maximum="{Binding ProgressMaximum}" Value="{Binding PositionMs}"
+                            Height="20" Margin="-5,-8,-5,0" IsEnabled="{Binding HasProgress}"
+                            PointerPressed="OnSliderPointerPressed" PointerReleased="OnSliderPointerReleased" />
+                    <Grid Grid.Row="1" ColumnDefinitions="70,*,Auto" ColumnSpacing="4" Margin="12,-4,12,0"
+                          Background="Transparent" PointerPressed="OnTrackAreaPressed">
+                        <Border Grid.Column="0" Width="60" Height="60" CornerRadius="4" ClipToBounds="True"
+                                Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Grid>
+                                <Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" />
+                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                            <TextBlock Classes="track-title" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Classes="track-subtitle" Text="{Binding Artist}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="8">
+                            <Button Classes="player-button" Width="40" Height="40" IsEnabled="False"><TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" /></Button>
+                            <Button Classes="player-button" Width="40" Height="40" IsEnabled="False"><TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" /></Button>
+                            <Button Classes="player-button" Command="{Binding TogglePlayPauseCommand}" Width="50" Height="50">
+                                <Grid>
+                                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" IsVisible="{Binding ShowPauseIcon}" />
+                                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" IsVisible="{Binding ShowPlayIcon}" />
+                                    <TextBlock Text="•••" FontSize="14" LetterSpacing="2" IsVisible="{Binding ShowLoadingIcon}" />
+                                </Grid>
+                            </Button>
+                            <Button Classes="player-button" Width="40" Height="40" IsEnabled="False"><TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" /></Button>
+                            <Button Classes="player-button" Width="40" Height="40" IsEnabled="False"><TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="16" /></Button>
+                            <Button Classes="player-button" Width="40" Height="40" ToolTip.Tip="音量">
+                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
+                                <Button.Flyout>
+                                    <Flyout Placement="Top">
+                                        <StackPanel Spacing="8" Margin="4">
+                                            <Slider Value="{Binding Volume}" Minimum="0" Maximum="100" Height="150" Orientation="Vertical" />
+                                            <TextBlock Text="{Binding Volume}" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                            <Button Classes="player-button" Width="40" Height="40" IsEnabled="False"><TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" /></Button>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
 
-                <!-- 中:上一首 / 播放 / 下一首 -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12"
-                            HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <Button Classes="playerctl" Width="40" Height="40" CornerRadius="20" IsEnabled="False"
-                            ToolTip.Tip="上一首">
-                        <PathIcon Data="M 4,2 L 9,2 L 9,14 L 4,14 Z M 11,2 L 13.5,2 L 13.5,14 L 11,14 Z"
-                                  Width="16" Height="16" Foreground="{DynamicResource TextPrimary}" />
-                    </Button>
-                    <Button Classes="playerctl" Command="{Binding TogglePlayPauseCommand}"
-                            Width="48" Height="48" CornerRadius="24" ToolTip.Tip="播放 / 暂停">
-                        <Grid>
-                            <PathIcon IsVisible="{Binding ShowLoadingIcon}" Width="22" Height="22"
-                                      Foreground="{DynamicResource TextPrimary}"
-                                      Data="M 4,2 L 10,5 L 10,11 L 4,14 Z M 12,2 L 12,14" />
-                            <PathIcon IsVisible="{Binding ShowPauseIcon}" Width="22" Height="22"
-                                      Foreground="{DynamicResource TextPrimary}"
-                                      Data="M 3,2 L 6,2 L 6,14 L 3,14 Z M 10,2 L 13,2 L 13,14 L 10,14 Z" />
-                            <PathIcon IsVisible="{Binding ShowPlayIcon}" Width="22" Height="22"
-                                      Foreground="{DynamicResource TextPrimary}"
-                                      Data="M 4,1 L 14,7 L 4,13 Z" />
-                        </Grid>
-                    </Button>
-                    <Button Classes="playerctl" Width="40" Height="40" CornerRadius="20" IsEnabled="False"
-                            ToolTip.Tip="下一首">
-                        <PathIcon Data="M 13,2 L 18,2 L 18,14 L 13,14 Z M 6,2 L 8.5,2 L 8.5,14 L 6,14 Z"
-                                  Width="16" Height="16" Foreground="{DynamicResource TextPrimary}" />
-                    </Button>
-                </StackPanel>
-
-                <!-- 右:喜欢/播放模式/音量/播放列表(32x32) -->
-                <StackPanel x:Name="RightButtons" Grid.Column="2" Orientation="Horizontal" Spacing="4"
-                            HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button Classes="iconbtn" Width="32" Height="32" CornerRadius="16" ToolTip.Tip="喜欢">
-                        <PathIcon Data="M 12,20.5 C 12,20.5 2.5,15 2.5,8.5 C 2.5,5.5 4.8,3.5 7.5,3.5 C 9.3,3.5 11,4.5 12,6 C 13,4.5 14.7,3.5 16.5,3.5 C 19.2,3.5 21.5,5.5 21.5,8.5 C 21.5,15 12,20.5 12,20.5 Z"
-                                  Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
-                    </Button>
-                    <Button Classes="iconbtn" Width="32" Height="32" CornerRadius="16" ToolTip.Tip="播放模式">
-                        <PathIcon Data="M 3,6 C 3,4.343 4.343,3 6,3 L 9,3 L 9,6 L 6,6 Z M 3,18 L 3,21 L 6,21 L 6,18 Z M 12,3 L 15,3 C 16.657,3 18,4.343 18,6 L 18,9 L 15,9 L 15,6 Z M 18,12 L 21,12 L 21,15 L 18,15 Z M 15,18 L 18,18 L 18,21 L 12,21 L 12,18 Z M 6,9 L 9,9 L 9,15 L 6,15 Z M 3,9 L 6,9 L 6,15 L 3,15 Z"
-                                  Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
-                    </Button>
-                    <Button Classes="iconbtn" Width="32" Height="32" CornerRadius="16" ToolTip.Tip="音量">
-                        <PathIcon Data="M 2,9 L 2,15 L 6,15 L 11,20 L 11,4 L 6,9 Z M 15,8 C 16.1,9.1 16.7,10.5 16.7,12 C 16.7,13.5 16.1,14.9 15,16 Z M 13,6 C 15,8 16,10 16,12 C 16,14 15,16 13,18 Z M 15.5,5 C 18,7.5 19,10 19,12 C 19,14 18,16.5 15.5,19 Z"
-                                  Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
-                    </Button>
-                    <Slider x:Name="VolumeSlider" Value="{Binding Volume}" Minimum="0" Maximum="100" Width="96"
-                            VerticalAlignment="Center" Margin="4,0,6,0" />
-                    <Button Classes="iconbtn" Width="32" Height="32" CornerRadius="16" ToolTip.Tip="播放列表">
-                        <PathIcon Data="M 2,5 L 22,5 L 22,9 L 2,9 Z M 2,13 L 22,13 L 22,17 L 2,17 Z M 2,21 L 22,21 L 22,25 L 2,25 Z"
-                                  Width="18" Height="18" Foreground="{DynamicResource TextPrimary}" />
-                    </Button>
-                </StackPanel>
+                <Grid x:Name="CompactPlayer" RowDefinitions="4,*" Background="Transparent">
+                    <ProgressBar Grid.Row="0" Minimum="0" Maximum="{Binding ProgressMaximum}" Value="{Binding PositionMs}"
+                                 Foreground="{DynamicResource LyricEaseTeal}" Background="#668A8A8A" />
+                    <Grid Grid.Row="1" ColumnDefinitions="56,*,52" ColumnSpacing="8" Margin="8,4,8,4"
+                          PointerPressed="OnTrackAreaPressed">
+                        <Border Grid.Column="0" Width="48" Height="48" CornerRadius="4" ClipToBounds="True"
+                                Background="{DynamicResource ArtFallback}" VerticalAlignment="Center">
+                            <Grid>
+                                <Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" />
+                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Classes="track-title" FontSize="14" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Classes="track-subtitle" Text="{Binding Artist}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Button Grid.Column="2" Classes="player-button" Command="{Binding TogglePlayPauseCommand}"
+                                Width="48" Height="48" VerticalAlignment="Center">
+                            <Grid>
+                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24" IsVisible="{Binding ShowPauseIcon}" />
+                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24" IsVisible="{Binding ShowPlayIcon}" />
+                                <TextBlock Text="•••" FontSize="12" LetterSpacing="1" IsVisible="{Binding ShowLoadingIcon}" />
+                            </Grid>
+                        </Button>
+                    </Grid>
+                </Grid>
             </Grid>
-
-            <!-- 第二行:00:00 [——————] 04:20 -->
-            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,2,0,0">
-                <TextBlock Text="{Binding PositionText}" FontSize="11" VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextTertiary}" />
-                <Slider Grid.Column="1" Minimum="0" Maximum="{Binding ProgressMaximum}"
-                        Value="{Binding PositionMs}" Height="16" Margin="10,0"
-                        IsEnabled="{Binding HasProgress}"
-                        PointerPressed="OnSliderPointerPressed"
-                        PointerReleased="OnSliderPointerReleased" />
-                <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="11" VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextTertiary}" />
-            </Grid>
-        </Grid>
+        </ExperimentalAcrylicBorder>
     </Border>
 </UserControl>

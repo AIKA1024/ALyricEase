@@ -1,5 +1,7 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using ALyricEase.Infrastructure;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using ALyricEase.ViewModels;
@@ -11,6 +13,8 @@ public partial class SearchView : UserControl
     public SearchView()
     {
         InitializeComponent();
+        SizeChanged += (_, e) => ResponsiveClasses.Apply(this, e.NewSize.Width);
+        AttachedToVisualTree += (_, _) => ResponsiveClasses.Apply(this, Bounds.Width);
     }
 
     private void OnResultContainerPreparing(object? sender, ContainerPreparedEventArgs e)

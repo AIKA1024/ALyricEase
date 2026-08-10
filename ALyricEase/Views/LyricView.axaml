@@ -8,47 +8,55 @@
              mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="320"
              x:Class="ALyricEase.Views.LyricView">
     <UserControl.Styles>
-        <!-- 滚动歌词:当前句(:selected) 28px 白,其他 16px 半透明;居中 -->
         <Style Selector="ListBoxItem">
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="20,7" />
-            <Setter Property="Opacity" Value="0.35" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Opacity" Value="0.4" />
             <Setter Property="FontSize" Value="16" />
             <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+            <Setter Property="RenderTransform" Value="scale(1,1)" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.3" />
+                    <DoubleTransition Property="FontSize" Duration="0:0:0.5" />
+                    <BrushTransition Property="Background" Duration="0:0:0.2" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter Property="Background" Value="#33FFFFFF" />
+            <Setter Property="Opacity" Value="0.8" />
         </Style>
         <Style Selector="ListBoxItem:selected">
             <Setter Property="Opacity" Value="1" />
-            <Setter Property="FontSize" Value="28" />
+            <Setter Property="FontSize" Value="22" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="RenderTransform" Value="scale(1.05,1.05)" />
         </Style>
     </UserControl.Styles>
     <Grid>
-        <!-- 滚动歌词:当前句高亮,代码后置 SelectionChanged 居中滚动 -->
         <ListBox x:Name="LyricList" ItemsSource="{Binding Lines}"
                  SelectedIndex="{Binding CurrentIndex, Mode=OneWay}"
                  IsVisible="{Binding HasLyric}"
                  Background="Transparent" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.VerticalScrollBarVisibility="Hidden"
                  SelectionChanged="OnSelectionChanged">
             <ListBox.ItemTemplate>
-                <!-- LyricView 仅用于正在播放页(深色模糊底),文字固定浅色 -->
                 <DataTemplate x:DataType="models:LyricLine">
                     <StackPanel MaxWidth="380">
-                        <TextBlock Text="{Binding Original}" TextAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   Foreground="#F5F5F7" />
-                        <TextBlock Text="{Binding Translation}" TextAlignment="Center"
-                                   TextWrapping="Wrap" FontSize="14" Opacity="0.55"
-                                   Foreground="#C7C7CC"
+                        <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap" Foreground="#F5F5F7" />
+                        <TextBlock Text="{Binding Translation}" TextAlignment="Left" TextWrapping="Wrap"
+                                   FontSize="14" Opacity="0.55" Foreground="#C7C7CC"
                                    IsVisible="{Binding HasTranslation}" />
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
-
-        <!-- 空态/加载提示 -->
         <TextBlock Text="{Binding Message}" TextWrapping="Wrap" TextAlignment="Center"
                    HorizontalAlignment="Center" VerticalAlignment="Center"
                    Foreground="#9A9AA0" IsVisible="{Binding ShowEmpty}" />

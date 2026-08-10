@@ -5,84 +5,159 @@
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:MainViewModel"
-             mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
-             x:Class="ALyricEase.Views.NowPlayingView">
-    <Grid KeyDown="OnKeyDown">
-        <!-- Layer1:封面铺满窗口 -->
-        <Image Source="{Binding Player.Cover}" Stretch="UniformToFill">
-            <Image.Effect>
-                <BlurEffect Radius="60" />
-            </Image.Effect>
-        </Image>
+             mc:Ignorable="d"
+             d:DesignWidth="1200" d:DesignHeight="720"
+             x:Class="ALyricEase.Views.NowPlayingView" Focusable="True">
+    <UserControl.Styles>
+        <Style Selector="Grid#DesktopPlaybackLayout">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <Style Selector="Grid#PhonePlaybackLayout">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="UserControl.compact Grid#DesktopPlaybackLayout">
+            <Setter Property="Margin" Value="56,76,56,40" />
+            <Setter Property="ColumnSpacing" Value="36" />
+        </Style>
+        <Style Selector="UserControl.compact Border#DesktopArtwork">
+            <Setter Property="Width" Value="360" />
+            <Setter Property="Height" Value="360" />
+        </Style>
+        <Style Selector="UserControl.narrow Grid#DesktopPlaybackLayout">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="UserControl.narrow Grid#PhonePlaybackLayout">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <Style Selector="UserControl.narrow Button.top-action">
+            <Setter Property="Width" Value="48" />
+            <Setter Property="Height" Value="48" />
+        </Style>
+    </UserControl.Styles>
 
-        <!-- Layer2:毛玻璃/深色遮罩 Opacity 0.8 -->
+    <Grid KeyDown="OnKeyDown" Background="#FF000000">
+        <Image Source="{Binding Player.Cover}" Stretch="UniformToFill" Opacity="0.9">
+            <Image.Effect><BlurEffect Radius="100" /></Image.Effect>
+        </Image>
         <Rectangle Fill="#CC000000" />
 
-        <Grid RowDefinitions="Auto,*,Auto" Margin="28,18,24,18">
-            <!-- 顶部:左上返回按钮 50x50 ChevronDown -->
-            <Grid Grid.Row="0">
-                <Button Classes="playerctl" Command="{Binding CloseNowPlayingCommand}"
-                        ToolTip.Tip="收起" Width="50" Height="50" CornerRadius="25"
-                        HorizontalAlignment="Left">
-                    <PathIcon Data="M 3,7 L 12,16 L 21,7 L 19,5.5 L 12,13 L 5,5.5 Z"
-                              Width="20" Height="20" Foreground="White" />
-                </Button>
-            </Grid>
+        <!-- 顶部拖拽条:播放详情页盖住标题栏时,按住顶部空白区可拖动窗口 -->
+        <Grid Height="48" VerticalAlignment="Top" Background="Transparent" ZIndex="1"
+              PointerPressed="OnTitleDragPressed" />
 
-            <!-- 中部:居中 StackPanel 宽400:封面300 圆12 + 歌名28 + 歌手16 + 歌词 -->
-            <StackPanel Grid.Row="1" Width="400" HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Spacing="16">
-                <Border Width="300" Height="300" CornerRadius="12" ClipToBounds="True"
-                        Background="#22FFFFFF" HorizontalAlignment="Center"
-                        BoxShadow="0 12 50 #66000000">
+        <Button Classes="player-button top-action" Command="{Binding CloseNowPlayingCommand}"
+                Width="50" Height="50" Margin="20,16,0,0"
+                HorizontalAlignment="Left" VerticalAlignment="Top" ToolTip.Tip="收起" ZIndex="2">
+            <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White" />
+        </Button>
+        <Button Classes="player-button top-action" Width="50" Height="50" Margin="0,16,20,0"
+                HorizontalAlignment="Right" VerticalAlignment="Top" IsEnabled="False"
+                ToolTip.Tip="更多操作将在后续阶段接入" ZIndex="2">
+            <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White" />
+        </Button>
+
+        <Grid x:Name="DesktopPlaybackLayout" ColumnDefinitions="*,400" ColumnSpacing="54"
+              Margin="86,76,86,50" MaxWidth="1120" HorizontalAlignment="Center">
+            <Border x:Name="DesktopArtwork" Grid.Column="0" Width="480" Height="480" MaxWidth="600" MaxHeight="600"
+                    CornerRadius="16" ClipToBounds="True" Background="#22FFFFFF"
+                    BoxShadow="0 10 50 #4D000000" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid>
+                    <Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" />
                     <Image Source="{Binding Player.Cover}" Stretch="UniformToFill" />
-                </Border>
-                <TextBlock Text="{Binding Player.Title}" FontSize="28" FontWeight="Bold"
-                           TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="White" />
-                <TextBlock Text="{Binding Player.Artist}" FontSize="16" Opacity="0.7"
-                           TextAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="White" />
-                <views:LyricView DataContext="{Binding Lyric}" Height="320" Margin="0,8,0,0" />
-            </StackPanel>
-
-            <!-- 底部:时间线 + 控制 -->
-            <Grid Grid.Row="2" RowDefinitions="Auto,Auto">
-                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="44,0">
-                    <TextBlock Text="{Binding Player.PositionText}" FontSize="12" Opacity="0.75"
-                               VerticalAlignment="Center" Foreground="White" />
-                    <Slider Grid.Column="1" Minimum="0" Maximum="{Binding Player.ProgressMaximum}"
-                            Value="{Binding Player.PositionMs}" Margin="12,0"
-                            IsEnabled="{Binding Player.HasProgress}"
-                            PointerPressed="OnTimelinePointerPressed"
-                            PointerReleased="OnTimelinePointerReleased" />
-                    <TextBlock Grid.Column="2" Text="{Binding Player.DurationText}" FontSize="12" Opacity="0.75"
-                               VerticalAlignment="Center" Foreground="White" />
                 </Grid>
-                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center"
-                            Margin="0,10,0,0" Spacing="28">
-                    <Button Classes="playerctl" Width="48" Height="48" CornerRadius="24" IsEnabled="False">
-                        <PathIcon Data="M 4,2 L 9,2 L 9,14 L 4,14 Z M 11,2 L 13.5,2 L 13.5,14 L 11,14 Z"
-                                  Width="18" Height="18" Foreground="White" />
-                    </Button>
-                    <Button Classes="playerctl" Command="{Binding Player.TogglePlayPauseCommand}"
-                            Width="60" Height="60" CornerRadius="30">
-                        <Grid>
-                            <PathIcon IsVisible="{Binding Player.ShowLoadingIcon}" Width="26" Height="26"
-                                      Foreground="White"
-                                      Data="M 4,2 L 10,5 L 10,11 L 4,14 Z M 12,2 L 12,14" />
-                            <PathIcon IsVisible="{Binding Player.ShowPauseIcon}" Width="26" Height="26"
-                                      Foreground="White"
-                                      Data="M 3,2 L 6,2 L 6,14 L 3,14 Z M 10,2 L 13,2 L 13,14 L 10,14 Z" />
-                            <PathIcon IsVisible="{Binding Player.ShowPlayIcon}" Width="26" Height="26"
-                                      Foreground="White"
-                                      Data="M 4,1 L 14,7 L 4,13 Z" />
-                        </Grid>
-                    </Button>
-                    <Button Classes="playerctl" Width="48" Height="48" CornerRadius="24" IsEnabled="False">
-                        <PathIcon Data="M 13,2 L 18,2 L 18,14 L 13,14 Z M 6,2 L 8.5,2 L 8.5,14 L 6,14 Z"
-                                  Width="18" Height="18" Foreground="White" />
-                    </Button>
+            </Border>
+
+            <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto,*" VerticalAlignment="Center">
+                <StackPanel Grid.Row="0" Spacing="3" Margin="0,0,0,14">
+                    <TextBlock Text="{Binding Player.Title}" FontSize="20" FontWeight="Bold" LetterSpacing="-0.2"
+                               TextTrimming="CharacterEllipsis" Foreground="White" />
+                    <TextBlock Text="{Binding Player.Artist}" FontSize="16" TextTrimming="CharacterEllipsis" Foreground="#BFFFFFFF" />
                 </StackPanel>
+                <Grid Grid.Row="1" RowDefinitions="30,Auto" Margin="0,0,0,12">
+                    <Slider Classes="player-progress" Minimum="0" Maximum="{Binding Player.ProgressMaximum}"
+                            Value="{Binding Player.PositionMs}" Height="30" IsEnabled="{Binding Player.HasProgress}"
+                            PointerPressed="OnTimelinePointerPressed" PointerReleased="OnTimelinePointerReleased" />
+                    <Grid Grid.Row="1" ColumnDefinitions="*,*">
+                        <TextBlock Text="{Binding Player.PositionText}" FontWeight="SemiBold" Foreground="#BFFFFFFF" />
+                        <TextBlock Grid.Column="1" Text="{Binding Player.DurationText}" HorizontalAlignment="Right"
+                                   FontWeight="SemiBold" Foreground="#BFFFFFFF" />
+                    </Grid>
+                </Grid>
+                <Grid Grid.Row="2" ColumnDefinitions="50,*,50" Margin="0,0,0,10">
+                    <Button Classes="player-button" Grid.Column="0" Width="50" Height="50" IsEnabled="False">
+                        <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="White" />
+                    </Button>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="30">
+                        <Button Classes="player-button" Width="50" Height="50" IsEnabled="False">
+                            <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="White" />
+                        </Button>
+                        <Button Classes="player-button" Command="{Binding Player.TogglePlayPauseCommand}" Width="60" Height="60">
+                            <Grid>
+                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White"
+                                           IsVisible="{Binding Player.ShowPauseIcon}" />
+                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White"
+                                           IsVisible="{Binding Player.ShowPlayIcon}" />
+                                <TextBlock Text="•••" FontSize="14" LetterSpacing="2" Foreground="White"
+                                           IsVisible="{Binding Player.ShowLoadingIcon}" />
+                            </Grid>
+                        </Button>
+                        <Button Classes="player-button" Width="50" Height="50" IsEnabled="False">
+                            <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="White" />
+                        </Button>
+                    </StackPanel>
+                    <Button Classes="player-button" Grid.Column="2" Width="50" Height="50" IsEnabled="False">
+                        <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="White" />
+                    </Button>
+                </Grid>
+                <Grid Grid.Row="3" Height="300">
+                    <views:LyricView DataContext="{Binding Lyric}" />
+                </Grid>
             </Grid>
+        </Grid>
+
+        <Grid x:Name="PhonePlaybackLayout" Margin="20,74,20,20" RowDefinitions="Auto,Auto,*,Auto,Auto">
+            <Border Grid.Row="0" Width="220" Height="220" CornerRadius="14" ClipToBounds="True"
+                    Background="#22FFFFFF" BoxShadow="0 8 40 #4D000000" HorizontalAlignment="Center">
+                <Grid>
+                    <Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" />
+                    <Image Source="{Binding Player.Cover}" Stretch="UniformToFill" />
+                </Grid>
+            </Border>
+            <StackPanel Grid.Row="1" Margin="0,16,0,8" Spacing="2">
+                <TextBlock Text="{Binding Player.Title}" FontSize="20" FontWeight="Bold" TextAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Foreground="White" />
+                <TextBlock Text="{Binding Player.Artist}" FontSize="14" TextAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Foreground="#BFFFFFFF" />
+            </StackPanel>
+            <views:LyricView Grid.Row="2" DataContext="{Binding Lyric}" MinHeight="96" />
+            <Grid Grid.Row="3" RowDefinitions="28,Auto" Margin="0,8,0,4">
+                <Slider Classes="player-progress" Minimum="0" Maximum="{Binding Player.ProgressMaximum}"
+                        Value="{Binding Player.PositionMs}" Height="28" IsEnabled="{Binding Player.HasProgress}"
+                        PointerPressed="OnTimelinePointerPressed" PointerReleased="OnTimelinePointerReleased" />
+                <Grid Grid.Row="1" ColumnDefinitions="*,*">
+                    <TextBlock Text="{Binding Player.PositionText}" FontSize="12" Foreground="#BFFFFFFF" />
+                    <TextBlock Grid.Column="1" Text="{Binding Player.DurationText}" FontSize="12"
+                               HorizontalAlignment="Right" Foreground="#BFFFFFFF" />
+                </Grid>
+            </Grid>
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="24">
+                <Button Classes="player-button" Width="48" Height="48" IsEnabled="False">
+                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="19" Foreground="White" />
+                </Button>
+                <Button Classes="player-button" Command="{Binding Player.TogglePlayPauseCommand}" Width="64" Height="64">
+                    <Grid>
+                        <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="30" Foreground="White"
+                                   IsVisible="{Binding Player.ShowPauseIcon}" />
+                        <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="30" Foreground="White"
+                                   IsVisible="{Binding Player.ShowPlayIcon}" />
+                        <TextBlock Text="•••" FontSize="14" LetterSpacing="2" Foreground="White"
+                                   IsVisible="{Binding Player.ShowLoadingIcon}" />
+                    </Grid>
+                </Button>
+                <Button Classes="player-button" Width="48" Height="48" IsEnabled="False">
+                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="19" Foreground="White" />
+                </Button>
+            </StackPanel>
         </Grid>
     </Grid>
 </UserControl>

@@ -43,4 +43,15 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
     [ObservableProperty] private IImage? _cover;
 
     private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(Playlist.CoverUrl, 100);
+
+    /// <summary>头部大封面：600 尺寸拉取，保证在 200px 显示尺寸下清晰。仅选中时调用一次。</summary>
+    private bool _largeCoverRequested;
+    public async Task EnsureLargeCoverLoadedAsync()
+    {
+        if (_largeCoverRequested || LargeCover is not null) return;
+        _largeCoverRequested = true;
+        LargeCover = await CoverLoader.LoadAsync(Playlist.CoverUrl, 600);
+    }
+
+    [ObservableProperty] private IImage? _largeCover;
 }

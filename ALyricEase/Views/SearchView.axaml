@@ -7,6 +7,10 @@
              mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
              x:Class="ALyricEase.Views.SearchView">
     <UserControl.Styles>
+        <Style Selector="Border.search-box"><Setter Property="Width" Value="500" /></Style>
+        <Style Selector="UserControl.compact Border.search-box"><Setter Property="Width" Value="420" /></Style>
+        <Style Selector="UserControl.narrow Border.search-box"><Setter Property="Width" Value="320" /></Style>
+        <Style Selector="UserControl.narrow TextBlock.album-column"><Setter Property="IsVisible" Value="False" /></Style>
         <!-- 热门关键词 chip -->
         <Style Selector="Button.chip">
             <Setter Property="Background" Value="{DynamicResource AppSurface}" />
@@ -42,9 +46,9 @@
                     IsVisible="{Binding ShowLanding}" Spacing="24" Margin="32">
             <TextBlock Text="LyricEase" FontSize="40" FontWeight="Bold" LetterSpacing="-0.02"
                        HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-            <Border CornerRadius="20" Background="{DynamicResource AppSurface}"
+            <Border Classes="search-box" CornerRadius="20" Background="{DynamicResource AppSurface}"
                     BorderBrush="{DynamicResource AppBorder}" BorderThickness="1"
-                    Width="500" Height="40" HorizontalAlignment="Center">
+                    Height="40" HorizontalAlignment="Center">
                 <Grid ColumnDefinitions="Auto,*" Margin="14,0">
                     <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
                                Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
@@ -81,9 +85,9 @@
                     <PathIcon Data="M 11,3 L 4,10 L 11,17 L 12.4,15.6 L 7,10 L 12.4,4.4 Z"
                               Width="16" Height="16" Foreground="{DynamicResource TextPrimary}" />
                 </Button>
-                <Border Grid.Column="1" CornerRadius="20" Background="{DynamicResource AppSurface}"
+                <Border Classes="search-box" Grid.Column="1" CornerRadius="20" Background="{DynamicResource AppSurface}"
                         BorderBrush="{DynamicResource AppBorder}" BorderThickness="1"
-                        Width="500" Height="40" HorizontalAlignment="Center">
+                        Height="40" HorizontalAlignment="Center">
                     <Grid ColumnDefinitions="Auto,*" Margin="14,0">
                         <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
                                    Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
@@ -108,7 +112,7 @@
                      PreparingContainer="OnResultContainerPreparing">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:SongItemViewModel">
-                        <Grid ColumnDefinitions="48,*,180,100">
+                        <Grid Classes="result-row" ColumnDefinitions="48,*,180,100">
                             <Border Grid.Column="0" Width="40" Height="40" CornerRadius="6"
                                     Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                     HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -122,7 +126,7 @@
                                            Foreground="{DynamicResource TextSecondary}"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{Binding Album}" FontSize="13"
+                            <TextBlock Classes="album-column" Grid.Column="2" Text="{Binding Album}" FontSize="13"
                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextSecondary}" />
                             <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="1" Margin="0,0,8,0">

@@ -15,16 +15,10 @@ public sealed class CryptoService
     private static readonly char[] SecretKeyChars =
         "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".ToCharArray();
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        // 与 Node 的 JSON.stringify 对齐:紧凑输出、数字/字符串原样
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
-    };
-
     /// <summary>weapi 加密,返回 (params, encSecKey),配合 form-urlencoded 提交。</summary>
     public (string Params, string EncSecKey) EncryptWeapi(IReadOnlyDictionary<string, object?> payload)
     {
-        var text = JsonSerializer.Serialize(payload, JsonOpts);
+        var text = SerializeObject(payload);
         var secretKey = CreateSecretKey(16);
         return EncryptWeapiWithKey(text, secretKey);
     }
@@ -45,10 +39,63 @@ public sealed class CryptoService
     /// urlPath 为明文里的 /api/... 路径,如 /api/song/enhance/player/url/v1。</summary>
     public string EncryptEapi(string urlPath, IReadOnlyDictionary<string, object?> payload)
     {
-        var body = new { method = "POST", url = urlPath, @params = payload };
-        var text = JsonSerializer.Serialize(body, JsonOpts);
+        var text = SerializeEapiBody(urlPath, payload);
         var message = "nobody{use}{this}" + text;
         return AesEcbEncryptToHex(message, EapiKey);
+    }
+
+    /// <summary>手写紧凑 JSON 序列化 Dictionary(NativeAOT 兼容,替代 JsonSerializer 反射;payload 值仅基本类型)。
+    /// 输出与 Node JSON.stringify / 原 JsonSerializer 一致:紧凑无空白、字典项恒写。</summary>
+    private static string SerializeObject(IReadOnlyDictionary<string, object?> obj)
+    {
+        using var ms = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(ms))
+        {
+            writer.WriteStartObject();
+            foreach (var (key, value) in obj)
+            {
+                writer.WritePropertyName(key);
+                WriteValue(writer, value);
+            }
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    /// <summary>eapi body:{ method="POST", url=urlPath, params=payload }。</summary>
+    private static string SerializeEapiBody(string urlPath, IReadOnlyDictionary<string, object?> payload)
+    {
+        using var ms = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(ms))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("method", "POST");
+            writer.WriteString("url", urlPath);
+            writer.WritePropertyName("params");
+            writer.WriteStartObject();
+            foreach (var (key, value) in payload)
+            {
+                writer.WritePropertyName(key);
+                WriteValue(writer, value);
+            }
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    private static void WriteValue(Utf8JsonWriter writer, object? value)
+    {
+        switch (value)
+        {
+            case null: writer.WriteNullValue(); break;
+            case string s: writer.WriteStringValue(s); break;
+            case bool b: writer.WriteBooleanValue(b); break;
+            case int i: writer.WriteNumberValue(i); break;
+            case long l: writer.WriteNumberValue(l); break;
+            case double d: writer.WriteNumberValue(d); break;
+            default: throw new InvalidOperationException($"payload 不支持的值类型 {value.GetType().Name}");
+        }
     }
 
     private static string AesCbcEncryptToBase64(string text, string key, string iv)

@@ -1,3 +1,4 @@
+#if WINDOWS
 using System.Drawing;
 using System.Runtime.InteropServices;
 
@@ -317,3 +318,4 @@ public sealed class TaskbarThumbButtons : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, IntPtr uIdSubclass, IntPtr dwRefData);
 }
+#endif

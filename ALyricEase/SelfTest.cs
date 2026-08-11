@@ -23,8 +23,13 @@ internal static class SelfTest
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
         services.AddSingleton<NetEaseApiClient>();
+#if ANDROID
+        services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
+        services.AddSingleton<ISmtcService, SmtcServiceStub>();
+#else
         services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
-        services.AddSingleton<SmtcService>();
+        services.AddSingleton<ISmtcService, SmtcService>();
+#endif
         services.AddSingleton<LyricViewModel>();
         services.AddSingleton<PlayerViewModel>();
         var sp = services.BuildServiceProvider(); // 无头 selftest:不 DisposeAsync(WinRT MediaPlayer 无泵 Dispose 会挂)
@@ -94,8 +99,13 @@ internal static class SelfTest
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
         services.AddSingleton<NetEaseApiClient>();
+#if ANDROID
+        services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
+        services.AddSingleton<ISmtcService, SmtcServiceStub>();
+#else
         services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
-        services.AddSingleton<SmtcService>();
+        services.AddSingleton<ISmtcService, SmtcService>();
+#endif
         services.AddSingleton<LyricViewModel>();
         services.AddSingleton<PlayerViewModel>();
         var sp = services.BuildServiceProvider(); // 无头 selftest:不 DisposeAsync(WinRT MediaPlayer 在无泵线程 Dispose 会挂)

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ALyricEase.Models.Dtos;
 
 namespace ALyricEase.Services.Auth;
 
@@ -40,7 +41,7 @@ public sealed class CookieStore
         try
         {
             if (!File.Exists(_path)) return;
-            var dto = JsonSerializer.Deserialize<CookieFile>(File.ReadAllText(_path));
+            var dto = JsonSerializer.Deserialize(File.ReadAllText(_path), NetEaseJsonContext.Default.CookieFile);
             if (dto is null) return;
             MusicU = dto.MusicU;
             AnonymousMusicA = dto.AnonymousMusicA;
@@ -63,7 +64,7 @@ public sealed class CookieStore
                 AnonymousExpiresUtc = AnonymousExpiresUtc,
             };
             var tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(dto));
+            File.WriteAllText(tmp, JsonSerializer.Serialize(dto, NetEaseJsonContext.Default.CookieFile));
             File.Move(tmp, _path, overwrite: true);
         }
         catch
@@ -72,7 +73,7 @@ public sealed class CookieStore
         }
     }
 
-    private sealed class CookieFile
+    internal sealed class CookieFile
     {
         public string? MusicU { get; set; }
 

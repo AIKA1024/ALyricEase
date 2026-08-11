@@ -130,8 +130,9 @@ public sealed class RecommendViewModel : ViewModelBase
 
     private async Task<List<RecommendItem>> LoadHotSongsAsync()
     {
-        var songs = await _api.GetPlaylistDetailAsync(HotPlaylistId).ConfigureAwait(false);
-        return songs.Take(6).Select(s => new RecommendItem(s.Id, s.Name, s.Artist, s.CoverUrl)).ToList();
+        // 只取前 6 首预览,不拉全量 200+ 首(避免启动时白拉 194 首)
+        var songs = await _api.GetPlaylistTracksAsync(HotPlaylistId, 6).ConfigureAwait(false);
+        return songs.Select(s => new RecommendItem(s.Id, s.Name, s.Artist, s.CoverUrl)).ToList();
     }
 
     private static async Task<List<RecommendItem>> SafeAsync(Task<List<RecommendItem>> task)

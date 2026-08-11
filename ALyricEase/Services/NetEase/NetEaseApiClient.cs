@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
 using ALyricEase.Services.Auth;
@@ -26,8 +27,6 @@ public sealed class NetEaseApiClient
 
     /// <summary>已确认 weapi/eapi 被风控拦截后置 true,后续请求直接走明文接口,省掉重复空请求。</summary>
     private bool _wafBlocked;
-
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public NetEaseApiClient(CryptoService crypto, CnIpPool ipPool, CookieStore cookie)
     {
@@ -168,7 +167,7 @@ public sealed class NetEaseApiClient
         };
         using var req = CreateWeapiRequest("weapi/v3/song/detail", payload, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<SongDetailResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.SongDetailResponse);
         if (resp is null || resp.Code != 200)
             throw new ApiException("获取歌曲详情失败", resp?.Code ?? -1);
         var item = resp.Songs?.FirstOrDefault();
@@ -187,7 +186,7 @@ public sealed class NetEaseApiClient
         // 播放地址走 eapi,带随机 CN IP 防海外风控
         using var req = CreateEapiRequest("/api/song/enhance/player/url/v1", payload, includeRealIp: true);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<PlayUrlResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.PlayUrlResponse);
         if (resp is null || resp.Code != 200 || resp.Data is null)
             return null;
         return resp.Data.FirstOrDefault(i => i.Id == id) ?? resp.Data.FirstOrDefault();
@@ -208,7 +207,7 @@ public sealed class NetEaseApiClient
         };
         using var req = CreateWeapiRequest("weapi/cloudsearch/get/web", payload, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<SearchResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.SearchResponse);
         if (resp is null || resp.Code != 200 || resp.Result?.Songs is null)
             throw new ApiException("搜索失败", resp?.Code ?? -1);
         return resp.Result.Songs.Select(MapSearchSong).ToList();
@@ -228,7 +227,7 @@ public sealed class NetEaseApiClient
         };
         using var req = CreateWeapiRequest("weapi/song/lyric", payload, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<LyricResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LyricResponse);
         if (resp is null || resp.Code != 200)
             throw new ApiException("获取歌词失败", resp?.Code ?? -1);
         return new LyricResult
@@ -246,7 +245,7 @@ public sealed class NetEaseApiClient
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<LegacySearchResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacySearchResponse);
         if (resp is null || resp.Code != 200 || resp.Result?.Songs is null)
             throw new ApiException("搜索失败", resp?.Code ?? -1);
         return resp.Result.Songs.Select(MapLegacySong).ToList();
@@ -258,7 +257,7 @@ public sealed class NetEaseApiClient
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<LyricResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LyricResponse);
         if (resp is null || resp.Code != 200)
             throw new ApiException("获取歌词失败", resp?.Code ?? -1);
         return new LyricResult
@@ -276,7 +275,7 @@ public sealed class NetEaseApiClient
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: true); // 带随机 CN IP 防海外风控
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<PlayUrlResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.PlayUrlResponse);
         if (resp is null || resp.Code != 200 || resp.Data is null)
             return null;
         return resp.Data.FirstOrDefault(i => i.Id == id) ?? resp.Data.FirstOrDefault();
@@ -299,7 +298,7 @@ public sealed class NetEaseApiClient
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<LegacyAccountResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyAccountResponse);
         if (resp is null || resp.Code != 200 || resp.Profile is null)
             throw new ApiException("获取用户信息失败(未登录或 cookie 失效)", resp?.Code ?? -1);
         return new UserProfile
@@ -317,7 +316,7 @@ public sealed class NetEaseApiClient
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<LegacyUserPlaylistResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyUserPlaylistResponse);
         if (resp is null || resp.Code != 200 || resp.Playlist is null)
             throw new ApiException("获取歌单失败", resp?.Code ?? -1);
         return resp.Playlist
@@ -340,7 +339,7 @@ public sealed class NetEaseApiClient
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<PlaylistDetailResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.PlaylistDetailResponse);
         var playlist = resp?.Playlist;
         if (resp is null || resp.Code != 200 || playlist is null)
             throw new ApiException("获取歌单详情失败", resp?.Code ?? -1);
@@ -364,6 +363,31 @@ public sealed class NetEaseApiClient
         return trackIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
     }
 
+    /// <summary>取歌单前 N 首曲目(推荐页预览用,避免拉全量 200+ 首)。
+    /// v6 的 tracks 已含前段(匿名约 10 首),不足时从 trackIds 前 N 补齐 song/detail。</summary>
+    public async Task<List<Song>> GetPlaylistTracksAsync(long id, int count, CancellationToken ct = default)
+    {
+        var url = $"{BaseUrl}/api/v6/playlist/detail?id={id}";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize<PlaylistDetailResponse>(NetEaseJsonContext.Default.PlaylistDetailResponse);
+        var playlist = resp?.Playlist;
+        if (resp is null || resp.Code != 200 || playlist is null)
+            throw new ApiException("获取歌单详情失败", resp?.Code ?? -1);
+
+        var songs = (playlist.Tracks ?? Enumerable.Empty<SearchSong>()).Take(count).Select(MapSearchSong).ToList();
+        if (songs.Count >= count) return songs;
+
+        // 前段不足,从 trackIds 前 count 补齐
+        var have = new HashSet<long>(songs.Select(s => s.Id));
+        var missing = (playlist.TrackIds ?? Enumerable.Empty<TrackIdItem>())
+            .Select(t => t.Id).Take(count).Where(id => !have.Contains(id)).ToList();
+        if (missing.Count > 0)
+            songs.AddRange(await GetSongDetailsLegacyAsync(missing, ct).ConfigureAwait(false));
+        return songs.Take(count).ToList();
+    }
+
     /// <summary>明文 /api/song/detail 批量取曲目(legacy 格式:artists/album/duration)。</summary>
     private async Task<List<Song>> GetSongDetailsLegacyAsync(List<long> ids, CancellationToken ct)
     {
@@ -372,7 +396,7 @@ public sealed class NetEaseApiClient
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<LegacySongDetailResponse>(JsonOpts);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacySongDetailResponse);
         return resp?.Songs?.Select(MapLegacySong).ToList() ?? new List<Song>();
     }
 
@@ -381,7 +405,7 @@ public sealed class NetEaseApiClient
     /// <summary>推荐歌单(personalized/playlist)。</summary>
     public async Task<List<RecommendItem>> GetPersonalizedPlaylistsAsync(int limit = 6, CancellationToken ct = default)
     {
-        var resp = await GetJsonAsync<RecommendListResponse>($"{BaseUrl}/api/personalized/playlist?limit={limit}", ct).ConfigureAwait(false);
+        var resp = await GetJsonAsync($"{BaseUrl}/api/personalized/playlist?limit={limit}", NetEaseJsonContext.Default.RecommendListResponse, ct).ConfigureAwait(false);
         if (resp is null || resp.Code != 200 || resp.Result is null) return new();
         return resp.Result.Select(MapPlaylistCard).ToList();
     }
@@ -389,7 +413,7 @@ public sealed class NetEaseApiClient
     /// <summary>猜你喜欢 / 新歌推荐(personalized/newsong)。</summary>
     public async Task<List<RecommendItem>> GetNewSongsAsync(int limit = 6, CancellationToken ct = default)
     {
-        var resp = await GetJsonAsync<RecommendListResponse>($"{BaseUrl}/api/personalized/newsong?limit={limit}", ct).ConfigureAwait(false);
+        var resp = await GetJsonAsync($"{BaseUrl}/api/personalized/newsong?limit={limit}", NetEaseJsonContext.Default.RecommendListResponse, ct).ConfigureAwait(false);
         if (resp is null || resp.Code != 200 || resp.Result is null) return new();
         return resp.Result.Select(MapSongCard).ToList();
     }
@@ -397,7 +421,7 @@ public sealed class NetEaseApiClient
     /// <summary>每日推荐(需登录;未登录接口返回 code 301 → 空列表,由调用方隐藏该区块)。</summary>
     public async Task<List<RecommendItem>> GetDailyRecommendAsync(CancellationToken ct = default)
     {
-        var resp = await GetJsonAsync<RecommendResourceResponse>($"{BaseUrl}/api/v1/discovery/recommend/resource", ct).ConfigureAwait(false);
+        var resp = await GetJsonAsync($"{BaseUrl}/api/v1/discovery/recommend/resource", NetEaseJsonContext.Default.RecommendResourceResponse, ct).ConfigureAwait(false);
         if (resp is null || resp.Code != 200 || resp.Recommend is null) return new();
         return resp.Recommend.Select(MapPlaylistCard).ToList();
     }
@@ -422,12 +446,12 @@ public sealed class NetEaseApiClient
         return $"{count:0}播放";
     }
 
-    private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct) where T : class
+    private async Task<T?> GetJsonAsync<T>(string url, JsonTypeInfo<T> typeInfo, CancellationToken ct) where T : class
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        return doc.RootElement.Deserialize<T>(JsonOpts);
+        return doc.RootElement.Deserialize(typeInfo);
     }
 
 

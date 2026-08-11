@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -15,7 +16,7 @@ namespace ALyricEase.Services.Smtc;
 /// 桌面(Win32)应用没有 GetForCurrentSession,须经 COM 互操作
 /// ISystemMediaTransportControlsInterop::GetForWindow 取句柄;SMTC 无歌词 API,
 /// 歌词仍由应用内滚动视图展示。任何失败静默降级(不阻塞播放)。</summary>
-public sealed class SmtcService : IDisposable
+public sealed class SmtcService : ISmtcService, IDisposable
 {
     // ISystemMediaTransportControlsInterop — systemmediatransportcontrolsinterop.h
     private const string SmtcRuntimeClass = "Windows.Media.SystemMediaTransportControls";
@@ -278,3 +279,4 @@ public sealed class SmtcService : IDisposable
     [DllImport("combase.dll")]
     private static extern void WindowsDeleteString(IntPtr hstring);
 }
+#endif

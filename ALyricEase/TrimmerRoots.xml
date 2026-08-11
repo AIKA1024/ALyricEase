@@ -1,0 +1,7 @@
+<linker>
+  <!-- MainWindow.MarkClientHitTest 反射 Avalonia.Win32.Interop.UnmanagedMethods+HitTestValues(Enum.Parse)。
+       AOT/trimming 下保留该枚举,避免标题栏拖拽按钮不可点。Win32Properties 已由 DynamicDependency(typeof)保留。 -->
+  <assembly fullname="Avalonia.Win32">
+    <type fullname="Avalonia.Win32.Interop.UnmanagedMethods/HitTestValues" preserve="all" />
+  </assembly>
+</linker>

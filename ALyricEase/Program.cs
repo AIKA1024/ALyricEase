@@ -62,8 +62,13 @@ class Program
     services.AddSingleton<CnIpPool>();
     services.AddSingleton<CryptoService>();
     services.AddSingleton<NetEaseApiClient>();
+#if ANDROID
+    services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
+    services.AddSingleton<ISmtcService, SmtcServiceStub>();
+#else
     services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
-    services.AddSingleton<SmtcService>();
+    services.AddSingleton<ISmtcService, SmtcService>();
+#endif
     services.AddSingleton<LyricViewModel>();
     services.AddSingleton<PlayerViewModel>();
     services.AddSingleton<SearchViewModel>();

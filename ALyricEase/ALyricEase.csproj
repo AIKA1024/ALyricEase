@@ -2,7 +2,9 @@
     <PropertyGroup>
         <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-        <!-- 22000 投影含桌面版 GetForCurrentSession,且不依赖 WinAppSDK -->
+        <!-- 22000 投影含桌面版 GetForCurrentSession,且不依赖 WinAppSDK。
+             将来加 net10.0-android TFM 时,此属性(连同 app.manifest / System.Drawing.Common 包引用)
+             需搬进 Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'" 的组,Android TFM 不用。 -->
         <WindowsSdkPackageVersion>10.0.22000.57</WindowsSdkPackageVersion>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -13,22 +15,38 @@
         <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
     </PropertyGroup>
 
+    <!-- NativeAOT 发布配置:PublishAot=true 时才生效,普通 build/publish 零影响。
+         JsonSerializerIsReflectionEnabledByDefault=false 让漏网的反射式 JSON 在 AOT 编译期报 SYSLIB 告警/运行期抛异常兜底。 -->
+    <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+        <IsAotCompatible>true</IsAotCompatible>
+        <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+        <!-- MainWindow 的 Assembly.GetType 反射目标已用 TrimmerRoots.xml 保留,抑制 IL2026 警告 -->
+        <NoWarn>$(NoWarn);IL2026</NoWarn>
+    </PropertyGroup>
+
     <ItemGroup>
         <!-- 应用图标:app.ico 同时作为 exe 资源(ApplicationIcon)与窗口图标(AvaloniaResource) -->
         <AvaloniaResource Include="Assets\**" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="12.1.1"/>
-        <PackageReference Include="Avalonia.Desktop" Version="12.1.1"/>
-        <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1"/>
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1"/>
+        <!-- AOT/trimming 保留 MainWindow 标题栏 HTClient 标记的反射目标 -->
+        <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Avalonia" Version="12.1.1" />
+        <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
         <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+        <PackageReference Include="Lottie" Version="12.0.0" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
+        <!-- System.Drawing.Common 仅 Windows 任务栏缩略图用;将来 Android TFM 需按 TFM 条件化去掉 -->
         <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
     </ItemGroup>
 </Project>

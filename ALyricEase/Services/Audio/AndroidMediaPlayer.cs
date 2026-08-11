@@ -46,10 +46,13 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
         get { try { return _prepared ? _mp.Duration : 0; } catch { return 0; } }
     }
 
+    private int _volume;
+
     public int Volume
     {
-        get => (int)Math.Round(_mp.Volume * 100);
-        set { var v = Math.Clamp(value, 0, 100) / 100f; _mp.SetVolume(v, v); }
+        // Android MediaPlayer 无 getVolume(),用私有字段回读(避免编译不过)
+        get => _volume;
+        set { _volume = value; var v = Math.Clamp(value, 0, 100) / 100f; _mp.SetVolume(v, v); }
     }
 
     public event EventHandler? StateChanged;

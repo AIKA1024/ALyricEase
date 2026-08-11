@@ -19,7 +19,6 @@
             <Setter Property="Padding" Value="14,6" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-            <Setter Property="Cursor" Value="Hand" />
         </Style>
         <Style Selector="Button.chip:pointerover">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />

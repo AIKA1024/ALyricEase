@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:SongItemViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="60"
@@ -16,7 +17,8 @@
     </UserControl.Styles>
     <Grid Classes="row-root" x:Name="RowRoot" ColumnDefinitions="40,58,*,180,100" MinHeight="60" DoubleTapped="OnDoubleTapped">
         <TextBlock Grid.Column="0" Text="{Binding DisplayIndex}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
-        <Border Grid.Column="1" Width="50" Height="50" CornerRadius="5" ClipToBounds="True" Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center"><Grid><Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" /><Image Source="{Binding Cover}" Stretch="UniformToFill" /></Grid></Border>
+        <!-- 单 Image + CoverImageConverter:封面未加载/失败时返回共享占位图(静态懒加载一份),加载后返回封面 -->
+        <Border Grid.Column="1" Width="50" Height="50" CornerRadius="5" ClipToBounds="True" Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center"><Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" /></Border>
         <StackPanel Grid.Column="2" Margin="10,0,12,0" VerticalAlignment="Center" Spacing="1"><TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" /><TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" /></StackPanel>
         <TextBlock Grid.Column="3" Text="{Binding Album}" FontSize="13" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
         <Grid Grid.Column="4" VerticalAlignment="Center"><TextBlock Classes="row-duration" Text="{Binding DurationText}" FontSize="12" HorizontalAlignment="Right" Margin="0,0,12,0" Foreground="{DynamicResource TextSecondary}" /><Button Classes="row-more" HorizontalAlignment="Right" Margin="0,0,2,0"><TextBlock Text="•••" LetterSpacing="2" /></Button></Grid>

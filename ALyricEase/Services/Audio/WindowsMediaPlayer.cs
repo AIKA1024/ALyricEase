@@ -1,3 +1,4 @@
+#if WINDOWS
 using System;
 using System.Threading;
 using ALyricEase.Infrastructure;
@@ -200,3 +201,4 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 }
+#endif

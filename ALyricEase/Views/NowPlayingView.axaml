@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:MainViewModel"
@@ -61,10 +62,7 @@
             <Border x:Name="DesktopArtwork" Grid.Column="0" Width="480" Height="480" MaxWidth="600" MaxHeight="600"
                     CornerRadius="16" ClipToBounds="True" Background="#22FFFFFF"
                     BoxShadow="0 10 50 #4D000000" HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Grid>
-                    <Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" />
-                    <Image Source="{Binding Player.Cover}" Stretch="UniformToFill" />
-                </Grid>
+                <Image Source="{Binding Player.Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
             </Border>
 
             <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto,*" VerticalAlignment="Center">
@@ -118,10 +116,7 @@
         <Grid x:Name="PhonePlaybackLayout" Margin="20,74,20,20" RowDefinitions="Auto,Auto,*,Auto,Auto">
             <Border Grid.Row="0" Width="220" Height="220" CornerRadius="14" ClipToBounds="True"
                     Background="#22FFFFFF" BoxShadow="0 8 40 #4D000000" HorizontalAlignment="Center">
-                <Grid>
-                    <Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" />
-                    <Image Source="{Binding Player.Cover}" Stretch="UniformToFill" />
-                </Grid>
+                <Image Source="{Binding Player.Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
             </Border>
             <StackPanel Grid.Row="1" Margin="0,16,0,8" Spacing="2">
                 <TextBlock Text="{Binding Player.Title}" FontSize="20" FontWeight="Bold" TextAlignment="Center"

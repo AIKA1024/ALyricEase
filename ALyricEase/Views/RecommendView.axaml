@@ -2,73 +2,105 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:RecommendViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecommendView">
-    <UserControl.Styles>
-        <Style Selector="StackPanel#PageContent"><Setter Property="Margin" Value="48,0,32,116" /></Style>
-        <Style Selector="Border.card"><Setter Property="Width" Value="200" /><Setter Property="Height" Value="250" /><Setter Property="RenderTransformOrigin" Value="50%,50%" /><Setter Property="RenderTransform" Value="scale(1,1)" /></Style>
-        <Style Selector="Border.card:pointerover"><Setter Property="RenderTransform" Value="scale(1.02,1.02)" /></Style>
-        <Style Selector="Border.card-art"><Setter Property="Width" Value="200" /><Setter Property="Height" Value="200" /></Style>
-        <Style Selector="UserControl.compact StackPanel#PageContent"><Setter Property="Margin" Value="28,0,24,80" /></Style>
-        <Style Selector="UserControl.compact Border.card"><Setter Property="Width" Value="168" /><Setter Property="Height" Value="218" /></Style>
-        <Style Selector="UserControl.compact Border.card-art"><Setter Property="Width" Value="168" /><Setter Property="Height" Value="168" /></Style>
-        <Style Selector="UserControl.narrow StackPanel#PageContent"><Setter Property="Margin" Value="16,0,12,20" /></Style>
-        <Style Selector="UserControl.narrow Border.card"><Setter Property="Width" Value="156" /><Setter Property="Height" Value="206" /></Style>
-        <Style Selector="UserControl.narrow Border.card-art"><Setter Property="Width" Value="156" /><Setter Property="Height" Value="156" /></Style>
-        <!-- 横向虚拟化 ListBox:清掉容器默认选中/悬停高亮,悬停/放大交给卡片内样式 -->
-        <Style Selector="ListBox.card-list">
-            <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="0" />
-        </Style>
-        <Style Selector="ListBox.card-list > ListBoxItem">
-            <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,14,0" /><Setter Property="Background" Value="Transparent" />
-        </Style>
-        <Style Selector="ListBox.card-list > ListBoxItem:pointerover">
-            <Setter Property="Background" Value="Transparent" />
-        </Style>
-        <Style Selector="ListBox.card-list > ListBoxItem:selected">
-            <Setter Property="Background" Value="Transparent" />
-        </Style>
-    </UserControl.Styles>
-    <Grid RowDefinitions="96,*">
-        <Grid Grid.Row="0" Margin="48,0,32,0"><TextBlock Text="个性推荐" Classes="page-title" VerticalAlignment="Center" /></Grid>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel x:Name="PageContent" Spacing="34">
-                <ItemsControl ItemsSource="{Binding Sections}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:RecommendSectionViewModel">
-                            <StackPanel Spacing="12" Margin="0,0,0,28">
-                                <TextBlock Text="{Binding Title}" Classes="section-title" />
-                                <ListBox Classes="card-list" ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared"
-                                         Background="Transparent" BorderThickness="0"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Hidden">
-                                    <ListBox.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <VirtualizingStackPanel Orientation="Horizontal" />
-                                        </ItemsPanelTemplate>
-                                    </ListBox.ItemsPanel>
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:RecommendCardViewModel">
-                                            <Border Classes="card" Background="Transparent" CornerRadius="8" ClipToBounds="True" Cursor="Hand">
-                                                <Grid RowDefinitions="Auto,50">
-                                                    <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
-                                                        <Grid><Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" /><Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" /></Grid>
-                                                    </Border>
-                                                    <StackPanel Grid.Row="1" Margin="4,6,4,0" Spacing="1">
-                                                        <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1" />
-                                                        <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" MaxLines="1" />
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </ScrollViewer>
+  <UserControl.Styles>
+    <Style Selector="StackPanel#PageContent">
+      <Setter Property="Margin" Value="48,0,32,116" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Width" Value="200" /><Setter Property="Height" Value="250" />
+      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+      <Setter Property="RenderTransform" Value="scale(1,1)" />
+    </Style>
+    <Style Selector="Border.card:pointerover">
+      <Setter Property="RenderTransform" Value="scale(1.02,1.02)" />
+    </Style>
+    <Style Selector="Border.card-art">
+      <Setter Property="Width" Value="200" /><Setter Property="Height" Value="200" />
+    </Style>
+    <Style Selector="UserControl.compact StackPanel#PageContent">
+      <Setter Property="Margin" Value="28,0,24,80" />
+    </Style>
+    <Style Selector="UserControl.compact Border.card">
+      <Setter Property="Width" Value="168" /><Setter Property="Height" Value="218" />
+    </Style>
+    <Style Selector="UserControl.compact Border.card-art">
+      <Setter Property="Width" Value="168" /><Setter Property="Height" Value="168" />
+    </Style>
+    <Style Selector="UserControl.narrow StackPanel#PageContent">
+      <Setter Property="Margin" Value="16,0,12,20" />
+    </Style>
+    <Style Selector="UserControl.narrow Border.card">
+      <Setter Property="Width" Value="156" /><Setter Property="Height" Value="206" />
+    </Style>
+    <Style Selector="UserControl.narrow Border.card-art">
+      <Setter Property="Width" Value="156" /><Setter Property="Height" Value="156" />
+    </Style>
+    <!-- 横向虚拟化 ListBox:清掉容器默认选中/悬停高亮,悬停/放大交给卡片内样式 -->
+    <Style Selector="ListBox.card-list">
+      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.card-list > ListBoxItem">
+      <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,14,0" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.card-list > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.card-list > ListBoxItem:selected">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="96,*">
+    <Grid Grid.Row="0" Margin="48,0,32,0">
+      <TextBlock Text="个性推荐" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel x:Name="PageContent" Spacing="34">
+        <ItemsControl ItemsSource="{Binding Sections}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:RecommendSectionViewModel">
+              <StackPanel Spacing="12" Margin="0,0,0,28">
+                <TextBlock Text="{Binding Title}" Classes="section-title" />
+                <ListBox Classes="card-list" ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Hidden">
+                  <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <VirtualizingStackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ListBox.ItemsPanel>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:RecommendCardViewModel">
+                      <Border Classes="card" Background="Transparent" CornerRadius="8" ClipToBounds="True">
+                        <Grid RowDefinitions="Auto,50">
+                          <Border Classes="card-art" Grid.Row="0" CornerRadius="8"
+                                  Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                            <!-- 单 Image + CoverImageConverter:封面未加载/失败时返回共享占位图,加载后返回封面 -->
+                            <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
+                          </Border>
+                          <StackPanel Grid.Row="1" Margin="4,6,4,0" Spacing="1">
+                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" MaxLines="1" />
+                            <TextBlock Text="{Binding Subtitle}" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis"
+                                       MaxLines="1" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

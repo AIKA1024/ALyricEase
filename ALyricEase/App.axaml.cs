@@ -29,12 +29,14 @@ public partial class App : Application
         DataContext = ServiceLocator.Get<MainViewModel>(),
       };
 
+#if WINDOWS
       // SMTC 需要前台窗口 HWND,须在窗口创建后于 UI 线程初始化
       var hwnd = desktop.MainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-      ServiceLocator.Get<SmtcService>().Initialize(hwnd);
+      ServiceLocator.Get<ISmtcService>().Initialize(hwnd);
 
       // 任务栏缩略图工具栏:须窗口已显示(关联任务栏按钮)后再注册 → 挂 Opened
       desktop.MainWindow.Opened += (_, _) => InitTaskbarThumbButtons(desktop.MainWindow, hwnd);
+#endif
 
       // 后台恢复登录态(已存 MUSIC_U 则拉资料+歌单),不阻塞 UI
       _ = RestoreLoginAsync();
@@ -43,6 +45,7 @@ public partial class App : Application
     base.OnFrameworkInitializationCompleted();
   }
 
+#if WINDOWS
   private void InitTaskbarThumbButtons(Avalonia.Controls.Window window, IntPtr hwnd)
   {
     try
@@ -81,6 +84,7 @@ public partial class App : Application
       // 缩略图工具栏失败 → 静默降级
     }
   }
+#endif
 
   private static async Task RestoreLoginAsync()
   {

@@ -20,7 +20,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private readonly IAudioPlayer _player;
     private readonly NetEaseApiClient _api;
     private readonly LyricViewModel _lyric;
-    private readonly SmtcService _smtc;
+    private readonly ISmtcService _smtc;
 
     private bool _scrubbing;
 
@@ -28,7 +28,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private List<Song> _queue = new();
     private int _queueIndex = -1;
 
-    public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, LyricViewModel lyric, SmtcService smtc)
+    public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, LyricViewModel lyric, ISmtcService smtc)
     {
         _player = player;
         _api = api;

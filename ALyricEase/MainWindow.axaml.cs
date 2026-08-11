@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
@@ -6,7 +7,9 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+#if WINDOWS
 using Avalonia.Win32;
+#endif
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 
@@ -22,10 +25,12 @@ public partial class MainWindow : Window
         // 会被当作拖拽,须标记 Win32Properties.NonClientHitTestResult=HTClient 才能点击。
         // Avalonia 12.1.1 无公开 API(chrome:ElementRole 在原生标题栏命中路径不生效且 XAML 编译报
         // AVLN3000;Win32Properties 的值类型 HitTestValues 是 internal),故用反射设置。
+#if WINDOWS
         MarkClientHitTest(BackGlyph);
         MarkClientHitTest(MinGlyph);
         MarkClientHitTest(MaxGlyph);
         MarkClientHitTest(CloseGlyph);
+#endif
         SizeChanged += OnSizeChanged;
         Opened += OnOpened;
     }
@@ -35,7 +40,11 @@ public partial class MainWindow : Window
         ResponsiveClasses.Apply(this, ClientSize.Width);
     }
 
-    /// <summary>把 HTCAPTION 拖拽带内的元素标记为 HTClient(可点击)。</summary>
+#if WINDOWS
+    /// <summary>把 HTCAPTION 拖拽带内的元素标记为 HTClient(可点击)。
+    /// AOT 下用 DynamicDependency 保留 Win32Properties(类型可 typeof);
+    /// HitTestValues 枚举在 Avalonia.Win32 程序集,由 TrimmerRoots.xml 保留(字符串 DynamicDependency 无法解析)。</summary>
+    [DynamicDependency("SetNonClientHitTestResult", typeof(Win32Properties))]
     private static void MarkClientHitTest(Visual visual)
     {
         var assembly = typeof(Win32Properties).Assembly;
@@ -45,6 +54,7 @@ public partial class MainWindow : Window
         var setter = typeof(Win32Properties).GetMethod("SetNonClientHitTestResult");
         setter?.Invoke(null, new object[] { visual, htClient });
     }
+#endif
 
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
         => ResponsiveClasses.Apply(this, e.NewSize.Width);

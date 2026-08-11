@@ -15,6 +15,8 @@
             <SolidColorBrush x:Key="TextDisabled" Color="#707070" />
             <SolidColorBrush x:Key="AppBorder" Color="#12000000" />
             <SolidColorBrush x:Key="AppBorderStrong" Color="#24000000" />
+            <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
+            <SolidColorBrush x:Key="ListCardBorder" Color="#0F000000" />
             <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#C8F3F3F3" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#10000000" />
@@ -22,9 +24,9 @@
             <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5F3F3F3" />
             <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
                                          BackgroundSource="Digger"
-                                         TintColor="#F5F5F5"
-                                         TintOpacity="0.5"
-                                         MaterialOpacity="0.85"
+                                         TintColor="#FFFFFF"
+                                         TintOpacity="0.65"
+                                         MaterialOpacity="0.65"
                                          FallbackColor="#F3F3F3" />
             <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
                                          BackgroundSource="None"
@@ -47,6 +49,8 @@
             <SolidColorBrush x:Key="TextDisabled" Color="#777777" />
             <SolidColorBrush x:Key="AppBorder" Color="#14FFFFFF" />
             <SolidColorBrush x:Key="AppBorderStrong" Color="#28FFFFFF" />
+            <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
+            <SolidColorBrush x:Key="ListCardBorder" Color="#1AFFFFFF" />
             <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#D0181818" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#12FFFFFF" />
@@ -54,14 +58,14 @@
             <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5202020" />
             <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
                                          BackgroundSource="Digger"
-                                         TintColor="#101010"
-                                         TintOpacity="0.5"
-                                         MaterialOpacity="0.85"
+                                         TintColor="#000000"
+                                         TintOpacity="1"
+                                         MaterialOpacity=".15"
                                          FallbackColor="#141516" />
             <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
                                          BackgroundSource="None"
-                                         TintColor="#282828"
-                                         TintOpacity="0.85"
+                                         TintColor="#000000"
+                                         TintOpacity="1"
                                          MaterialOpacity="0.9"
                                          FallbackColor="#282828" />
         </ResourceDictionary>

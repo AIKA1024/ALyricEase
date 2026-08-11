@@ -87,12 +87,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         Tracks.Clear();
     }
 
-    private const int MaterializeBatch = 150;
-
     private List<Song> _allTracks = new();
-    private int _materialized;
 
-    /// <summary>点开歌单:一次取曲目元数据(单请求,小),客户端分批物化 + 封面懒加载(真正的内存大头)。</summary>
+    /// <summary>点开歌单:全量取曲目元数据(v6+分批 song/detail),一次性填入列表。
+    /// 列表已虚拟化,只有可见行物化 + 封面按可见懒加载,内存与歌单规模无关。</summary>
     [RelayCommand]
     private async Task OpenPlaylistAsync(PlaylistItemViewModel? playlist)
     {
@@ -107,8 +105,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         try
         {
             _allTracks = await _api.GetPlaylistDetailAsync(playlist.Id);
-            _materialized = 0;
-            AppendBatch();
+            for (var i = 0; i < _allTracks.Count; i++)
+                Tracks.Add(new SongItemViewModel(_allTracks[i], _player.PlayFromList, i + 1, _allTracks));
+
+            // 首屏 ~40 首封面预热,避免首屏全默认图;其余交给容器 realized 懒加载(不并发拉全量)
+            const int prefetch = 40;
+            for (var i = 0; i < Tracks.Count && i < prefetch; i++)
+                Tracks[i].EnsureCoverLoaded();
         }
         catch (ApiException ex)
         {
@@ -118,26 +121,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         {
             IsBusy = false;
         }
-    }
-
-    /// <summary>滚动接近底部时调用:把下一批曲目物化成列表项(封面仍按可见懒加载)。</summary>
-    public void LoadMoreAsync()
-    {
-        if (IsBusy) return;
-        AppendBatch();
-    }
-
-    private void AppendBatch()
-    {
-        var end = Math.Min(_materialized + MaterializeBatch, _allTracks.Count);
-        for (; _materialized < end; _materialized++)
-            Tracks.Add(new SongItemViewModel(_allTracks[_materialized], _player.PlayFromList, _materialized + 1, _allTracks));
-
-        // 物化后立即预取前 40 首封面,避免首屏/近屏全默认图;
-        // 其余仍走容器 realized 懒加载(不并发拉全量)。
-        const int prefetch = 40;
-        for (var i = 0; i < Tracks.Count && i < prefetch; i++)
-            Tracks[i].EnsureCoverLoaded();
     }
 
     /// <summary>头部「播放全部」:从第一首开始播放(后续可扩展为顺序队列)。</summary>
@@ -179,5 +162,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
     }
 
-    private async Task LoadAvatarAsync() => AvatarImage = await CoverLoader.LoadAsync(AvatarUrl);
+    // 头像缩到 128px:profile avatarUrl 是 1000px 原图,直接加载解码 ~4MB 纯浪费(当前头像尚未在 UI 显示)
+    private async Task LoadAvatarAsync() => AvatarImage = await CoverLoader.LoadAsync(AvatarUrl, 128);
 }

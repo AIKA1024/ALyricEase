@@ -122,6 +122,8 @@ public sealed record PlaylistDto
 
 public sealed record PlaylistDetailResponse
 {
+    public int Code { get; init; }
+
     public PlaylistDetail? Playlist { get; init; }
 }
 
@@ -133,6 +135,14 @@ public sealed record PlaylistDetail
 
     [JsonPropertyName("trackCount")] public int TrackCount { get; init; }
 
-    /// <summary>歌单内的完整曲目。</summary>
+    /// <summary>歌单内全量曲目 id(v6 接口 trackIds,权威顺序)。</summary>
+    public List<TrackIdItem>? TrackIds { get; init; }
+
+    /// <summary>接口顺带返回的前段完整曲目(登录态约 150 首,匿名约 10 首)。</summary>
     public List<SearchSong>? Tracks { get; init; }
+}
+
+public sealed record TrackIdItem
+{
+    public long Id { get; init; }
 }

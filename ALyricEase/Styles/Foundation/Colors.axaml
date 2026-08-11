@@ -22,16 +22,16 @@
             <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5F3F3F3" />
             <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
                                          BackgroundSource="Digger"
-                                         TintColor="#F3F3F3"
-                                         TintOpacity="0.72"
-                                         MaterialOpacity="0.88"
+                                         TintColor="#F5F5F5"
+                                         TintOpacity="0.5"
+                                         MaterialOpacity="0.85"
                                          FallbackColor="#F3F3F3" />
             <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
-                                         BackgroundSource="Digger"
-                                         TintColor="#5A5A5A"
-                                         TintOpacity="0.90"
-                                         MaterialOpacity="0.55"
-                                         FallbackColor="#5A5A5A" />
+                                         BackgroundSource="None"
+                                         TintColor="#E8E8E8"
+                                         TintOpacity="0.8"
+                                         MaterialOpacity="0.9"
+                                         FallbackColor="#E8E8E8" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="AppBackground" Color="#141516" />
@@ -54,16 +54,16 @@
             <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5202020" />
             <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
                                          BackgroundSource="Digger"
-                                         TintColor="#141516"
-                                         TintOpacity="1.0"
+                                         TintColor="#101010"
+                                         TintOpacity="0.5"
                                          MaterialOpacity="0.85"
                                          FallbackColor="#141516" />
             <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
-                                         BackgroundSource="Digger"
-                                         TintColor="#5A5A5A"
-                                         TintOpacity="0.90"
-                                         MaterialOpacity="0.55"
-                                         FallbackColor="#5A5A5A" />
+                                         BackgroundSource="None"
+                                         TintColor="#282828"
+                                         TintOpacity="0.85"
+                                         MaterialOpacity="0.9"
+                                         FallbackColor="#282828" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 

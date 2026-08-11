@@ -6,8 +6,35 @@
              x:DataType="vm:PlayerViewModel"
              mc:Ignorable="d"
              d:DesignWidth="1200" d:DesignHeight="100"
-             x:Class="ALyricEase.Views.PlayerBarView">
+             x:Class="ALyricEase.Views.PlayerBarView"
+             ClipToBounds="False">
     <UserControl.Styles>
+        <!-- 原版进度条:已播放 #6FBAB3(球左)、未播放 #808080(球右)、球为两个圆叠加
+             (外层 20px 深色球 #454545 + 内层 10px 实心球 #5EA9A2);
+             hover(:pointerover)时轨道变亮 + 内层球放大到 14(Transitions 动画),外层球不变。 -->
+        <!-- 进度条默认值放样式(非内联),hover(:pointerover)时才能覆盖 -->
+        <Style Selector="Grid#ProgressRoot Border#ProgressFill">
+            <Setter Property="Background" Value="#FF6FBAB3" />
+        </Style>
+        <Style Selector="Grid#ProgressRoot Border#TrackInactive">
+            <Setter Property="Background" Value="#FF808080" />
+        </Style>
+        <Style Selector="Grid#ProgressRoot Ellipse#ThumbFill">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+        </Style>
+        <!-- hover:轨道变亮 + 内层球放大(Transitions 动画),外层球不变 -->
+        <Style Selector="Grid#ProgressRoot:pointerover Border#ProgressFill">
+            <Setter Property="Background" Value="#FF65A9A2" />
+        </Style>
+        <Style Selector="Grid#ProgressRoot:pointerover Border#TrackInactive">
+            <Setter Property="Background" Value="#FFA7A7A7" />
+        </Style>
+        <!-- 球放大:仅 hover 球本身时触发,非 hover 轨道;内层小球 8→14,外层球不变 -->
+        <Style Selector="Grid#ProgressThumb:pointerover Ellipse#ThumbFill">
+            <Setter Property="Width" Value="14" />
+            <Setter Property="Height" Value="14" />
+        </Style>
         <Style Selector="Grid#WidePlayer"><Setter Property="IsVisible" Value="True" /></Style>
         <Style Selector="Grid#CompactPlayer"><Setter Property="IsVisible" Value="False" /></Style>
         <Style Selector="UserControl.compact Grid#WidePlayer"><Setter Property="IsVisible" Value="False" /></Style>
@@ -16,16 +43,42 @@
         <Style Selector="UserControl.narrow Grid#CompactPlayer"><Setter Property="IsVisible" Value="True" /></Style>
     </UserControl.Styles>
 
-    <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}">
-        <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}">
-            <Grid>
-                <Grid x:Name="WidePlayer" RowDefinitions="20,80">
-                    <Slider Classes="player-progress" Grid.Row="0"
-                            Minimum="0" Maximum="{Binding ProgressMaximum}" Value="{Binding PositionMs}"
-                            Height="20" Margin="-5,-8,-5,0" IsEnabled="{Binding HasProgress}"
-                            PointerPressed="OnSliderPointerPressed" PointerReleased="OnSliderPointerReleased" />
-                    <Grid Grid.Row="1" ColumnDefinitions="70,*,Auto" ColumnSpacing="4" Margin="12,-4,12,0"
-                          Background="Transparent" PointerPressed="OnTrackAreaPressed">
+    <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}" ClipToBounds="False">
+        <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}" ClipToBounds="False">
+            <Grid ClipToBounds="False">
+                <Grid x:Name="WidePlayer" Height="100" ClipToBounds="False">
+                    <!-- 自定义进度条(替代 Slider+Track):未播放段整条+已播放段按进度+圆形球,轨道保证渲染。
+                         颜色在 code-behind 用系统强调色动态设置;hover 时球放大+轨道加亮。 -->
+                    <Grid x:Name="ProgressRoot" Height="28" VerticalAlignment="Top" Margin="0,-14,0,0" ZIndex="1"
+                          IsVisible="{Binding HasProgress}"
+                          PointerPressed="OnProgressPointerPressed" PointerMoved="OnProgressPointerMoved"
+                          PointerReleased="OnProgressPointerReleased"
+                          Background="#01FFFFFF"><!-- #01 几乎全透明但不透明 → 可命中测试,:pointerover 生效 -->
+                        <Grid x:Name="ProgressTrack" Height="4" VerticalAlignment="Center" ClipToBounds="True">
+                            <!-- 未播放段(整条) -->
+                            <Border x:Name="TrackInactive" CornerRadius="2" />
+                            <!-- 已播放段(宽度=进度比例) -->
+                            <Border x:Name="ProgressFill" CornerRadius="2"
+                                    HorizontalAlignment="Left" IsHitTestVisible="False" />
+                        </Grid>
+                        <!-- 球:两个圆叠加 — 底层 20x20 深色大球(#454545),顶层 10px 强调色小球(#5EA9A2)。
+                             默认内球 10(露出 5px 深色外层球),hover 14(露出 3px),外层球固定 20。 -->
+                        <Grid x:Name="ProgressThumb" Width="20" Height="20" Background="Transparent"
+                              VerticalAlignment="Center" HorizontalAlignment="Left">
+                            <Ellipse x:Name="ThumbHalo" Fill="#FF454545" />
+                            <Ellipse x:Name="ThumbFill" Fill="#FF5EA9A2"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Ellipse.Transitions>
+                                    <Transitions>
+                                        <DoubleTransition Property="Width" Duration="0:0:0.15" />
+                                        <DoubleTransition Property="Height" Duration="0:0:0.15" />
+                                    </Transitions>
+                                </Ellipse.Transitions>
+                            </Ellipse>
+                        </Grid>
+                    </Grid>
+                    <Grid ColumnDefinitions="70,*,Auto" ColumnSpacing="4" Margin="12,0,12,0"
+                          Background="Transparent" PointerPressed="OnTrackAreaPressed" VerticalAlignment="Center">
                         <Border Grid.Column="0" Width="60" Height="60" CornerRadius="4" ClipToBounds="True"
                                 Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Grid>
@@ -67,7 +120,8 @@
 
                 <Grid x:Name="CompactPlayer" RowDefinitions="4,*" Background="Transparent">
                     <ProgressBar Grid.Row="0" Minimum="0" Maximum="{Binding ProgressMaximum}" Value="{Binding PositionMs}"
-                                 Foreground="{DynamicResource LyricEaseTeal}" Background="#668A8A8A" />
+                                 Foreground="#FF64A8A1" Background="#FFB2B2B2"
+                                 Height="4" VerticalAlignment="Center" Margin="0" />
                     <Grid Grid.Row="1" ColumnDefinitions="56,*,52" ColumnSpacing="8" Margin="8,4,8,4"
                           PointerPressed="OnTrackAreaPressed">
                         <Border Grid.Column="0" Width="48" Height="48" CornerRadius="4" ClipToBounds="True"

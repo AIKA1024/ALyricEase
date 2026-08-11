@@ -84,6 +84,14 @@ public sealed record LegacyPlaylistResult
     public List<LegacySearchSong>? Tracks { get; init; }
 }
 
+/// <summary>明文 /api/song/detail?ids=[...] 批量取曲目的响应(legacy 格式,artists/album/duration)。</summary>
+public sealed record LegacySongDetailResponse
+{
+    public int Code { get; init; }
+
+    public List<LegacySearchSong>? Songs { get; init; }
+}
+
 // ---------- 首页推荐(明文 GET) ----------
 
 /// <summary>personalized/playlist、personalized/newsong、discovery/recommend/resource 的通用封面项。

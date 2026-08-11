@@ -7,7 +7,7 @@
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecommendView">
     <UserControl.Styles>
-        <Style Selector="StackPanel#PageContent"><Setter Property="Margin" Value="48,0,32,80" /></Style>
+        <Style Selector="StackPanel#PageContent"><Setter Property="Margin" Value="48,0,32,116" /></Style>
         <Style Selector="Border.card"><Setter Property="Width" Value="200" /><Setter Property="Height" Value="250" /><Setter Property="RenderTransformOrigin" Value="50%,50%" /><Setter Property="RenderTransform" Value="scale(1,1)" /></Style>
         <Style Selector="Border.card:pointerover"><Setter Property="RenderTransform" Value="scale(1.02,1.02)" /></Style>
         <Style Selector="Border.card-art"><Setter Property="Width" Value="200" /><Setter Property="Height" Value="200" /></Style>
@@ -17,6 +17,19 @@
         <Style Selector="UserControl.narrow StackPanel#PageContent"><Setter Property="Margin" Value="16,0,12,20" /></Style>
         <Style Selector="UserControl.narrow Border.card"><Setter Property="Width" Value="156" /><Setter Property="Height" Value="206" /></Style>
         <Style Selector="UserControl.narrow Border.card-art"><Setter Property="Width" Value="156" /><Setter Property="Height" Value="156" /></Style>
+        <!-- 横向虚拟化 ListBox:清掉容器默认选中/悬停高亮,悬停/放大交给卡片内样式 -->
+        <Style Selector="ListBox.card-list">
+            <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="ListBox.card-list > ListBoxItem">
+            <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,14,0" /><Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox.card-list > ListBoxItem:pointerover">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox.card-list > ListBoxItem:selected">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
     </UserControl.Styles>
     <Grid RowDefinitions="96,*">
         <Grid Grid.Row="0" Margin="48,0,32,0"><TextBlock Text="个性推荐" Classes="page-title" VerticalAlignment="Center" /></Grid>
@@ -27,26 +40,30 @@
                         <DataTemplate x:DataType="vm:RecommendSectionViewModel">
                             <StackPanel Spacing="12" Margin="0,0,0,28">
                                 <TextBlock Text="{Binding Title}" Classes="section-title" />
-                                <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
-                                    <ItemsControl ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared">
-                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="14" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:RecommendCardViewModel">
-                                                <Border Classes="card" Background="Transparent" CornerRadius="8" ClipToBounds="True" Cursor="Hand">
-                                                    <Grid RowDefinitions="Auto,50">
-                                                        <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
-                                                            <Grid><Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" /><Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" /></Grid>
-                                                        </Border>
-                                                        <StackPanel Grid.Row="1" Margin="4,6,4,0" Spacing="1">
-                                                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1" />
-                                                            <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" MaxLines="1" />
-                                                        </StackPanel>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
+                                <ListBox Classes="card-list" ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Hidden">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <VirtualizingStackPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:RecommendCardViewModel">
+                                            <Border Classes="card" Background="Transparent" CornerRadius="8" ClipToBounds="True" Cursor="Hand">
+                                                <Grid RowDefinitions="Auto,50">
+                                                    <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                                                        <Grid><Image Source="avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png" Stretch="UniformToFill" /><Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding Cover, Converter={x:Static ObjectConverters.IsNotNull}}" /></Grid>
+                                                    </Border>
+                                                    <StackPanel Grid.Row="1" Margin="4,6,4,0" Spacing="1">
+                                                        <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
                             </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

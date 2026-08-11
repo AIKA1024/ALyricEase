@@ -331,17 +331,49 @@ public sealed class NetEaseApiClient
             .ToList();
     }
 
-    /// <summary>歌单详情 → 曲目列表(一次全部,仅用于测试/小歌单)。</summary>
+    /// <summary>歌单详情 → 全量曲目。v6 接口返回全量 trackIds + 前段曲目,
+    /// 缺的部分用明文 /api/song/detail 分批补齐。此前用 v1 playlist/detail 只回前 ~150 首,
+    /// 导致大歌单(如“我喜欢的音乐”)曲目不全。</summary>
     public async Task<List<Song>> GetPlaylistDetailAsync(long id, CancellationToken ct = default)
     {
-        var url = $"{BaseUrl}/api/playlist/detail?id={id}";
+        var url = $"{BaseUrl}/api/v6/playlist/detail?id={id}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize<LegacyPlaylistDetailResponse>(JsonOpts);
-        if (resp is null || resp.Code != 200 || resp.Result?.Tracks is null)
+        var resp = doc.RootElement.Deserialize<PlaylistDetailResponse>(JsonOpts);
+        var playlist = resp?.Playlist;
+        if (resp is null || resp.Code != 200 || playlist is null)
             throw new ApiException("获取歌单详情失败", resp?.Code ?? -1);
-        return resp.Result.Tracks.Select(MapLegacySong).ToList();
+
+        // trackIds 是权威顺序;tracks 是接口顺带返回的前段(登录态约 150 首,匿名约 10 首)
+        var trackIds = (playlist.TrackIds ?? Enumerable.Empty<TrackIdItem>()).Select(t => t.Id).ToList();
+        var byId = new Dictionary<long, Song>();
+        foreach (var t in playlist.Tracks ?? Enumerable.Empty<SearchSong>())
+            if (t.Id != 0) byId[t.Id] = MapSearchSong(t);
+
+        // 补齐 trackIds 里尚缺的完整曲目(分批明文 song/detail)
+        const int batchSize = 100;
+        var missing = trackIds.Where(id => !byId.ContainsKey(id)).ToList();
+        for (var i = 0; i < missing.Count; i += batchSize)
+        {
+            var slice = missing.Skip(i).Take(batchSize).ToList();
+            foreach (var s in await GetSongDetailsLegacyAsync(slice, ct).ConfigureAwait(false))
+                byId[s.Id] = s;
+        }
+
+        return trackIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+    }
+
+    /// <summary>明文 /api/song/detail 批量取曲目(legacy 格式:artists/album/duration)。</summary>
+    private async Task<List<Song>> GetSongDetailsLegacyAsync(List<long> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return new List<Song>();
+        var url = $"{BaseUrl}/api/song/detail?ids={Uri.EscapeDataString($"[{string.Join(",", ids)}]")}";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize<LegacySongDetailResponse>(JsonOpts);
+        return resp?.Songs?.Select(MapLegacySong).ToList() ?? new List<Song>();
     }
 
     // ---------- 首页推荐(明文 GET,匿名可用) ----------

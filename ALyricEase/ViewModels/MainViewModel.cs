@@ -24,7 +24,6 @@ public sealed partial class MainViewModel : ViewModelBase
         RebuildShellNavigation();
         Playlist.Playlists.CollectionChanged += OnPlaylistsChanged;
         _selectedNav = ShellNavItems.First(item => item.Key == _activePage);
-        Player.SongStarted += OnSongStarted;
         _ = Recommend.EnsureLoadedAsync(); // 启动即拉首页区块(幂等,失败静默)
     }
 
@@ -212,11 +211,9 @@ public sealed partial class MainViewModel : ViewModelBase
         Placeholder.Description = "应用设置";
     }
 
-    /// <summary>打开正在播放覆盖层(点底部播放条或播放歌曲时)。</summary>
+    /// <summary>打开正在播放覆盖层(点底部播放条时)。</summary>
     [RelayCommand] private void OpenNowPlaying() => ShowNowPlaying = true;
 
     /// <summary>收起正在播放覆盖层(返回键/Escape)。</summary>
     [RelayCommand] private void CloseNowPlaying() => ShowNowPlaying = false;
-
-    private void OnSongStarted() => ShowNowPlaying = true;
 }

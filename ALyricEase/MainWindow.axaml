@@ -69,7 +69,7 @@
   </Window.Styles>
 
   <ExperimentalAcrylicBorder Material="{DynamicResource AppAcrylicMaterial}">
-    <Grid RowDefinitions="48,*,100">
+    <Grid RowDefinitions="48,*">
       <!-- 原版风格自绘标题栏：左侧拖拽区，右侧窗口控制。 -->
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent" PointerPressed="OnTitleBarPointerPressed"
             ColumnDefinitions="Auto,*,Auto">
@@ -180,20 +180,24 @@
         </Border>
 
         <Border Grid.Column="1" Background="{DynamicResource AppBackground}" CornerRadius="8,0,0,0">
-          <TransitioningContentControl Content="{Binding CurrentContent}">
-            <TransitioningContentControl.PageTransition>
-              <CompositePageTransition>
-                <CompositePageTransition.PageTransitions>
-                  <PageSlide Orientation="Horizontal" Duration="0:0:0.3" /><CrossFade Duration="0:0:0.3" />
-                </CompositePageTransition.PageTransitions>
-              </CompositePageTransition>
-            </TransitioningContentControl.PageTransition>
-          </TransitioningContentControl>
+          <Grid x:Name="ContentArea" ClipToBounds="True">
+            <!-- 内容页:延伸到播放条后面,滚动内容从播放条下方穿过 -->
+            <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentContent}">
+              <TransitioningContentControl.PageTransition>
+                <CompositePageTransition>
+                  <CompositePageTransition.PageTransitions>
+                    <PageSlide Orientation="Horizontal" Duration="0:0:0.3" /><CrossFade Duration="0:0:0.3" />
+                  </CompositePageTransition.PageTransitions>
+                </CompositePageTransition>
+              </TransitioningContentControl.PageTransition>
+            </TransitioningContentControl>
+            <!-- 应用内毛玻璃曾用 VisualBrush+BlurEffect,但 Avalonia 12.1.1 的 BlurEffect 不实际渲染(见诊断),已移除 -->
+            <views:PlayerBarView DataContext="{Binding Player}" VerticalAlignment="Bottom" ZIndex="1" />
+          </Grid>
         </Border>
       </Grid>
-      <views:PlayerBarView Grid.Row="2" DataContext="{Binding Player}" />
 
-      <TransitioningContentControl Grid.Row="0" Grid.RowSpan="3" Content="{Binding NowPlayingContent}"
+      <TransitioningContentControl Grid.Row="0" Grid.RowSpan="2" Content="{Binding NowPlayingContent}"
                                    IsVisible="{Binding ShowNowPlaying}"
                                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ZIndex="100">
         <TransitioningContentControl.ContentTemplate>

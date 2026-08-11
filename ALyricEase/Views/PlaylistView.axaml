@@ -52,8 +52,19 @@
       <Setter Property="Width" Value="300" /><Setter Property="Height" Value="300" />
       <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
-    <Style Selector="ItemsControl.tracks > ContentPresenter">
-      <Setter Property="Margin" Value="0,1" /><Setter Property="CornerRadius" Value="6" />
+    <!-- 曲目列表虚拟化:ListBox(行有界高度才生效),清掉容器默认选中/悬停高亮,悬停交给行内样式 -->
+    <Style Selector="ListBox.tracks">
+      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.tracks > ListBoxItem">
+      <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,1" />
+      <Setter Property="CornerRadius" Value="6" /><Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.tracks > ListBoxItem:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.tracks > ListBoxItem:selected">
+      <Setter Property="Background" Value="Transparent" />
     </Style>
   </UserControl.Styles>
   <Grid>
@@ -78,10 +89,8 @@
                    FontSize="13" />
       </StackPanel>
     </Border>
-    <Grid Classes="detail-shell" IsVisible="{Binding IsLoggedIn}">
-      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="12">
-          <Border Classes="playlist-hero">
+    <Grid Classes="detail-shell" RowDefinitions="Auto,*" IsVisible="{Binding IsLoggedIn}">
+      <Border Classes="playlist-hero" Grid.Row="0">
             <Grid Classes="hero-layout" ColumnDefinitions="260,*">
               <Border Classes="hero-art" Grid.Column="0" Width="260" Height="260" CornerRadius="8" ClipToBounds="True"
                       Background="{DynamicResource ArtFallback}" HorizontalAlignment="Left" VerticalAlignment="Center">
@@ -93,7 +102,7 @@
                 <Button Classes="hero-creator" Content="{Binding UserName}" HorizontalAlignment="Left"
                         Background="Transparent" BorderThickness="0" Padding="0"
                         Foreground="{DynamicResource LyricEaseTeal}" FontSize="18" ToolTip.Tip="打开用户页（后续接入）" />
-                <TextBlock Text="创建于网易云 · {Binding SelectedPlaylist.TrackCountText}" FontSize="16"
+                <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="16"
                            FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" />
                 <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="14"
                            Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" MaxLines="3"
@@ -117,27 +126,20 @@
                 </StackPanel>
               </StackPanel>
             </Grid>
-          </Border>
-          <Border Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}"
-                  BorderThickness="1" CornerRadius="8" Padding="8,6">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-              <ItemsControl Classes="tracks" ItemsSource="{Binding Tracks}" ContainerPrepared="OnTrackContainerPreparing">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <StackPanel />  
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:SongItemViewModel">
-                    <views:TrackListItem />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-          </Border>
-        </StackPanel>
-      </ScrollViewer>
+      </Border>
+      <Border Grid.Row="1" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}"
+              BorderThickness="1" CornerRadius="8" Padding="8,6" Margin="0,12,0,0">
+        <ListBox Classes="tracks" ItemsSource="{Binding Tracks}" ContainerPrepared="OnTrackContainerPreparing"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,100">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:SongItemViewModel">
+              <views:TrackListItem />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
       <TextBlock Text="请选择左侧歌单查看曲目" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                 Grid.RowSpan="2"
                  IsVisible="{Binding SelectedPlaylist, Converter={x:Static ObjectConverters.IsNull}}"
                  Foreground="{DynamicResource TextTertiary}" />
     </Grid>

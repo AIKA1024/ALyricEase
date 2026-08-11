@@ -109,6 +109,7 @@
             <!-- 结果列表:行 56px,封面 40x40 圆6 + 歌名/歌手 + 专辑 + 时长 -->
             <ListBox Grid.Row="2" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedItem}"
                      Background="Transparent" DoubleTapped="OnListDoubleTapped" Margin="0,8,0,0"
+                     Padding="0,0,0,100"
                      PreparingContainer="OnResultContainerPreparing">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:SongItemViewModel">

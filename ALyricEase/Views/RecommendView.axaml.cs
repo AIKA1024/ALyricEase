@@ -14,7 +14,7 @@ public partial class RecommendView : UserControl
         AttachedToVisualTree += (_, _) => ResponsiveClasses.Apply(this, Bounds.Width);
     }
 
-    /// <summary>卡片容器 realized 时加载封面(幂等)。</summary>
+    /// <summary>卡片容器 realized(虚拟化进入视口)时加载封面(幂等)。</summary>
     private void OnCardContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
         if (e.Container.DataContext is RecommendCardViewModel card)

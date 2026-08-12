@@ -222,7 +222,8 @@
         <Border Grid.Column="1" Background="{DynamicResource AppBackground}" CornerRadius="8,0,0,0">
           <Grid x:Name="ContentArea" ClipToBounds="True">
             <!-- 内容页:延伸到播放条后面,滚动内容从播放条下方穿过 -->
-            <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentContent}">
+            <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentContent}"
+                                         IsTransitionReversed="{Binding IsTransitionReversed}">
               <TransitioningContentControl.PageTransition>
                 <CompositePageTransition>
                   <CompositePageTransition.PageTransitions>

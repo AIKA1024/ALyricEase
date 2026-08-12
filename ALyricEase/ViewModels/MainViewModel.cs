@@ -80,6 +80,10 @@ public sealed partial class MainViewModel : ViewModelBase
     private string _lastPage = "Recommend";
     private bool _isGoingBack;
 
+    /// <summary>页面切换动画方向:返回(true)时反向滑动(新页从左进),前进(false)从右进。
+    /// 绑定 TransitioningContentControl.IsTransitionReversed。</summary>
+    [ObservableProperty] private bool _isTransitionReversed;
+
 
     /// <summary>内容区当前页(TransitioningContentControl 按 VM 类型选模板)。</summary>
     public object? CurrentContent => ActivePage switch
@@ -101,6 +105,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnActivePageChanged(string value)
     {
+        // 返回时反向滑动(GoBack 期间 _isGoingBack=true),前进正向
+        IsTransitionReversed = _isGoingBack;
         if (!_isGoingBack && !string.Equals(_lastPage, value, StringComparison.Ordinal))
             _navigationHistory.Push(_lastPage);
         _lastPage = value;

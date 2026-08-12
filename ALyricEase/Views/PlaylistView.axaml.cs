@@ -16,6 +16,17 @@ public partial class PlaylistView : UserControl
         InitializeComponent();
         SizeChanged += (_, e) => ResponsiveClasses.Apply(this, e.NewSize.Width);
         AttachedToVisualTree += (_, _) => ResponsiveClasses.Apply(this, Bounds.Width);
+        // 页面滚动接近底部时增量补齐下一批曲目
+        PageScroller.ScrollChanged += OnTracksScrollChanged;
+    }
+
+    /// <summary>滚动接近底部(剩余不足 ~500px)时请求下一批曲目元数据;LoadMoreAsync 内部单飞防止重入。</summary>
+    private void OnTracksScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer sv) return;
+        var remaining = sv.Extent.Height - sv.Offset.Y - sv.Viewport.Height;
+        if (remaining < 500 && DataContext is PlaylistViewModel vm)
+            _ = vm.LoadMoreAsync();
     }
 
     /// <summary>曲目容器 realized 时触发封面懒加载。封面节流:滚动中不立即加载,

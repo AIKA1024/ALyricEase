@@ -87,7 +87,7 @@
     <!--   </StackPanel> -->
     <!-- </Border> -->
     <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid Classes="detail-shell" RowDefinitions="Auto,*" IsVisible="{Binding IsLoggedIn}">
+    <Grid Classes="detail-shell" RowDefinitions="Auto,*" IsVisible="{Binding IsLoggedIn}">
         <Border Classes="playlist-hero" Grid.Row="0">
           <Grid Classes="hero-layout" ColumnDefinitions="260,*">
             <Border Classes="hero-art" Grid.Column="0" Width="260" Height="260" CornerRadius="8" ClipToBounds="True"

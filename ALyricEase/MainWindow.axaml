@@ -31,7 +31,8 @@
     <Style Selector="Button.navigation-button">
       <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
       <Setter Property="Height" Value="40" /><Setter Property="CornerRadius" Value="4" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" /><Setter Property="VerticalContentAlignment" Value="Center" /><Setter Property="Padding" Value="12,0" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="VerticalContentAlignment" Value="Center" /><Setter Property="Padding" Value="12,0" />
     </Style>
     <Style Selector="Button.navigation-button:pointerover">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
@@ -123,17 +124,21 @@
             </Button>
             <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorder}"
                     Padding="0,12,0,0">
-              <StackPanel Margin="4,0,8,8">
-                <Button Classes="navigation-button" Command="{Binding GoAccountCommand}">
-                  <Grid ColumnDefinitions="24,*" ColumnSpacing="10">
-                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
-                    <TextBlock Grid.Column="1" Text="账号" FontSize="14" />
+              <StackPanel Margin="4,0,8,8" HorizontalAlignment="Stretch">
+                <Button Classes="navigation-button" Command="{Binding GoAccountCommand}"
+                        HorizontalAlignment="Stretch">
+                  <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
+                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="账号" FontSize="14" VerticalAlignment="Center" />
                   </Grid>
                 </Button>
-                <Button Classes="navigation-button" Command="{Binding GoSettingsCommand}">
-                  <Grid ColumnDefinitions="24,*" ColumnSpacing="10">
-                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
-                    <TextBlock Grid.Column="1" Text="设置" FontSize="14" />
+                <Button Classes="navigation-button" Command="{Binding GoSettingsCommand}"
+                        HorizontalAlignment="Stretch">
+                  <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
+                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="设置" FontSize="14" VerticalAlignment="Center" />
                   </Grid>
                 </Button>
               </StackPanel>
@@ -182,12 +187,16 @@
             </Button>
             <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorder}"
                     Padding="0,8,0,0">
-              <StackPanel Spacing="4" Margin="0,0,0,8">
-                <Button Classes="icon-button" Command="{Binding GoAccountCommand}" Width="48" Height="40">
-                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+              <StackPanel Spacing="4" Margin="0,0,0,8" HorizontalAlignment="Stretch">
+                <Button Classes="icon-button" Command="{Binding GoAccountCommand}" Width="48" Height="40"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
-                <Button Classes="icon-button" Command="{Binding GoSettingsCommand}" Width="48" Height="40">
-                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                <Button Classes="icon-button" Command="{Binding GoSettingsCommand}" Width="48" Height="40"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
               </StackPanel>
             </Border>

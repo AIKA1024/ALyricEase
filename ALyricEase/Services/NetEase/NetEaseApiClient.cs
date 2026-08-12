@@ -330,10 +330,12 @@ public sealed class NetEaseApiClient
             .ToList();
     }
 
-    /// <summary>歌单详情 → 全量曲目。v6 接口返回全量 trackIds + 前段曲目,
-    /// 缺的部分用明文 /api/song/detail 分批补齐。此前用 v1 playlist/detail 只回前 ~150 首,
-    /// 导致大歌单(如“我喜欢的音乐”)曲目不全。</summary>
-    public async Task<List<Song>> GetPlaylistDetailAsync(long id, CancellationToken ct = default)
+    /// <summary>歌单轨道概览：v6 单次请求即可拿到全量 trackIds(权威顺序) + 前段曲目(登录态约 150 首)。
+    /// 不做任何 song/detail 补齐，供歌单页增量加载使用。</summary>
+    public sealed record PlaylistTrackOverview(IReadOnlyList<long> TrackIds, IReadOnlyList<Song> PrefixTracks);
+
+    /// <summary>单次 v6 请求取歌单轨道概览，不补齐元数据。</summary>
+    public async Task<PlaylistTrackOverview> GetPlaylistTrackOverviewAsync(long id, CancellationToken ct = default)
     {
         var url = $"{BaseUrl}/api/v6/playlist/detail?id={id}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
@@ -344,23 +346,40 @@ public sealed class NetEaseApiClient
         if (resp is null || resp.Code != 200 || playlist is null)
             throw new ApiException("获取歌单详情失败", resp?.Code ?? -1);
 
-        // trackIds 是权威顺序;tracks 是接口顺带返回的前段(登录态约 150 首,匿名约 10 首)
         var trackIds = (playlist.TrackIds ?? Enumerable.Empty<TrackIdItem>()).Select(t => t.Id).ToList();
-        var byId = new Dictionary<long, Song>();
+        var prefix = new List<Song>();
         foreach (var t in playlist.Tracks ?? Enumerable.Empty<SearchSong>())
-            if (t.Id != 0) byId[t.Id] = MapSearchSong(t);
+            if (t.Id != 0) prefix.Add(MapSearchSong(t));
+        return new PlaylistTrackOverview(trackIds, prefix);
+    }
+
+    /// <summary>明文 /api/song/detail 批量取曲目元数据，单批 ≤100 首。供歌单增量加载补齐缺失段。</summary>
+    public async Task<List<Song>> GetSongsByIdsAsync(IReadOnlyList<long> ids, CancellationToken ct = default)
+    {
+        if (ids.Count == 0) return new List<Song>();
+        return await GetSongDetailsLegacyAsync(ids.Take(100).ToList(), ct).ConfigureAwait(false);
+    }
+
+    /// <summary>歌单详情 → 全量曲目。v6 接口返回全量 trackIds + 前段曲目,
+    /// 缺的部分用明文 /api/song/detail 分批补齐。此前用 v1 playlist/detail 只回前 ~150 首,
+    /// 导致大歌单(如“我喜欢的音乐”)曲目不全。</summary>
+    public async Task<List<Song>> GetPlaylistDetailAsync(long id, CancellationToken ct = default)
+    {
+        var overview = await GetPlaylistTrackOverviewAsync(id, ct).ConfigureAwait(false);
+        var byId = new Dictionary<long, Song>();
+        foreach (var s in overview.PrefixTracks) byId[s.Id] = s;
 
         // 补齐 trackIds 里尚缺的完整曲目(分批明文 song/detail)
         const int batchSize = 100;
-        var missing = trackIds.Where(id => !byId.ContainsKey(id)).ToList();
+        var missing = overview.TrackIds.Where(id => !byId.ContainsKey(id)).ToList();
         for (var i = 0; i < missing.Count; i += batchSize)
         {
             var slice = missing.Skip(i).Take(batchSize).ToList();
-            foreach (var s in await GetSongDetailsLegacyAsync(slice, ct).ConfigureAwait(false))
+            foreach (var s in await GetSongsByIdsAsync(slice, ct).ConfigureAwait(false))
                 byId[s.Id] = s;
         }
 
-        return trackIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+        return overview.TrackIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
     }
 
     /// <summary>取歌单前 N 首曲目(推荐页预览用,避免拉全量 200+ 首)。

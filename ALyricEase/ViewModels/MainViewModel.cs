@@ -13,13 +13,15 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album)
     {
         Search = search;
         Player = player;
         Lyric = lyric;
         Playlist = playlist;
         Recommend = recommend;
+        Artist = artist;
+        Album = album;
         _playlist = playlist;
         RebuildShellNavigation();
         Playlist.Playlists.CollectionChanged += OnPlaylistsChanged;
@@ -32,6 +34,8 @@ public sealed partial class MainViewModel : ViewModelBase
     public LyricViewModel Lyric { get; }
     public PlaylistViewModel Playlist { get; }
     public RecommendViewModel Recommend { get; }
+    public ArtistViewModel Artist { get; }
+    public AlbumViewModel Album { get; }
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
@@ -83,6 +87,8 @@ public sealed partial class MainViewModel : ViewModelBase
         "Recommend" => Recommend,
         "Search" => Search,
         "Favorites" => Playlist,
+        "Artist" => Artist,
+        "Album" => Album,
         _ => Placeholder,
     };
 
@@ -183,6 +189,26 @@ public sealed partial class MainViewModel : ViewModelBase
         if (playlist is null) return;
         ActivePage = "Favorites";
         Playlist.OpenPlaylistCommand.Execute(playlist);
+    }
+
+    /// <summary>歌单行/专辑行点击歌手 → 歌手页。</summary>
+    [RelayCommand]
+    private async Task OpenArtistAsync(long? artistId)
+    {
+        if (artistId is null or 0) return;
+        ActivePage = "Artist";
+        try { await Artist.LoadAsync(artistId.Value); }
+        catch { /* 网络失败:停留在歌手页空内容 */ }
+    }
+
+    /// <summary>歌单行/歌手页点击专辑 → 专辑页。</summary>
+    [RelayCommand]
+    private async Task OpenAlbumAsync(long? albumId)
+    {
+        if (albumId is null or 0) return;
+        ActivePage = "Album";
+        try { await Album.LoadAsync(albumId.Value); }
+        catch { /* 网络失败:停留在专辑页空内容 */ }
     }
 
     [RelayCommand] private void ToggleNavigationExpanded() => IsNavigationExpanded = !IsNavigationExpanded;

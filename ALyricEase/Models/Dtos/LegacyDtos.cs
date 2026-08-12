@@ -69,6 +69,9 @@ public sealed record LegacyPlaylistItem
     [JsonPropertyName("trackCount")] public int TrackCount { get; init; }
 
     [JsonPropertyName("coverImgUrl")] public string CoverUrl { get; init; } = "";
+
+    /// <summary>歌单特殊类型:5 = "我喜欢的音乐"(红心喜欢集合)。</summary>
+    [JsonPropertyName("specialType")] public int SpecialType { get; init; }
 }
 
 public sealed record LegacyPlaylistDetailResponse

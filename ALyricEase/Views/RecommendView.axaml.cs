@@ -1,4 +1,3 @@
-using Avalonia;
 using Avalonia.Controls;
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
@@ -14,10 +13,16 @@ public partial class RecommendView : UserControl
         AttachedToVisualTree += (_, _) => ResponsiveClasses.Apply(this, Bounds.Width);
     }
 
-    /// <summary>卡片容器 realized(虚拟化进入视口)时加载封面(幂等)。</summary>
-    private void OnCardContainerPrepared(object? sender, ContainerPreparedEventArgs e)
+    /// <summary>容器 realized(虚拟化进入视口)时加载封面(幂等)。卡片和每日歌曲行都走这里。</summary>
+    private void OnItemContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
-        if (e.Container.DataContext is RecommendCardViewModel card)
-            card.EnsureCoverLoaded();
+        switch (e.Container.DataContext)
+        {
+            case RecommendCardViewModel card: card.EnsureCoverLoaded(); break;
+            case SongItemViewModel song:
+                song.EnsureCoverLoaded();
+                song.EnsureLikedLoaded();
+                break;
+        }
     }
 }

@@ -52,7 +52,7 @@
       <Setter Property="Width" Value="300" /><Setter Property="Height" Value="300" />
       <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
-    <!-- 曲目列表:ItemsControl 无选中逻辑(不可选中);悬停高亮交给行内样式(TrackListItem),容器只留行间距 -->
+    <!-- 曲目列表:ItemsControl 无选中逻辑(不可选中);悬停高亮交给行内样式(共享 TrackRow),容器只留行间距 -->
     <Style Selector="ItemsControl.tracks">
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -141,7 +141,7 @@
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:SongItemViewModel">
-                  <views:TrackListItem />
+                  <views:TrackRow />
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

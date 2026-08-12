@@ -13,6 +13,9 @@
     <x:String x:Key="IconHeartPulse">&#xE944;</x:String>
     <x:String x:Key="IconPerson">&#xE910;</x:String>
     <x:String x:Key="IconSettings">&#xE917;</x:String>
+    <x:String x:Key="IconSingleArtist">&#xE921;</x:String>
+    <x:String x:Key="IconMultiArtists">&#xE920;</x:String>
+    <x:String x:Key="IconAlbum">&#xE922;</x:String>
     <x:String x:Key="IconAdd">&#xE92B;</x:String>
     <x:String x:Key="IconPrevious">&#xE914;</x:String>
     <x:String x:Key="IconPlayFilled">&#xE912;</x:String>

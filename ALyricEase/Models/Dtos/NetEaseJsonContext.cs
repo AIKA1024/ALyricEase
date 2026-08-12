@@ -17,6 +17,11 @@ namespace ALyricEase.Models.Dtos;
 [JsonSerializable(typeof(LegacySongDetailResponse))]
 [JsonSerializable(typeof(RecommendListResponse))]
 [JsonSerializable(typeof(RecommendResourceResponse))]
+[JsonSerializable(typeof(DailySongsResponse))]
+[JsonSerializable(typeof(ArtistDetailResponse))]
+[JsonSerializable(typeof(ArtistTopSongsResponse))]
+[JsonSerializable(typeof(ArtistAlbumsResponse))]
+[JsonSerializable(typeof(AlbumDetailResponse))]
 [JsonSerializable(typeof(CookieStore.CookieFile))]
 internal sealed partial class NetEaseJsonContext : JsonSerializerContext
 {

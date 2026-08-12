@@ -4,24 +4,79 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:RecommendViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecommendView">
+  <UserControl.DataTemplates>
+    <!-- 歌单/歌曲卡片(200x250):封面 + 右上播放量角标 + 标题/副标题 + 悬停黑遮罩(原版 ShadowMaskBorder) -->
+    <DataTemplate DataType="vm:RecommendCardViewModel">
+      <Border Classes="card" CornerRadius="8" ClipToBounds="True" Background="Transparent">
+        <Grid RowDefinitions="Auto,50">
+          <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}"
+                  ClipToBounds="True">
+            <Grid>
+              <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                     Stretch="UniformToFill" />
+              <Border Classes="play-count-badge" IsVisible="{Binding HasPlayCount}"
+                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Padding="5,1" CornerRadius="4">
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="12" Foreground="White" />
+                  <TextBlock Text="{Binding PlayCountText}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                </StackPanel>
+              </Border>
+            </Grid>
+          </Border>
+          <StackPanel Grid.Row="1" Margin="4,6,4,0" Spacing="1">
+            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                       MaxLines="1" />
+            <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                       TextTrimming="CharacterEllipsis" MaxLines="1" />
+          </StackPanel>
+          <Border Classes="card-mask" Grid.RowSpan="2" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <!-- 每日歌曲推荐行(400px):封面 + 歌名/歌手 + 时长;悬停时长隐藏,右侧浮现播放/更多按钮(仿原版 SearchResult 行)。
+         复用 TrackRow 控件套 Search 主题(播放按钮靠右);悬停高亮/操作浮现由共享样式驱动 -->
+    <DataTemplate DataType="vm:SongItemViewModel">
+      <views:TrackRow Theme="{StaticResource TrackRowSearchTheme}" />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
   <UserControl.Styles>
     <Style Selector="StackPanel#PageContent">
       <Setter Property="Margin" Value="48,0,32,116" />
     </Style>
+    <!-- 卡片:固定尺寸(断点缩放由 compact/narrow 覆盖),悬停用黑遮罩而非放大;不改鼠标指针 -->
     <Style Selector="Border.card">
       <Setter Property="Width" Value="200" /><Setter Property="Height" Value="250" />
-      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
-      <Setter Property="RenderTransform" Value="scale(1,1)" />
-    </Style>
-    <Style Selector="Border.card:pointerover">
-      <Setter Property="RenderTransform" Value="scale(1.02,1.02)" />
     </Style>
     <Style Selector="Border.card-art">
       <Setter Property="Width" Value="200" /><Setter Property="Height" Value="200" />
     </Style>
+    <!-- 悬停/按下遮罩:原版 ShadowMaskBorder,黑遮罩 opacity 0 → 0.2(悬停) → 0.4(按下),200ms -->
+    <Style Selector="Border.card-mask">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.card:pointerover Border.card-mask">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+    <Style Selector="Border.card:pressed Border.card-mask">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <!-- 播放量角标:原版 acrylic chip(右上,圆角4,深色半透明) -->
+    <Style Selector="Border.play-count-badge">
+      <Setter Property="Background" Value="#59000000" />
+    </Style>
+    <!-- 每日歌曲行的悬停高亮/操作浮现/圆形按钮等样式已统一到共享 TrackRow 控件(Views/TrackRow.axaml) -->
     <Style Selector="UserControl.compact StackPanel#PageContent">
       <Setter Property="Margin" Value="28,0,24,80" />
     </Style>
@@ -40,20 +95,35 @@
     <Style Selector="UserControl.narrow Border.card-art">
       <Setter Property="Width" Value="156" /><Setter Property="Height" Value="156" />
     </Style>
-    <!-- 横向虚拟化 ListBox:清掉容器默认选中/悬停高亮,悬停/放大交给卡片内样式 -->
-    <Style Selector="ListBox.card-list">
-      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
+
+    <!-- 每日歌曲推荐容器:仿原版 HorizontalScrollableGridView(圆角8 + 1px 边框 + 列表背景 + 内边距6),
+         内部滚动区 PresenterHeight=320 → 正好 5 行(60px 行 + 2px 边距 = 64px × 5) -->
+    <Style Selector="Border.daily-container">
+      <Setter Property="Background" Value="{DynamicResource AppListBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="6 6 6 12" />
+      <Setter Property="ClipToBounds" Value="True" />
     </Style>
-    <Style Selector="ListBox.card-list > ListBoxItem">
-      <Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,14,0" />
-      <Setter Property="Background" Value="Transparent" />
+    <!-- 每日歌曲行间距 2px,与原版 GridViewItem Margin="2" 一致 -->
+    <Style Selector="ItemsControl.daily-items > ContentPresenter">
+      <Setter Property="Margin" Value="2" />
     </Style>
-    <Style Selector="ListBox.card-list > ListBoxItem:pointerover">
-      <Setter Property="Background" Value="Transparent" />
+
+    <!-- 播放全部按钮:原版 AccentFluentButton(红胶囊 + 播放图标) -->
+    <Style Selector="Button.play-all">
+      <Setter Property="Background" Value="{DynamicResource LyricEaseRed}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="Padding" Value="14,0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
-    <Style Selector="ListBox.card-list > ListBoxItem:selected">
-      <Setter Property="Background" Value="Transparent" />
+    <Style Selector="Button.play-all:pointerover">
+      <Setter Property="Background" Value="{DynamicResource LyricEaseRedHover}" />
     </Style>
   </UserControl.Styles>
   <Grid RowDefinitions="96,*">
@@ -66,36 +136,46 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:RecommendSectionViewModel">
               <StackPanel Spacing="12" Margin="0,0,0,28">
-                <TextBlock Text="{Binding Title}" Classes="section-title" />
-                <ListBox Classes="card-list" ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared"
-                         Background="Transparent" BorderThickness="0"
-                         ScrollViewer.HorizontalScrollBarVisibility="Hidden">
-                  <ListBox.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <VirtualizingStackPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                  </ListBox.ItemsPanel>
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:RecommendCardViewModel">
-                      <Border Classes="card" Background="Transparent" CornerRadius="8" ClipToBounds="True">
-                        <Grid RowDefinitions="Auto,50">
-                          <Border Classes="card-art" Grid.Row="0" CornerRadius="8"
-                                  Background="{DynamicResource ArtFallback}" ClipToBounds="True">
-                            <!-- 单 Image + CoverImageConverter:封面未加载/失败时返回共享占位图,加载后返回封面 -->
-                            <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
-                          </Border>
-                          <StackPanel Grid.Row="1" Margin="4,6,4,0" Spacing="1">
-                            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
-                                       TextTrimming="CharacterEllipsis" MaxLines="1" />
-                            <TextBlock Text="{Binding Subtitle}" FontSize="12"
-                                       Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis"
-                                       MaxLines="1" />
-                          </StackPanel>
-                        </Grid>
-                      </Border>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="{Binding Title}" Classes="section-title" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Classes="play-all" Command="{Binding PlayAllCommand}"
+                          IsVisible="{Binding HasPlayAll}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                                 FontSize="14" />
+                      <TextBlock Text="播放全部" FontSize="14" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+                <!-- 每日歌曲推荐:圆角边框容器 + 滚动区 + 纵向换行网格(先竖向排满再换列,横向滚动);
+                     外层滚动区必须随 IsBordered 显隐,否则非每日区块会残留 340px 空白 -->
+                <ScrollViewer Height="340" IsVisible="{Binding IsBordered}"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                  <Border Classes="daily-container" IsVisible="{Binding IsBordered}">
+                    <ItemsControl Classes="daily-items" ItemsSource="{Binding Items}"
+                                  ContainerPrepared="OnItemContainerPrepared">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel Orientation="Vertical" />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                  </Border>
+                </ScrollViewer>
+
+                <!-- 其余区块:单行横向滚动,无容器;底部留 14px 给水平滚动条,避免压住卡片标题 -->
+                <ScrollViewer IsVisible="{Binding IsBordered, Converter={x:Static BoolConverters.Not}}"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Padding="0,0,0,14">
+                  <ItemsControl ItemsSource="{Binding Items}" ContainerPrepared="OnItemContainerPrepared">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <!-- 列距 12px = 原版 GridViewItem 边距2 + 卡片 Margin右8 + 下一项边距2 -->
+                        <StackPanel Orientation="Horizontal" Spacing="12" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                  </ItemsControl>
+                </ScrollViewer>
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

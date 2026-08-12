@@ -185,7 +185,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         {
             var id = _trackIds[_materialized];
             if (!_known.TryGetValue(id, out var song)) break;
-            Tracks.Add(new SongItemViewModel(song, _player.PlayFromList, _materialized + 1, queue));
+            Tracks.Add(new SongItemViewModel(song, _player.PlayFromList, _materialized + 1, queue, _api));
             queue.Add(song);
             _materialized++;
         }

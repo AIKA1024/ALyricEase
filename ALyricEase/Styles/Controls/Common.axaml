@@ -21,4 +21,59 @@
     <Style Selector="ListBoxItem.lyric-nav-item:selected">
         <Setter Property="Background" Value="{DynamicResource NavigationSelected}" />
     </Style>
+
+    <!-- 所有 Flyout 表面内边距收窄为 4(默认 8 太大);仅覆盖 Padding,保留默认模板的阴影/圆角表面 -->
+    <Style Selector="FlyoutPresenter">
+        <Setter Property="Padding" Value="4" />
+    </Style>
+
+    <!-- 普通 Flyout 投影:排除带 track-menu-presenter 类的 MenuFlyoutPresenter(菜单走下面全局 MenuFlyoutPresenter 样式) -->
+    <Style Selector="FlyoutPresenter:not(.track-menu-presenter) /template/ Border">
+        <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
+        <Setter Property="Margin" Value="4 0 4 4" />
+    </Style>
+
+    <!-- 所有 MenuFlyoutPresenter(一级+子菜单都自动创建 MenuFlyoutPresenter,子菜单不继承父级 FlyoutPresenterClasses):
+         统一淡入动画 + 圆角;阴影/内边距放模板根 Border(MenuFlyoutPresenter 模板不绑 {TemplateBinding Padding}) -->
+    <Style Selector="MenuFlyoutPresenter">
+        <Setter Property="CornerRadius" Value="12" />
+        <Style.Animations>
+            <Animation Duration="0:0:0.12">
+                <KeyFrame Cue="0%">
+                    <Setter Property="Opacity" Value="0" />
+                </KeyFrame>
+                <KeyFrame Cue="100%">
+                    <Setter Property="Opacity" Value="1" />
+                </KeyFrame>
+            </Animation>
+        </Style.Animations>
+    </Style>
+    <Style Selector="MenuFlyoutPresenter /template/ Border">
+        <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
+        <Setter Property="Margin" Value="4 0 4 14" />
+        <Setter Property="Padding" Value="4" />
+    </Style>
+
+    <!-- 子菜单容器:MenuItem 模板里 Popup#PART_Popup 的 Border(子菜单不是 MenuFlyoutPresenter,是这里承载;
+         给它阴影/圆角/内边距/淡入,一级二级外观统一) -->
+    <Style Selector="MenuItem /template/ Popup#PART_Popup Border">
+        <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
+        <Setter Property="Margin" Value="4 0 4 14" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="4" />
+        <Style.Animations>
+            <Animation Duration="0:0:0.12">
+                <KeyFrame Cue="0%">
+                    <Setter Property="Opacity" Value="0" />
+                </KeyFrame>
+                <KeyFrame Cue="100%">
+                    <Setter Property="Opacity" Value="1" />
+                </KeyFrame>
+            </Animation>
+        </Style.Animations>
+    </Style>
+    <!-- 子菜单内边距均衡:清掉模板里 ItemsPresenter 的 MenuFlyoutScrollerMargin(左右不对称),只留 Border 的 Padding=4 -->
+    <Style Selector="MenuItem /template/ Popup#PART_Popup ScrollViewer ItemsPresenter">
+        <Setter Property="Margin" Value="0" />
+    </Style>
 </Styles>

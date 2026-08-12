@@ -28,6 +28,12 @@ public sealed class NetEaseApiClient
     /// <summary>已确认 weapi/eapi 被风控拦截后置 true,后续请求直接走明文接口,省掉重复空请求。</summary>
     private bool _wafBlocked;
 
+    // 红心/喜欢状态:"我喜欢的音乐"歌单 id + 已喜欢曲目集合(懒加载缓存)。
+    private long _likedPlaylistId;
+    private HashSet<long>? _likedIds;
+    private bool _likedLoading;
+    private Task? _likedLoadTask;
+
     public NetEaseApiClient(CryptoService crypto, CnIpPool ipPool, CookieStore cookie)
     {
         _crypto = crypto;
@@ -319,6 +325,12 @@ public sealed class NetEaseApiClient
         var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyUserPlaylistResponse);
         if (resp is null || resp.Code != 200 || resp.Playlist is null)
             throw new ApiException("获取歌单失败", resp?.Code ?? -1);
+
+        // 识别"我喜欢的音乐"(红心集合):specialType=5,兜底按名字
+        _likedPlaylistId = resp.Playlist.FirstOrDefault(p => p.SpecialType == 5)?.Id
+            ?? resp.Playlist.FirstOrDefault(p => p.Name == "我喜欢的音乐")?.Id
+            ?? 0;
+
         return resp.Playlist
             .Select(p => new Playlist
             {
@@ -358,6 +370,121 @@ public sealed class NetEaseApiClient
     {
         if (ids.Count == 0) return new List<Song>();
         return await GetSongDetailsLegacyAsync(ids.Take(100).ToList(), ct).ConfigureAwait(false);
+    }
+
+    // ---------- 红心/喜欢 ----------
+
+    /// <summary>登录后"我喜欢的音乐"歌单 id(0 = 未识别到/未登录)。</summary>
+    public long LikedPlaylistId => _likedPlaylistId;
+
+    /// <summary>懒加载已喜欢曲目 id 集合(单飞,幂等)。未登录或未识别到喜欢歌单时为空集。</summary>
+    public Task EnsureLikedIdsAsync(CancellationToken ct = default)
+    {
+        if (_likedPlaylistId == 0 || _likedIds is not null) return Task.CompletedTask;
+        if (_likedLoading) return _likedLoadTask ?? Task.CompletedTask;
+        _likedLoading = true;
+        return _likedLoadTask = LoadLikedIdsAsync(ct);
+    }
+
+    private async Task LoadLikedIdsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var overview = await GetPlaylistTrackOverviewAsync(_likedPlaylistId, ct).ConfigureAwait(false);
+            _likedIds = new HashSet<long>(overview.TrackIds);
+        }
+        catch
+        {
+            // 失败降级为空集合,避免反复请求
+            _likedIds ??= new HashSet<long>();
+        }
+        finally
+        {
+            _likedLoading = false;
+        }
+    }
+
+    /// <summary>已喜欢集合是否含该曲目(集合未加载时返回 false)。</summary>
+    public bool IsLiked(long id) => _likedIds?.Contains(id) ?? false;
+
+    /// <summary>切换红心:返回切换后状态(成功);失败抛 ApiException(调用方回滚 UI)。
+    /// 乐观更新在调用方,这里只负责请求 + 更新内部集合。</summary>
+    public async Task<bool> LikeToggleAsync(long id, CancellationToken ct = default)
+    {
+        if (_likedPlaylistId == 0)
+            throw new ApiException("未识别到'我喜欢的音乐'歌单(请先登录)", -1);
+        await EnsureLikedIdsAsync(ct).ConfigureAwait(false);
+        var target = !IsLiked(id);
+        await LikeRequestAsync(id, target, ct).ConfigureAwait(false);
+        _likedIds ??= new HashSet<long>();
+        if (target) _likedIds.Add(id); else _likedIds.Remove(id);
+        return target;
+    }
+
+    /// <summary>明文 POST /api/song/like 设置红心状态(不走 weapi,规避本机风控)。</summary>
+    private async Task LikeRequestAsync(long id, bool like, CancellationToken ct)
+    {
+        var url = $"{BaseUrl}/api/song/like?csrf_token=";
+        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        req.Content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("id", id.ToString()),
+            new KeyValuePair<string, string>("like", like ? "true" : "false"),
+        });
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+        if (code != 200) throw new ApiException($"红心操作失败(code={code})", code);
+    }
+
+    // ---------- 歌手 / 专辑详情(明文 GET) ----------
+
+    /// <summary>歌手详情(姓名/头像)。明文 GET /api/artist/head/info/get。</summary>
+    public async Task<ArtistDetailInfo> GetArtistAsync(long id, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync($"{BaseUrl}/api/artist/head/info/get?id={id}", NetEaseJsonContext.Default.ArtistDetailResponse, ct).ConfigureAwait(false);
+        var a = resp?.Data?.Artist;
+        if (resp is null || resp.Code != 200 || a is null) throw new ApiException("获取歌手信息失败", resp?.Code ?? -1);
+        return a;
+    }
+
+    /// <summary>歌手热门歌曲。</summary>
+    public async Task<List<Song>> GetArtistSongsAsync(long id, int count = 30, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync($"{BaseUrl}/api/artist/top/song?id={id}&limit={count}", NetEaseJsonContext.Default.ArtistTopSongsResponse, ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.Songs is null) return new();
+        return resp.Songs.Select(MapSearchSong).ToList();
+    }
+
+    /// <summary>歌手专辑列表(专辑/单曲/EP,按 Type 字符串区分)。明文 GET /api/artist/albums/{id},
+    /// 单页约 30 条,响应 more=true 时按 offset 翻页拉全。老路径 /api/artist/album?id= 已废弃(恒返回 400)。</summary>
+    public async Task<List<ArtistAlbumItem>> GetArtistAlbumsAsync(long id, int limit = 50, CancellationToken ct = default)
+    {
+        var all = new List<ArtistAlbumItem>();
+        const int pageSize = 30;
+        var offset = 0;
+        while (all.Count < limit)
+        {
+            var take = Math.Min(pageSize, limit - all.Count);
+            var resp = await GetJsonAsync(
+                $"{BaseUrl}/api/artist/albums/{id}?offset={offset}&limit={take}",
+                NetEaseJsonContext.Default.ArtistAlbumsResponse, ct).ConfigureAwait(false);
+            if (resp is null || resp.Code != 200 || resp.HotAlbums is null) break;
+            all.AddRange(resp.HotAlbums);
+            if (!resp.More || resp.HotAlbums.Count == 0) break; // 无更多或返回空,停止翻页
+            offset += resp.HotAlbums.Count;
+        }
+        return all;
+    }
+
+    /// <summary>专辑详情:信息 + 全量曲目。</summary>
+    public sealed record AlbumDetailResult(AlbumDetailInfo Info, IReadOnlyList<Song> Songs);
+
+    public async Task<AlbumDetailResult> GetAlbumAsync(long id, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync($"{BaseUrl}/api/v1/album/{id}", NetEaseJsonContext.Default.AlbumDetailResponse, ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.Album is null) throw new ApiException("获取专辑信息失败", resp?.Code ?? -1);
+        return new AlbumDetailResult(resp.Album, (resp.Songs ?? Enumerable.Empty<SearchSong>()).Select(MapSearchSong).ToList());
     }
 
     /// <summary>歌单详情 → 全量曲目。v6 接口返回全量 trackIds + 前段曲目,
@@ -445,10 +572,22 @@ public sealed class NetEaseApiClient
         return resp.Recommend.Select(MapPlaylistCard).ToList();
     }
 
+    /// <summary>每日歌曲推荐(需登录;匿名或被风控时返回空,由调用方隐藏该区块)。
+    /// 明文 GET 试拉,失败/空由调用方兜底为每日推荐歌单卡片。</summary>
+    public async Task<List<Song>> GetDailyRecommendSongsAsync(CancellationToken ct = default)
+    {
+        var url = $"{BaseUrl}/api/v3/discovery/recommend/songs?csrf_token=";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.DailySongsResponse);
+        return resp?.Data?.DailySongs?.Select(MapSearchSong).ToList() ?? new List<Song>();
+    }
+
     private static RecommendItem MapPlaylistCard(RecommendItemDto d)
     {
         var subtitle = string.IsNullOrEmpty(d.Copywriter) ? FormatPlayCount(d.PlayCount) : d.Copywriter;
-        return new RecommendItem(d.Id, d.Name, subtitle, d.PicUrl);
+        return new RecommendItem(d.Id, d.Name, subtitle, d.PicUrl, (long)d.PlayCount);
     }
 
     private static RecommendItem MapSongCard(RecommendItemDto d)
@@ -458,7 +597,8 @@ public sealed class NetEaseApiClient
         return new RecommendItem(d.Id, name, artists, d.PicUrl);
     }
 
-    private static string FormatPlayCount(double count)
+    /// <summary>播放量格式化(1.2亿播放 / 23.4万播放 / 999播放)。卡片角标与副标题共用。</summary>
+    public static string FormatPlayCount(double count)
     {
         if (count >= 1e8) return $"{count / 1e8:0.#}亿播放";
         if (count >= 1e4) return $"{count / 1e4:0.#}万播放";
@@ -560,6 +700,9 @@ public sealed class NetEaseApiClient
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.Duration,
         Fee = s.Fee,
+        ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
+        ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
+        AlbumId = s.Album?.Id ?? 0,
     };
 
     private static Song MapSearchSong(SearchSong s) => new()
@@ -571,6 +714,9 @@ public sealed class NetEaseApiClient
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.DurationMs,
         Fee = s.Fee,
+        ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
+        ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
+        AlbumId = s.Album?.Id ?? 0,
     };
 
     private static Song MapDetailSong(SongDetailItem s) => new()
@@ -582,5 +728,8 @@ public sealed class NetEaseApiClient
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.DurationMs,
         Fee = s.Fee,
+        ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
+        ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
+        AlbumId = s.Album?.Id ?? 0,
     };
 }

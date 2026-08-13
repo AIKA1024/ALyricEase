@@ -100,13 +100,6 @@ public sealed partial class MainViewModel : ViewModelBase
         _ => Placeholder,
     };
 
-    private static readonly object s_nowPlayingToken = new();
-
-    /// <summary>正在播放覆盖层的哨兵对象(非 null 才渲染模板)。</summary>
-    public object? NowPlayingContent => ShowNowPlaying ? s_nowPlayingToken : null;
-
-    partial void OnShowNowPlayingChanged(bool value) => OnPropertyChanged(nameof(NowPlayingContent));
-
     partial void OnActivePageChanged(string value)
     {
         // 返回时反向滑动(GoBack 期间 _isGoingBack=true),前进正向

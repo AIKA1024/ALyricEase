@@ -67,14 +67,17 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         DurationText = FormatTime(value);
         OnPropertyChanged(nameof(ProgressMaximum));
-        OnPropertyChanged(nameof(HasProgress));
     }
 
     /// <summary>进度条 Maximum:空闲时 DurationMs=0 → 至少 1,避免 Min==Max 造成 NaN 布局循环。</summary>
     public double ProgressMaximum => DurationMs > 0 ? DurationMs : 1;
 
-    /// <summary>是否有可显示的时长(无则进度条禁用)。</summary>
-    public bool HasProgress => DurationMs > 0;
+    /// <summary>是否有当前曲目(进度条据此显示)。用 CurrentSong 而非 DurationMs 判断:
+    /// 切歌时 PlayAsync 会先把 DurationMs 清零再等新歌时长,按 DurationMs 会在切歌瞬间隐藏进度条;
+    /// 只有开软件未放歌(无曲目)时才隐藏。</summary>
+    public bool HasProgress => CurrentSong is not null;
+
+    partial void OnCurrentSongChanged(Song? value) => OnPropertyChanged(nameof(HasProgress));
 
     /// <summary>播放/暂停/加载图标互切(View 里三个 PathIcon)。</summary>
     public bool ShowPauseIcon => IsPlaying;

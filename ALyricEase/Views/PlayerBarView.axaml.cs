@@ -76,14 +76,35 @@ public partial class PlayerBarView : UserControl
         var ratio = Math.Clamp((double)_vm.PositionMs / _vm.DurationMs, 0, 1);
         ProgressFill.Width = width * ratio;
         ProgressThumb.Margin = new Thickness(width * ratio - ProgressThumb.Width / 2, 0, 0, 0);
+        UpdateTooltipPosition();
+    }
+
+    /// <summary>时间气泡:与球同属 ProgressRoot(同一坐标系),按球的 Margin 对齐球心。
+    /// 尺寸固定(不 Measure,避免拖动期间反复测量→布局→Hover 状态抖动);气泡底边距球上缘 20px。</summary>
+    private void UpdateTooltipPosition()
+    {
+        if (ProgressTooltip is null || !ProgressTooltip.IsVisible) return;
+        var centerX = ProgressThumb.Margin.Left + ProgressThumb.Width / 2;
+        // ProgressRoot 高 28、球 20 居中 → 球上缘 y=4;气泡底边 = 球上缘 - 20px 间距
+        const double thumbTop = 4;
+        const double gap = 20;
+        ProgressTooltip.Margin = new Thickness(
+            centerX - ProgressTooltip.Width / 2,
+            thumbTop - gap - ProgressTooltip.Height,
+            0,
+            0);
     }
 
     private void OnProgressPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (DataContext is not PlayerViewModel vm) return;
+        if (!e.GetCurrentPoint(ProgressRoot).Properties.IsLeftButtonPressed) return;
         _scrubbing = true;
+        e.Pointer.Capture(ProgressRoot); // 捕获指针:拖动期间移出轨道区仍持续收到 PointerMoved,防闪烁
+        UpdateTooltipVisibility();
         vm.BeginScrub();
         SetProgressFromPointer(e);
+        e.Handled = true;
     }
 
     private void OnProgressPointerMoved(object? sender, PointerEventArgs e)
@@ -95,8 +116,29 @@ public partial class PlayerBarView : UserControl
     {
         if (!_scrubbing) return;
         _scrubbing = false;
+        e.Pointer.Capture(null);
+        _hovered = ProgressThumb.IsPointerOver; // 松开后鼠标若仍在球上,保持气泡(hover)
+        UpdateTooltipVisibility();
         if (DataContext is PlayerViewModel vm) vm.EndScrub();
+        e.Handled = true;
     }
+
+    /// <summary>鼠标停在球上时也显示气泡(显示当前播放位置的时间)。</summary>
+    private void OnThumbPointerEntered(object? sender, PointerEventArgs e)
+    {
+        _hovered = true;
+        UpdateTooltipVisibility();
+        UpdateProgress(); // 立即把气泡摆到当前进度
+    }
+
+    private void OnThumbPointerExited(object? sender, PointerEventArgs e)
+    {
+        _hovered = false;
+        UpdateTooltipVisibility();
+    }
+
+    /// <summary>气泡显示状态唯一由 _scrubbing/_hovered 决定(hover 或拖动即显示,避免两套逻辑互相覆盖)。</summary>
+    private void UpdateTooltipVisibility() => ProgressTooltip.IsVisible = _scrubbing || _hovered;
 
     private void SetProgressFromPointer(PointerEventArgs e)
     {

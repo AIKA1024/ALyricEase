@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
@@ -13,13 +14,23 @@ public partial class NowPlayingView : UserControl
     {
         InitializeComponent();
         SizeChanged += OnSizeChanged;
-        AttachedToVisualTree += (_, _) =>
-        {
-            ResponsiveClasses.Apply(this, Bounds.Width);
-            // Escape 由收起按钮的 HotKeyManager.HotKey 全局处理(XAML),不依赖本视图焦点;
-            // 这里延迟聚焦仅为视图内部键盘交互(进度条方向键等)争取焦点,失败不影响 Escape。
+        AttachedToVisualTree += (_, _) => ResponsiveClasses.Apply(this, Bounds.Width);
+        DataContextChanged += OnDataContextChanged;
+        // Escape 由收起按钮的 HotKeyManager.HotKey 全局处理(XAML),不依赖本视图焦点;
+        // 聚焦(OnShowNowPlaying)仅为进度条方向键等内部键盘交互争取焦点,失败不影响 Escape。
+    }
+
+    /// <summary>覆盖层常驻(关闭时在屏幕外),打开(ShowNowPlaying=true)时聚焦本视图。</summary>
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+            vm.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.ShowNowPlaying) && sender is MainViewModel { ShowNowPlaying: true })
             Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Background);
-        };
     }
 
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)

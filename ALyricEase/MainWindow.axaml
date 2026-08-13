@@ -286,19 +286,21 @@
         </Border>
       </Grid>
 
-      <TransitioningContentControl Grid.Row="0" Grid.RowSpan="2" Content="{Binding NowPlayingContent}"
-                                   IsVisible="{Binding ShowNowPlaying}"
-                                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch" ZIndex="100">
-        <TransitioningContentControl.ContentTemplate>
-          <DataTemplate>
-            <views:NowPlayingView
-              DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" />
-          </DataTemplate>
-        </TransitioningContentControl.ContentTemplate>
-        <TransitioningContentControl.PageTransition>
-          <CrossFade Duration="0:0:0.25" />
-        </TransitioningContentControl.PageTransition>
-      </TransitioningContentControl>
+      <!-- 正在播放覆盖层:整窗 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
+           RenderTransform 目标值由 MainWindow 代码后置按 MainViewModel.ShowNowPlaying 切换,
+           过渡(时长/缓动)在这里声明。不用 TransitioningContentControl(空→有内容会先露末帧再启动动画;
+           关闭时 IsVisible 直接隐藏会杀掉退出动画)。 -->
+      <Grid x:Name="NowPlayingOverlay" Grid.Row="0" Grid.RowSpan="2" ZIndex="100"
+            IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
+        <Grid.Transitions>
+          <Transitions>
+            <!-- 时长/缓动对齐原版 LyricEase:实际手感 0.4s 缓出;曲线取 Toolkit 默认缓出 cubic-bezier(0.215,0.61,0.355,1)。 -->
+            <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.4" Easing="0.215,0.61,0.355,1" />
+          </Transitions>
+        </Grid.Transitions>
+        <views:NowPlayingView
+          DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" />
+      </Grid>
     </Grid>
   </ExperimentalAcrylicBorder>
 </Window>

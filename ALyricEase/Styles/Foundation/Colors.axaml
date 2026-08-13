@@ -28,8 +28,8 @@
             <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
                                          BackgroundSource="Digger"
                                          TintColor="#FFFFFF"
-                                         TintOpacity="0.65"
-                                         MaterialOpacity="0.65"
+                                         TintOpacity="1"
+                                         MaterialOpacity=".2"
                                          FallbackColor="#F3F3F3" />
             <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
                                          BackgroundSource="None"
@@ -66,7 +66,7 @@
                                          BackgroundSource="Digger"
                                          TintColor="#000000"
                                          TintOpacity="1"
-                                         MaterialOpacity=".15"
+                                         MaterialOpacity=".2"
                                          FallbackColor="#141516" />
             <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
                                          BackgroundSource="None"

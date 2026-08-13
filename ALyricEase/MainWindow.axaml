@@ -40,8 +40,11 @@
       <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="VerticalContentAlignment" Value="Center" /><Setter Property="Padding" Value="12,0" />
     </Style>
-    <Style Selector="Button.navigation-button:pointerover">
+    <Style Selector="Button.navigation-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.navigation-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
     </Style>
     <Style Selector="Button.navigation-button:disabled">
       <Setter Property="Opacity" Value="1" /><Setter Property="Background" Value="Transparent" />
@@ -85,6 +88,35 @@
       <Setter Property="Background" Value="#E81123" />
       <Setter Property="Foreground" Value="White" />
     </Style>
+
+    <!-- 返回按钮(仿 UWP NavigationView 默认返回按钮):40x40 方钮,返回箭头 E72B 居中;
+         hover/pressed/disabled 必须经 /template/ ContentPresenter 才生效(Fluent 模板的 VisualState 直接改 ContentPresenter 背景) -->
+    <Style Selector="Button.back-button">
+      <Setter Property="Width" Value="40" /><Setter Property="Height" Value="40" />
+      <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.back-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.back-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+    </Style>
+    <Style Selector="Button.back-button:disabled">
+      <Setter Property="Opacity" Value="1" /><Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+    <!-- 主题的 Button:disabled 会给 ContentPresenter 设 20% 白背景/禁用前景,覆盖为透明 + 灰字 -->
+    <Style Selector="Button.back-button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+
+    <!-- Tooltip 圆角收小:OverlayCornerRadius 全局 12 波及了 Tooltip,单独压回 4 -->
+    <Style Selector="ToolTip">
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
   </Window.Styles>
 
   <ExperimentalAcrylicBorder Material="{DynamicResource AppAcrylicMaterial}">
@@ -93,10 +125,9 @@
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent" PointerPressed="OnTitleBarPointerPressed"
             ColumnDefinitions="Auto,*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="10" Margin="4,0,0,0" VerticalAlignment="Center">
-          <Button Classes="navigation-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
+          <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
-            <TextBlock x:Name="BackGlyph" Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                       Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" />
+            <TextBlock x:Name="BackGlyph" Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
           </Button>
           <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" />
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
@@ -154,6 +185,11 @@
                      Background="Transparent" BorderThickness="0" Margin="0,4,0,4"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="4" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
               <ListBox.ItemContainerTheme>
                 <ControlTheme TargetType="ListBoxItem" x:DataType="vm:NavItemViewModel">
                   <Setter Property="IsEnabled" Value="{Binding IsItem}" />
@@ -206,13 +242,25 @@
                 </Button>
               </StackPanel>
             </Border>
-            <ListBox Classes="shell-navigation" ItemsSource="{Binding PrimaryNavItems}"
+            <ListBox Classes="shell-navigation" ItemsSource="{Binding CompactNavItems}"
                      SelectedItem="{Binding SelectedNav}"
                      Width="48" Background="Transparent" BorderThickness="0" Margin="0,4,0,4">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="4" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <!-- Tooltip 放容器上:整项(48px)悬停都触发,不是只有图标 -->
+              <ListBox.ItemContainerTheme>
+                <ControlTheme TargetType="ListBoxItem" x:DataType="vm:NavItemViewModel"
+                              BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                  <Setter Property="ToolTip.Tip" Value="{Binding Label}" />
+                </ControlTheme>
+              </ListBox.ItemContainerTheme>
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:NavItemViewModel">
                   <TextBlock Text="{Binding IconGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
-                             HorizontalAlignment="Center" ToolTip.Tip="{Binding Label}" />
+                             HorizontalAlignment="Center" />
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>

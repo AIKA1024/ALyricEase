@@ -60,6 +60,10 @@ public sealed partial class MainViewModel : ViewModelBase
     public IReadOnlyList<NavItemViewModel> PrimaryNavItems =>
         ShellNavItems.Where(item => item.Key is "Search" or "Recommend" or "Library" or "Recents").ToArray();
 
+    /// <summary>收起侧边栏(图标栏)显示的项:全部导航项(仿原版 NavigationView 紧凑态,不是只留常用 4 个)。</summary>
+    public IReadOnlyList<NavItemViewModel> CompactNavItems =>
+        ShellNavItems.Where(item => item.IsItem).ToArray();
+
     /// <summary>当前导航页键(Home/Recommend/Library/Recents/Favorites/Search/Account/Settings)。</summary>
     [ObservableProperty] private string _activePage = "Recommend";
 

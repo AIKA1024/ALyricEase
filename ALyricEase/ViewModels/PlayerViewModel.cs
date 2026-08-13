@@ -13,6 +13,15 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
+/// <summary>播放模式:列表循环 / 单曲循环 / 随机播放 / 心动模式(网易云新模式,优先播红心喜欢的歌)。</summary>
+public enum PlaybackMode
+{
+    ListLoop,
+    SingleLoop,
+    Shuffle,
+    Heartbeat,
+}
+
 /// <summary>播放器 VM:状态机(Idle→Loading→Playing/Paused)、进度/音量、
 /// 播放/暂停控制。事件均已在 UI 线程(见 IAudioPlayer 契约),可直接更新可观察属性。</summary>
 public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
@@ -27,6 +36,9 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     // 播放队列:下一曲/上一曲用。PlayAsync 播放时若来自列表(歌单/搜索)会带上来源,否则单曲。
     private List<Song> _queue = new();
     private int _queueIndex = -1;
+
+    private PlaybackState _prevState;
+    private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
 
     public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, LyricViewModel lyric, ISmtcService smtc)
     {
@@ -59,6 +71,56 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _positionText = "00:00";
     [ObservableProperty] private string _durationText = "00:00";
 
+    /// <summary>当前播放模式(点播放条模式按钮循环切换)。</summary>
+    [ObservableProperty] private PlaybackMode _playbackMode = PlaybackMode.ListLoop;
+
+    /// <summary>当前曲是否已红心(在"我喜欢的音乐"里)。</summary>
+    [ObservableProperty] private bool _isCurrentLiked;
+
+    /// <summary>曲名显示:未放歌时显示应用名占位(原版显示 "LyricEase")。</summary>
+    public string DisplayTitle => CurrentSong is null ? "ALyricEase" : Title;
+
+    /// <summary>副标题显示:未放歌时显示原版标语占位。</summary>
+    public string DisplayArtist => CurrentSong is null ? "Dedicated to creators." : Artist;
+
+    partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(DisplayTitle));
+
+    partial void OnArtistChanged(string value) => OnPropertyChanged(nameof(DisplayArtist));
+
+    /// <summary>模式按钮图标:三个循环模式用 Segoe MDL2(原版 Symbol.RepeatAll/RepeatOne/Shuffle),
+    /// 心动模式用 Fluent 字体 E944(HeartPulse,与红心图标区分)。</summary>
+    public string PlaybackModeGlyph => PlaybackMode switch
+    {
+        PlaybackMode.SingleLoop => "",
+        PlaybackMode.Shuffle => "",
+        PlaybackMode.Heartbeat => "",
+        _ => "",
+    };
+
+    /// <summary>模式按钮 ToolTip。</summary>
+    public string PlaybackModeName => PlaybackMode switch
+    {
+        PlaybackMode.SingleLoop => "单曲循环",
+        PlaybackMode.Shuffle => "随机播放",
+        PlaybackMode.Heartbeat => "心动模式",
+        _ => "列表循环",
+    };
+
+    /// <summary>仅心动模式用 Fluent 图标字体(其余用 Segoe MDL2)。</summary>
+    public bool IsFluentModeIcon => PlaybackMode == PlaybackMode.Heartbeat;
+
+    partial void OnPlaybackModeChanged(PlaybackMode value)
+    {
+        OnPropertyChanged(nameof(PlaybackModeGlyph));
+        OnPropertyChanged(nameof(PlaybackModeName));
+        OnPropertyChanged(nameof(IsFluentModeIcon));
+    }
+
+    /// <summary>循环切换播放模式:列表循环 → 单曲循环 → 随机播放 → 心动模式。</summary>
+    [RelayCommand]
+    private void TogglePlaybackMode()
+        => PlaybackMode = (PlaybackMode)(((int)PlaybackMode + 1) % 4);
+
     partial void OnVolumeChanged(int value) => _player.Volume = value;
 
     partial void OnPositionMsChanged(long value) => PositionText = FormatTime(value);
@@ -77,7 +139,54 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// 只有开软件未放歌(无曲目)时才隐藏。</summary>
     public bool HasProgress => CurrentSong is not null;
 
-    partial void OnCurrentSongChanged(Song? value) => OnPropertyChanged(nameof(HasProgress));
+    partial void OnCurrentSongChanged(Song? value)
+    {
+        OnPropertyChanged(nameof(HasProgress));
+        OnPropertyChanged(nameof(DisplayTitle));
+        OnPropertyChanged(nameof(DisplayArtist));
+        _ = LoadCurrentLikedAsync();
+    }
+
+    /// <summary>当前曲红心状态(后台加载;未登录/失败保持未喜欢)。</summary>
+    private async Task LoadCurrentLikedAsync()
+    {
+        if (CurrentSong is not { } song) return;
+        try
+        {
+            await _api.EnsureLikedIdsAsync();
+            if (CurrentSong?.Id == song.Id) // 切歌后丢弃过期结果
+                IsCurrentLiked = _api.IsLiked(song.Id);
+        }
+        catch
+        {
+            // 保持未喜欢
+        }
+    }
+
+    /// <summary>红心需要登录(未登录时触发,由宿主打开登录窗口)。</summary>
+    public event Action? LoginRequired;
+
+    /// <summary>切换当前曲红心:乐观更新,失败回滚;未登录时触发 LoginRequired 弹登录窗口。</summary>
+    [RelayCommand]
+    private async Task ToggleLikeAsync()
+    {
+        if (CurrentSong is null) return;
+        if (_api.LikedPlaylistId == 0) // 未登录:没有"我喜欢的音乐"歌单
+        {
+            LoginRequired?.Invoke();
+            return;
+        }
+        var prev = IsCurrentLiked;
+        IsCurrentLiked = !prev; // 乐观更新,立即反馈
+        try
+        {
+            IsCurrentLiked = await _api.LikeToggleAsync(CurrentSong.Id);
+        }
+        catch
+        {
+            IsCurrentLiked = prev; // 失败回滚
+        }
+    }
 
     /// <summary>播放/暂停/加载图标互切(View 里三个 PathIcon)。</summary>
     public bool ShowPauseIcon => IsPlaying;
@@ -122,6 +231,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         if (song is null) return;
 
+        _advancing++; // 到 finally 才减:PlayUrl 内部 Stop() 会瞬时置 Idle,别把它当"播完"触发自动切歌
         CurrentSong = song;
         Title = song.Name;
         Artist = song.Artist;
@@ -154,6 +264,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
         finally
         {
+            _advancing--;
             IsLoading = false;
         }
     }
@@ -181,26 +292,85 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnSmtcPrevious() => _ = PlayPreviousAsync();
 
-    /// <summary>播放队列中的下一首(无队列/已到末尾则忽略)。</summary>
+    /// <summary>播放队列中的下一首。按播放模式:列表循环(尾→头)、单曲循环(重播当前)、
+    /// 随机播放、心动模式(下一首红心,无红心则退回列表循环)。</summary>
     [RelayCommand]
     public async Task PlayNextAsync()
     {
         if (_queue.Count == 0) return;
-        var idx = _queueIndex + 1;
-        if (idx >= _queue.Count) return; // 末尾不循环
-        _queueIndex = idx;
-        await PlayAsync(_queue[idx]);
+        switch (PlaybackMode)
+        {
+            case PlaybackMode.SingleLoop when CurrentSong is not null:
+                await PlayAsync(CurrentSong);
+                break;
+            case PlaybackMode.Shuffle:
+                await PlayShuffleAsync();
+                break;
+            case PlaybackMode.Heartbeat:
+                await PlayLikedAsync(forward: true);
+                break;
+            default: // ListLoop:尾→头循环
+                _queueIndex = (_queueIndex + 1) % _queue.Count;
+                await PlayAsync(_queue[_queueIndex]);
+                break;
+        }
     }
 
-    /// <summary>播放队列中的上一首(无队列/已到开头则忽略)。</summary>
+    /// <summary>播放队列中的上一首,按当前播放模式(列表循环头→尾、单曲重播、随机、心动上一首红心)。</summary>
     [RelayCommand]
     public async Task PlayPreviousAsync()
     {
         if (_queue.Count == 0) return;
-        var idx = _queueIndex - 1;
-        if (idx < 0) return;
+        switch (PlaybackMode)
+        {
+            case PlaybackMode.SingleLoop when CurrentSong is not null:
+                await PlayAsync(CurrentSong);
+                break;
+            case PlaybackMode.Shuffle:
+                await PlayShuffleAsync();
+                break;
+            case PlaybackMode.Heartbeat:
+                await PlayLikedAsync(forward: false);
+                break;
+            default: // ListLoop:头→尾循环
+                _queueIndex = (_queueIndex - 1 + _queue.Count) % _queue.Count;
+                await PlayAsync(_queue[_queueIndex]);
+                break;
+        }
+    }
+
+    /// <summary>随机播放:队列中随机挑一首(队列 &gt; 1 时避开当前曲)。</summary>
+    private async Task PlayShuffleAsync()
+    {
+        if (_queue.Count <= 1)
+        {
+            if (CurrentSong is not null) await PlayAsync(CurrentSong);
+            return;
+        }
+        int idx;
+        do { idx = Random.Shared.Next(_queue.Count); } while (idx == _queueIndex);
         _queueIndex = idx;
         await PlayAsync(_queue[idx]);
+    }
+
+    /// <summary>心动模式:沿队列方向找下一首红心(喜欢的)歌;队列里没有红心则退回列表循环。</summary>
+    private async Task PlayLikedAsync(bool forward)
+    {
+        if (_queue.Count == 0) return;
+        await _api.EnsureLikedIdsAsync(); // 已加载则幂等;未登录 → 空集合
+        for (var i = 1; i <= _queue.Count; i++)
+        {
+            var idx = (forward ? _queueIndex + i : _queueIndex - i + _queue.Count) % _queue.Count;
+            if (_api.IsLiked(_queue[idx].Id))
+            {
+                _queueIndex = idx;
+                await PlayAsync(_queue[idx]);
+                return;
+            }
+        }
+        // 无红心 → 退回列表循环方向
+        _queueIndex = (forward ? _queueIndex + 1 : _queueIndex - 1 + _queue.Count) % _queue.Count;
+        await PlayAsync(_queue[_queueIndex]);
     }
 
     private void OnSmtcSeek(long ms)
@@ -222,8 +392,19 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnStateChanged(object? sender, EventArgs e)
     {
-        IsLoading = _player.State == PlaybackState.Loading;
-        IsPlaying = _player.State == PlaybackState.Playing;
+        var newState = _player.State;
+        IsLoading = newState == PlaybackState.Loading;
+        IsPlaying = newState == PlaybackState.Playing;
+        // 歌曲自然播完(Playing/Paused → Idle)按当前模式自动切下一首;
+        // PlayUrl 内部 Stop() 的瞬时 Idle 用 _advancing 抑制(启动新歌不是播完)。
+        if (_advancing == 0
+            && _prevState is PlaybackState.Playing or PlaybackState.Paused
+            && newState == PlaybackState.Idle
+            && CurrentSong is not null)
+        {
+            _ = PlayNextAsync();
+        }
+        _prevState = newState;
     }
 
     private void OnPositionChanged(object? sender, long value)

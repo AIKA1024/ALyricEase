@@ -250,15 +250,25 @@ GET /api/user/playlist?uid=368236520&limit=50
 
 ```
 POST /api/song/like?csrf_token=
-Form: id=186016&like=true
+Form: trackId=186016&userid=368236520&like=true
 ```
 
-| 参数 | 值 |
-|---|---|
-| `id` | 曲目 id |
-| `like` | `true` / `false` |
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `trackId` | 曲目 id | **不是 `id`** —— 用 `id` 会返回 `code:400 参数错误`（已实测） |
+| `userid` | 当前登录用户 uid | **不能省略** —— 缺它返回 `code:401 下架歌曲无法收藏`（值不严格校验，但参数必须在） |
+| `like` | `true` / `false` | |
 
-响应：`{"code":200}`。**注意走明文 POST 而非 weapi**（本机规避风控；明文 POST 表单格式即可）。
+响应（成功）：
+
+```json
+{ "code": 200, "playlistId": 519899033 }
+```
+
+**注意走明文 POST 而非 weapi**（本机规避风控；明文 POST 表单格式即可）。
+
+> ⚠️ 老资料常写 `id`/`like` 两参数，**是错的**——实测返回 400。
+> 正确参数名 `trackId`/`userid`/`like`（与 HyPlayer LikeApi.cs 一致，2026-08 实测）。
 
 ---
 
@@ -308,6 +318,33 @@ GET /api/v6/playlist/detail?id=519899033
 GET /api/v6/playlist/detail?id=...
 ```
 取 `tracks` 前 N 首；不足则从 `trackIds` 前 N 个用 G1 补齐。推荐页预览只拉前 6 首。
+
+### F4. 歌单增删曲目（明文 POST，需登录）
+
+```
+POST /api/playlist/manipulate/tracks?csrf_token=
+Form (application/x-www-form-urlencoded):
+  op=del|add&pid=519899033&trackIds=[3382900119]&imme=true
+```
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `op` | `del` / `add` | 删除 / 添加 |
+| `pid` | 歌单 id | |
+| `trackIds` | JSON 数组字符串 | **必须是 `[3382900119]` 或 `["3382900119"]`（JSON 数组）**；逗号分隔 `3382900119` 会返回 400「传入的歌曲ID错误」 |
+| `imme` | `true` | 必须带 |
+
+响应（成功，2026-08 实测删除 Calming Aroma）：
+
+```json
+{ "code": 200, "count": 1074, "cloudCount": 11 }
+```
+
+- **幂等**：重复删除已不在列表的曲目仍返回 200，但列表不减少（实测确认）。
+- **必须带 `?csrf_token=`**（明文 POST 通道的固定后缀）。
+- 官方 web 的 JS 里 `trackIds` 会先 `JSON.stringify(...)` 再提交，印证数组字符串格式。
+- 本项目「红心切换」用的是更简单的 `/api/song/like`（见 E4），不需要这个接口；
+  此接口用于**对任意歌单**增删曲目（如移除某首歌）。
 
 ---
 
@@ -485,7 +522,8 @@ GET /api/v3/discovery/recommend/songs?csrf_token=
 | 播放地址 | `eapi/song/enhance/player/url/v1` POST | `GET /api/song/enhance/player/url` | 否(匿名低码) | 明文必带 `br`；VIP `-110`；需 `X-Real-IP` |
 | 用户资料 | — | `GET /api/nuser/account/get` | ✅ | |
 | 我的歌单 | — | `GET /api/user/playlist?uid=` | ✅ | `specialType=5` 红心 |
-| 红心切换 | — | `POST /api/song/like` | ✅ | 明文表单 |
+| 红心切换 | — | `POST /api/song/like` | ✅ | 参数 trackId/userid/like(id 会 400) |
+| 歌单增删曲目 | — | `POST /api/playlist/manipulate/tracks` | ✅ | op=del/add, trackIds 必须 JSON 数组字符串 |
 | 歌单概览 | — | `GET /api/v6/playlist/detail?id=` | 登录态更全 | trackIds 权威顺序 |
 | 歌曲批量 | `weapi/v3/song/detail` POST | `GET /api/song/detail?ids=` | 否 | ≤100/批 |
 | 歌手资料 | — | `GET /api/artist/head/info/get?id=` | 否 | |

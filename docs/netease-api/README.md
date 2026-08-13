@@ -80,6 +80,40 @@ CN IP 池见 `CnIpPool.cs`（22 个大陆公共 DNS / 云厂商 IP，随机取�
 
 ---
 
+## 3.5 信息来源：网页 JS 是最权威参照（实测）
+
+除了实测抓包，**直接分析 `music.163.com` 的网页 JS** 是获取 API 信息的最权威途径——
+它就是官方客户端代码本身，永不过时。2026-08 实测结论：
+
+1. **抓核心 JS**（首页 HTML → `core_<hash>.js`，约 700KB）：
+   ```
+   curl -s https://music.163.com/ | grep -oE 'src="[^"]*\.js[^"]*"'
+   # 核心包形如 //s3.music.126.net/web/s/core_<hash>.js?<hash>
+   ```
+2. **提取全部端点**（一次性拿到真实路径清单）：
+   ```
+   grep -oE '"/?(weapi|eapi|api)/[a-zA-Z0-9/_.-]+"' core.js | tr -d '"' | sort -u
+   ```
+   实测命中本项目用的全部端点：`/api/v6/playlist/detail`、`/api/song/lyric`、
+   `/api/user/playlist`、`/api/song/enhance/player/url/v1`、`/api/cloudsearch/get/web` 等。
+3. **加密入口在 JS 里叫 `window.asrsea`**，四个参数是**词表动态解码**的：
+   ```js
+   var bVk4q = window.asrsea(JSON.stringify(payload),
+       bxo6m(["流泪","强"]),      // 词表查值拼成 0x010001 = RSA 指数 E
+       bxo6m(BF2e.md),           // 密钥模块(动态下载的 nm.x.ek)
+       bxo6m(["爱心","女孩","惊恐","大笑"])); // IV 相关
+   ```
+   所以**加密常量不能直接在 JS 里搜明文**（`0CoJUm6Qyw8W8jud` 等搜索不到），
+   它们藏在中文词表 `BF2e.emj` 里，按字查 hex 再拼接。这解释了为什么
+   抓 JS 验证常量要"按词表拼"而非"按字符串找"。
+4. **Web API 与 eapi 是同一套路径**：JS 里是 `/api/...`，提交时 `X0a.replace("api","weapi")`
+   或打 `/eapi/...`——印证了加密/明文双通道共用路径的架构。
+
+> 取用建议：**端点清单以网页 JS 为准**（最新），**加密算法以本项目 `01-crypto.md` 为准**
+> （算法稳定，社区多年验证）。两者交叉验证最可靠。
+
+---
+
 ## 4. 目录
 
 | 文档 | 内容 |

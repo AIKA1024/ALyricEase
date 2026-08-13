@@ -14,6 +14,7 @@ using Avalonia.Win32;
 #endif
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
+using ALyricEase.Views;
 
 namespace ALyricEase;
 
@@ -102,6 +103,17 @@ public partial class MainWindow : Window
     private void OnCloseClick(object? sender, RoutedEventArgs e)
         => Close();
 
+    /// <summary>侧边栏"账号":未登录 → 弹 Cookie 登录窗口;已登录 → 进账号占位页。</summary>
+    private void OnAccountClick(object? sender, RoutedEventArgs e)
+    {
+        if (!ServiceLocator.Get<PlaylistViewModel>().IsLoggedIn)
+        {
+            new LoginWindow().ShowDialog(this);
+            return;
+        }
+        (DataContext as MainViewModel)?.GoAccountCommand.Execute(null);
+    }
+
     // ── 正在播放覆盖层滑入/滑出 ──────────────────────────────────────────────
     // 覆盖层常驻:关闭时整体下移到窗口下方屏幕外(不隐藏),过渡本身声明在 MainWindow.axaml。
     // 这里只负责在"原位(0)/屏幕外(窗口高度)"间切换 RenderTransform 目标值,过渡自动播放。
@@ -127,10 +139,16 @@ public partial class MainWindow : Window
     {
         base.OnDataContextChanged(e);
         if (_nowPlayingVm is not null)
+        {
             _nowPlayingVm.PropertyChanged -= OnNowPlayingVmPropertyChanged;
+            _nowPlayingVm.Player.LoginRequired -= OnPlayerLoginRequired;
+        }
         _nowPlayingVm = DataContext as MainViewModel;
         if (_nowPlayingVm is not null)
+        {
             _nowPlayingVm.PropertyChanged += OnNowPlayingVmPropertyChanged;
+            _nowPlayingVm.Player.LoginRequired += OnPlayerLoginRequired;
+        }
     }
 
     private void OnNowPlayingVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -138,6 +156,10 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(MainViewModel.ShowNowPlaying) && _nowPlayingVm is not null)
             NowPlayingOverlay.RenderTransform = TranslateY(_nowPlayingVm.ShowNowPlaying ? 0 : NowPlayingClosedY);
     }
+
+    /// <summary>红心等账号功能未登录时触发:弹 Cookie 登录窗口。</summary>
+    private void OnPlayerLoginRequired()
+        => new LoginWindow().ShowDialog(this);
 
     /// <summary>临时停用 Transitions 设置基值(启动/缩放等时机先摆到屏幕外,不触发过渡)。</summary>
     private void SetOverlayTransformNoTransition(TransformOperations transform)

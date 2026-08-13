@@ -34,6 +34,9 @@ public sealed class NetEaseApiClient
     private bool _likedLoading;
     private Task? _likedLoadTask;
 
+    /// <summary>当前登录用户 uid(GetUserProfileAsync 填充,红心接口 userid 参数用)。</summary>
+    private long _currentUserId;
+
     public NetEaseApiClient(CryptoService crypto, CnIpPool ipPool, CookieStore cookie)
     {
         _crypto = crypto;
@@ -307,6 +310,7 @@ public sealed class NetEaseApiClient
         var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyAccountResponse);
         if (resp is null || resp.Code != 200 || resp.Profile is null)
             throw new ApiException("获取用户信息失败(未登录或 cookie 失效)", resp?.Code ?? -1);
+        _currentUserId = resp.Profile.UserId;
         return new UserProfile
         {
             UserId = resp.Profile.UserId,
@@ -343,10 +347,10 @@ public sealed class NetEaseApiClient
     }
 
     /// <summary>歌单轨道概览：v6 单次请求即可拿到全量 trackIds(权威顺序) + 前段曲目(登录态约 150 首)。
-    /// 不做任何 song/detail 补齐，供歌单页增量加载使用。</summary>
-    public sealed record PlaylistTrackOverview(IReadOnlyList<long> TrackIds, IReadOnlyList<Song> PrefixTracks);
+    /// 不做任何 song/detail 补齐,供歌单页增量加载使用。CoverUrl = 当前封面(随曲目变化)。</summary>
+    public sealed record PlaylistTrackOverview(IReadOnlyList<long> TrackIds, IReadOnlyList<Song> PrefixTracks, string CoverUrl);
 
-    /// <summary>单次 v6 请求取歌单轨道概览，不补齐元数据。</summary>
+    /// <summary>单次 v6 请求取歌单轨道概览,不补齐元数据。</summary>
     public async Task<PlaylistTrackOverview> GetPlaylistTrackOverviewAsync(long id, CancellationToken ct = default)
     {
         var url = $"{BaseUrl}/api/v6/playlist/detail?id={id}";
@@ -362,7 +366,7 @@ public sealed class NetEaseApiClient
         var prefix = new List<Song>();
         foreach (var t in playlist.Tracks ?? Enumerable.Empty<SearchSong>())
             if (t.Id != 0) prefix.Add(MapSearchSong(t));
-        return new PlaylistTrackOverview(trackIds, prefix);
+        return new PlaylistTrackOverview(trackIds, prefix, playlist.CoverImgUrl ?? "");
     }
 
     /// <summary>明文 /api/song/detail 批量取曲目元数据，单批 ≤100 首。供歌单增量加载补齐缺失段。</summary>
@@ -421,15 +425,19 @@ public sealed class NetEaseApiClient
         return target;
     }
 
-    /// <summary>明文 POST /api/song/like 设置红心状态(不走 weapi,规避本机风控)。</summary>
+    /// <summary>明文 POST /api/song/like 设置红心状态(不走 weapi,规避本机风控)。
+    /// 参数名必须是 trackId/userid/like —— 用 id 会返回 code:400 参数错误(已实测)。</summary>
     private async Task LikeRequestAsync(long id, bool like, CancellationToken ct)
     {
+        if (_currentUserId == 0)
+            throw new ApiException("未登录(缺少用户 id)", -1);
         var url = $"{BaseUrl}/api/song/like?csrf_token=";
         using var req = new HttpRequestMessage(HttpMethod.Post, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         req.Content = new FormUrlEncodedContent(new[]
         {
-            new KeyValuePair<string, string>("id", id.ToString()),
+            new KeyValuePair<string, string>("trackId", id.ToString()),
+            new KeyValuePair<string, string>("userid", _currentUserId.ToString()),
             new KeyValuePair<string, string>("like", like ? "true" : "false"),
         });
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);

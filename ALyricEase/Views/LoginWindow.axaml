@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ALyricEase.ViewModels"
+        x:Class="ALyricEase.Views.LoginWindow"
+        x:DataType="vm:PlaylistViewModel"
+        Title="登录 ALyricEase"
+        Width="440" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AppSurface}">
+  <!-- 仿原版 LyricEase 登录卡片(圆角 + 阴影),只做 Cookie 登录:
+       密码/验证码/扫码易被风控,粘贴 MUSIC_U 最稳。 -->
+  <Border CornerRadius="8" Background="{DynamicResource AppSurfaceElevated}" Margin="12"
+          BorderThickness="1" BorderBrush="{DynamicResource AppBorder}"
+          BoxShadow="0 8 40 #40000000">
+    <StackPanel Spacing="16" Margin="24">
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="32" Height="32" />
+        <StackPanel Spacing="2">
+          <TextBlock Text="登录 ALyricEase" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Text="使用网易云音乐 Cookie 登录(红心等账号功能需要登录)" FontSize="12"
+                     Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+        </StackPanel>
+      </StackPanel>
+
+      <StackPanel Spacing="6">
+        <TextBlock Text="MUSIC_U Cookie" FontSize="14" FontWeight="SemiBold" />
+        <TextBox Text="{Binding MusicUInput}" Watermark="粘贴 MUSIC_U 的值"
+                 AcceptsReturn="True" TextWrapping="Wrap" Height="64" FontSize="13" />
+      </StackPanel>
+
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <TextBlock Grid.Column="0" Text="{Binding Message}" FontSize="12"
+                   Foreground="{DynamicResource LyricEaseRed}" TextWrapping="Wrap"
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="primary" Content="登录" Command="{Binding LoginCommand}"
+                Width="88" Height="36" HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                IsEnabled="{Binding !IsBusy}" />
+      </Grid>
+
+      <Border Background="{DynamicResource AppSurface}" CornerRadius="6" Padding="12,10">
+        <StackPanel Spacing="5">
+          <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />
+          <TextBlock Text="1. 用浏览器打开 music.163.com 并登录你的账号" FontSize="12"
+                     Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+          <TextBlock Text="2. 按 F12 → Application → Cookies → https://music.163.com" FontSize="12"
+                     Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+          <TextBlock Text="3. 复制 MUSIC_U 的值,粘贴到上方输入框后点登录" FontSize="12"
+                     Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </Border>
+</Window>

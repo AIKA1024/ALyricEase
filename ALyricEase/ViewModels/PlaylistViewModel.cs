@@ -75,7 +75,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Logout()
+    /// <summary>清除本地 Cookie 并重置登录态(账号页"删除本地Cookie"按钮调用)。</summary>
+    public void Logout()
     {
         _cookie.MusicU = null;
         _cookie.Save();
@@ -115,6 +116,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         {
             var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id);
             if (generation != _loadGeneration) return; // 期间切了别的歌单,丢弃过期结果
+            playlist.RefreshCover(overview.CoverUrl); // 封面随曲目变化(如"我喜欢的音乐"),URL 变了才重载
             _trackIds = overview.TrackIds.ToList();
             foreach (var s in overview.PrefixTracks)
                 if (s.Id != 0) _known[s.Id] = s;

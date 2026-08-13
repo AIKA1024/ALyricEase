@@ -231,6 +231,9 @@ public sealed record PlaylistDetail
 
     [JsonPropertyName("trackCount")] public int TrackCount { get; init; }
 
+    /// <summary>歌单封面(会随曲目变化:如"我喜欢的音乐"自动生成的封面,加歌后 coverImgUrl 会变)。</summary>
+    [JsonPropertyName("coverImgUrl")] public string CoverImgUrl { get; init; } = "";
+
     /// <summary>歌单内全量曲目 id(v6 接口 trackIds,权威顺序)。</summary>
     public List<TrackIdItem>? TrackIds { get; init; }
 

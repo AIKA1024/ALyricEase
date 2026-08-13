@@ -113,6 +113,7 @@ public sealed partial class MainViewModel : ViewModelBase
         // 未完成页面使用明确占位，不伪装为可用功能。
         if (value is "Browse" or "PersonalStation" or "CloudDrive" or "Recents" or "Account" or "Settings")
         {
+            Placeholder.ShowLogout = value == "Account";
             (Placeholder.Title, Placeholder.Description) = value switch
             {
                 "Browse" => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),

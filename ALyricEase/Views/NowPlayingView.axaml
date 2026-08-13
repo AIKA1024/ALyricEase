@@ -36,7 +36,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid KeyDown="OnKeyDown" Background="#FF000000">
+    <Grid Background="#FF000000">
         <Image Source="{Binding Player.Cover}" Stretch="UniformToFill" Opacity="0.9">
             <Image.Effect><BlurEffect Radius="100" /></Image.Effect>
         </Image>
@@ -46,7 +46,11 @@
         <Grid Height="48" VerticalAlignment="Top" Background="Transparent" ZIndex="1"
               PointerPressed="OnTitleDragPressed" />
 
+        <!-- 收起按钮:HotKey=Escape 是原版 KeyboardAccelerator 的移植——
+             HotKey 内部注册为窗口级 KeyBinding(不依赖焦点),且 HotkeyCommandWrapper
+             沿祖先链检查 IsVisible:详情页关闭(不在可视树)时自动失效,不抢别的 Escape。 -->
         <Button Classes="player-button top-action" Command="{Binding CloseNowPlayingCommand}"
+                HotKeyManager.HotKey="Escape"
                 Width="50" Height="50" Margin="20,16,0,0"
                 HorizontalAlignment="Left" VerticalAlignment="Top" ToolTip.Tip="收起" ZIndex="2">
             <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White" />

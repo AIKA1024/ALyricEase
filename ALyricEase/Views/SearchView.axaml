@@ -3,9 +3,14 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:SearchViewModel"
              mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
              x:Class="ALyricEase.Views.SearchView">
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
+        <KeyBinding Gesture="Escape" Command="{Binding BackToLandingCommand}" />
+    </UserControl.KeyBindings>
     <UserControl.Styles>
         <Style Selector="Border.search-box"><Setter Property="Width" Value="500" /></Style>
         <Style Selector="UserControl.compact Border.search-box"><Setter Property="Width" Value="420" /></Style>
@@ -53,8 +58,7 @@
                                Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
                     <TextBox Grid.Column="1" Text="{Binding Keyword}" PlaceholderText="搜索歌曲 / 歌手"
                              Background="Transparent" BorderThickness="0" FontSize="14"
-                             VerticalContentAlignment="Center" Margin="10,0,0,0"
-                             KeyDown="OnSearchKeyDown" />
+                             VerticalContentAlignment="Center" Margin="10,0,0,0" />
                 </Grid>
             </Border>
             <StackPanel Spacing="10">
@@ -69,7 +73,8 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="x:String">
                             <Button Classes="chip" Margin="0,0,8,8"
-                                    Click="OnChipClick" Content="{Binding}" />
+                                    Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).SearchKeywordCommand}"
+                                    CommandParameter="{Binding}" Content="{Binding}" />
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -92,8 +97,7 @@
                                    Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
                         <TextBox Grid.Column="1" Text="{Binding Keyword}" PlaceholderText="搜索歌曲 / 歌手"
                                  Background="Transparent" BorderThickness="0" FontSize="14"
-                                 VerticalContentAlignment="Center" Margin="10,0,0,0"
-                                 KeyDown="OnSearchKeyDown" />
+                                 VerticalContentAlignment="Center" Margin="10,0,0,0" />
                     </Grid>
                 </Border>
                 <Button Grid.Column="2" Content="搜索" Command="{Binding SearchCommand}"

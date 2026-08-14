@@ -223,7 +223,7 @@
 
   <!-- 悬停高亮:画在内容之后(仿原版行背景色动画),不遮罩封面/红心;SystemBaseLow 20%,按下 SystemBaseMediumLow 35% -->
   <Style Selector="views|TrackRow Border.row-hover-bg">
-    <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+    <Setter Property="Background" Value="{DynamicResource RowHoverBackground}" />
     <Setter Property="IsHitTestVisible" Value="False" />
     <Setter Property="Opacity" Value="0" />
     <Setter Property="Transitions">
@@ -259,25 +259,25 @@
     <Setter Property="Grid.ColumnSpan" Value="1" />
   </Style>
 
-  <!-- 圆形操作按钮(32px,仿原版 32 列宽):透明底,悬停 SystemBaseLow,按下 SystemBaseMediumLow。
-       RowButtonTheme 的 ContentPresenter 已命名 PART_ContentPresenter,与默认 Fluent 按钮一致,
-       统一用 /template/ 选择器命中状态色 -->
+  <!-- 圆形操作按钮(32px,仿原版 32 列宽):控件级 Background(自定义 RowButtonTheme 无 Fluent 模板内
+       状态样式,控件级 setter 可靠生效;`/template/` 选择器带 TrackRow 祖先会匹配不到,勿用)。
+       基础 RowButton(浅色半透明叠行背景/深色实色 #404040),悬停 RowButtonHover 变浅,按下 RowButtonPressed 更深 -->
   <Style Selector="views|TrackRow Button.row-action">
     <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" />
     <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="16" />
-    <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="{DynamicResource RowButton}" /><Setter Property="BorderThickness" Value="0" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
-  <Style Selector="views|TrackRow Button.row-action:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+  <Style Selector="views|TrackRow Button.row-action:pointerover">
+    <Setter Property="Background" Value="{DynamicResource RowButtonHover}" />
   </Style>
-  <Style Selector="views|TrackRow Button.row-action:pressed /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
+  <Style Selector="views|TrackRow Button.row-action:pressed">
+    <Setter Property="Background" Value="{DynamicResource RowButtonPressed}" />
   </Style>
 
   <!-- 歌手/专辑文本链接按钮:仿原版(Background #00FFFFFF CornerRadius4 Padding4),内容靠左、不撑满整列;
-       悬停 SystemBaseLow、按下 SystemBaseMediumLow。同 row-action,统一 /template/ 选择器 -->
+       悬停 SystemBaseLow、按下 SystemBaseMediumLow。同 row-action,控件级 setter 可靠生效 -->
   <Style Selector="views|TrackRow Button.row-link">
     <Setter Property="Background" Value="#00FFFFFF" />
     <Setter Property="BorderThickness" Value="0" />
@@ -287,10 +287,10 @@
     <Setter Property="HorizontalContentAlignment" Value="Left" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
-  <Style Selector="views|TrackRow Button.row-link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="views|TrackRow Button.row-link:pointerover">
     <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
   </Style>
-  <Style Selector="views|TrackRow Button.row-link:pressed /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="views|TrackRow Button.row-link:pressed">
     <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
   </Style>
 

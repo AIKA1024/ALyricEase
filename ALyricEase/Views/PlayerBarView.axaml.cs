@@ -26,7 +26,7 @@ public partial class PlayerBarView : UserControl
 
     /// <summary>Tap 封面/曲目区 → 打开正在播放页。用 Tap(按下抬起才算)而非 PointerPressed:
     /// 按下即触发会跟拖动/滑进度误触;按钮点击冒泡上来时,按来源过滤掉。</summary>
-    private void OnTrackAreaPressed(object? sender, TappedEventArgs e)
+    private void OnTrackAreaTap(object? sender, TappedEventArgs e)
     {
         // Grid 处理触摸/鼠标事件时,播放按钮的 Tap 会冒泡;但歌曲区域(含封面)仍应打开详情。
         if (e.Source is Visual source && source.FindAncestorOfType<Button>() is not null) return;

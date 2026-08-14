@@ -153,6 +153,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>当前选中导航项(ListBox 双向)。</summary>
     [ObservableProperty] private NavItemViewModel? _selectedNav;
 
+    /// <summary>选中导航项即导航。原版 UWP NavigationView 在点击(抬起)时选中;Avalonia ListBox 默认
+    /// 按下选中,已给导航列表项设 InputElement.IsHoldWithMouseEnabled 延迟到抬起选中,故这里触发时机
+    /// 对齐原版:按下不导航、拖走松开不选中、抬起在项上才导航。</summary>
     partial void OnSelectedNavChanged(NavItemViewModel? value)
     {
         if (value is null || value.IsHeader) return;

@@ -15,6 +15,7 @@ namespace ALyricEase.Views;
 public class TrackRow : TemplatedControl
 {
     private Button? _artistAlbumButton;
+    private Button? _artistButton;
 
     public TrackRow()
     {
@@ -27,6 +28,8 @@ public class TrackRow : TemplatedControl
         // 模板重新应用时先解除旧按钮订阅,避免重复
         if (_artistAlbumButton is { } oldButton)
             oldButton.RemoveHandler(InputElement.PointerPressedEvent, OnArtistAlbumPointerPressed);
+        if (_artistButton is { } oldArtist)
+            oldArtist.RemoveHandler(InputElement.PointerPressedEvent, OnArtistButtonPointerPressed);
 
         base.OnApplyTemplate(e);
 
@@ -41,6 +44,17 @@ public class TrackRow : TemplatedControl
         {
             _artistAlbumButton = null;
         }
+
+        // 歌单行歌手按钮:多歌手按下弹菜单选歌手;单歌手不拦截,让 Command 抬起直接跳(PlaylistWide 主题才有)
+        if (e.NameScope.Find("ArtistButton") is Button artistButton)
+        {
+            _artistButton = artistButton;
+            artistButton.AddHandler(InputElement.PointerPressedEvent, OnArtistButtonPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        }
+        else
+        {
+            _artistButton = null;
+        }
     }
 
     /// <summary>点击歌手/专辑按钮 → 在指针位置展开 MenuFlyout(替代 Button.Flyout 默认底部定位)。</summary>
@@ -51,6 +65,17 @@ public class TrackRow : TemplatedControl
         if (button.Resources["TrackMenuFlyout"] is not MenuFlyout flyout) return;
         flyout.ShowAt(button, true); // showAtPointer:在鼠标点击位置展开
         e.Handled = true;
+    }
+
+    /// <summary>歌单行歌手按钮:仅多歌手时在指针位置弹菜单选歌手;单歌手走 Command 直接跳。</summary>
+    private void OnArtistButtonPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(null).Properties.IsLeftButtonPressed) return;
+        if (sender is not Button { } button) return;
+        if (button.DataContext is not SongItemViewModel { HasMultipleArtists: true }) return; // 单歌手:走 Command
+        if (button.Resources["ArtistMenuFlyout"] is not MenuFlyout flyout) return;
+        flyout.ShowAt(button, true); // showAtPointer
+        e.Handled = true;            // 挡住抬起时的 Command(不再跳第一个歌手)
     }
 
     private static void OnRowDoubleTapped(object? sender, TappedEventArgs e)

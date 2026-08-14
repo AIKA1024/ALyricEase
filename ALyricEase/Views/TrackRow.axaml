@@ -9,9 +9,17 @@
     <ControlTheme x:Key="RowButtonTheme" TargetType="Button">
       <Setter Property="Template">
         <ControlTemplate TargetType="Button">
+          <!-- 仿默认 Fluent 按钮结构:Border 撑满(Background/Width/Height),ContentPresenter 也撑满并自带
+               Padding + CornerRadius —— 状态色经 /template/ 设在 ContentPresenter 上时覆盖整个按钮(含 padding 区),
+               圆角由它自己画(不用靠 Border 裁剪);ClipToBounds 兜底防子元素越界 -->
           <Border Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}"
-                  Width="{TemplateBinding Width}" Height="{TemplateBinding Height}" Padding="{TemplateBinding Padding}">
-            <ContentPresenter Content="{TemplateBinding Content}"
+                  Width="{TemplateBinding Width}" Height="{TemplateBinding Height}" ClipToBounds="True">
+            <!-- 命名 PART_ContentPresenter 与默认 Fluent 按钮模板一致:应用里所有按钮状态样式统一用
+                 /template/ ContentPresenter#PART_ContentPresenter 命中 -->
+            <ContentPresenter x:Name="PART_ContentPresenter"
+                              Content="{TemplateBinding Content}"
+                              Padding="{TemplateBinding Padding}"
+                              CornerRadius="{TemplateBinding CornerRadius}"
                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                               VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
           </Border>
@@ -150,10 +158,41 @@
                       HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="播放">
                 <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="15" />
               </Button>
-              <!-- 歌手:可点击 → 歌手页(仿原版 ArtistsButton) -->
-              <Button Grid.Column="4" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
+              <!-- 歌手:可点击 → 歌手页(仿原版 ArtistsButton);多歌手时按下弹菜单选歌手 -->
+              <Button Grid.Column="4" x:Name="ArtistButton" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
                       Command="{Binding OpenArtistCommand}" VerticalAlignment="Center" ToolTip.Tip="打开歌手页">
-                <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                  <!-- 多歌手时显示下箭头提示可展开菜单(单歌手无) -->
+                  <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="9"
+                             Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center"
+                             IsVisible="{Binding HasMultipleArtists}" />
+                </StackPanel>
+                <Button.Resources>
+                  <!-- 多歌手菜单:点击歌手按钮直接平铺歌手名(仅表演者,不设"表演者>"分级),逐项跳对应歌手页 -->
+                  <MenuFlyout x:Key="ArtistMenuFlyout" FlyoutPresenterClasses="track-menu-presenter"
+                              ItemsSource="{Binding Artists}">
+                    <MenuFlyout.ItemContainerTheme>
+                      <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
+                                    BasedOn="{StaticResource {x:Type MenuItem}}">
+                        <Setter Property="Header" Value="{Binding Name}" />
+                        <Setter Property="Command" Value="{Binding OpenCommand}" />
+                        <Setter Property="CommandParameter" Value="{Binding Id}" />
+                        <!-- 统一菜单项样式(同 track-menu-item):高 32、圆角 8、悬停 SystemBaseLow -->
+                        <Setter Property="Height" Value="32" />
+                        <Setter Property="Padding" Value="12,0" />
+                        <Setter Property="Margin" Value="0,2" />
+                        <Setter Property="CornerRadius" Value="8" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="FontSize" Value="13" />
+                        <Style Selector="^:pointerover /template/ Border#PART_LayoutRoot">
+                          <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+                        </Style>
+                      </ControlTheme>
+                    </MenuFlyout.ItemContainerTheme>
+                  </MenuFlyout>
+                </Button.Resources>
               </Button>
               <!-- 专辑:可点击 → 专辑页(仿原版 AlbumButton) -->
               <Button Grid.Column="5" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
@@ -220,7 +259,9 @@
     <Setter Property="Grid.ColumnSpan" Value="1" />
   </Style>
 
-  <!-- 圆形操作按钮(32px,仿原版 32 列宽):透明底,悬停 SystemBaseLow,按下 SystemBaseMediumLow(仿原版默认 Button) -->
+  <!-- 圆形操作按钮(32px,仿原版 32 列宽):透明底,悬停 SystemBaseLow,按下 SystemBaseMediumLow。
+       RowButtonTheme 的 ContentPresenter 已命名 PART_ContentPresenter,与默认 Fluent 按钮一致,
+       统一用 /template/ 选择器命中状态色 -->
   <Style Selector="views|TrackRow Button.row-action">
     <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" />
     <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="16" />
@@ -236,7 +277,7 @@
   </Style>
 
   <!-- 歌手/专辑文本链接按钮:仿原版(Background #00FFFFFF CornerRadius4 Padding4),内容靠左、不撑满整列;
-       悬停 SystemBaseLow、按下 SystemBaseMediumLow -->
+       悬停 SystemBaseLow、按下 SystemBaseMediumLow。同 row-action,统一 /template/ 选择器 -->
   <Style Selector="views|TrackRow Button.row-link">
     <Setter Property="Background" Value="#00FFFFFF" />
     <Setter Property="BorderThickness" Value="0" />

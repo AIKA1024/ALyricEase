@@ -136,7 +136,7 @@
             </Border>
           </Grid>
           
-          <Border Padding="12 0" Background="Transparent" Tapped="OnTrackAreaPressed">
+          <Border Padding="12 0" Background="Transparent" Tapped="OnTrackAreaTap">
             <Grid ColumnDefinitions="70,*,Auto" ColumnSpacing="4"
                   VerticalAlignment="Stretch">
               <Border Grid.Column="0" Width="60" Height="60" CornerRadius="4" ClipToBounds="True"
@@ -219,7 +219,7 @@
                        Foreground="#FF64A8A1" Background="#FFB2B2B2"
                        Height="4" VerticalAlignment="Center" Margin="0" />
           <Grid Grid.Row="1" ColumnDefinitions="56,*,52" ColumnSpacing="8" Margin="8,4,8,4"
-                Tapped="OnTrackAreaPressed">
+                Tapped="OnTrackAreaTap">
             <Border Grid.Column="0" Width="48" Height="48" CornerRadius="4" ClipToBounds="True"
                     Background="{DynamicResource ArtFallback}" VerticalAlignment="Center">
               <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"

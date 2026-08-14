@@ -63,10 +63,10 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="ListBox.shell-navigation > ListBoxItem:pointerover">
+    <Style Selector="ListBox.shell-navigation > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
     </Style>
-    <Style Selector="ListBox.shell-navigation > ListBoxItem:selected">
+    <Style Selector="ListBox.shell-navigation > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource NavigationSelected}" />
     </Style>
     <Style Selector="ListBox.shell-navigation > ListBoxItem:disabled">
@@ -81,10 +81,10 @@
       <Setter Property="Padding" Value="0" /><Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" /><Setter Property="CornerRadius" Value="0" />
     </Style>
-    <Style Selector="Button.window-control:pointerover">
+    <Style Selector="Button.window-control:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
     </Style>
-    <Style Selector="Button.close-control:pointerover">
+    <Style Selector="Button.close-control:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="#E81123" />
       <Setter Property="Foreground" Value="White" />
     </Style>

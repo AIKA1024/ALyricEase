@@ -8,9 +8,9 @@
             <SolidColorBrush x:Key="AppSurfaceHover" Color="#0D000000" />
             <SolidColorBrush x:Key="AppSurfacePressed" Color="#18000000" />
             <SolidColorBrush x:Key="AppSurfaceSelected" Color="#15000000" />
-            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow(曲目行悬停/按下,20%/35%) -->
+            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow(曲目行悬停/按下,20%/40%) -->
             <SolidColorBrush x:Key="SystemBaseLow" Color="#33000000" />
-            <SolidColorBrush x:Key="SystemBaseMediumLow" Color="#59000000" />
+            <SolidColorBrush x:Key="SystemBaseMediumLow" Color="#66000000" />
             <SolidColorBrush x:Key="AppListBackground" Color="#B3FFFFFF" />
             <SolidColorBrush x:Key="TextPrimary" Color="#1B1B1B" />
             <SolidColorBrush x:Key="TextSecondary" Color="#5D5D5D" />
@@ -45,9 +45,9 @@
             <SolidColorBrush x:Key="AppSurfaceHover" Color="#12FFFFFF" />
             <SolidColorBrush x:Key="AppSurfacePressed" Color="#1FFFFFFF" />
             <SolidColorBrush x:Key="AppSurfaceSelected" Color="#18FFFFFF" />
-            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow(曲目行悬停/按下,20%/35%) -->
+            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow(曲目行悬停/按下,20%/40%) -->
             <SolidColorBrush x:Key="SystemBaseLow" Color="#33FFFFFF" />
-            <SolidColorBrush x:Key="SystemBaseMediumLow" Color="#59FFFFFF" />
+            <SolidColorBrush x:Key="SystemBaseMediumLow" Color="#66FFFFFF" />
             <SolidColorBrush x:Key="AppListBackground" Color="#0DFFFFFF" />
             <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF" />
             <SolidColorBrush x:Key="TextSecondary" Color="#C2C2C2" />

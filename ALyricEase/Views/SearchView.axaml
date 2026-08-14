@@ -25,7 +25,7 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         </Style>
-        <Style Selector="Button.chip:pointerover">
+        <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
         <!-- 结果行 56px -->
@@ -36,10 +36,10 @@
             <Setter Property="Padding" Value="8,4" />
             <Setter Property="Margin" Value="0,1" />
         </Style>
-        <Style Selector="ListBox > ListBoxItem:pointerover">
+        <Style Selector="ListBox > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
-        <Style Selector="ListBox > ListBoxItem:selected">
+        <Style Selector="ListBox > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
         </Style>
     </UserControl.Styles>

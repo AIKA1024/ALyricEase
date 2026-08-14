@@ -9,167 +9,241 @@
              d:DesignWidth="1200" d:DesignHeight="100"
              x:Class="ALyricEase.Views.PlayerBarView"
              ClipToBounds="False">
-    <UserControl.Styles>
-        <!-- 原版进度条:已播放 #6FBAB3(球左)、未播放 #808080(球右)、球为两个圆叠加
+  <UserControl.Styles>
+    <!-- 原版进度条:已播放 #6FBAB3(球左)、未播放 #808080(球右)、球为两个圆叠加
              (外层 20px 深色球 #454545 + 内层 10px 实心球 #5EA9A2);
              hover(:pointerover)时轨道变亮 + 内层球放大到 14(Transitions 动画),外层球不变。 -->
-        <!-- 进度条默认值放样式(非内联),hover(:pointerover)时才能覆盖 -->
-        <Style Selector="Grid#ProgressRoot Border#ProgressFill">
-            <Setter Property="Background" Value="#FF6FBAB3" />
-        </Style>
-        <Style Selector="Grid#ProgressRoot Border#TrackInactive">
-            <Setter Property="Background" Value="#FF808080" />
-        </Style>
-        <Style Selector="Grid#ProgressRoot Ellipse#ThumbFill">
-            <Setter Property="Width" Value="10" />
-            <Setter Property="Height" Value="10" />
-        </Style>
-        <!-- hover:轨道变亮 + 内层球放大(Transitions 动画),外层球不变 -->
-        <Style Selector="Grid#ProgressRoot:pointerover Border#ProgressFill">
-            <Setter Property="Background" Value="#FF65A9A2" />
-        </Style>
-        <Style Selector="Grid#ProgressRoot:pointerover Border#TrackInactive">
-            <Setter Property="Background" Value="#FFA7A7A7" />
-        </Style>
-        <!-- 球放大:仅 hover 球本身时触发,非 hover 轨道;内层小球 8→14,外层球不变 -->
-        <Style Selector="Grid#ProgressThumb:pointerover Ellipse#ThumbFill">
-            <Setter Property="Width" Value="14" />
-            <Setter Property="Height" Value="14" />
-        </Style>
-        <Style Selector="Grid#WidePlayer"><Setter Property="IsVisible" Value="True" /></Style>
-        <Style Selector="Grid#CompactPlayer"><Setter Property="IsVisible" Value="False" /></Style>
-        <Style Selector="UserControl.compact Grid#WidePlayer"><Setter Property="IsVisible" Value="False" /></Style>
-        <Style Selector="UserControl.compact Grid#CompactPlayer"><Setter Property="IsVisible" Value="True" /></Style>
-        <Style Selector="UserControl.narrow Grid#WidePlayer"><Setter Property="IsVisible" Value="False" /></Style>
-        <Style Selector="UserControl.narrow Grid#CompactPlayer"><Setter Property="IsVisible" Value="True" /></Style>
-    </UserControl.Styles>
+    <!-- 进度条默认值放样式(非内联),hover(:pointerover)时才能覆盖 -->
+    <Style Selector="Grid#ProgressRoot Border#ProgressFill">
+      <Setter Property="Background" Value="#FF6FBAB3" />
+    </Style>
+    <Style Selector="Grid#ProgressRoot Border#TrackInactive">
+      <Setter Property="Background" Value="#FF808080" />
+    </Style>
+    <Style Selector="Grid#ProgressRoot Ellipse#ThumbFill">
+      <Setter Property="Width" Value="10" />
+      <Setter Property="Height" Value="10" />
+    </Style>
+    <!-- hover:轨道变亮 + 内层球放大(Transitions 动画),外层球不变 -->
+    <Style Selector="Grid#ProgressRoot:pointerover Border#ProgressFill">
+      <Setter Property="Background" Value="#FF65A9A2" />
+    </Style>
+    <Style Selector="Grid#ProgressRoot:pointerover Border#TrackInactive">
+      <Setter Property="Background" Value="#FFA7A7A7" />
+    </Style>
+    <!-- 球放大:仅 hover 球本身时触发,非 hover 轨道;内层小球 8→14,外层球不变 -->
+    <Style Selector="Grid#ProgressThumb:pointerover Ellipse#ThumbFill">
+      <Setter Property="Width" Value="14" />
+      <Setter Property="Height" Value="14" />
+    </Style>
+    <!-- 原版 MouseFocusBorder:整条播放条 hover 时低透明度高亮(Opacity 0.2,色 SystemBaseMediumLow),
+             画在内容之下、不可命中。用 Opacity 0→0.2 显隐(仿 TrackRow 行悬停):颜色放基样式,避免
+             本地 Background 压过 :pointerover 样式;原版按下态更深,但 Grid 无 :pressed 伪类,仅做 hover
+             反馈(按钮自带按下态)。 -->
+    <Style Selector="Grid#WidePlayer Border#WideHoverBg">
+      <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Grid#WidePlayer:pointerover Border#WideHoverBg">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+    <Style Selector="Grid#CompactPlayer Border#CompactHoverBg">
+      <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Grid#CompactPlayer:pointerover Border#CompactHoverBg">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+    <Style Selector="Grid#WidePlayer">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="Grid#CompactPlayer">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="UserControl.compact Grid#WidePlayer">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="UserControl.compact Grid#CompactPlayer">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="UserControl.narrow Grid#WidePlayer">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="UserControl.narrow Grid#CompactPlayer">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+  </UserControl.Styles>
 
 
-    <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}" ClipToBounds="False">
-        <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}" ClipToBounds="False">
-            <Grid ClipToBounds="False" Background="Transparent">
-                <Grid x:Name="WidePlayer" Height="100" ClipToBounds="False">
-                    <!-- 自定义进度条(替代 Slider+Track):未播放段整条+已播放段按进度+圆形球,轨道保证渲染。
+  <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}" ClipToBounds="False">
+    <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}" ClipToBounds="False">
+      <Grid ClipToBounds="False" Background="Transparent">
+        <Grid x:Name="WidePlayer" Height="100" ClipToBounds="False">
+          <!-- 原版 MouseFocusBorder:整条播放条 hover 低透明度高亮,画在内容之下、不可命中;
+                         撑满整条高度(原版 84px 底对齐,但我们进度条在顶部,底部对齐会留一条不亮的缝) -->
+          <Border x:Name="WideHoverBg" Margin="-12,0" />
+          <!-- 自定义进度条(替代 Slider+Track):未播放段整条+已播放段按进度+圆形球,轨道保证渲染。
                          颜色在 code-behind 用系统强调色动态设置;hover 时球放大+轨道加亮。 -->
-                    <Grid x:Name="ProgressRoot" Height="28" VerticalAlignment="Top" Margin="0,-14,0,0" ZIndex="1"
-                          IsVisible="{Binding HasProgress}"
-                          PointerPressed="OnProgressPointerPressed" PointerMoved="OnProgressPointerMoved"
-                          PointerReleased="OnProgressPointerReleased"
-                          Background="#01FFFFFF"><!-- #01 几乎全透明但不透明 → 可命中测试,:pointerover 生效 -->
-                        <Grid x:Name="ProgressTrack" Height="4" VerticalAlignment="Center" ClipToBounds="True">
-                            <!-- 未播放段(整条) -->
-                            <Border x:Name="TrackInactive" CornerRadius="2" />
-                            <!-- 已播放段(宽度=进度比例) -->
-                            <Border x:Name="ProgressFill" CornerRadius="2"
-                                    HorizontalAlignment="Left" IsHitTestVisible="False" />
-                        </Grid>
-                        <!-- 球:两个圆叠加 — 底层 20x20 深色大球(#454545),顶层 10px 强调色小球(#5EA9A2)。
-                             默认内球 10(露出 5px 深色外层球),hover 14(露出 3px),外层球固定 20。 -->
-                        <!-- 球:20x20,hover/动画只在球上触发 -->
-                        <Grid x:Name="ProgressThumb" Width="20" Height="20" Background="Transparent"
-                              VerticalAlignment="Center" HorizontalAlignment="Left"
-                              PointerEntered="OnThumbPointerEntered" PointerExited="OnThumbPointerExited">
-                            <Ellipse x:Name="ThumbHalo" Fill="#FF454545" />
-                            <Ellipse x:Name="ThumbFill" Fill="#FF5EA9A2"
-                                     HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Ellipse.Transitions>
-                                    <Transitions>
-                                        <DoubleTransition Property="Width" Duration="0:0:0.1" />
-                                        <DoubleTransition Property="Height" Duration="0:0:0.1" />
-                                    </Transitions>
-                                </Ellipse.Transitions>
-                            </Ellipse>
-                        </Grid>
-                        <!-- 时间气泡:与球同为 ProgressRoot 的子元素(同一坐标系),固定宽高(不 Measure,
-                             避免拖动期间反复测量→布局抖动);位置由 code-behind 按球的 Margin 对齐球心。 -->
-                        <Border x:Name="ProgressTooltip" IsVisible="False" Width="58" Height="24" Padding="6,3"
-                                HorizontalAlignment="Left" VerticalAlignment="Top"
-                                CornerRadius="4" Background="#FF1F1F1F" BoxShadow="0 2 8 #55000000"
-                                IsHitTestVisible="False">
-                            <TextBlock Text="{Binding PositionText}" FontSize="12" Foreground="#FFFFFFFF"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                    </Grid>
-                    <Grid ColumnDefinitions="70,*,Auto" ColumnSpacing="4" Margin="12,0,12,0"
-                          Background="Transparent" PointerPressed="OnTrackAreaPressed" VerticalAlignment="Center">
-                        <Border Grid.Column="0" Width="60" Height="60" CornerRadius="4" ClipToBounds="True"
-                                Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
-                        </Border>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                            <TextBlock Classes="track-title" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Classes="track-subtitle" Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="8"
-                                    IsVisible="{Binding HasProgress}">
-                            <Button Classes="player-button" Width="40" Height="40" Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心">
-                                <Grid>
-                                    <TextBlock Text="&#xE931;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="{DynamicResource LyricEaseRed}" IsVisible="{Binding IsCurrentLiked}" />
-                                    <TextBlock Text="&#xE94A;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" IsVisible="{Binding !IsCurrentLiked}" />
-                                </Grid>
-                            </Button>
-                            <Button Classes="player-button" Width="40" Height="40" Command="{Binding PlayPreviousCommand}" ToolTip.Tip="上一曲"><TextBlock Text="&#xE914;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" /></Button>
-                            <Button Classes="player-button" Command="{Binding TogglePlayPauseCommand}" Width="50" Height="50">
-                                <Grid>
-                                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" IsVisible="{Binding ShowPauseIcon}" />
-                                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" IsVisible="{Binding ShowPlayIcon}" />
-                                    <TextBlock Text="•••" FontSize="14" LetterSpacing="2" IsVisible="{Binding ShowLoadingIcon}" />
-                                </Grid>
-                            </Button>
-                            <Button Classes="player-button" Width="40" Height="40" Command="{Binding PlayNextCommand}" ToolTip.Tip="下一曲"><TextBlock Text="&#xE90E;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" /></Button>
-                            <!-- 播放模式:点击循环切换(列表循环/单曲循环/随机播放/心动模式),图标随模式变化。
-                                 三个循环模式用 Segoe MDL2(原版 Symbol),心动模式用 Fluent 红心跳(与红心图标区分)。 -->
-                            <Button Classes="player-button" Width="40" Height="40" Command="{Binding TogglePlaybackModeCommand}"
-                                    ToolTip.Tip="{Binding PlaybackModeName}">
-                                <Grid>
-                                    <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                                               IsVisible="{Binding !IsFluentModeIcon}" />
-                                    <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
-                                               IsVisible="{Binding IsFluentModeIcon}" />
-                                </Grid>
-                            </Button>
-                            <Button Classes="player-button" Width="40" Height="40" ToolTip.Tip="音量">
-                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
-                                <Button.Flyout>
-                                    <Flyout Placement="Top">
-                                        <StackPanel Spacing="8" Margin="4">
-                                            <Slider Value="{Binding Volume}" Minimum="0" Maximum="100" Height="150" Orientation="Vertical" />
-                                            <TextBlock Text="{Binding Volume}" HorizontalAlignment="Center" />
-                                        </StackPanel>
-                                    </Flyout>
-                                </Button.Flyout>
-                            </Button>
-                            <Button Classes="player-button" Width="40" Height="40" IsEnabled="False"><TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" /></Button>
-                        </StackPanel>
-                    </Grid>
-                </Grid>
-
-                <Grid x:Name="CompactPlayer" RowDefinitions="4,*" Background="Transparent">
-                    <ProgressBar Grid.Row="0" Minimum="0" Maximum="{Binding ProgressMaximum}" Value="{Binding PositionMs}"
-                                 IsVisible="{Binding HasProgress}"
-                                 Foreground="#FF64A8A1" Background="#FFB2B2B2"
-                                 Height="4" VerticalAlignment="Center" Margin="0" />
-                    <Grid Grid.Row="1" ColumnDefinitions="56,*,52" ColumnSpacing="8" Margin="8,4,8,4"
-                          PointerPressed="OnTrackAreaPressed">
-                        <Border Grid.Column="0" Width="48" Height="48" CornerRadius="4" ClipToBounds="True"
-                                Background="{DynamicResource ArtFallback}" VerticalAlignment="Center">
-                            <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
-                        </Border>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
-                            <TextBlock Classes="track-title" FontSize="14" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Classes="track-subtitle" Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                        <Button Grid.Column="2" Classes="player-button" Command="{Binding TogglePlayPauseCommand}"
-                                Width="48" Height="48" VerticalAlignment="Center" IsVisible="{Binding HasProgress}">
-                            <Grid>
-                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24" IsVisible="{Binding ShowPauseIcon}" />
-                                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24" IsVisible="{Binding ShowPlayIcon}" />
-                                <TextBlock Text="•••" FontSize="12" LetterSpacing="1" IsVisible="{Binding ShowLoadingIcon}" />
-                            </Grid>
-                        </Button>
-                    </Grid>
-                </Grid>
+          <Grid x:Name="ProgressRoot" Height="28" VerticalAlignment="Top" Margin="0,-14,0,0" ZIndex="1"
+                IsVisible="{Binding HasProgress}"
+                PointerPressed="OnProgressPointerPressed" PointerMoved="OnProgressPointerMoved"
+                PointerReleased="OnProgressPointerReleased"
+                Background="#01FFFFFF"><!-- #01 几乎全透明但不透明 → 可命中测试,:pointerover 生效 -->
+            <Grid x:Name="ProgressTrack" Height="4" VerticalAlignment="Center" ClipToBounds="True">
+              <!-- 未播放段(整条) -->
+              <Border x:Name="TrackInactive" />
+              <!-- 已播放段(宽度=进度比例) -->
+              <Border x:Name="ProgressFill"
+                      HorizontalAlignment="Left" IsHitTestVisible="False" />
             </Grid>
-        </ExperimentalAcrylicBorder>
-    </Border>
+            <!-- 球:两个圆叠加 — 底层 20x20 深色大球(#454545),顶层 10px 强调色小球(#5EA9A2)。
+                             默认内球 10(露出 5px 深色外层球),hover 14(露出 3px),外层球固定 20。 -->
+            <!-- 球:20x20,hover/动画只在球上触发 -->
+            <Grid x:Name="ProgressThumb" Width="20" Height="20" Background="Transparent"
+                  VerticalAlignment="Center" HorizontalAlignment="Left"
+                  PointerEntered="OnThumbPointerEntered" PointerExited="OnThumbPointerExited">
+              <Ellipse x:Name="ThumbHalo" Fill="#FF454545" />
+              <Ellipse x:Name="ThumbFill" Fill="#FF5EA9A2"
+                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Ellipse.Transitions>
+                  <Transitions>
+                    <DoubleTransition Property="Width" Duration="0:0:0.1" />
+                    <DoubleTransition Property="Height" Duration="0:0:0.1" />
+                  </Transitions>
+                </Ellipse.Transitions>
+              </Ellipse>
+            </Grid>
+            <!-- 时间气泡:与球同为 ProgressRoot 的子元素(同一坐标系),固定宽高(不 Measure,
+                             避免拖动期间反复测量→布局抖动);位置由 code-behind 按球的 Margin 对齐球心。 -->
+            <Border x:Name="ProgressTooltip" IsVisible="False" Width="58" Height="24" Padding="6,3"
+                    HorizontalAlignment="Left" VerticalAlignment="Top"
+                    CornerRadius="4" Background="#FF1F1F1F" BoxShadow="0 2 8 #55000000"
+                    IsHitTestVisible="False">
+              <TextBlock Text="{Binding PositionText}" FontSize="12" Foreground="#FFFFFFFF"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Grid>
+          
+          <Border Padding="12 0" Background="Transparent" Tapped="OnTrackAreaPressed">
+            <Grid ColumnDefinitions="70,*,Auto" ColumnSpacing="4"
+                  VerticalAlignment="Stretch">
+              <Border Grid.Column="0" Width="60" Height="60" CornerRadius="4" ClipToBounds="True"
+                      Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center"
+                      VerticalAlignment="Center">
+                <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                       Stretch="UniformToFill" />
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                <TextBlock Classes="track-title" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="track-subtitle" Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                          HorizontalAlignment="Right" Spacing="8"
+                          IsVisible="{Binding HasProgress}">
+                <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                        Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心">
+                  <Grid>
+                    <TextBlock Text="&#xE931;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
+                               Foreground="{DynamicResource LyricEaseRed}" IsVisible="{Binding IsCurrentLiked}" />
+                    <TextBlock Text="&#xE94A;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
+                               IsVisible="{Binding !IsCurrentLiked}" />
+                  </Grid>
+                </Button>
+                <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                        Command="{Binding PlayPreviousCommand}" ToolTip.Tip="上一曲">
+                  <TextBlock Text="&#xE914;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                </Button>
+                <Button Classes="player-button" RenderTransform="none" Command="{Binding TogglePlayPauseCommand}"
+                        Width="50" Height="50">
+                  <Grid>
+                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28"
+                               IsVisible="{Binding ShowPauseIcon}" />
+                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28"
+                               IsVisible="{Binding ShowPlayIcon}" />
+                    <TextBlock Text="•••" FontSize="14" LetterSpacing="2" IsVisible="{Binding ShowLoadingIcon}" />
+                  </Grid>
+                </Button>
+                <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                        Command="{Binding PlayNextCommand}" ToolTip.Tip="下一曲">
+                  <TextBlock Text="&#xE90E;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                </Button>
+                <!-- 播放模式:点击循环切换(列表循环/单曲循环/随机播放/心动模式),图标随模式变化。
+                                 三个循环模式用 Segoe MDL2(原版 Symbol),心动模式用 Fluent 红心跳(与红心图标区分)。 -->
+                <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                        Command="{Binding TogglePlaybackModeCommand}"
+                        ToolTip.Tip="{Binding PlaybackModeName}">
+                  <Grid>
+                    <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                               IsVisible="{Binding !IsFluentModeIcon}" />
+                    <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}"
+                               FontSize="16"
+                               IsVisible="{Binding IsFluentModeIcon}" />
+                  </Grid>
+                </Button>
+                <Button Classes="player-button" RenderTransform="none" Width="40" Height="40" ToolTip.Tip="音量">
+                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
+                  <Button.Flyout>
+                    <Flyout Placement="Top">
+                      <StackPanel Spacing="8" Margin="4">
+                        <Slider Value="{Binding Volume}" Minimum="0" Maximum="100" Height="150" Orientation="Vertical" />
+                        <TextBlock Text="{Binding Volume}" HorizontalAlignment="Center" />
+                      </StackPanel>
+                    </Flyout>
+                  </Button.Flyout>
+                </Button>
+                <Button Classes="player-button" RenderTransform="none" Width="40" Height="40" IsEnabled="False">
+                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
+                </Button>
+              </StackPanel>
+            </Grid>
+          </Border>
+
+        </Grid>
+
+        <Grid x:Name="CompactPlayer" RowDefinitions="4,*" Background="Transparent">
+          <Border x:Name="CompactHoverBg" Grid.RowSpan="2" VerticalAlignment="Stretch" Margin="-8,0" />
+          <ProgressBar Grid.Row="0" Minimum="0" Maximum="{Binding ProgressMaximum}" Value="{Binding PositionMs}"
+                       IsVisible="{Binding HasProgress}"
+                       Foreground="#FF64A8A1" Background="#FFB2B2B2"
+                       Height="4" VerticalAlignment="Center" Margin="0" />
+          <Grid Grid.Row="1" ColumnDefinitions="56,*,52" ColumnSpacing="8" Margin="8,4,8,4"
+                Tapped="OnTrackAreaPressed">
+            <Border Grid.Column="0" Width="48" Height="48" CornerRadius="4" ClipToBounds="True"
+                    Background="{DynamicResource ArtFallback}" VerticalAlignment="Center">
+              <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                     Stretch="UniformToFill" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
+              <TextBlock Classes="track-title" FontSize="14" Text="{Binding DisplayTitle}"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock Classes="track-subtitle" Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <Button Grid.Column="2" Classes="player-button" RenderTransform="none"
+                    Command="{Binding TogglePlayPauseCommand}"
+                    Width="48" Height="48" VerticalAlignment="Center" IsVisible="{Binding HasProgress}">
+              <Grid>
+                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24"
+                           IsVisible="{Binding ShowPauseIcon}" />
+                <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24"
+                           IsVisible="{Binding ShowPlayIcon}" />
+                <TextBlock Text="•••" FontSize="12" LetterSpacing="1" IsVisible="{Binding ShowLoadingIcon}" />
+              </Grid>
+            </Button>
+          </Grid>
+        </Grid>
+      </Grid>
+    </ExperimentalAcrylicBorder>
+  </Border>
 </UserControl>

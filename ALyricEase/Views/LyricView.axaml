@@ -27,8 +27,11 @@
                 </Transitions>
             </Setter>
         </Style>
-        <Style Selector="ListBoxItem:pointerover">
+        <!-- hover 高亮:背景必须经 /template/ ContentPresenter 才生效;Opacity 是控件属性不被主题覆盖,留在控件上 -->
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#33FFFFFF" />
+        </Style>
+        <Style Selector="ListBoxItem:pointerover">
             <Setter Property="Opacity" Value="0.8" />
         </Style>
         <Style Selector="ListBoxItem:selected">

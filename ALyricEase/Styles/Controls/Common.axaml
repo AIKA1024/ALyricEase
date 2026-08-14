@@ -15,10 +15,10 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="ListBoxItem.lyric-nav-item:pointerover">
+    <Style Selector="ListBoxItem.lyric-nav-item:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
     </Style>
-    <Style Selector="ListBoxItem.lyric-nav-item:selected">
+    <Style Selector="ListBoxItem.lyric-nav-item:selected /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource NavigationSelected}" />
     </Style>
 

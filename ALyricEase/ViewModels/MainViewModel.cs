@@ -7,6 +7,14 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
+/// <summary>正在播放页右侧面板:无 / 歌词 / 播放列表(原版 PlaybackDetailView 的两个切换按钮互斥)。</summary>
+public enum NowPlayingPanel
+{
+    None,
+    Lyrics,
+    Queue,
+}
+
 /// <summary>聚合 VM:主窗口 DataContext。左导航(规格 5 项 + 底部账号/设置)、
 /// 内容页(TransitioningContentControl)、正在播放全屏覆盖层、底部播放条。播放自动打开正在播放页。</summary>
 public sealed partial class MainViewModel : ViewModelBase
@@ -69,6 +77,29 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>正在播放全屏覆盖层。</summary>
     [ObservableProperty] private bool _showNowPlaying;
+
+    /// <summary>正在播放页右侧面板(歌词/播放列表互斥,再点一次收起)。</summary>
+    [ObservableProperty] private NowPlayingPanel _nowPlayingPanel;
+
+    public bool ShowLyricsPanel => NowPlayingPanel == NowPlayingPanel.Lyrics;
+
+    public bool ShowQueuePanel => NowPlayingPanel == NowPlayingPanel.Queue;
+
+    partial void OnNowPlayingPanelChanged(NowPlayingPanel value)
+    {
+        OnPropertyChanged(nameof(ShowLyricsPanel));
+        OnPropertyChanged(nameof(ShowQueuePanel));
+    }
+
+    /// <summary>切换歌词面板(开着播放列表时先收起到歌词,互斥)。</summary>
+    [RelayCommand]
+    private void ToggleLyricsPanel()
+        => NowPlayingPanel = NowPlayingPanel == NowPlayingPanel.Lyrics ? NowPlayingPanel.None : NowPlayingPanel.Lyrics;
+
+    /// <summary>切换播放列表面板(与歌词面板互斥)。</summary>
+    [RelayCommand]
+    private void ToggleQueuePanel()
+        => NowPlayingPanel = NowPlayingPanel == NowPlayingPanel.Queue ? NowPlayingPanel.None : NowPlayingPanel.Queue;
 
     /// <summary>桌面/中屏侧栏是否完整展开；汉堡按钮在完整栏和图标栏之间切换。</summary>
     [ObservableProperty] private bool _isNavigationExpanded = true;

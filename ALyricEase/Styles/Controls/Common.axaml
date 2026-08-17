@@ -1,9 +1,53 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <!-- 播放详情页进度条(仿原版 TimelineSlider):2px 轨道(灰)+ 已播放段(teal,由 DecreaseButton 充当)
+             + 12px teal 圆形滑块。默认 Fluent 模板在 30px 高度下滑块下半被模板裁剪且用系统强调色,故自定义。
+             Track 会把子元素沿轨道方向排布:DecreaseButton 宽度=已播放比例,Thumb 居中其右缘。 -->
+        <ControlTheme x:Key="PlayerProgressSliderTheme" TargetType="Slider">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="Slider">
+                    <Grid Background="Transparent">
+                        <Border Height="2" VerticalAlignment="Center" Background="#7F8A8A8A" />
+                        <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                               Value="{TemplateBinding Value, Mode=TwoWay}" Orientation="Horizontal"
+                               VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+                            <Track.DecreaseButton>
+                                <RepeatButton x:Name="PART_DecreaseButton">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Height="2" VerticalAlignment="Center" Background="#FF5EA9A2" />
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseButton>
+                            <Track.Thumb>
+                                <Thumb x:Name="PART_Thumb" Width="12" Height="12">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Fill="#FF5EA9A2" />
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseButton>
+                                <RepeatButton x:Name="PART_IncreaseButton">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="Transparent" />
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </ControlTheme>
+    </Styles.Resources>
+
     <Style Selector="Slider.player-progress">
-        <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
-        <Setter Property="Background" Value="#7F8A8A8A" />
-        <Setter Property="MinHeight" Value="4" />
+        <Setter Property="Theme" Value="{StaticResource PlayerProgressSliderTheme}" />
     </Style>
 
     <Style Selector="ListBoxItem.lyric-nav-item">

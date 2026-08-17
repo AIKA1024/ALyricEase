@@ -20,14 +20,14 @@ public partial class App : Application
 #endif
   }
 
-  public override void OnFrameworkInitializationCompleted()
-  {
-    if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+    public override void OnFrameworkInitializationCompleted()
     {
-      desktop.MainWindow = new MainWindow
-      {
-        DataContext = ServiceLocator.Get<MainViewModel>(),
-      };
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = ServiceLocator.Get<MainViewModel>(),
+            };
 
 #if WINDOWS
       // SMTC 需要前台窗口 HWND,须在窗口创建后于 UI 线程初始化

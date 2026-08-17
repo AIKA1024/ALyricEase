@@ -91,6 +91,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     // 增量加载状态:trackIds 是全量权威顺序;仅已解析的歌曲会物化进 Tracks。
     private List<long> _trackIds = new();
     private readonly Dictionary<long, Song> _known = new();
+    // 当前歌单的共享播放队列:所有曲目行持有同一列表引用,随物化增长;
+    // 点击播放时 PlayerViewModel.SetQueue 会 ToList() 快照,即"此刻已物化的完整歌单"。
+    private readonly List<Song> _queueSongs = new();
     private int _materialized;          // 已物化进 Tracks 的曲目数(按 trackIds 顺序)
     private bool _isLoadingMore;
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
@@ -109,6 +112,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         PlaylistTitle = playlist.Name;
         _trackIds = new List<long>();
         _known.Clear();
+        _queueSongs.Clear();
         _materialized = 0;
         IsBusy = true;
         Message = null;
@@ -178,22 +182,22 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
     }
 
-    /// <summary>把 trackIds 里连续已解析的曲目物化成列表项(队列取当前已物化列表的快照)。</summary>
+    /// <summary>把 trackIds 里连续已解析的曲目物化成列表项。
+    /// 所有行共享 _queueSongs(与 Tracks 同步增长):先物化的行不会再拿到比后加载批次更短的旧队列,
+    /// 点击播放时按"此刻已物化的完整歌单"快照入队。</summary>
     private void AppendKnownTracks()
     {
-        var queue = new List<Song>(Tracks.Count + 64);
-        foreach (var t in Tracks) queue.Add(t.Song);
         while (_materialized < _trackIds.Count)
         {
             var id = _trackIds[_materialized];
             if (!_known.TryGetValue(id, out var song)) break;
-            Tracks.Add(new SongItemViewModel(song, _player.PlayFromList, _materialized + 1, queue, _api));
-            queue.Add(song);
+            Tracks.Add(new SongItemViewModel(song, _player.PlayFromList, _materialized + 1, _queueSongs, _api, PlaylistTitle));
+            _queueSongs.Add(song);
             _materialized++;
         }
     }
 
-    /// <summary>头部「播放全部」:从第一首开始播放(后续可扩展为顺序队列)。
+    /// <summary>头部「播放全部」:从第一首开始播放,播放队列 = 当前已物化的完整歌单(经首行共享队列注入)。
     /// 增量模式下先保证队列里有足量已物化曲目,再开始播。</summary>
     [RelayCommand]
     private async Task PlayAllAsync()

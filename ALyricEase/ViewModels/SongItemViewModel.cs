@@ -13,21 +13,23 @@ namespace ALyricEase.ViewModels;
 /// <summary>搜索结果单行:展示歌曲信息 + 双击播放。封面/红心状态后台加载。</summary>
 public sealed partial class SongItemViewModel : ViewModelBase
 {
-    private readonly Func<Song, IReadOnlyList<Song>?, Task> _playSong;
+    private readonly Func<Song, IReadOnlyList<Song>?, string?, Task> _playSong;
     private readonly IReadOnlyList<Song>? _queue;
+    private readonly string? _source;
     private readonly NetEaseApiClient? _api;
 
     private bool _coverRequested;
     private bool _likedRequested;
 
     public SongItemViewModel(Song song, Func<Song, Task> playSong, int index = 0, NetEaseApiClient? api = null)
-        : this(song, (s, _) => playSong(s), index, api: api) { }
+        : this(song, (s, _, _) => playSong(s), index, api: api) { }
 
-    public SongItemViewModel(Song song, Func<Song, IReadOnlyList<Song>?, Task> playSong, int index = 0, IReadOnlyList<Song>? queue = null, NetEaseApiClient? api = null)
+    public SongItemViewModel(Song song, Func<Song, IReadOnlyList<Song>?, string?, Task> playSong, int index = 0, IReadOnlyList<Song>? queue = null, NetEaseApiClient? api = null, string? source = null)
     {
         Song = song;
         _playSong = playSong;
         _queue = queue;
+        _source = source;
         _api = api;
         Index = index;
         // 歌手子菜单项:按 id/名一一配对(数量不一致时取短的)
@@ -102,7 +104,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private bool _isInLikelist;
 
     [RelayCommand]
-    private async Task PlayAsync() => await _playSong(Song, _queue);
+    private async Task PlayAsync() => await _playSong(Song, _queue, _source);
 
     /// <summary>切换红心:乐观更新,失败回滚。</summary>
     [RelayCommand]

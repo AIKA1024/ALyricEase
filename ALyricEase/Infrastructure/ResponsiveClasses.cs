@@ -11,7 +11,7 @@ internal static class ResponsiveClasses
     internal static void Apply(Control control, double width)
     {
         control.Classes.Set("wide", width >= CompactWidth);
-        control.Classes.Set("compact", width >= NarrowWidth && width < CompactWidth);
-        control.Classes.Set("narrow", width > 0 && width < NarrowWidth);
+        control.Classes.Set("compact", width is >= NarrowWidth and < CompactWidth);
+        control.Classes.Set("narrow", width is > 0 and < NarrowWidth);
     }
 }

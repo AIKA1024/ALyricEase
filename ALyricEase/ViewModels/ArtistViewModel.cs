@@ -50,7 +50,7 @@ public sealed partial class ArtistViewModel : ViewModelBase
             var queue = songs;
             Songs.Clear();
             foreach (var s in songs)
-                Songs.Add(new SongItemViewModel(s, _player.PlayFromList, api: _api, queue: queue));
+                Songs.Add(new SongItemViewModel(s, _player.PlayFromList, api: _api, queue: queue, source: info.Name));
 
             var albums = await _api.GetArtistAlbumsAsync(artistId, 50);
             Albums.Clear();

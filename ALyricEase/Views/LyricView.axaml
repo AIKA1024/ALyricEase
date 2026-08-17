@@ -2,12 +2,47 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:models="using:ALyricEase.Models"
+             xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:LyricViewModel"
              mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="320"
              x:Class="ALyricEase.Views.LyricView">
+    <UserControl.Resources>
+        <!-- 默认(手机/紧凑)模板:字号继承 ListBoxItem 样式(16,选中 22 放大动画) -->
+        <DataTemplate x:Key="DefaultLyricItemTemplate" x:DataType="models:LyricLine">
+            <StackPanel MaxWidth="380">
+                <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap" Foreground="#F5F5F7" />
+                <TextBlock Text="{Binding Translation}" TextAlignment="Left" TextWrapping="Wrap"
+                           FontSize="14" Opacity="0.55" Foreground="#C7C7CC"
+                           IsVisible="{Binding HasTranslation}" />
+            </StackPanel>
+        </DataTemplate>
+        <!-- 详情页歌词面板模板(仿原版 PlaybackDetailView 歌词区):26 Bold 原文 + 18 翻译,
+             字号随 FontScale 档位缩放;翻译行受"显示翻译"开关控制 -->
+        <DataTemplate x:Key="DetailLyricItemTemplate" x:DataType="models:LyricLine">
+            <StackPanel Spacing="6">
+                <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap"
+                           FontWeight="Bold" Foreground="#FFFFFFFF"
+                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=26}" />
+                <TextBlock Text="{Binding Translation}" TextAlignment="Left" TextWrapping="Wrap"
+                           Foreground="#BFFFFFFF"
+                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=18}">
+                    <TextBlock.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="HasTranslation" />
+                            <Binding Path="$parent[views:LyricView].((vm:LyricViewModel)DataContext).ShowTranslation" />
+                        </MultiBinding>
+                    </TextBlock.IsVisible>
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
     <UserControl.Styles>
+        <Style Selector="ListBox#LyricList">
+            <Setter Property="ItemTemplate" Value="{StaticResource DefaultLyricItemTemplate}" />
+        </Style>
         <Style Selector="ListBoxItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -40,6 +75,37 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="RenderTransform" Value="scale(1.05,1.05)" />
         </Style>
+
+        <!-- ── detail 模式(播放详情页歌词面板)────────────────────────────── -->
+        <!-- 字号固定由模板控制(不随选中跳变);当前句:不透明 + 从左缘放大 1.05(仿原版 Present 状态) -->
+        <Style Selector="views|LyricView.detail ListBox#LyricList">
+            <Setter Property="ItemTemplate" Value="{StaticResource DetailLyricItemTemplate}" />
+            <!-- 视口上下淡出(原版歌词区边缘渐隐) -->
+            <Setter Property="OpacityMask">
+                <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+                    <GradientStop Color="#00FFFFFF" Offset="0" />
+                    <GradientStop Color="#FFFFFFFF" Offset="0.12" />
+                    <GradientStop Color="#FFFFFFFF" Offset="0.85" />
+                    <GradientStop Color="#00FFFFFF" Offset="1" />
+                </LinearGradientBrush>
+            </Setter>
+        </Style>
+        <Style Selector="views|LyricView.detail ListBoxItem">
+            <Setter Property="Padding" Value="10,12" />
+            <Setter Property="Margin" Value="0,0" />
+            <Setter Property="RenderTransformOrigin" Value="0%,50%" />
+        </Style>
+        <!-- 距离渐变(仿原版 InteractiveLyricControl:±1 句 0.75、±2 句 0.6、其余 0.4;d1/d2 类由代码后置按与当前句距离设置) -->
+        <Style Selector="views|LyricView.detail ListBoxItem.d1">
+            <Setter Property="Opacity" Value="0.75" />
+        </Style>
+        <Style Selector="views|LyricView.detail ListBoxItem.d2">
+            <Setter Property="Opacity" Value="0.6" />
+        </Style>
+        <Style Selector="views|LyricView.detail ListBoxItem:selected">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="RenderTransform" Value="scale(1.05,1.05)" />
+        </Style>
     </UserControl.Styles>
     <Grid>
         <ListBox x:Name="LyricList" ItemsSource="{Binding Lines}"
@@ -49,16 +115,6 @@
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Hidden"
                  SelectionChanged="OnSelectionChanged">
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="models:LyricLine">
-                    <StackPanel MaxWidth="380">
-                        <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap" Foreground="#F5F5F7" />
-                        <TextBlock Text="{Binding Translation}" TextAlignment="Left" TextWrapping="Wrap"
-                                   FontSize="14" Opacity="0.55" Foreground="#C7C7CC"
-                                   IsVisible="{Binding HasTranslation}" />
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
         </ListBox>
         <TextBlock Text="{Binding Message}" TextWrapping="Wrap" TextAlignment="Center"
                    HorizontalAlignment="Center" VerticalAlignment="Center"

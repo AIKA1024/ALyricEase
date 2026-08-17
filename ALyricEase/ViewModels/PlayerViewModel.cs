@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
@@ -36,6 +37,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     // 播放队列:下一曲/上一曲用。PlayAsync 播放时若来自列表(歌单/搜索)会带上来源,否则单曲。
     private List<Song> _queue = new();
     private int _queueIndex = -1;
+    // 队列行 VM 缓存(与 _queue 同序对齐):详情页"接下来播放"列表重建时复用,封面不用重载。
+    private List<QueueItemViewModel> _queueVms = new();
 
     private PlaybackState _prevState;
     private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
@@ -77,6 +80,17 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// <summary>当前曲是否已红心(在"我喜欢的音乐"里)。</summary>
     [ObservableProperty] private bool _isCurrentLiked;
 
+    /// <summary>播放来源名(歌单/每日推荐/专辑等,详情页"接下来播放"头部显示);单曲播放为 null。</summary>
+    [ObservableProperty] private string? _queueSourceName;
+
+    public bool HasQueueSource => !string.IsNullOrEmpty(QueueSourceName);
+
+    partial void OnQueueSourceNameChanged(string? value) => OnPropertyChanged(nameof(HasQueueSource));
+
+    /// <summary>详情页"接下来播放"列表:当前曲之后的队列(循环顺序,当前曲不重复出现)。
+    /// 随 SetQueue/切歌/移除重建,行 VM 复用缓存。</summary>
+    public ObservableCollection<QueueItemViewModel> UpcomingItems { get; } = new();
+
     /// <summary>曲名显示:未放歌时显示应用名占位(原版显示 "LyricEase")。</summary>
     public string DisplayTitle => CurrentSong is null ? "ALyricEase" : Title;
 
@@ -114,12 +128,35 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(PlaybackModeGlyph));
         OnPropertyChanged(nameof(PlaybackModeName));
         OnPropertyChanged(nameof(IsFluentModeIcon));
+        OnPropertyChanged(nameof(IsListLoopMode));
+        OnPropertyChanged(nameof(IsSingleLoopMode));
+        OnPropertyChanged(nameof(IsShuffleMode));
     }
 
-    /// <summary>循环切换播放模式:列表循环 → 单曲循环 → 随机播放 → 心动模式。</summary>
+    /// <summary>详情页播放模式菜单的单选绑定项(ToggleType=Radio):选中即切到对应模式。</summary>
+    public bool IsListLoopMode
+    {
+        get => PlaybackMode == PlaybackMode.ListLoop;
+        set { if (value) PlaybackMode = PlaybackMode.ListLoop; }
+    }
+
+    public bool IsSingleLoopMode
+    {
+        get => PlaybackMode == PlaybackMode.SingleLoop;
+        set { if (value) PlaybackMode = PlaybackMode.SingleLoop; }
+    }
+
+    public bool IsShuffleMode
+    {
+        get => PlaybackMode == PlaybackMode.Shuffle;
+        set { if (value) PlaybackMode = PlaybackMode.Shuffle; }
+    }
+
+    /// <summary>循环切换播放模式:列表循环 → 单曲循环 → 随机播放。
+    /// 心动模式暂未实现,不参与切换(枚举值保留,PlayNextAsync 中逻辑留作后续启用)。</summary>
     [RelayCommand]
     private void TogglePlaybackMode()
-        => PlaybackMode = (PlaybackMode)(((int)PlaybackMode + 1) % 4);
+        => PlaybackMode = (PlaybackMode)(((int)PlaybackMode + 1) % 3);
 
     partial void OnVolumeChanged(int value) => _player.Volume = value;
 
@@ -144,6 +181,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(HasProgress));
         OnPropertyChanged(nameof(DisplayTitle));
         OnPropertyChanged(nameof(DisplayArtist));
+        RefreshUpcomingItems(); // 切歌后"接下来播放"从新的当前曲起算
         _ = LoadCurrentLikedAsync();
     }
 
@@ -208,20 +246,63 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// <summary>一首歌开始加载/播放(UI 线程),供主窗口导航切到正在播放页。</summary>
     public event Action? SongStarted;
 
-    /// <summary>设置播放队列 + 定位当前曲目。播放来自歌单/搜索前调用,使下一曲/上一曲可用。</summary>
-    public void SetQueue(IReadOnlyList<Song> queue, Song current)
+    /// <summary>设置播放队列 + 定位当前曲目。播放来自歌单/搜索前调用,使下一曲/上一曲可用。
+    /// source 为播放来源名(歌单/每日推荐等),详情页"接下来播放"头部显示。</summary>
+    public void SetQueue(IReadOnlyList<Song> queue, Song current, string? source = null)
     {
         if (queue is not { Count: > 0 }) return;
         _queue = queue.ToList();
         _queueIndex = _queue.FindIndex(s => s.Id == current.Id);
         if (_queueIndex < 0) { _queue.Insert(0, current); _queueIndex = 0; }
+        QueueSourceName = source;
+        _queueVms = _queue.Select(s => new QueueItemViewModel(s, PlayQueueItem, RemoveFromQueue)).ToList();
+        RefreshUpcomingItems();
     }
 
-    /// <summary>从列表播放:先记录队列,再播当前曲。供 SongItemViewModel 的队列播放回调使用。</summary>
-    public Task PlayFromList(Song song, IReadOnlyList<Song>? queue)
+    /// <summary>从列表播放:先记录队列,再播当前曲。供 SongItemViewModel 的队列播放回调使用。
+    /// 无来源列表时退化为单曲队列:不能沿用旧队列,否则下一曲/播完自动切会跳回之前歌单里毫不相干的歌。</summary>
+    public Task PlayFromList(Song song, IReadOnlyList<Song>? queue, string? source = null)
     {
-        if (queue is { Count: > 0 }) SetQueue(queue, song);
+        if (queue is { Count: > 0 })
+            SetQueue(queue, song, source);
+        else
+        {
+            _queue = new List<Song> { song };
+            _queueIndex = 0;
+            QueueSourceName = null;
+            _queueVms = new List<QueueItemViewModel> { new(song, PlayQueueItem, RemoveFromQueue) };
+            RefreshUpcomingItems();
+        }
         return PlayAsync(song);
+    }
+
+    /// <summary>重建"接下来播放"列表:从当前曲下一首开始的循环顺序(当前曲不在列)。</summary>
+    private void RefreshUpcomingItems()
+    {
+        UpcomingItems.Clear();
+        if (_queueIndex < 0) return;
+        for (var i = 1; i < _queueVms.Count; i++)
+            UpcomingItems.Add(_queueVms[(_queueIndex + i) % _queueVms.Count]);
+    }
+
+    /// <summary>点播放列表行:直接播该曲(队列不变,仅移动当前位置)。</summary>
+    private Task PlayQueueItem(QueueItemViewModel item)
+    {
+        var idx = _queueVms.IndexOf(item);
+        if (idx < 0) return Task.CompletedTask;
+        _queueIndex = idx;
+        return PlayAsync(_queue[idx]);
+    }
+
+    /// <summary>从队列移除一首。移除当前曲不打断播放,当前位置挪到它的前一首(下一曲=被移除曲的后一首)。</summary>
+    private void RemoveFromQueue(QueueItemViewModel item)
+    {
+        var idx = _queueVms.IndexOf(item);
+        if (idx < 0) return;
+        _queue.RemoveAt(idx);
+        _queueVms.RemoveAt(idx);
+        if (idx <= _queueIndex) _queueIndex--;
+        RefreshUpcomingItems();
     }
 
     /// <summary>播放一首歌:查播放地址(higher→standard 自动降级),null 提示 VIP/不可播。

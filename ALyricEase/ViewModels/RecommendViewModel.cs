@@ -148,7 +148,7 @@ public sealed class RecommendViewModel : ViewModelBase
             if (dailySongs.Count > 0)
             {
                 var queue = dailySongs;
-                playAll = () => _player.PlayFromList(queue[0], queue);
+                playAll = () => _player.PlayFromList(queue[0], queue, "每日歌曲推荐");
             }
             sections.Add(new RecommendSectionViewModel("每日歌曲推荐", daily, isBordered: true, playAll));
         }
@@ -164,12 +164,13 @@ public sealed class RecommendViewModel : ViewModelBase
         }).ConfigureAwait(false);
     }
 
-    /// <summary>每日歌曲推荐区块:优先取每日歌曲(行),接口不可用时兜底为每日推荐歌单(卡片)。</summary>
+    /// <summary>每日歌曲推荐区块:优先取每日歌曲(行),接口不可用时兜底为每日推荐歌单(卡片)。
+    /// 每行都带全量每日歌曲队列:点任意一行播放,上一曲/下一曲/播完自动切都在每日推荐列表内进行。</summary>
     private async Task<List<object>> LoadDailyItemsAsync()
     {
         var songs = await _api.GetDailyRecommendSongsAsync().ConfigureAwait(false);
         if (songs.Count > 0)
-            return songs.Select(s => (object)new SongItemViewModel(s, _player.PlayFromList, api: _api)).ToList();
+            return songs.Select(s => (object)new SongItemViewModel(s, _player.PlayFromList, queue: songs, api: _api, source: "每日歌曲推荐")).ToList();
 
         var playlists = await _api.GetDailyRecommendAsync().ConfigureAwait(false);
         return playlists.Select(ToCard).ToList();

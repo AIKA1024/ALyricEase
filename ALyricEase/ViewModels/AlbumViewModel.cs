@@ -54,7 +54,7 @@ public sealed partial class AlbumViewModel : ViewModelBase
             Songs.Clear();
             var i = 1;
             foreach (var s in album.Songs)
-                Songs.Add(new SongItemViewModel(s, _player.PlayFromList, i++, queue, _api));
+                Songs.Add(new SongItemViewModel(s, _player.PlayFromList, i++, queue, _api, album.Info.Name));
         }
         catch
         {

@@ -28,4 +28,6 @@
     <x:String x:Key="IconPlaylist">&#xE905;</x:String>
     <x:String x:Key="IconTranslation">&#xE91D;</x:String>
     <x:String x:Key="IconFontSize">&#xE91C;</x:String>
+    <x:String x:Key="IconEnterFullScreen">&#xE924;</x:String>
+    <x:String x:Key="IconExitFullScreen">&#xE923;</x:String>
 </ResourceDictionary>

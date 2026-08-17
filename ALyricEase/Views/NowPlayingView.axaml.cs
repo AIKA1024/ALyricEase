@@ -6,6 +6,7 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Transformation;
+using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
@@ -15,7 +16,7 @@ namespace ALyricEase.Views;
 
 /// <summary>LyricEase 式正在播放页。仿原版 PlaybackDetailView:Canvas 绝对定位 + 代码后置布局,
 /// 控件位置由 UpdateDesktopLayout 按 尺寸档(小 &lt;700 / 中 700~1199 / 大 ≥1200)×面板状态 计算;
-/// 每个控件挂 RenderTransform 0.3s 过渡(等效原版 ImplicitAnimationSet 的 Offset 动画),
+/// RenderTransform 负责实际定位/命中测试;Composition Translation 负责 0.3s 补间动画,
 /// 缩放窗口/开关面板时控件平滑漂移。
 /// 布局规则(截图+用户确认):大/小屏无面板信息在封面下方;中屏信息在窗口顶部;开面板时封面缩为 60px 迷你头。</summary>
 public partial class NowPlayingView : UserControl
@@ -34,6 +35,7 @@ public partial class NowPlayingView : UserControl
     private Window? _window;
     private MainViewModel? _vm;
     private bool _transitionsAttached;
+    private readonly Dictionary<Control, Point> _positions = new();
 
     public NowPlayingView()
     {
@@ -94,12 +96,9 @@ public partial class NowPlayingView : UserControl
         else if (w >= 700) LayoutMedium(w, h, panelOpen);
         else LayoutSmall(w, h, panelOpen);
 
-        // 首次布局完成后再挂过渡:启动/首开时不应看到从 (0,0) 漂移的动画
+        // 首次布局完成后再启用 Composition 动画:启动/首开时不应看到从 (0,0) 漂移的动画
         if (!_transitionsAttached)
-        {
-            _transitionsAttached = true;
-            Dispatcher.UIThread.Post(AttachTransitions, DispatcherPriority.Loaded);
-        }
+            Dispatcher.UIThread.Post(() => _transitionsAttached = true, DispatcherPriority.Loaded);
     }
 
     /// <summary>大屏(≥1200,1920 截图基准):播放列 = 封面+信息+进度+控制+次级+切换;
@@ -256,33 +255,49 @@ public partial class NowPlayingView : UserControl
         QueueToggle.IsVisible = queueToggle;
     }
 
-    // ── 定位与过渡(等效原版 ImplicitAnimationSet 的 Offset 动画) ─────────────
+    // ── 定位与动画(Composition Animation) ─────────────────────────────────
 
     private void MoveTo(Control control, double x, double y)
-        => control.RenderTransform = Translate(x, y);
+    {
+        // RenderTransform 保留实际定位/命中测试;Composition Translation 只负责补间动画。
+        var old = _positions.TryGetValue(control, out var p) ? p : new Point(x, y);
+        control.RenderTransform = Translate(x, y);
+
+        var visual = ElementComposition.GetElementVisual(control);
+        if (visual is null)
+        {
+            _positions[control] = new Point(x, y);
+            return;
+        }
+
+        visual.StopAnimation("Translation");
+        if (_transitionsAttached)
+        {
+            // 从旧位置到新位置的视觉补间:RenderTransform 已经切到新位置,
+            // 所以用 Translation 从 (旧-新) 动画回 0。
+            // 先直接把 Translation 设为起点,避免首帧跳到新位置。
+            var from = new Vector3D(old.X - x, old.Y - y, 0);
+            visual.Translation = from;
+            var animation = visual.Compositor.CreateVector3DKeyFrameAnimation();
+            animation.Target = "Translation";
+            animation.Duration = s_slideDuration;
+            animation.InsertKeyFrame(0f, from);
+            animation.InsertKeyFrame(1f, default, s_slideEase);
+            visual.StartAnimation("Translation", animation);
+        }
+        else
+        {
+            visual.Translation = default;
+        }
+
+        _positions[control] = new Point(x, y);
+    }
 
     private void SetRect(Control control, double x, double y, double w, double h)
     {
         control.Width = w;
         control.Height = h;
         MoveTo(control, x, y);
-    }
-
-    /// <summary>给画布所有子元素挂 RenderTransform 过渡:之后任何坐标变更自动播放 0.3s 滑动。</summary>
-    private void AttachTransitions()
-    {
-        foreach (var child in DesktopCanvas.Children)
-        {
-            child.Transitions =
-            [
-                new TransformOperationsTransition
-                {
-                    Property = RenderTransformProperty,
-                    Duration = s_slideDuration,
-                    Easing = s_slideEase,
-                },
-            ];
-        }
     }
 
     /// <summary>构造 translate(x, y)(避免字符串解析的文化差异/格式问题)。</summary>

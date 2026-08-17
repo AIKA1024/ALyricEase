@@ -35,6 +35,7 @@ public partial class NowPlayingView : UserControl
     private Window? _window;
     private MainViewModel? _vm;
     private bool _transitionsAttached;
+    private bool _progressScrubbing;
     private readonly Dictionary<Control, Point> _positions = new();
 
     public NowPlayingView()
@@ -51,9 +52,19 @@ public partial class NowPlayingView : UserControl
     /// <summary>覆盖层常驻(关闭时在屏幕外),打开(ShowNowPlaying=true)时聚焦本视图。</summary>
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (_vm is not null) _vm.PropertyChanged -= OnViewModelPropertyChanged;
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged -= OnViewModelPropertyChanged;
+            _vm.Player.PropertyChanged -= OnPlayerPropertyChanged;
+        }
+
         _vm = DataContext as MainViewModel;
-        if (_vm is not null) _vm.PropertyChanged += OnViewModelPropertyChanged;
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged += OnViewModelPropertyChanged;
+            _vm.Player.PropertyChanged += OnPlayerPropertyChanged;
+            UpdateProgressBar();
+        }
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -63,6 +74,31 @@ public partial class NowPlayingView : UserControl
             Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Background);
         else if (e.PropertyName is nameof(MainViewModel.NowPlayingPanel))
             UpdateDesktopLayout(); // 面板开关 → 重算布局(控件漂移过去)
+    }
+
+    private void OnPlayerPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(PlayerViewModel.ScrubPositionMs)
+            or nameof(PlayerViewModel.DurationMs)
+            or nameof(PlayerViewModel.HasProgress))
+            UpdateProgressBar();
+    }
+
+    /// <summary>根据 ScrubPositionMs 更新进度条填充和滑块位置(与 PlayerBarView 一致)。</summary>
+    private void UpdateProgressBar()
+    {
+        if (_vm?.Player is not { } player || ProgressTrack is null) return;
+        var width = ProgressTrack.Bounds.Width;
+        if (width <= 0 || player.DurationMs <= 0)
+        {
+            ProgressFill.Width = 0;
+            ProgressThumb.Margin = new Thickness(-ProgressThumb.Width / 2, 0, 0, 0);
+            return;
+        }
+
+        var ratio = Math.Clamp(player.ScrubPositionMs / player.DurationMs, 0, 1);
+        ProgressFill.Width = width * ratio;
+        ProgressThumb.Margin = new Thickness(width * ratio - ProgressThumb.Width / 2, 0, 0, 0);
     }
 
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
@@ -375,13 +411,40 @@ public partial class NowPlayingView : UserControl
             w.BeginMoveDrag(e);
     }
 
-    private void OnTimelinePointerPressed(object? sender, PointerPressedEventArgs e)
+    private void OnProgressPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (DataContext is MainViewModel vm) vm.Player.BeginScrub();
+        if (_vm?.Player is not { } player) return;
+        if (!e.GetCurrentPoint(ProgressRoot).Properties.IsLeftButtonPressed) return;
+
+        _progressScrubbing = true;
+        e.Pointer.Capture(ProgressRoot);
+        player.BeginScrub();
+        SetProgressFromPointer(e);
+        e.Handled = true;
     }
 
-    private void OnTimelinePointerReleased(object? sender, PointerReleasedEventArgs e)
+    private void OnProgressPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (DataContext is MainViewModel vm) vm.Player.EndScrub();
+        if (_progressScrubbing) SetProgressFromPointer(e);
+    }
+
+    private void OnProgressPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_progressScrubbing) return;
+        _progressScrubbing = false;
+        e.Pointer.Capture(null);
+        if (_vm?.Player is { } player) player.EndScrub();
+        e.Handled = true;
+    }
+
+    private void SetProgressFromPointer(PointerEventArgs e)
+    {
+        if (_vm?.Player is not { } player) return;
+        var width = ProgressTrack.Bounds.Width;
+        if (width <= 0 || player.DurationMs <= 0) return;
+
+        var ratio = Math.Clamp(e.GetPosition(ProgressTrack).X / width, 0, 1);
+        player.ScrubPositionMs = player.DurationMs * ratio;
+        UpdateProgressBar();
     }
 }

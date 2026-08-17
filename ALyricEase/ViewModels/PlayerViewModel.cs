@@ -33,6 +33,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private readonly ISmtcService _smtc;
 
     private bool _scrubbing;
+    private bool _seekPending;
+    private long _seekTarget;
 
     // 播放队列:下一曲/上一曲用。PlayAsync 播放时若来自列表(歌单/搜索)会带上来源,否则单曲。
     private List<Song> _queue = new();
@@ -66,6 +68,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _artist = "";
     [ObservableProperty] private IImage? _cover;
     [ObservableProperty] private long _positionMs;
+    [ObservableProperty] private double _scrubPositionMs;
     [ObservableProperty] private long _durationMs;
     [ObservableProperty] private int _volume;
     [ObservableProperty] private bool _isPlaying;
@@ -460,15 +463,40 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _player.PositionMs = ms;
     }
 
-    /// <summary>进度条拖动开始:暂停接收播放器位置更新。</summary>
-    public void BeginScrub() => _scrubbing = true;
+    /// <summary>进度条拖动开始:把当前真实进度复制到 ScrubPositionMs,并暂停用播放器进度覆盖 Slider。</summary>
+    public void BeginScrub()
+    {
+        ScrubPositionMs = PositionMs;
+        _scrubbing = true;
+        _seekPending = false;
+    }
 
-    /// <summary>进度条松开:Seek 到当前位置,恢复接收更新。</summary>
-    public void EndScrub()
+    /// <summary>进度条松开:默认使用 ScrubPositionMs(底部 PlayerBar 也走这里)。</summary>
+    public void EndScrub() => EndScrub(ScrubPositionMs);
+
+    /// <summary>进度条松开:直接用 Slider/ScrubPositionMs 的最终值 Seek。
+    /// Seek 后进入短暂的 _seekPending 状态,等播放器进度追上目标值再恢复同步 Slider。</summary>
+    public void EndScrub(double positionMs)
     {
         _scrubbing = false;
-        if (_player.State is PlaybackState.Playing or PlaybackState.Paused)
-            _player.PositionMs = PositionMs;
+
+        if (CurrentSong is not null)
+        {
+            var ms = (long)Math.Round(positionMs);
+            PositionMs = ms;
+            ScrubPositionMs = ms;
+            _player.PositionMs = ms;
+            _seekPending = true;
+            _seekTarget = ms;
+            _ = ClearSeekPendingAfterTimeoutAsync();
+        }
+    }
+
+    private async Task ClearSeekPendingAfterTimeoutAsync()
+    {
+        // 如果播放器一直没回报接近 Seek 目标的位置,最多 1s 后恢复同步,避免 Slider 卡住。
+        await Task.Delay(1000);
+        _seekPending = false;
     }
 
     private void OnStateChanged(object? sender, EventArgs e)
@@ -490,8 +518,23 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnPositionChanged(object? sender, long value)
     {
-        if (_scrubbing) return;
         PositionMs = value;
+
+        if (_seekPending)
+        {
+            // Seek 后只等播放器进度追上目标,避免旧进度事件把 ScrubPositionMs/Slider 拉回去。
+            if (Math.Abs(value - _seekTarget) <= 500)
+            {
+                _seekPending = false;
+                ScrubPositionMs = value;
+            }
+        }
+        else if (!_scrubbing)
+        {
+            // 正常播放:真实进度同步给 Slider。
+            ScrubPositionMs = value;
+        }
+
         _lyric.UpdatePosition(value); // 驱动歌词高亮(UI 线程)
     }
 

@@ -59,6 +59,7 @@ public partial class PlayerBarView : UserControl
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(PlayerViewModel.PositionMs)
+            or nameof(PlayerViewModel.ScrubPositionMs)
             or nameof(PlayerViewModel.DurationMs)
             or nameof(PlayerViewModel.HasProgress))
             UpdateProgress();
@@ -78,7 +79,7 @@ public partial class PlayerBarView : UserControl
             ProgressThumb.Margin = new Thickness(-ProgressThumb.Width / 2, 0, 0, 0);
             return;
         }
-        var ratio = Math.Clamp((double)_vm.PositionMs / _vm.DurationMs, 0, 1);
+        var ratio = Math.Clamp(_vm.ScrubPositionMs / _vm.DurationMs, 0, 1);
         ProgressFill.Width = width * ratio;
         ProgressThumb.Margin = new Thickness(width * ratio - ProgressThumb.Width / 2, 0, 0, 0);
         UpdateTooltipPosition();
@@ -151,6 +152,6 @@ public partial class PlayerBarView : UserControl
         var width = ProgressTrack.Bounds.Width;
         if (width <= 0 || vm.DurationMs <= 0) return;
         var ratio = Math.Clamp(e.GetPosition(ProgressTrack).X / width, 0, 1);
-        vm.PositionMs = (long)(vm.DurationMs * ratio);
+        vm.ScrubPositionMs = vm.DurationMs * ratio;
     }
 }

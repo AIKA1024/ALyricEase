@@ -146,11 +146,22 @@
                 <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White" />
             </Button>
 
-            <!-- 进度条 + 两侧时间 -->
+            <!-- 进度条 + 两侧时间(参考 PlayerBarView 的自定义进度条,Pointer 事件直接驱动 ScrubPositionMs) -->
             <Grid x:Name="ProgressArea" RowDefinitions="30,Auto">
-                <Slider Classes="player-progress" Minimum="0" Maximum="{Binding Player.ProgressMaximum}"
-                        Value="{Binding Player.PositionMs}" Height="30" IsEnabled="{Binding Player.HasProgress}"
-                        PointerPressed="OnTimelinePointerPressed" PointerReleased="OnTimelinePointerReleased" />
+                <Grid x:Name="ProgressRoot" Height="30" Background="#01FFFFFF"
+                      IsVisible="{Binding Player.HasProgress}"
+                      PointerPressed="OnProgressPointerPressed" PointerMoved="OnProgressPointerMoved"
+                      PointerReleased="OnProgressPointerReleased">
+                    <Grid x:Name="ProgressTrack" Height="4" VerticalAlignment="Center" ClipToBounds="True">
+                        <Border Height="2" VerticalAlignment="Center" Background="#7F8A8A8A" />
+                        <Border x:Name="ProgressFill" Height="2" VerticalAlignment="Center" HorizontalAlignment="Left"
+                                Background="#FF5EA9A2" IsHitTestVisible="False" />
+                    </Grid>
+                    <Grid x:Name="ProgressThumb" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center"
+                          Background="Transparent" IsHitTestVisible="False">
+                        <Ellipse Fill="#FF5EA9A2" />
+                    </Grid>
+                </Grid>
                 <Grid Grid.Row="1" ColumnDefinitions="*,*">
                     <TextBlock Text="{Binding Player.PositionText}" FontWeight="SemiBold" Foreground="#BFFFFFFF" />
                     <TextBlock Grid.Column="1" Text="{Binding Player.DurationText}" HorizontalAlignment="Right"

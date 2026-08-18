@@ -163,7 +163,12 @@ public sealed partial class MainViewModel : ViewModelBase
         if (value == "Favorites")
             _ = _playlist.EnsureLoadedAsync(); // 已存 MUSIC_U 则恢复并打开“我喜欢的音乐”
 
-        // 从搜索/占位页切回导航项时同步选中;非导航页(搜索/账号/设置)清除选中
+        // 从搜索/占位页切回导航项时同步选中;非导航页(搜索/账号/设置)清除选中。
+        // 打开具体歌单时 ActivePage 也是 "Favorites",但 SelectedNav 当前是歌单子项,
+        // 不能把它重置成“我的收藏”,否则歌单项选中样式会消失。
+        if (value == "Favorites" && SelectedNav is { Playlist: not null })
+            return;
+
         SelectedNav = IsNavItem(value) ? ShellNavItems.FirstOrDefault(n => n.Key == value) : null;
     }
 
@@ -193,6 +198,9 @@ public sealed partial class MainViewModel : ViewModelBase
         if (value.Playlist is { } playlist)
         {
             OpenShellPlaylistCommand.Execute(playlist);
+            // OpenShellPlaylist 会把 ActivePage 设为 "Favorites",
+            // 这里再强制把选中项设回歌单子项,防止被“我的收藏”同步逻辑覆盖。
+            SelectedNav = value;
             return;
         }
 

@@ -62,9 +62,8 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Background" Value="Transparent" />
-      <!-- 原版 UWP NavigationView 点击(抬起)才选中导航;Avalonia 鼠标默认按下即选中。
-           IsHoldWithMouseEnabled=true 让鼠标选中延迟到抬起,拖走松开不选中(不残留高亮) -->
-      <Setter Property="InputElement.IsHoldWithMouseEnabled" Value="True" />
+      <!-- 暂时关闭 IsHoldWithMouseEnabled:它会导致特定导航顺序下歌单子项选中样式不刷新 -->
+      <Setter Property="InputElement.IsHoldWithMouseEnabled" Value="False" />
     </Style>
     <Style
       Selector="ListBox.shell-navigation > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -249,7 +248,7 @@
               </StackPanel>
             </Border>
             <ListBox Classes="shell-navigation" ItemsSource="{Binding CompactNavItems}"
-                     SelectedItem="{Binding SelectedNav}"
+                     SelectedItem="{Binding SelectedNav, Mode=OneWay}"
                      Width="48" Background="Transparent" BorderThickness="0" Margin="0,4,0,4">
               <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>

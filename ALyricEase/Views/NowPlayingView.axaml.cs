@@ -27,7 +27,7 @@ public partial class NowPlayingView : UserControl
 
     // 大屏封面下方的控件栈高度:信息54+进度52+控制60+次级50+切换32 + 间距 22+18+14+16+24 = 342
     private const double BelowCoverStack = 342;
-    private const double PanelGap = 42;   // 大屏:播放列与右侧面板间距
+    private const double PanelGap = 50;   // 大屏:播放列与右侧面板间距
 
     private static readonly TimeSpan s_slideDuration = TimeSpan.FromSeconds(0.3);
     private static readonly SplineEasing s_slideEase = new(0.215, 0.61, 0.355, 1); // 与主窗口覆盖层同曲线
@@ -141,7 +141,7 @@ public partial class NowPlayingView : UserControl
     /// 无面板居中;开面板整组左移,面板占剩余宽度(1920 时恰为 898)。</summary>
     private void LayoutLarge(double w, double h, bool panelOpen)
     {
-        var margin = Math.Clamp(w * 0.10, 36, 190);
+        var margin = 40.0;
         var cover = Math.Clamp(Math.Min(h - BelowCoverStack - 114, w - margin * 2), 180, 600);
         var colH = cover + BelowCoverStack;
         var colTop = (h - colH) / 2 + 35;

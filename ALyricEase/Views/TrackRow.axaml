@@ -43,14 +43,18 @@
               <Border Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
-                  <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
+                  <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                         Stretch="UniformToFill" />
                   <!-- 封面红心按钮:黑圆底 + 实心爱心(仿原版 LikeToggleButtonStyle),悬停浮现;未喜欢白,喜欢红 E74C3C -->
                   <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
                           HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">
                     <Grid>
-                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24"
-                                 Foreground="White" IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />
-                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24"
+                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
+                                 FontSize="24"
+                                 Foreground="White"
+                                 IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />
+                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
+                                 FontSize="24"
                                  Foreground="#FFE74C3C" IsVisible="{Binding IsInLikelist}" />
                     </Grid>
                   </Button>
@@ -59,27 +63,35 @@
               <StackPanel Classes="row-title" Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                 <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                 <!-- 歌手/专辑链接按钮(仿原版 ArtistsAndAlbum),点击出菜单跳歌手/专辑页 -->
-                <Button x:Name="ArtistAlbumButton" Classes="row-link" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <Button x:Name="ArtistAlbumButton" Classes="row-link" HorizontalAlignment="Left"
+                        VerticalAlignment="Center">
                   <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="{Binding ArtistsAndAlbumText}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                    <TextBlock Text="{Binding ArtistsAndAlbumText}" FontSize="12"
+                               Foreground="{DynamicResource TextSecondary}"
                                TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="9"
+                    <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}"
+                               FontSize="9"
                                Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center" />
                   </StackPanel>
                   <Button.Resources>
                     <!-- MenuFlyout:原生 hover 子菜单/延迟/定位(多歌手"表演者"子项),不再手写计时器 -->
                     <MenuFlyout x:Key="TrackMenuFlyout" FlyoutPresenterClasses="track-menu-presenter">
                       <!-- 单歌手:直接跳歌手页 -->
-                      <MenuItem Classes="track-menu-item" Header="{Binding Artist, StringFormat='表演者: {0}'}" Command="{Binding OpenArtistCommand}"
-                                IsEnabled="{Binding HasArtist}" IsVisible="{Binding HasMultipleArtists, Converter={x:Static BoolConverters.Not}}">
+                      <MenuItem Classes="track-menu-item" Header="{Binding Artist, StringFormat='表演者: {0}'}"
+                                Command="{Binding OpenArtistCommand}"
+                                IsEnabled="{Binding HasArtist}"
+                                IsVisible="{Binding HasMultipleArtists, Converter={x:Static BoolConverters.Not}}">
                         <MenuItem.Icon>
-                          <TextBlock Text="{DynamicResource IconSingleArtist}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
+                          <TextBlock Text="{DynamicResource IconSingleArtist}"
+                                     FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
                         </MenuItem.Icon>
                       </MenuItem>
                       <!-- 多歌手:子菜单逐项跳对应歌手页(ItemContainerTheme 直接绑生成的 MenuItem 容器,不用 DataTemplate 嵌套) -->
-                      <MenuItem Classes="track-menu-item" Header="表演者" IsVisible="{Binding HasMultipleArtists}" ItemsSource="{Binding Artists}">
+                      <MenuItem Classes="track-menu-item" Header="表演者" IsVisible="{Binding HasMultipleArtists}"
+                                ItemsSource="{Binding Artists}">
                         <MenuItem.Icon>
-                          <TextBlock Text="{DynamicResource IconMultiArtists}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
+                          <TextBlock Text="{DynamicResource IconMultiArtists}"
+                                     FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
                         </MenuItem.Icon>
                         <MenuItem.ItemContainerTheme>
                           <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
@@ -91,10 +103,12 @@
                         </MenuItem.ItemContainerTheme>
                       </MenuItem>
                       <!-- 专辑 -->
-                      <MenuItem Classes="track-menu-item" Header="{Binding Album, StringFormat='专辑: {0}'}" Command="{Binding OpenAlbumCommand}"
+                      <MenuItem Classes="track-menu-item" Header="{Binding Album, StringFormat='专辑: {0}'}"
+                                Command="{Binding OpenAlbumCommand}"
                                 IsEnabled="{Binding HasAlbum}">
                         <MenuItem.Icon>
-                          <TextBlock Text="{DynamicResource IconAlbum}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
+                          <TextBlock Text="{DynamicResource IconAlbum}" FontFamily="{DynamicResource LyricEaseIcons}"
+                                     FontSize="14" />
                         </MenuItem.Icon>
                       </MenuItem>
                     </MenuFlyout>
@@ -102,16 +116,21 @@
                 </Button>
               </StackPanel>
               <!-- 播放按钮:悬停浮现,居中于标题与时长之间(仿原版 SearchResult 播放按钮独立列) -->
-              <Button Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action" Command="{Binding PlayCommand}"
+              <Button Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
+                      Command="{Binding PlayCommand}"
                       HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="播放">
-                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="15" />
+                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                           FontSize="15" />
               </Button>
               <Grid Grid.Column="3" VerticalAlignment="Center">
                 <!-- 时长与更多按钮同列居中:悬停时 32px 更多按钮原地盖住窄时长,无跳动(仿原版 Duration/MoreButton 同列) -->
                 <TextBlock Classes="row-duration" Text="{Binding DurationText}" FontSize="12"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
-                <Button Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="更多操作">
-                  <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondary}" />
+                <Button Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="更多操作">
+                  <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="16" />
                 </Button>
               </Grid>
             </Grid>
@@ -138,13 +157,17 @@
               <Border Grid.Column="1" Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
-                  <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
+                  <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                         Stretch="UniformToFill" />
                   <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
                           HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">
                     <Grid>
-                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24"
-                                 Foreground="White" IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />
-                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="24"
+                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
+                                 FontSize="24"
+                                 Foreground="White"
+                                 IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />
+                      <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
+                                 FontSize="24"
                                  Foreground="#FFE74C3C" IsVisible="{Binding IsInLikelist}" />
                     </Grid>
                   </Button>
@@ -154,17 +177,21 @@
               <TextBlock Classes="row-title" Grid.Column="2" Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
                          TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               <!-- 播放按钮:悬停浮现,居中于歌名与歌手之间 -->
-              <Button Grid.Column="3" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action" Command="{Binding PlayCommand}"
+              <Button Grid.Column="3" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
+                      Command="{Binding PlayCommand}"
                       HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="播放">
-                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="15" />
+                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                           FontSize="15" />
               </Button>
               <!-- 歌手:可点击 → 歌手页(仿原版 ArtistsButton);多歌手时按下弹菜单选歌手 -->
               <Button Grid.Column="4" x:Name="ArtistButton" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
                       Command="{Binding OpenArtistCommand}" VerticalAlignment="Center" ToolTip.Tip="打开歌手页">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                             TextTrimming="CharacterEllipsis" />
                   <!-- 多歌手时显示下箭头提示可展开菜单(单歌手无) -->
-                  <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="9"
+                  <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="9"
                              Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center"
                              IsVisible="{Binding HasMultipleArtists}" />
                 </StackPanel>
@@ -197,14 +224,18 @@
               <!-- 专辑:可点击 → 专辑页(仿原版 AlbumButton) -->
               <Button Grid.Column="5" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
                       Command="{Binding OpenAlbumCommand}" VerticalAlignment="Center" ToolTip.Tip="打开专辑页">
-                <TextBlock Text="{Binding Album}" FontSize="12" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Album}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
               </Button>
               <!-- 时长 + 更多(同列居中,更多盖住时长) -->
               <Grid Grid.Column="6" VerticalAlignment="Center">
-                <TextBlock Classes="row-duration" Text="{Binding DurationText}" FontSize="12" HorizontalAlignment="Center"
+                <TextBlock Classes="row-duration" Text="{Binding DurationText}" FontSize="12"
+                           HorizontalAlignment="Center"
                            VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
-                <Button Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="更多操作">
-                  <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                <Button Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="更多操作">
+                  <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="16" />
                 </Button>
               </Grid>
             </Grid>
@@ -212,6 +243,101 @@
         </ControlTemplate>
       </Setter>
     </ControlTheme>
+    <!-- 专辑行:仿原版 PlaylistTrackListItemWideStyle 但去掉封面列。
+         专辑内歌曲封面与专辑一致,行内不再重复显示 Image,红心移到歌名右侧悬停浮现。 -->
+    <ControlTheme x:Key="TrackRowAlbumTheme" TargetType="views:TrackRow">
+      <Setter Property="Template">
+        <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
+          <Grid Background="{TemplateBinding Background}">
+            <!-- 悬停高亮 -->
+            <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
+            <Grid ColumnDefinitions="64,3*,32,2*,3*,32" Margin="8,0" ColumnSpacing="8">
+              <!-- 序号 + 红心(无封面,红心悬停时覆盖在序号上) -->
+              <Grid Grid.Column="0" VerticalAlignment="Center" Margin="24,0">
+                <TextBlock Text="{Binding DisplayIndex}" FontSize="12" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+                <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart album-heart"
+                        Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        ToolTip.Tip="喜欢">
+                  <Grid>
+                    <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
+                               FontSize="15"
+                               Foreground="White"
+                               IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />
+                    <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
+                               FontSize="15"
+                               Foreground="#FFE74C3C" IsVisible="{Binding IsInLikelist}" />
+                  </Grid>
+                </Button>
+              </Grid>
+              <!-- 歌名 -->
+              <TextBlock Classes="row-title" Grid.Column="1" Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <!-- 播放按钮 -->
+              <Button Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
+                      Command="{Binding PlayCommand}"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="播放">
+                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                           FontSize="15" />
+              </Button>
+              <!-- 歌手 -->
+              <Button Grid.Column="3" x:Name="ArtistButton" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
+                      Command="{Binding OpenArtistCommand}" VerticalAlignment="Center" ToolTip.Tip="打开歌手页">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="9"
+                             Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center"
+                             IsVisible="{Binding HasMultipleArtists}" />
+                </StackPanel>
+                <Button.Resources>
+                  <MenuFlyout x:Key="ArtistMenuFlyout" FlyoutPresenterClasses="track-menu-presenter"
+                              ItemsSource="{Binding Artists}">
+                    <MenuFlyout.ItemContainerTheme>
+                      <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
+                                    BasedOn="{StaticResource {x:Type MenuItem}}">
+                        <Setter Property="Header" Value="{Binding Name}" />
+                        <Setter Property="Command" Value="{Binding OpenCommand}" />
+                        <Setter Property="CommandParameter" Value="{Binding Id}" />
+                        <Setter Property="Height" Value="32" />
+                        <Setter Property="Padding" Value="12,0" />
+                        <Setter Property="Margin" Value="0,2" />
+                        <Setter Property="CornerRadius" Value="8" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="FontSize" Value="13" />
+                        <Style Selector="^:pointerover /template/ Border#PART_LayoutRoot">
+                          <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+                        </Style>
+                      </ControlTheme>
+                    </MenuFlyout.ItemContainerTheme>
+                  </MenuFlyout>
+                </Button.Resources>
+              </Button>
+              <!-- 专辑 -->
+              <Button Grid.Column="4" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
+                      Command="{Binding OpenAlbumCommand}" VerticalAlignment="Center" ToolTip.Tip="打开专辑页">
+                <TextBlock Text="{Binding Album}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
+              </Button>
+              <!-- 时长 + 更多 -->
+              <Grid Grid.Column="5" VerticalAlignment="Center">
+                <TextBlock Classes="row-duration" Text="{Binding DurationText}" FontSize="12"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+                <Button Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="更多操作">
+                  <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="16" />
+                </Button>
+              </Grid>
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+
   </Styles.Resources>
 
   <!-- 默认样式:默认套用歌单宽行;Background=Transparent 让整行可命中(:pointerover 悬停高亮 + 双击播放) -->
@@ -302,6 +428,11 @@
     <Setter Property="Background" Value="#FF000000" /><Setter Property="BorderThickness" Value="0" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <!-- 专辑行序号上的红心:比通用 row-heart 更具体,覆盖为 32 -->
+  <Style Selector="views|TrackRow Button.row-heart.album-heart">
+    <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" />
+    <Setter Property="CornerRadius" Value="16" />
   </Style>
   <Style Selector="views|TrackRow:pointerover Button.row-heart">
     <Setter Property="IsVisible" Value="True" />

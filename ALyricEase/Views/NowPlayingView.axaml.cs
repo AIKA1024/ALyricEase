@@ -407,8 +407,10 @@ public partial class NowPlayingView : UserControl
     /// <summary>顶部拖拽条:按下并拖动时移动窗口(播放详情页盖住标题栏,靠这里拖)。</summary>
     private void OnTitleDragPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && TopLevel.GetTopLevel(this) is Window w)
-            w.BeginMoveDrag(e);
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (TopLevel.GetTopLevel(this) is not Window w) return;
+        if (w.WindowState == WindowState.FullScreen) return; // 全屏下禁止拖动窗口
+        w.BeginMoveDrag(e);
     }
 
     private void OnProgressPointerPressed(object? sender, PointerPressedEventArgs e)

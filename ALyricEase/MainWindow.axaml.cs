@@ -20,6 +20,10 @@ namespace ALyricEase;
 
 public partial class MainWindow : Window
 {
+#if WINDOWS
+    private Win32Properties.CustomWndProcHookCallback? _wndProcHook;
+#endif
+
     public MainWindow()
     {
         InitializeComponent();
@@ -33,9 +37,12 @@ public partial class MainWindow : Window
         MarkClientHitTest(MinGlyph);
         MarkClientHitTest(MaxGlyph);
         MarkClientHitTest(CloseGlyph);
+        _wndProcHook = OnWndProc;
+        Win32Properties.AddWndProcHookCallback(this, _wndProcHook);
 #endif
         SizeChanged += OnSizeChanged;
         Opened += OnOpened;
+        PropertyChanged += OnWindowPropertyChanged;
         // 覆盖层常驻:先把 RenderTransform 无过渡地摆到屏幕外(启动首帧即隐藏)。
         // 必须用代码且在 attach 前:若靠绑定首设值,attach 时会触发过渡导致启动闪现。
         SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
@@ -46,9 +53,50 @@ public partial class MainWindow : Window
         ResponsiveClasses.Apply(this, ClientSize.Width);
         // 布局完成、ClientSize 有效:把屏幕外位置从"大值兜底"更新为真实高度(仍无过渡,不可见)。
         SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
+        UpdateFullScreenChrome();
+        UpdateMaximizeGlyph();
+    }
+
+    private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == WindowStateProperty)
+        {
+            UpdateFullScreenChrome();
+            UpdateMaximizeGlyph();
+        }
+    }
+
+    /// <summary>全屏时隐藏右上角窗口控制按钮,并禁止标题栏拖拽。</summary>
+    private void UpdateFullScreenChrome()
+    {
+        var isFullScreen = WindowState == WindowState.FullScreen;
+        if (WindowControls is not null)
+            WindowControls.IsVisible = !isFullScreen;
+        // 全屏禁用拖动由 OnWndProc 的 WM_NCHITTEST 处理,这里不再改动 TitleBar 的命中结果,
+        // 避免影响正常状态下右上角按钮的点击。
+    }
+
+    /// <summary>根据窗口状态切换最大化/还原图标。</summary>
+    private void UpdateMaximizeGlyph()
+    {
+        if (MaxGlyph is not null)
+            MaxGlyph.Text = WindowState == WindowState.Maximized ? "" : "";
     }
 
 #if WINDOWS
+    /// <summary>全屏时把 Win32 命中测试直接改为 HTCLIENT,阻止系统标题栏拖动。</summary>
+    private IntPtr OnWndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_NCHITTEST = 0x0084;
+        if (msg == WM_NCHITTEST && WindowState == WindowState.FullScreen)
+        {
+            handled = true;
+            return new IntPtr(1); // HTCLIENT
+        }
+
+        return IntPtr.Zero;
+    }
+
     /// <summary>把 HTCAPTION 拖拽带内的元素标记为 HTClient(可点击)。
     /// AOT 下用 DynamicDependency 保留 Win32Properties(类型可 typeof);
     /// HitTestValues 枚举在 Avalonia.Win32 程序集,由 TrimmerRoots.xml 保留(字符串 DynamicDependency 无法解析)。</summary>
@@ -60,7 +108,7 @@ public partial class MainWindow : Window
         if (htType is null) return;
         var htClient = Enum.Parse(htType, "HTClient");
         var setter = typeof(Win32Properties).GetMethod("SetNonClientHitTestResult");
-        setter?.Invoke(null, new object[] { visual, htClient });
+        setter?.Invoke(null, [visual, htClient]);
     }
 #endif
 
@@ -83,8 +131,11 @@ public partial class MainWindow : Window
     private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (WindowState == WindowState.FullScreen) return; // 全屏下不允许拖标题栏移动窗口
+
         // 按钮(返回/最小化/最大化/关闭)自己处理点击,冒泡到此不做窗口拖拽
         if (e.Source is Visual v && v.FindAncestorOfType<Button>() is not null) return;
+
         BeginMoveDrag(e);
     }
 
@@ -98,7 +149,10 @@ public partial class MainWindow : Window
         => WindowState = WindowState.Minimized;
 
     private void OnMaximizeClick(object? sender, RoutedEventArgs e)
-        => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    {
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        UpdateMaximizeGlyph();
+    }
 
     private void OnCloseClick(object? sender, RoutedEventArgs e)
         => Close();

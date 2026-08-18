@@ -66,7 +66,8 @@
            IsHoldWithMouseEnabled=true 让鼠标选中延迟到抬起,拖走松开不选中(不残留高亮) -->
       <Setter Property="InputElement.IsHoldWithMouseEnabled" Value="True" />
     </Style>
-    <Style Selector="ListBox.shell-navigation > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Style
+      Selector="ListBox.shell-navigation > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
     </Style>
     <Style Selector="ListBox.shell-navigation > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
@@ -98,7 +99,8 @@
       <Setter Property="Width" Value="40" /><Setter Property="Height" Value="40" />
       <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="4" />
       <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.back-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
@@ -136,18 +138,19 @@
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
                      Foreground="{DynamicResource TextPrimary}" />
         </StackPanel>
-        <StackPanel Grid.Column="2" Orientation="Horizontal">
+        <StackPanel Grid.Column="2" x:Name="WindowControls" Orientation="Horizontal">
           <Button Classes="window-control" Click="OnMinimizeClick" ToolTip.Tip="最小化"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="MinGlyph" Text="—" FontSize="16" VerticalAlignment="Center" />
+            <TextBlock x:Name="MinGlyph" Text="&#xE921;" FontSize="16" VerticalAlignment="Center"
+                       Margin="0 4 0 0"/>
           </Button>
           <Button Classes="window-control" Click="OnMaximizeClick" ToolTip.Tip="最大化"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="MaxGlyph" Text="□" FontSize="15" VerticalAlignment="Center" />
+            <TextBlock x:Name="MaxGlyph" Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="15" VerticalAlignment="Center" />
           </Button>
           <Button Classes="window-control close-control" Click="OnCloseClick" ToolTip.Tip="关闭"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="CloseGlyph" Text="×" FontSize="22" VerticalAlignment="Center" />
+            <TextBlock x:Name="CloseGlyph" Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center" />
           </Button>
         </StackPanel>
       </Grid>

@@ -25,6 +25,7 @@
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <!-- 清掉 Fluent 默认 ToggleButton 模板可能附加的 XAML Transitions -->
         </Style>
         <Style Selector="ToggleButton.le-toggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#33FFFFFF" />
@@ -35,7 +36,7 @@
         <Style Selector="ToggleButton.le-toggle:checked /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#FFFFFFFF" />
         </Style>
-        <Style Selector="ToggleButton.le-toggle:checked">
+        <Style Selector="ToggleButton.le-toggle:checked /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Foreground" Value="#FF1F1F1F" />
         </Style>
         <Style Selector="ToggleButton.le-toggle:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -297,32 +298,32 @@
                     </StackPanel>
                     <Border Grid.Row="1" Background="#0DFFFFFF" BorderBrush="#14FFFFFF" BorderThickness="1"
                             CornerRadius="8" ClipToBounds="True">
-                        <ItemsControl x:Name="QueueList" ItemsSource="{Binding Player.UpcomingItems}"
-                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                      ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                                      ContainerPrepared="OnQueueContainerPrepared">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:QueueItemViewModel">
-                                    <Grid Classes="queue-row" ColumnDefinitions="60,*,60" Height="60"
-                                          Background="Transparent" Tapped="OnQueueItemTapped">
-                                        <Border Classes="queue-row-hover" />
-                                        <Border Grid.Column="0" Width="44" Height="44" CornerRadius="4" ClipToBounds="True"
-                                                Background="#3A3A3A" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                            <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
-                                        </Border>
-                                        <StackPanel Grid.Column="1" Margin="5,0" VerticalAlignment="Center" Spacing="2">
-                                            <TextBlock Text="{Binding Name}" FontSize="16" Foreground="White" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding ArtistAlbumText}" FontSize="12" Foreground="#73FFFFFF" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-                                        <Button Grid.Column="2" Classes="queue-remove" Width="40" Height="40"
-                                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                Command="{Binding RemoveCommand}" ToolTip.Tip="从播放列表移除">
-                                            <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#73FFFFFF" />
-                                        </Button>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="QueueList" ItemsSource="{Binding Player.UpcomingItems}"
+                                          ContainerPrepared="OnQueueContainerPrepared">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:QueueItemViewModel">
+                                        <Grid Classes="queue-row" ColumnDefinitions="60,*,60" Height="60"
+                                              Background="Transparent" Tapped="OnQueueItemTapped">
+                                            <Border Classes="queue-row-hover" Grid.ColumnSpan="3" />
+                                            <Border Grid.Column="0" Width="44" Height="44" CornerRadius="4" ClipToBounds="True"
+                                                    Background="#3A3A3A" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="5,0" VerticalAlignment="Center" Spacing="2">
+                                                <TextBlock Text="{Binding Name}" FontSize="16" Foreground="White" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding ArtistAlbumText}" FontSize="12" Foreground="#73FFFFFF" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Classes="queue-remove" Width="40" Height="40"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    Command="{Binding RemoveCommand}" ToolTip.Tip="从播放列表移除">
+                                                <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#73FFFFFF" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                     </Border>
                 </Grid>
             </Grid>

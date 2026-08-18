@@ -25,6 +25,10 @@
     </Style>
     <!-- 播放条/正在播放按钮:hover/pressed 必须经 /template/ ContentPresenter 才生效(主题模板直接改
          ContentPresenter 背景,优先级压过控件属性 setter)。色对齐原版标准按钮:SystemBaseLow/SystemBaseMediumLow。 -->
+    <Style Selector="Button.player-button /template/ ContentPresenter#PART_ContentPresenter">
+        <!-- 只清模板内容宿主的 Transitions,避免和 Composition 位移动画叠加 -->
+        <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
     <Style Selector="Button.player-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
     </Style>

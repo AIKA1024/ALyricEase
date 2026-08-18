@@ -32,6 +32,11 @@ public sealed class SmtcService : ISmtcService, IDisposable
     private SystemMediaTransportControls? _controls;
     private bool _enabled;
     private DateTime _lastTimelineUpdate;
+    private string _lastTitle = "";
+    private string _lastArtist = "";
+    private string _lastAlbum = "";
+    private string _lastCoverUrl = "";
+    private bool _hasMetadata;
 
     /// <summary>SMTC 按钮(播放/暂停)按下 → UI 线程。</summary>
     public event Action? PlayPauseRequested;
@@ -86,17 +91,31 @@ public sealed class SmtcService : ISmtcService, IDisposable
     public void SetNowPlaying(string title, string artist, string album, string coverUrl)
     {
         if (!_enabled || _controls is null) return;
+
+        _lastTitle = string.IsNullOrWhiteSpace(title) ? "未知歌曲" : title;
+        _lastArtist = artist ?? "";
+        _lastAlbum = album ?? "";
+        _lastCoverUrl = coverUrl ?? "";
+        _hasMetadata = true;
+
+        // 微软文档建议在媒体真正打开/开始播放后再 Update 元数据;
+        // 这里先缓存,等状态进入 Playing/Paused 时由 SyncPlaybackStatus 推送,
+        // 避免在 PlayUrl 的 Stop→Playing 过程中被 Stopped 状态清掉。
+        if (!string.IsNullOrEmpty(_lastCoverUrl))
+            _ = SetCoverAsync(_lastCoverUrl); // 后台拉取,失败不影响
+    }
+
+    private void PushMetadata()
+    {
+        if (!_enabled || _controls is null || !_hasMetadata) return;
         try
         {
             var updater = _controls.DisplayUpdater;
             updater.Type = MediaPlaybackType.Music;
-            updater.MusicProperties.Title = string.IsNullOrWhiteSpace(title) ? "未知歌曲" : title;
-            updater.MusicProperties.Artist = artist;
-            updater.MusicProperties.AlbumTitle = album;
+            updater.MusicProperties.Title = _lastTitle;
+            updater.MusicProperties.Artist = _lastArtist;
+            updater.MusicProperties.AlbumTitle = _lastAlbum;
             updater.Update();
-
-            if (!string.IsNullOrEmpty(coverUrl))
-                _ = SetCoverAsync(coverUrl); // 后台拉取,失败不影响
         }
         catch (Exception)
         {
@@ -198,6 +217,11 @@ public sealed class SmtcService : ISmtcService, IDisposable
             _controls.PlaybackStatus = status;
             _controls.IsPlayEnabled = playEnabled;
             _controls.IsPauseEnabled = pauseEnabled;
+
+            // 切歌时 PlayUrl 内部 Stop() 会先经过 Stopped 状态,可能让部分 SMTC 客户端清掉元数据;
+            // 进入 Playing/Paused 后再推一次元数据,确保信息不会“闪没”。
+            if (state is PlaybackState.Playing or PlaybackState.Paused)
+                PushMetadata();
         }
         catch (Exception)
         {

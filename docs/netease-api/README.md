@@ -96,6 +96,7 @@ CN IP 池见 `CnIpPool.cs`（22 个大陆公共 DNS / 云厂商 IP，随机取�
    ```
    实测命中本项目用的全部端点：`/api/v6/playlist/detail`、`/api/song/lyric`、
    `/api/user/playlist`、`/api/song/enhance/player/url/v1`、`/api/cloudsearch/get/web` 等。
+   （搜索明文回落用的 `/api/cloudsearch/pc` 是 PC 客户端端点，不在 Web core.js 里。）
 3. **加密入口在 JS 里叫 `window.asrsea`**，四个参数是**词表动态解码**的：
    ```js
    var bVk4q = window.asrsea(JSON.stringify(payload),

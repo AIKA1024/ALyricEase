@@ -250,14 +250,18 @@ public sealed class NetEaseApiClient
 
     private async Task<List<Song>> SearchLegacyAsync(string keyword, int limit, int offset, CancellationToken ct)
     {
-        var url = $"{BaseUrl}/api/search/get/web?s={Uri.EscapeDataString(keyword)}&type=1&limit={limit}&offset={offset}";
+        // 明文回落用 /api/cloudsearch/pc 而非 /api/search/get/web:
+        // 后者响应已不返回 album.picUrl(只剩 picId),搜索页封面全空(实测 2026);
+        // cloudsearch/pc 的 al.picUrl 齐全,且字段与 weapi 一致(ar/al/dt + result.songCount),
+        // 直接复用 weapi 的 SearchResponse/MapSearchSong,不再走 LegacySearchSong。
+        var url = $"{BaseUrl}/api/cloudsearch/pc?s={Uri.EscapeDataString(keyword)}&type=1&limit={limit}&offset={offset}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacySearchResponse);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.SearchResponse);
         if (resp is null || resp.Code != 200 || resp.Result?.Songs is null)
             throw new ApiException("搜索失败", resp?.Code ?? -1);
-        return resp.Result.Songs.Select(MapLegacySong).ToList();
+        return resp.Result.Songs.Select(MapSearchSong).ToList();
     }
 
     private async Task<LyricResult?> LyricLegacyAsync(long id, CancellationToken ct)

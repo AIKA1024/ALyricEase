@@ -3,19 +3,8 @@ using System.Text.Json.Serialization;
 namespace ALyricEase.Models.Dtos;
 
 /// <summary>网易云明文 GET 接口(/api/...)响应 DTO。字段命名与 weapi cloudsearch 不同:
-/// 明文搜索用 artists/album/duration,weapi 用 ar/al/dt。仅在 weapi/eapi 被风控拦截时回落使用。</summary>
-
-public sealed record LegacySearchResponse
-{
-    public int Code { get; init; }
-
-    public LegacySearchResult? Result { get; init; }
-}
-
-public sealed record LegacySearchResult
-{
-    public List<LegacySearchSong>? Songs { get; init; }
-}
+/// song/detail 明文用 artists/album/duration,weapi 用 ar/al/dt。仅在 weapi/eapi 被风控拦截时回落使用。
+/// (明文搜索回落已改用 /api/cloudsearch/pc,字段与 weapi 一致,复用 SearchResponse,不再有此差异。)</summary>
 
 public sealed record LegacySearchSong
 {
@@ -23,10 +12,10 @@ public sealed record LegacySearchSong
 
     public string Name { get; init; } = "";
 
-    /// <summary>明文搜索返回 artists(weapi 是 ar)。</summary>
+    /// <summary>明文 song/detail 返回 artists(weapi 是 ar)。</summary>
     public List<SearchArtist>? Artists { get; init; }
 
-    /// <summary>明文搜索返回 album(weapi 是 al)。</summary>
+    /// <summary>明文 song/detail 返回 album(weapi 是 al)。</summary>
     public SearchAlbum? Album { get; init; }
 
     /// <summary>时长,毫秒(weapi 是 dt)。</summary>
@@ -83,7 +72,7 @@ public sealed record LegacyPlaylistDetailResponse
 
 public sealed record LegacyPlaylistResult
 {
-    /// <summary>歌单曲目:字段是 artists/album/duration(与明文搜索一致),复用 LegacySearchSong。</summary>
+    /// <summary>歌单曲目:字段是 artists/album/duration(与明文 song/detail 一致),复用 LegacySearchSong。</summary>
     public List<LegacySearchSong>? Tracks { get; init; }
 }
 

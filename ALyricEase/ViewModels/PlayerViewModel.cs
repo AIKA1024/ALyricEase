@@ -163,7 +163,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     partial void OnVolumeChanged(int value) => _player.Volume = value;
 
-    partial void OnPositionMsChanged(long value) => PositionText = FormatTime(value);
+    /// <summary>时间文本跟 ScrubPositionMs(进度条显示位置)走而非 PositionMs:拖动进度条时
+    /// 只有 ScrubPositionMs 在变,气泡/时间文本才能随拖动位置实时更新;正常播放、悬停球、
+    /// Seek 后,OnPositionChanged/EndScrub 都会把真实进度同步给 ScrubPositionMs,文本保持一致。</summary>
+    partial void OnScrubPositionMsChanged(double value) => PositionText = FormatTime((long)Math.Round(value));
 
     partial void OnDurationMsChanged(long value)
     {
@@ -322,6 +325,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _smtc.SetNowPlaying(song.Name, song.Artist, song.Album, song.CoverUrl);
         SongStarted?.Invoke();
         PositionMs = 0;
+        ScrubPositionMs = 0; // 时间文本跟 ScrubPositionMs 走,切歌时一并清零(显示 00:00)
         DurationMs = 0;
         Message = null;
         IsLoading = true;

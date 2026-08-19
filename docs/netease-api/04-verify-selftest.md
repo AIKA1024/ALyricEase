@@ -45,6 +45,7 @@
 
 - **加密通道被 WAF 拦时**：`[anon] 匿名注册失败 → 走明文回落` 是预期输出，不代表功能坏。
   此时加密路径静默跳过，所有结果应仍来自明文 GET。
-- **字段差异**：明文路径搜索/详情返回 `artists/album/duration`，weapi 返回 `ar/al/dt`——
-  两套 DTO 不可混用（`MapLegacySong` vs `MapSearchSong`）。
+- **字段差异**：明文 song/detail 返回 `artists/album/duration`（`MapLegacySong`），weapi 返回 `ar/al/dt`
+  （`MapSearchSong`），两套 DTO 不可混用。搜索明文回落走 `/api/cloudsearch/pc`，字段与 weapi
+  一致，复用 `MapSearchSong`（`/api/search/get/web` 已无 `picUrl`，弃用）。
 - **VIP 曲**：`GetPlayUrlAsync` 对 VIP 曲目应返回 null（明文 `-110`）或试听，播放器如实降级。

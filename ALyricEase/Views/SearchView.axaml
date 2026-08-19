@@ -113,7 +113,7 @@
             <ListBox Grid.Row="2" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedItem}"
                      Background="Transparent" DoubleTapped="OnListDoubleTapped" Margin="0,8,0,0"
                      Padding="0,0,0,100"
-                     PreparingContainer="OnResultContainerPreparing">
+                     ContainerPrepared="OnResultContainerPrepared">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:SongItemViewModel">
                         <Grid Classes="result-row" ColumnDefinitions="48,*,180,100">

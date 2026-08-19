@@ -68,11 +68,14 @@ Body: {"s":"晴天","type":1,"limit":30,"offset":0,"csrf_token":""}
 ### B2. 搜索（明文 GET，回落路径）
 
 ```
-GET /api/search/get/web?s=晴天&type=1&limit=30&offset=0
+GET /api/cloudsearch/pc?s=晴天&type=1&limit=30&offset=0
 ```
 
-响应结构与 B1 相同，但字段名**不同**：`artists` / `album` / `duration`
-（`LegacySearchSong`）。`songCount` 此路径可能缺省。
+响应字段与 B1 **一致**（`ar` / `al` / `dt` + `result.songCount`），直接复用
+`SearchResponse` / `MapSearchSong`，且 `al.picUrl` 齐全（匿名可用）。
+
+> 曾用 `/api/search/get/web`（字段 `artists` / `album` / `duration`，即 `LegacySearchSong`）：
+> 该端点 2026 年实测已不再返回 `album.picUrl`（只剩 `picId`），搜索页封面全空，故弃用。
 
 ```json
 {
@@ -82,12 +85,13 @@ GET /api/search/get/web?s=晴天&type=1&limit=30&offset=0
       {
         "id": 186016,
         "name": "晴天",
-        "artists": [ {"id": 6452, "name": "周杰伦"} ],
-        "album": { "id": 11345, "name": "叶惠美", "picUrl": "..." },
-        "duration": 269232,
+        "ar": [ {"id": 6452, "name": "周杰伦"} ],
+        "al": { "id": 11345, "name": "叶惠美", "picUrl": "https://p2.music.126.net/...jpg" },
+        "dt": 269232,
         "fee": 8
       }
-    ]
+    ],
+    "songCount": 168
   }
 }
 ```
@@ -517,7 +521,7 @@ GET /api/v3/discovery/recommend/songs?csrf_token=
 | 功能 | 主路径 | 回落 | 登录 | 备注 |
 |---|---|---|---|---|
 | 匿名注册 | `weapi/register/anonimous` POST | — | 否 | 下发 MUSIC_A |
-| 搜索 | `weapi/cloudsearch/get/web` POST | `GET /api/search/get/web` | 否 | 字段 `ar/al/dt` vs `artists/album/duration` |
+| 搜索 | `weapi/cloudsearch/get/web` POST | `GET /api/cloudsearch/pc` | 否 | 回落字段同为 `ar/al/dt`(`/api/search/get/web` 已无 `picUrl`,弃用) |
 | 歌词 | `weapi/song/lyric` POST | `GET /api/song/lyric` | 否 | `lv/kv/tv=-1` |
 | 播放地址 | `eapi/song/enhance/player/url/v1` POST | `GET /api/song/enhance/player/url` | 否(匿名低码) | 明文必带 `br`；VIP `-110`；需 `X-Real-IP` |
 | 用户资料 | — | `GET /api/nuser/account/get` | ✅ | |

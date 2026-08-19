@@ -10,7 +10,6 @@ namespace ALyricEase.Models.Dtos;
 [JsonSerializable(typeof(PlayUrlResponse))]
 [JsonSerializable(typeof(SearchResponse))]
 [JsonSerializable(typeof(LyricResponse))]
-[JsonSerializable(typeof(LegacySearchResponse))]
 [JsonSerializable(typeof(LegacyAccountResponse))]
 [JsonSerializable(typeof(LegacyUserPlaylistResponse))]
 [JsonSerializable(typeof(PlaylistDetailResponse))]

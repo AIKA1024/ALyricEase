@@ -8,3 +8,5 @@ riderModule.iml
 *.user
 *.suo
 run-err.log
+.claude/
+tmpapi2/

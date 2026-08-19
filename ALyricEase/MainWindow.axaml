@@ -249,6 +249,7 @@
             </Border>
             <ListBox Classes="shell-navigation" ItemsSource="{Binding CompactNavItems}"
                      SelectedItem="{Binding SelectedNav, Mode=OneWay}"
+                     SelectionChanged="OnCompactNavSelectionChanged"
                      Width="48" Background="Transparent" BorderThickness="0" Margin="0,4,0,4">
               <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>

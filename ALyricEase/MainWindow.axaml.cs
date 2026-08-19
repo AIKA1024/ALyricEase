@@ -157,6 +157,18 @@ public partial class MainWindow : Window
     private void OnCloseClick(object? sender, RoutedEventArgs e)
         => Close();
 
+    /// <summary>图标栏(侧边栏收起态)点击导航:紧凑 ListBox 的 SelectedItem 特意是 OneWay
+    /// (只把 VM 选中态同步进来,不回写——否则收起态打开歌单页时,歌单子项不在 CompactNavItems,
+    /// ListBox 清选会把 VM 的 SelectedNav 冲掉,展开后歌单项高亮丢失)。点击由这里手动调
+    /// NavigateCompactCommand 回写 VM;同引用回写是 SetProperty 无操作,不会与 OneWay 同步成环。</summary>
+    private void OnCompactNavSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm
+            && e.AddedItems?.Count > 0
+            && e.AddedItems[0] is NavItemViewModel { IsItem: true } item)
+            vm.NavigateCompactCommand.Execute(item);
+    }
+
     /// <summary>侧边栏"账号":未登录 → 弹 Cookie 登录窗口;已登录 → 进账号占位页。</summary>
     private void OnAccountClick(object? sender, RoutedEventArgs e)
     {

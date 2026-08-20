@@ -206,17 +206,18 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnSelectedNavChanged(NavItemViewModel? value)
     {
         if (value is null || value.IsHeader) return;
+        // 中/小屏抽屉内点击导航项后自动收起(原版 NavigationView Compact/Minimal 语义:选中即收起抽屉)
+        IsNavigationDrawerOpen = false;
         if (value.Playlist is { } playlist)
         {
             OpenShellPlaylistCommand.Execute(playlist);
-            // OpenShellPlaylist 会把 ActivePage 设为 "Favorites",
-            // 这里再强制把选中项设回歌单子项,防止被“我的收藏”同步逻辑覆盖。
+            // OpenShellPlaylist 会把 ActivePage 设为 “Favorites”,
+            // 这里再强制把选中项设回歌单子项,防止被”我的收藏”同步逻辑覆盖。
             SelectedNav = value;
             return;
         }
 
         ActivePage = value.Key;
-        IsNavigationDrawerOpen = false;
     }
 
     public bool CanGoBack => _navigationHistory.Count > 0;
@@ -225,6 +226,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void GoBack()
     {
         if (_navigationHistory.Count == 0) return;
+        IsNavigationDrawerOpen = false;
         _isGoingBack = true;
         try
         {
@@ -282,6 +284,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [RelayCommand] private void GoAccount()
     {
+        IsNavigationDrawerOpen = false;
         ActivePage = "Account";
         Placeholder.Title = "账号";
         Placeholder.Description = "登录与账户信息";
@@ -289,6 +292,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [RelayCommand] private void GoSettings()
     {
+        IsNavigationDrawerOpen = false;
         ActivePage = "Settings";
         Placeholder.Title = "设置";
         Placeholder.Description = "应用设置";

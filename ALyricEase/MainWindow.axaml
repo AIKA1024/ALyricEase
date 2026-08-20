@@ -101,6 +101,7 @@
       <Setter Property="Width" Value="40" /><Setter Property="Height" Value="40" />
       <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="4" />
       <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontSize" Value="12"/>
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
@@ -145,10 +146,16 @@
       <!-- 原版风格自绘标题栏：左侧拖拽区，右侧窗口控制。 -->
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent" PointerPressed="OnTitleBarPointerPressed"
             ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Orientation="Horizontal" Spacing="10" Margin="4,0,0,0" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0" VerticalAlignment="Center">
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
             <TextBlock x:Name="BackGlyph" Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+          </Button>
+          <!-- 小屏汉堡按钮(仿原版 NavigationView Minimal):窄窗无侧栏,汉堡移入标题栏、在返回键右侧,点开抽屉。
+               IsVisible 由代码后置按宽度控制(ResponsiveClasses 的 narrow)。 -->
+          <Button x:Name="TitleBarHamburger" Classes="back-button" IsVisible="False"
+                  Command="{Binding ToggleNavigationDrawerCommand}" ToolTip.Tip="展开侧边栏">
+            <TextBlock x:Name="TitleBarHamburgerGlyph" Text="☰" FontSize="16" />
           </Button>
           <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" />
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
@@ -158,22 +165,26 @@
           <Button Classes="window-control" Click="OnMinimizeClick" ToolTip.Tip="最小化"
                   HorizontalContentAlignment="Center">
             <TextBlock x:Name="MinGlyph" Text="&#xE921;" FontSize="16" VerticalAlignment="Center"
-                       Margin="0 4 0 0"/>
+                       Margin="0 4 0 0" />
           </Button>
           <Button Classes="window-control" Click="OnMaximizeClick" ToolTip.Tip="最大化"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="MaxGlyph" Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="15" VerticalAlignment="Center" />
+            <TextBlock x:Name="MaxGlyph" Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                       VerticalAlignment="Center" />
           </Button>
           <Button Classes="window-control close-control" Click="OnCloseClick" ToolTip.Tip="关闭"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="CloseGlyph" Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="16" VerticalAlignment="Center" />
+            <TextBlock x:Name="CloseGlyph" Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                       VerticalAlignment="Center" />
           </Button>
         </StackPanel>
       </Grid>
 
       <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
-        <!-- 完整导航：截图中的桌面展开态。 -->
-        <Border Grid.Column="0" Width="320" IsVisible="{Binding IsNavigationExpanded}"
+        <!-- 完整导航：宽屏展开态(截图中的桌面展开态)。内容与抽屉复用 NavigationPaneView,
+             汉堡只在宽屏内联栏顶部出现(点开/收起内联栏);抽屉复用时不带汉堡。
+             IsVisible 由代码后置按宽度 + IsNavigationExpanded 控制。 -->
+        <Border x:Name="WideSidebar" Grid.Column="0" Width="320"
                 Background="Transparent" BorderThickness="0">
           <DockPanel>
             <Button DockPanel.Dock="Top" Classes="navigation-button"
@@ -181,80 +192,17 @@
                     Margin="4,0" ToolTip.Tip="收起侧边栏">
               <TextBlock Text="☰" FontSize="16" />
             </Button>
-            <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorder}"
-                    Padding="0,8,0,0">
-              <StackPanel Margin="4,0,8,8" Spacing="4" HorizontalAlignment="Stretch">
-                <Button Classes="navigation-button" Click="OnAccountClick"
-                        HorizontalAlignment="Stretch">
-                  <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
-                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
-                               VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="账号" FontSize="14" VerticalAlignment="Center" />
-                  </Grid>
-                </Button>
-                <Button Classes="navigation-button" Command="{Binding GoSettingsCommand}"
-                        HorizontalAlignment="Stretch">
-                  <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
-                    <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
-                               VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="设置" FontSize="14" VerticalAlignment="Center" />
-                  </Grid>
-                </Button>
-                <!-- Debug 入口:仅 DEBUG 构建可见(IsDebug 由条件编译决定,Release 无入口) -->
-                <Button Classes="navigation-button" Command="{Binding GoDebugCommand}"
-                        HorizontalAlignment="Stretch" IsVisible="{Binding IsDebug}">
-                  <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
-                    <TextBlock Text="&#xEBE8;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                               VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="Debug" FontSize="14" VerticalAlignment="Center" />
-                  </Grid>
-                </Button>
-              </StackPanel>
-            </Border>
-            <ListBox Classes="shell-navigation" ItemsSource="{Binding ShellNavItems}"
-                     SelectedItem="{Binding SelectedNav}"
-                     Background="Transparent" BorderThickness="0" Margin="0,4,0,4"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto">
-              <ListBox.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <StackPanel Spacing="4" />
-                </ItemsPanelTemplate>
-              </ListBox.ItemsPanel>
-              <ListBox.ItemContainerTheme>
-                <ControlTheme TargetType="ListBoxItem" x:DataType="vm:NavItemViewModel">
-                  <Setter Property="IsEnabled" Value="{Binding IsItem}" />
-                  <Setter Property="Focusable" Value="{Binding IsItem}" />
-                  <Setter Property="MinHeight" Value="40" />
-                  <Setter Property="Margin" Value="4,0" />
-                  <Setter Property="Padding" Value="12,0" />
-                  <Setter Property="CornerRadius" Value="4" />
-                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                  <Setter Property="VerticalContentAlignment" Value="Center" />
-                </ControlTheme>
-              </ListBox.ItemContainerTheme>
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:NavItemViewModel">
-                  <Grid ColumnDefinitions="24,*" ColumnSpacing="10">
-                    <TextBlock Text="{Binding IconGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
-                               VerticalAlignment="Center" IsVisible="{Binding IsItem}" />
-                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14" VerticalAlignment="Center"
-                               IsVisible="{Binding IsItem}" />
-                    <TextBlock Classes="nav-header" Text="{Binding Label}" Grid.ColumnSpan="2" Margin="0,4,0,-2"
-                               IsVisible="{Binding IsHeader}" />
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+            <views:NavigationPaneView />
           </DockPanel>
         </Border>
-
-        <!-- 原版中/小屏态：仍是左侧图标栏，不用底部导航取代。 -->
-        <Border Grid.Column="0" Width="48" IsVisible="{Binding IsNavigationCompact}"
+        <!-- 中/小屏态：仍是左侧图标栏(原版 NavigationView Compact:收起后内联图标栏)。
+             汉堡点击语义由 NavigationHamburger 按宽度分发:宽屏收起→内联展开,中/小屏→开抽屉。
+             IsVisible 由代码后置按宽度 + IsNavigationExpanded 控制。 -->
+        <Border x:Name="CompactSidebar" Grid.Column="0" Width="48"
                 Background="Transparent" BorderThickness="0">
           <DockPanel>
             <Button DockPanel.Dock="Top" Classes="navigation-button"
-                    Command="{Binding ToggleNavigationExpandedCommand}"
+                    Click="OnCompactHamburgerClick"
                     Margin="4,0" ToolTip.Tip="展开侧边栏">
               <TextBlock Text="☰" FontSize="16" />
             </Button>
@@ -322,6 +270,36 @@
             <!-- 应用内毛玻璃曾用 VisualBrush+BlurEffect,但 Avalonia 12.1.1 的 BlurEffect 不实际渲染(见诊断),已移除 -->
             <views:PlayerBarView DataContext="{Binding Player}" VerticalAlignment="Bottom" ZIndex="1" />
           </Grid>
+        </Border>
+      </Grid>
+
+      <!-- 中/小屏导航抽屉(原版 NavigationView Compact/Minimal 语义):覆盖式抽屉,开在内容区上方。
+           中屏(compact):图标栏常驻,点汉堡开抽屉;小屏(narrow):无侧栏,汉堡在标题栏返回键旁开抽屉。
+           抽屉内点击导航项后自动收起(OnSelectedNavChanged 置 IsNavigationDrawerOpen=false)。
+           遮罩(DrawerScrim)固定覆盖整个内容区、只做透明度淡入淡出(不随抽屉滑动);
+           抽屉本体(NavigationDrawer, 320px)靠 RenderTransform 平移滑入滑出,过渡各自声明在元素上。
+           IsVisible 只在宽/窄态切换;开合由代码后置驱动(见 UpdateNavigationVisibility)。
+           (平移/透明度目标值均由代码设置,避免 XAML 字符串解析在部分版本抛 FormatException。) -->
+      <Grid x:Name="DrawerRoot" Grid.Row="1" ZIndex="60"
+            IsVisible="False">
+        <Border x:Name="DrawerScrim" Background="#66000000" Opacity="0"
+                PointerPressed="OnDrawerScrimPointerPressed">
+          <Border.Transitions>
+            <Transitions>
+              <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+            </Transitions>
+          </Border.Transitions>
+        </Border>
+        <Border x:Name="NavigationDrawer" Width="320" HorizontalAlignment="Left"
+                Background="{DynamicResource AppSurface}"
+                BorderThickness="0,0,1,0" BorderBrush="{DynamicResource AppBorderStrong}">
+          <Border.Transitions>
+            <Transitions>
+              <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25"
+                                             Easing="0.215,0.61,0.355,1" />
+            </Transitions>
+          </Border.Transitions>
+          <views:NavigationPaneView />
         </Border>
       </Grid>
 

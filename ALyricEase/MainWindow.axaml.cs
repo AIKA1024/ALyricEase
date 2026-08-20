@@ -35,6 +35,7 @@ public partial class MainWindow : Window
         // AVLN3000;Win32Properties 的值类型 HitTestValues 是 internal),故用反射设置。
 #if WINDOWS
         MarkClientHitTest(BackGlyph);
+        MarkClientHitTest(TitleBarHamburgerGlyph);
         MarkClientHitTest(MinGlyph);
         MarkClientHitTest(MaxGlyph);
         MarkClientHitTest(CloseGlyph);
@@ -47,11 +48,14 @@ public partial class MainWindow : Window
         // 覆盖层常驻:先把 RenderTransform 无过渡地摆到屏幕外(启动首帧即隐藏)。
         // 必须用代码且在 attach 前:若靠绑定首设值,attach 时会触发过渡导致启动闪现。
         SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
+        // 导航抽屉同理:初始摆到左界外,避免启动时若为小屏/中屏态先露在内容上方。
+        SetDrawerTransformNoTransition(TranslateX(-320));
     }
 
     private void OnOpened(object? sender, EventArgs e)
     {
         ResponsiveClasses.Apply(this, ClientSize.Width);
+        UpdateNavigationVisibility();
         // 布局完成、ClientSize 有效:把屏幕外位置从"大值兜底"更新为真实高度(仍无过渡,不可见)。
         SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
         UpdateFullScreenChrome();
@@ -116,9 +120,37 @@ public partial class MainWindow : Window
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         ResponsiveClasses.Apply(this, e.NewSize.Width);
+        UpdateNavigationVisibility();
         // 关闭态(覆盖层在屏幕外)时随窗口高度同步屏幕外位置;打开态保持原位即可。
         if (!NowPlayingOverlay.IsHitTestVisible)
             SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
+    }
+
+    /// <summary>侧边栏形态按宽度 + VM 状态切换(仿原版 NavigationView 的 Expanded/Compact/Minimal 三态):
+    /// 宽屏:内联 320px 展开 / 内联 48px 图标栏;中屏:48px 图标栏常驻 + 覆盖式抽屉;小屏:无侧栏 + 标题栏汉堡。
+    /// 汉堡按钮语义统一由 NavigationHamburger.Dispatch 按宽度分发。</summary>
+    private void UpdateNavigationVisibility()
+    {
+        var width = ClientSize.Width;
+        bool wide = width >= ResponsiveClasses.CompactWidth;
+        bool compact = width is >= ResponsiveClasses.NarrowWidth and < ResponsiveClasses.CompactWidth;
+        bool narrow = width is > 0 and < ResponsiveClasses.NarrowWidth;
+        var vm = DataContext as MainViewModel;
+        bool expanded = vm?.IsNavigationExpanded ?? true;
+        bool drawerOpen = vm?.IsNavigationDrawerOpen ?? false;
+
+        WideSidebar.IsVisible = wide && expanded;
+        CompactSidebar.IsVisible = (wide && !expanded) || compact;
+        TitleBarHamburger.IsVisible = narrow;
+
+        // 抽屉只存在于中/小屏。结构:DrawerRoot 固定覆盖内容区(不平移);DrawerScrim 只淡入淡出(透明度遮罩);
+        // 只有 NavigationDrawer(320px 面板)靠 RenderTransform 平移滑入滑出,关闭态平移 -320 出左界。过渡各自声明在 XAML。
+        DrawerRoot.IsVisible = compact || narrow;
+        DrawerRoot.IsHitTestVisible = drawerOpen;
+        DrawerScrim.Opacity = drawerOpen ? 1 : 0;
+        NavigationDrawer.RenderTransform = drawerOpen
+            ? TranslateX(0)
+            : TranslateX(-320);
     }
 
     /// <summary>分组标题(发现/我的歌单)虽然和普通项在同一个 ListBox 中，但不允许被选中或高亮。
@@ -181,6 +213,14 @@ public partial class MainWindow : Window
         (DataContext as MainViewModel)?.GoAccountCommand.Execute(null);
     }
 
+    /// <summary>中屏图标栏汉堡:宽屏收起态→内联展开,中/小屏→开抽屉(与抽屉/宽栏内汉堡同一分发)。</summary>
+    private void OnCompactHamburgerClick(object? sender, RoutedEventArgs e)
+        => NavigationHamburger.Dispatch(this, DataContext as MainViewModel);
+
+    /// <summary>抽屉遮罩点任意处关闭抽屉(原版 NavigationView 抽屉的 light-dismiss)。</summary>
+    private void OnDrawerScrimPointerPressed(object? sender, PointerPressedEventArgs e)
+        => (DataContext as MainViewModel)?.CloseNavigationDrawerCommand.Execute(null);
+
     // ── 正在播放覆盖层滑入/滑出 ──────────────────────────────────────────────
     // 覆盖层常驻:关闭时整体下移到窗口下方屏幕外(不隐藏),过渡本身声明在 MainWindow.axaml。
     // 这里只负责在"原位(0)/屏幕外(窗口高度)"间切换 RenderTransform 目标值,过渡自动播放。
@@ -222,6 +262,10 @@ public partial class MainWindow : Window
 
     private void OnNowPlayingVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // 侧边栏形态依赖 IsNavigationExpanded / IsNavigationDrawerOpen,VM 变化时同步(尺寸变化走 OnSizeChanged)
+        if (e.PropertyName is nameof(MainViewModel.IsNavigationExpanded) or nameof(MainViewModel.IsNavigationDrawerOpen))
+            UpdateNavigationVisibility();
+
         if (e.PropertyName == nameof(MainViewModel.ShowNowPlaying) && _nowPlayingVm is not null)
             NowPlayingOverlay.RenderTransform = TranslateY(_nowPlayingVm.ShowNowPlaying ? 0 : NowPlayingClosedY);
 
@@ -261,11 +305,29 @@ public partial class MainWindow : Window
         NowPlayingOverlay.Transitions = transitions;
     }
 
+    /// <summary>导航抽屉的初始变换(同覆盖层:attach 前无过渡摆到左界外)。</summary>
+    /// <summary>导航抽屉的初始变换(同覆盖层:attach 前无过渡摆到左界外,只作用于 320px 面板;遮罩固定靠 Opacity)。</summary>
+    private void SetDrawerTransformNoTransition(TransformOperations transform)
+    {
+        var transitions = NavigationDrawer.Transitions;
+        NavigationDrawer.Transitions = null;
+        NavigationDrawer.RenderTransform = transform;
+        NavigationDrawer.Transitions = transitions;
+    }
+
     /// <summary>构造 translate(0, y)(避免字符串解析的文化差异/格式问题)。</summary>
     private static TransformOperations TranslateY(double y)
     {
         var builder = TransformOperations.CreateBuilder(1);
         builder.AppendTranslate(0, y);
+        return builder.Build();
+    }
+
+    /// <summary>构造 translate(x, 0)(抽屉开合用)。</summary>
+    private static TransformOperations TranslateX(double x)
+    {
+        var builder = TransformOperations.CreateBuilder(1);
+        builder.AppendTranslate(x, 0);
         return builder.Build();
     }
 }

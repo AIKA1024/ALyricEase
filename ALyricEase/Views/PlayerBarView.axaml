@@ -155,8 +155,9 @@
                 <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
                         Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心">
                   <Grid>
+                    <!-- 已喜欢红心:原版 #E74C3C(非品牌红 EC4141),与行内/详情页红心一致 -->
                     <TextBlock Text="&#xE931;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
-                               Foreground="{DynamicResource LyricEaseRed}" IsVisible="{Binding IsCurrentLiked}" />
+                               Foreground="#FFE74C3C" IsVisible="{Binding IsCurrentLiked}" />
                     <TextBlock Text="&#xE94A;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
                                IsVisible="{Binding !IsCurrentLiked}" />
                   </Grid>

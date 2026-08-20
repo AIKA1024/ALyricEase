@@ -47,6 +47,16 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
+    /// <summary>Debug 页 VM(仅 DEBUG 构建有左下角入口可看,Release 无入口不可达)。</summary>
+    public DebugViewModel Debug { get; } = new();
+
+    /// <summary>是否 Debug 构建(DEBUG 条件编译):控制侧边栏底部 Debug 入口显隐。</summary>
+#if DEBUG
+    public bool IsDebug => true;
+#else
+    public bool IsDebug => false;
+#endif
+
     /// <summary>原版导航结构；首阶段未实现的页面仍进入明确占位页。</summary>
     public IReadOnlyList<NavItemViewModel> NavItems { get; } =
     [
@@ -128,6 +138,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "Favorites" => Playlist,
         "Artist" => Artist,
         "Album" => Album,
+        "Debug" => Debug,
         _ => Placeholder,
     };
 
@@ -282,6 +293,23 @@ public sealed partial class MainViewModel : ViewModelBase
         Placeholder.Title = "设置";
         Placeholder.Description = "应用设置";
     }
+
+    /// <summary>登录对话框(WinUI3 ContentDialog 式窗口内弹层):true=显示。代替原独立 LoginWindow。</summary>
+    [ObservableProperty] private bool _isLoginDialogOpen;
+
+    /// <summary>打开登录对话框:清掉上一次失败信息,总是以干净态出现。</summary>
+    [RelayCommand]
+    private void OpenLoginDialog()
+    {
+        Playlist.Message = null;
+        IsLoginDialogOpen = true;
+    }
+
+    /// <summary>关闭登录对话框(取消/Esc;登录成功由 MainWindow 监听 IsLoggedIn 自动关闭)。</summary>
+    [RelayCommand] private void CloseLoginDialog() => IsLoginDialogOpen = false;
+
+    /// <summary>左下角 Debug 入口(仅 DEBUG 构建可见)。</summary>
+    [RelayCommand] private void GoDebug() => ActivePage = "Debug";
 
     /// <summary>打开正在播放覆盖层(点底部播放条时)。</summary>
     [RelayCommand] private void OpenNowPlaying() => ShowNowPlaying = true;

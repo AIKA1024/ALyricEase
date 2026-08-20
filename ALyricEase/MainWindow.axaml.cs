@@ -8,6 +8,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Transformation;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 #if WINDOWS
 using Avalonia.Win32;
@@ -169,12 +170,12 @@ public partial class MainWindow : Window
             vm.NavigateCompactCommand.Execute(item);
     }
 
-    /// <summary>侧边栏"账号":未登录 → 弹 Cookie 登录窗口;已登录 → 进账号占位页。</summary>
+    /// <summary>侧边栏"账号":未登录 → 弹登录对话框(窗口内 ContentDialog 式弹层);已登录 → 进账号占位页。</summary>
     private void OnAccountClick(object? sender, RoutedEventArgs e)
     {
         if (!ServiceLocator.Get<PlaylistViewModel>().IsLoggedIn)
         {
-            new LoginWindow().ShowDialog(this);
+            (DataContext as MainViewModel)?.OpenLoginDialogCommand.Execute(null);
             return;
         }
         (DataContext as MainViewModel)?.GoAccountCommand.Execute(null);
@@ -208,12 +209,14 @@ public partial class MainWindow : Window
         {
             _nowPlayingVm.PropertyChanged -= OnNowPlayingVmPropertyChanged;
             _nowPlayingVm.Player.LoginRequired -= OnPlayerLoginRequired;
+            _nowPlayingVm.Playlist.PropertyChanged -= OnPlaylistPropertyChanged;
         }
         _nowPlayingVm = DataContext as MainViewModel;
         if (_nowPlayingVm is not null)
         {
             _nowPlayingVm.PropertyChanged += OnNowPlayingVmPropertyChanged;
             _nowPlayingVm.Player.LoginRequired += OnPlayerLoginRequired;
+            _nowPlayingVm.Playlist.PropertyChanged += OnPlaylistPropertyChanged;
         }
     }
 
@@ -221,11 +224,33 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainViewModel.ShowNowPlaying) && _nowPlayingVm is not null)
             NowPlayingOverlay.RenderTransform = TranslateY(_nowPlayingVm.ShowNowPlaying ? 0 : NowPlayingClosedY);
+
+        // 登录对话框打开(IsVisible 翻转不跑过渡):下一帧先把 Opacity 置 0 再置 1,让淡入过渡跑起来;
+        // 顺带把焦点给输入框(ContentDialog 打开即聚焦首个可交互控件的语义)。
+        if (e.PropertyName == nameof(MainViewModel.IsLoginDialogOpen)
+            && _nowPlayingVm is { IsLoginDialogOpen: true })
+        {
+            LoginDialogOverlay.Opacity = 0;
+            Dispatcher.UIThread.Post(() =>
+            {
+                LoginDialogOverlay.Opacity = 1;
+                MusicUBox.Focus();
+            }, DispatcherPriority.Render);
+        }
     }
 
-    /// <summary>红心等账号功能未登录时触发:弹 Cookie 登录窗口。</summary>
+    /// <summary>登录对话框生命周期:登录成功(PlaylistViewModel.IsLoggedIn)自动关闭,代替原 LoginWindow 的关闭监听。</summary>
+    private void OnPlaylistPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlaylistViewModel.IsLoggedIn)
+            && sender is PlaylistViewModel { IsLoggedIn: true }
+            && _nowPlayingVm is not null)
+            _nowPlayingVm.IsLoginDialogOpen = false;
+    }
+
+    /// <summary>红心等账号功能未登录时触发:弹登录对话框(窗口内 ContentDialog 式弹层)。</summary>
     private void OnPlayerLoginRequired()
-        => new LoginWindow().ShowDialog(this);
+        => _nowPlayingVm?.OpenLoginDialogCommand.Execute(null);
 
     /// <summary>临时停用 Transitions 设置基值(启动/缩放等时机先摆到屏幕外,不触发过渡)。</summary>
     private void SetOverlayTransformNoTransition(TransformOperations transform)

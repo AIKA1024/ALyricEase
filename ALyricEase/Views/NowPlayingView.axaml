@@ -75,11 +75,29 @@
         <Style Selector="ToggleButton.le-like:pressed /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#66FFFFFF" />
         </Style>
+        <!-- 已喜欢态背景:原版 Checked=透明,CheckedPointerOver=SystemBaseLow,CheckedPressed=SystemBaseMediumLow。
+             必须显式压掉 Fluent 主题 ToggleButton:checked 默认强调蓝(#0078D7)背景 -->
+        <Style Selector="ToggleButton.le-like:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton.le-like:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#33FFFFFF" />
+        </Style>
+        <Style Selector="ToggleButton.le-like:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#66FFFFFF" />
+        </Style>
         <Style Selector="ToggleButton.le-like TextBlock">
             <Setter Property="Foreground" Value="White" />
         </Style>
+        <!-- 原版心形颜色:Pressed=#F5B7B1(浅粉),Checked=#E74C3C(红),CheckedPressed=#B03A2E(暗红) -->
+        <Style Selector="ToggleButton.le-like:pressed TextBlock">
+            <Setter Property="Foreground" Value="#FFF5B7B1" />
+        </Style>
         <Style Selector="ToggleButton.le-like:checked TextBlock">
             <Setter Property="Foreground" Value="#FFE74C3C" />
+        </Style>
+        <Style Selector="ToggleButton.le-like:checked:pressed TextBlock">
+            <Setter Property="Foreground" Value="#FFB03A2E" />
         </Style>
 
         <!-- 播放列表行:60px,悬停 SystemBaseHigh 10%(原版 QueueTrackItem PointerOver)。

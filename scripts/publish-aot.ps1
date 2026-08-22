@@ -18,7 +18,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$project = Join-Path $repoRoot "ALyricEase\ALyricEase.csproj"
+$project = Join-Path $repoRoot "src\ALyricEase.Desktop\ALyricEase.Desktop.csproj"
 if (-not $Output) { $Output = Join-Path $repoRoot "artifacts\aot-$Runtime" }
 
 # NativeAOT's findvcvarsall.bat CALLs vcvarsall.bat, which probes vswhere.exe by
@@ -44,7 +44,7 @@ dotnet publish $project `
 
 if ($LASTEXITCODE -ne 0) { throw "AOT publish failed (exit code $LASTEXITCODE)" }
 
-$exe = Join-Path $Output "ALyricEase.exe"
+$exe = Join-Path $Output "ALyricEase.Desktop.exe"
 if (Test-Path $exe) {
     Write-Host "== OK: $exe" -ForegroundColor Green
 }

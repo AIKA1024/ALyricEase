@@ -1,3 +1,9 @@
 <Solution>
-  <Project Path="ALyricEase/ALyricEase.csproj" />
+
+  <Project Path="src/ALyricEase/ALyricEase.csproj" />
+
+  <Project Path="src/ALyricEase.Desktop/ALyricEase.Desktop.csproj" />
+
+  <Project Path="src/ALyricEase.Android/ALyricEase.Android.csproj" />
+
 </Solution>

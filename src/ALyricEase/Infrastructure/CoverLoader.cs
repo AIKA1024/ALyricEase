@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -16,9 +17,14 @@ public static class CoverLoader
     /// <summary>缓存总解码字节预算(~48MB):歌曲行 100px≈40KB 能存上千张,640px 大封面只留 ~30 张。</summary>
     private const long MaxCacheBytes = 48L * 1024 * 1024;
 
+    /// <summary>并发下载上限:首页/列表一次会触发几十张封面,不限流会把慢网连接占满、
+    /// 拖慢同批 API 请求与封面填图速度(实测 30 并发 vs 6 并发,填满时间差不大但整体稳定)。</summary>
+    private const int MaxConcurrentDownloads = 6;
+
     private static readonly HttpClient Http = new() { Timeout = System.TimeSpan.FromSeconds(10) };
     private static readonly Dictionary<string, IImage?> Cache = new();
     private static readonly Queue<string> Order = new();
+    private static readonly SemaphoreSlim DownloadGate = new(MaxConcurrentDownloads, MaxConcurrentDownloads);
     private static long _cacheBytes;
 
     /// <summary>加载封面。size>0 时请求对应缩略图(param=WxH),列表项务必用 ~100 的小图,避免全尺寸大图撑爆内存。</summary>
@@ -33,28 +39,36 @@ public static class CoverLoader
 
         try
         {
-            var bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
-            var bitmap = await Task.Run(() =>
+            await DownloadGate.WaitAsync().ConfigureAwait(false);
+            try
             {
-                using var ms = new MemoryStream(bytes);
-                return new Bitmap(ms);
-            }).ConfigureAwait(false);
-            lock (Cache)
-            {
-                var cost = EstimateBytes(bitmap);
-                // 单张超过预算 → 不进缓存(避免一张超超大图独占预算),直接用
-                if (cost > MaxCacheBytes) return bitmap;
-                while (_cacheBytes + cost > MaxCacheBytes && Order.Count > 0)
+                var bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
+                var bitmap = await Task.Run(() =>
                 {
-                    var oldest = Order.Dequeue();
-                    if (Cache.Remove(oldest, out var old))
-                        _cacheBytes -= EstimateBytes(old);
+                    using var ms = new MemoryStream(bytes);
+                    return new Bitmap(ms);
+                }).ConfigureAwait(false);
+                lock (Cache)
+                {
+                    var cost = EstimateBytes(bitmap);
+                    // 单张超过预算 → 不进缓存(避免一张超超大图独占预算),直接用
+                    if (cost > MaxCacheBytes) return bitmap;
+                    while (_cacheBytes + cost > MaxCacheBytes && Order.Count > 0)
+                    {
+                        var oldest = Order.Dequeue();
+                        if (Cache.Remove(oldest, out var old))
+                            _cacheBytes -= EstimateBytes(old);
+                    }
+                    Cache[url] = bitmap;
+                    _cacheBytes += cost;
+                    Order.Enqueue(url);
                 }
-                Cache[url] = bitmap;
-                _cacheBytes += cost;
-                Order.Enqueue(url);
+                return bitmap;
             }
-            return bitmap;
+            finally
+            {
+                DownloadGate.Release();
+            }
         }
         catch
         {

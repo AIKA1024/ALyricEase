@@ -17,6 +17,7 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
 {
     private readonly string _coverUrl;
     private bool _coverRequested;
+    private bool _coverRevealed;
 
     public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0)
     {
@@ -46,9 +47,35 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
         _ = LoadCoverAsync();
     }
 
+    /// <summary>后台加载完成的真实封面(240px)。</summary>
     [ObservableProperty] private IImage? _cover;
 
+    /// <summary>视图实际显示的封面:过渡期间保持 null(→共享占位图),过渡结束后才换成真实封面。
+    /// 若 30 张位图都绑在首帧渲染,切页动画第一帧会被位图绘制卡死(实测 ~250ms),所以延后亮出。</summary>
+    [ObservableProperty] private IImage? _displayCover;
+
     private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(_coverUrl, 240);
+
+    partial void OnCoverChanged(IImage? value)
+    {
+        // 封面后台加载完成(首次进入,晚于切页):本轮过渡已结束(_coverRevealed)就直接亮出,
+        // 未结束则等 Background 翻转任务统一处理(任务里读的是最新 Cover)。
+        if (value is not null && _coverRevealed) DisplayCover = value;
+    }
+
+    /// <summary>每次容器实化(每次挂树)调用:先把显示封面重置回占位图,再安排过渡结束后亮出真实封面。
+    /// 若 30 张位图直接参与首帧渲染,切页动画第一帧会被卡死(实测旧行为 ~300ms);
+    /// 每次切回都重置,保证"切回来"同样走延后路径(即使封面已缓存/被淘汰)。</summary>
+    public void PrepareCoverForTransition()
+    {
+        DisplayCover = null; // 本轮首帧回到共享占位图(首轮本来就是 null,无害;后续轮次清除已亮出的封面)
+        _coverRevealed = false;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _coverRevealed = true;
+            if (DisplayCover is null) DisplayCover = Cover;
+        }, Avalonia.Threading.DispatcherPriority.Background);
+    }
 }
 
 /// <summary>首页推荐区块:标题 + 横向列表。元素可为卡片(RecommendCardViewModel)或每日歌曲行(SongItemViewModel),
@@ -71,6 +98,9 @@ public sealed partial class RecommendSectionViewModel : ViewModelBase
 
     /// <summary>是否套圆角边框容器(仿原版 DailyMix 的 HorizontalScrollableGridView)。</summary>
     public bool IsBordered { get; }
+
+    /// <summary>区块滚动区高度:每日区块固定 340(容纳 5 行,横向滚动条不压内容),其余区块自动。</summary>
+    public double ScrollViewerHeight => IsBordered ? 340 : double.NaN;
 
     public bool HasPlayAll => _playAll is not null;
 

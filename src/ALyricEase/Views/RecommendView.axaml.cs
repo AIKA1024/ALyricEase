@@ -18,7 +18,11 @@ public partial class RecommendView : UserControl
     {
         switch (e.Container.DataContext)
         {
-            case RecommendCardViewModel card: card.EnsureCoverLoaded(); break;
+            case RecommendCardViewModel card:
+                card.EnsureCoverLoaded();
+                // 真实封面延后到切页过渡结束后再亮出(Background 优先级),避免 30 张位图首帧绘制卡死过渡
+                card.PrepareCoverForTransition();
+                break;
             case SongItemViewModel song:
                 song.EnsureCoverLoaded();
                 song.EnsureLikedLoaded();

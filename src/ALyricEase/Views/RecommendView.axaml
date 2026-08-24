@@ -16,7 +16,8 @@
           <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}"
                   ClipToBounds="True">
             <Grid>
-              <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+              <!-- DisplayCover:过渡期间为 null(共享占位图),过渡结束才亮出真实封面,避免首帧绘制 30 张位图卡死切页 -->
+              <Image Source="{Binding DisplayCover, Converter={x:Static infra:CoverImageConverter.Instance}}"
                      Stretch="UniformToFill" />
               <Border Classes="play-count-badge" IsVisible="{Binding HasPlayCount}"
                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Padding="5,1" CornerRadius="4">
@@ -147,36 +148,36 @@
                     </StackPanel>
                   </Button>
                 </Grid>
-                <!-- 每日歌曲推荐:圆角边框容器 + 滚动区 + 纵向换行网格(先竖向排满再换列,横向滚动);
-                     外层滚动区必须随 IsBordered 显隐,否则非每日区块会残留 340px 空白 -->
-                <ScrollViewer Height="340" IsVisible="{Binding IsBordered}"
+                <!-- 区块内容:单个滚动区,两种面板按 IsBordered 互斥显隐 —— 每日=圆角容器+纵向换行,
+                     其余=横向单行。原先每个区块实例化两个 ScrollViewer(其中一个隐藏),
+                     合并后每区块省一个滚动区,首帧实化更轻。隐藏面板不参与布局(IsVisible=false 跳过测量)。 -->
+                <ScrollViewer Height="{Binding ScrollViewerHeight}"
                               HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                  <Border Classes="daily-container" IsVisible="{Binding IsBordered}">
-                    <!-- 显式 320 = 5 行 × (60 行高 + 2×2 边距):WrapPanel 测量高度不再依赖外层 340 的减法,
-                         避免平台滚动条/舍入差挤掉第 5 行 -->
-                    <ItemsControl Classes="daily-items" Height="320" ItemsSource="{Binding Items}"
-                                  ContainerPrepared="OnItemContainerPrepared">
+                  <Grid>
+                    <!-- 每日歌曲推荐:圆角边框容器 + 纵向换行网格(先竖向排满再换列,横向滚动) -->
+                    <Border Classes="daily-container" IsVisible="{Binding IsBordered}">
+                      <!-- 显式 320 = 5 行 × (60 行高 + 2×2 边距):WrapPanel 测量高度不再依赖外层 340 的减法,
+                           避免平台滚动条/舍入差挤掉第 5 行 -->
+                      <ItemsControl Classes="daily-items" Height="320" ItemsSource="{Binding Items}"
+                                    ContainerPrepared="OnItemContainerPrepared">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Vertical" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                      </ItemsControl>
+                    </Border>
+                    <!-- 其余区块:单行横向滚动,无容器;面板底部留 14px 给水平滚动条,避免压住卡片标题 -->
+                    <ItemsControl ItemsSource="{Binding Items}" ContainerPrepared="OnItemContainerPrepared"
+                                  IsVisible="{Binding IsBordered, Converter={x:Static BoolConverters.Not}}">
                       <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                          <WrapPanel Orientation="Vertical" />
+                          <!-- 列距 12px = 原版 GridViewItem 边距2 + 卡片 Margin右8 + 下一项边距2 -->
+                          <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,14" />
                         </ItemsPanelTemplate>
                       </ItemsControl.ItemsPanel>
                     </ItemsControl>
-                  </Border>
-                </ScrollViewer>
-
-                <!-- 其余区块:单行横向滚动,无容器;底部留 14px 给水平滚动条,避免压住卡片标题 -->
-                <ScrollViewer IsVisible="{Binding IsBordered, Converter={x:Static BoolConverters.Not}}"
-                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                              Padding="0,0,0,14">
-                  <ItemsControl ItemsSource="{Binding Items}" ContainerPrepared="OnItemContainerPrepared">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate>
-                        <!-- 列距 12px = 原版 GridViewItem 边距2 + 卡片 Margin右8 + 下一项边距2 -->
-                        <StackPanel Orientation="Horizontal" Spacing="12" />
-                      </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                  </ItemsControl>
+                  </Grid>
                 </ScrollViewer>
               </StackPanel>
             </DataTemplate>

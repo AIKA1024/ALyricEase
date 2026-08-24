@@ -22,13 +22,20 @@ public static class Program
     private static Window? _window;
 
     [STAThread]
-    public static void Main()
+    public static void Main(string[] args)
     {
         AppBuilder.Configure<HeadlessApp>()
+            .UseSkia()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions())
             .SetupWithoutStarting();
 
         HeadlessApp.ConfigureServices();
+
+        if (args.Length > 0 && args[0] == "--probe")
+        {
+            PerfProbe.Run();
+            return;
+        }
 
         _window = new Window
         {

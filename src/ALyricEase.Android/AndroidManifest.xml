@@ -9,5 +9,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
     <application android:label="ALyricEase" android:icon="@drawable/Icon"
-                 android:usesCleartextTraffic="true" />
+                 android:usesCleartextTraffic="true">
+        <!-- 蓝牙/有线耳机媒体键(播放/暂停/上一曲/下一曲):系统发 MEDIA_BUTTON 广播,
+             由该 Receiver 转发到 MediaPlaybackService 的媒体会话回调 -->
+        <receiver android:name="androidx.media.session.MediaButtonReceiver"
+                  android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

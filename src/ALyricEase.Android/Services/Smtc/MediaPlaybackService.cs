@@ -9,6 +9,7 @@ using Android.Graphics;
 using Android.OS;
 using Android.Support.V4.Media;
 using Android.Support.V4.Media.Session;
+using AndroidX.Media.Session;
 using CoreNotificationCompat = AndroidX.Core.App.NotificationCompat;
 using MediaNotificationCompat = AndroidX.Media.App.NotificationCompat;
 
@@ -27,6 +28,7 @@ namespace ALyricEase.Services.Smtc;
 [Service(Name = "com.aika1024.alyricease.MediaPlaybackService",
          Exported = false,
          ForegroundServiceType = ForegroundService.TypeMediaPlayback)]
+[IntentFilter(new[] { "android.intent.action.MEDIA_BUTTON" })]
 public sealed class MediaPlaybackService : Service
 {
     // ---- 命令 Action(SmtcService 通过显式 Intent 驱动本服务) ----
@@ -100,6 +102,26 @@ public sealed class MediaPlaybackService : Service
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
+        // 蓝牙/有线耳机媒体键:清单里的 MediaButtonReceiver 收到 MEDIA_BUTTON 广播后
+        // 显式启动本服务,这里把事件解析为媒体会话回调(OnPlay/OnPause/OnSkipToNext...)。
+        // HandleIntent 内部已把 KeyEvent 分发到会话,返回非 null 表示确实是媒体键事件。
+        if (intent is not null && _session is not null
+            && MediaButtonReceiver.HandleIntent(_session, intent) is not null)
+        {
+            // 媒体键可能在没有播放上下文时经 startForegroundService 冷启动本服务:
+            // 必须先进入前台,否则 API 26+ 5 秒内未 StartForeground 会抛异常。
+            // 先用当前内容占位;若媒体键触发播放,后续 SHOW 指令会刷新为完整通知。
+            if (!_foreground)
+            {
+                ShowForegroundNotification();
+                // 冷启动(应用未初始化,无订阅者):媒体键本身无法生效,
+                // 立即收掉前台通知,避免留下"未知歌曲"僵尸横幅。
+                if (OnPlayPauseRequested is null && OnNextRequested is null && OnPreviousRequested is null)
+                    HideForegroundAndStop();
+            }
+            return StartCommandResult.NotSticky;
+        }
+
         switch (intent?.Action)
         {
             case ActionShow:

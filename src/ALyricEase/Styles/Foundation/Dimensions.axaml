@@ -1,0 +1,16 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <x:Double x:Key="TitleBarHeight">48</x:Double>
+    <x:Double x:Key="PageHeaderHeight">96</x:Double>
+    <Thickness x:Key="PageHorizontalPadding">48,0</Thickness>
+    <Thickness x:Key="PageContentPadding">48,0,48,80</Thickness>
+    <x:Double x:Key="PlayerBarHeight">100</x:Double>
+    <x:Double x:Key="PlayerBarContentHeight">80</x:Double>
+    <x:Double x:Key="PlayerArtworkSize">60</x:Double>
+    <x:Double x:Key="TrackRowHeight">60</x:Double>
+    <x:Double x:Key="CollectionCardWidth">200</x:Double>
+    <x:Double x:Key="CollectionCardHeight">250</x:Double>
+    <CornerRadius x:Key="CardCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="ControlCornerRadius">4</CornerRadius>
+    <CornerRadius x:Key="ListCornerRadius">8</CornerRadius>
+</ResourceDictionary>

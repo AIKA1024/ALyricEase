@@ -1,0 +1,28 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ALyricEase.App"
+             RequestedThemeVariant="Default">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Colors.axaml" />
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Dimensions.axaml" />
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Icons.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <!-- MenuFlyout/子菜单内边距统一 4(覆盖主题资源,模板根 Border 绑的是它,样式 setter 压不过动态资源) -->
+            <Thickness x:Key="MenuFlyoutPresenterThemePadding">4</Thickness>
+            <Thickness x:Key="MenuFlyoutScrollerMargin">0</Thickness>
+            <!-- 一级 MenuFlyout 的根 Border 绑的是 FlyoutBorderThemePadding;子菜单圆角绑 OverlayCornerRadius -->
+            <Thickness x:Key="FlyoutBorderThemePadding">4</Thickness>
+            <CornerRadius x:Key="OverlayCornerRadius">12</CornerRadius>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://ALyricEase/Styles/Foundation/Typography.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/Buttons.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/Common.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Views/TrackRow.axaml" />
+    </Application.Styles>
+</Application>

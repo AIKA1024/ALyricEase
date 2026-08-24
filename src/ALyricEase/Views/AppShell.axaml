@@ -1,0 +1,327 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
+             x:Class="ALyricEase.Views.AppShell">
+
+
+    <UserControl.Styles>
+    <Style Selector="Button.navigation-button">
+      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Height" Value="40" /><Setter Property="CornerRadius" Value="4" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="VerticalContentAlignment" Value="Center" /><Setter Property="Padding" Value="12,0" />
+    </Style>
+    <Style Selector="Button.navigation-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.navigation-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+    </Style>
+    <Style Selector="Button.navigation-button:disabled">
+      <Setter Property="Opacity" Value="1" /><Setter Property="Background" Value="Transparent" />
+      <!-- 禁用时图标变灰弱化(和 UWP 一致),背景保持透明 -->
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+    <!-- 主题的 Button:disabled /template/ ContentPresenter#PART_ContentPresenter 会给禁用态设 20% 白背景,
+         覆盖为透明(带 :disabled + /template/ 提高优先级,否则被主题样式盖掉) -->
+    <Style Selector="Button.navigation-button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.shell-navigation > ListBoxItem">
+      <Setter Property="MinHeight" Value="40" /><Setter Property="Margin" Value="4,0" />
+      <Setter Property="Padding" Value="12,0" /><Setter Property="CornerRadius" Value="4" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="Transparent" />
+      <!-- 暂时关闭 IsHoldWithMouseEnabled:它会导致特定导航顺序下歌单子项选中样式不刷新 -->
+      <Setter Property="InputElement.IsHoldWithMouseEnabled" Value="False" />
+    </Style>
+    <Style
+      Selector="ListBox.shell-navigation > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="ListBox.shell-navigation > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource NavigationSelected}" />
+    </Style>
+    <Style Selector="ListBox.shell-navigation > ListBoxItem:disabled">
+      <Setter Property="Opacity" Value="1" /><Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="TextBlock.nav-header">
+      <Setter Property="FontWeight" Value="Bold" /><Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="Button.window-control">
+      <Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" />
+      <Setter Property="Padding" Value="0" /><Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" /><Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Button.window-control:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.close-control:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#E81123" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- 返回按钮(仿 UWP NavigationView 默认返回按钮):40x40 方钮,返回箭头 E72B 居中;
+         hover/pressed/disabled 必须经 /template/ ContentPresenter 才生效(Fluent 模板的 VisualState 直接改 ContentPresenter 背景) -->
+    <Style Selector="Button.back-button">
+      <Setter Property="Width" Value="40" /><Setter Property="Height" Value="40" />
+      <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.back-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.back-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+    </Style>
+    <Style Selector="Button.back-button:disabled">
+      <Setter Property="Opacity" Value="1" /><Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+    <!-- 主题的 Button:disabled 会给 ContentPresenter 设 20% 白背景/禁用前景,覆盖为透明 + 灰字 -->
+    <Style Selector="Button.back-button:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+
+    <!-- Tooltip 圆角收小:OverlayCornerRadius 全局 12 波及了 Tooltip,单独压回 4 -->
+    <Style Selector="ToolTip">
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+
+    <!-- ContentDialog 主按钮(WinUI3 AccentButton 样式):强调色底白字,悬停/按下用系统强调色变体 -->
+    <Style Selector="Button.dialog-primary">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.dialog-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+    </Style>
+    <Style Selector="Button.dialog-primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
+    </Style>
+    </UserControl.Styles>
+
+    <Grid>
+
+
+<Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+        <!-- 完整导航：宽屏展开态(截图中的桌面展开态)。内容与抽屉复用 NavigationPaneView,
+             汉堡只在宽屏内联栏顶部出现(点开/收起内联栏);抽屉复用时不带汉堡。
+             IsVisible 由代码后置按宽度 + IsNavigationExpanded 控制。 -->
+        <Border x:Name="WideSidebar" Grid.Column="0" Width="320"
+                Background="Transparent" BorderThickness="0">
+          <DockPanel>
+            <Button DockPanel.Dock="Top" Classes="navigation-button"
+                    Command="{Binding ToggleNavigationExpandedCommand}"
+                    Margin="4,0" ToolTip.Tip="收起侧边栏">
+              <TextBlock Text="☰" FontSize="16" />
+            </Button>
+            <views:NavigationPaneView />
+          </DockPanel>
+        </Border>
+        <!-- 中/小屏态：仍是左侧图标栏(原版 NavigationView Compact:收起后内联图标栏)。
+             汉堡点击语义由 NavigationHamburger 按宽度分发:宽屏收起→内联展开,中/小屏→开抽屉。
+             IsVisible 由代码后置按宽度 + IsNavigationExpanded 控制。 -->
+        <Border x:Name="CompactSidebar" Grid.Column="0" Width="48"
+                Background="Transparent" BorderThickness="0">
+          <DockPanel>
+            <Button DockPanel.Dock="Top" Classes="navigation-button"
+                    Click="OnCompactHamburgerClick"
+                    Margin="4,0" ToolTip.Tip="展开侧边栏">
+              <TextBlock Text="☰" FontSize="16" />
+            </Button>
+            <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorder}"
+                    Padding="0,8,0,0">
+              <StackPanel Spacing="4" Margin="0,0,0,8" HorizontalAlignment="Stretch">
+                <Button Classes="icon-button" Click="OnAccountClick" Width="48" Height="40"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Button>
+                <Button Classes="icon-button" Command="{Binding GoSettingsCommand}" Width="48" Height="40"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                  <TextBlock Text="" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Button>
+                <!-- Debug 入口(图标栏形态):仅 DEBUG 构建可见 -->
+                <Button Classes="icon-button" Command="{Binding GoDebugCommand}" Width="48" Height="40"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        IsVisible="{Binding IsDebug}" ToolTip.Tip="Debug">
+                  <TextBlock Text="&#xEBE8;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Button>
+              </StackPanel>
+            </Border>
+            <ListBox Classes="shell-navigation" ItemsSource="{Binding CompactNavItems}"
+                     SelectedItem="{Binding SelectedNav, Mode=OneWay}"
+                     SelectionChanged="OnCompactNavSelectionChanged"
+                     Width="48" Background="Transparent" BorderThickness="0" Margin="0,4,0,4">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="4" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <!-- Tooltip 放容器上:整项(48px)悬停都触发,不是只有图标 -->
+              <ListBox.ItemContainerTheme>
+                <ControlTheme TargetType="ListBoxItem" x:DataType="vm:NavItemViewModel"
+                              BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                  <Setter Property="ToolTip.Tip" Value="{Binding Label}" />
+                </ControlTheme>
+              </ListBox.ItemContainerTheme>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:NavItemViewModel">
+                  <TextBlock Text="{Binding IconGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                             HorizontalAlignment="Center" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </Border>
+
+        <Border Grid.Column="1" Background="{DynamicResource AppBackground}" CornerRadius="8,0,0,0">
+          <Grid x:Name="ContentArea" ClipToBounds="True">
+            <!-- 内容页:延伸到播放条后面,滚动内容从播放条下方穿过 -->
+            <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentContent}"
+                                         IsTransitionReversed="{Binding IsTransitionReversed}">
+              <TransitioningContentControl.PageTransition>
+                <CompositePageTransition>
+                  <CompositePageTransition.PageTransitions>
+                    <PageSlide Orientation="Horizontal" Duration="0:0:0.3" /><CrossFade Duration="0:0:0.3" />
+                  </CompositePageTransition.PageTransitions>
+                </CompositePageTransition>
+              </TransitioningContentControl.PageTransition>
+            </TransitioningContentControl>
+            <!-- 应用内毛玻璃曾用 VisualBrush+BlurEffect,但 Avalonia 12.1.1 的 BlurEffect 不实际渲染(见诊断),已移除 -->
+            <views:PlayerBarView DataContext="{Binding Player}" VerticalAlignment="Bottom" ZIndex="1" />
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- 中/小屏导航抽屉(原版 NavigationView Compact/Minimal 语义):覆盖式抽屉,开在内容区上方。
+           中屏(compact):图标栏常驻,点汉堡开抽屉;小屏(narrow):无侧栏,汉堡在标题栏返回键旁开抽屉。
+           抽屉内点击导航项后自动收起(OnSelectedNavChanged 置 IsNavigationDrawerOpen=false)。
+           遮罩(DrawerScrim)固定覆盖整个内容区、只做透明度淡入淡出(不随抽屉滑动);
+           抽屉本体(NavigationDrawer, 320px)靠 RenderTransform 平移滑入滑出,过渡各自声明在元素上。
+           IsVisible 只在宽/窄态切换;开合由代码后置驱动(见 UpdateNavigationVisibility)。
+           (平移/透明度目标值均由代码设置,避免 XAML 字符串解析在部分版本抛 FormatException。) -->
+      <Grid x:Name="DrawerRoot" Grid.Row="1" ZIndex="60"
+            IsVisible="False">
+        <Border x:Name="DrawerScrim" Background="#66000000" Opacity="0"
+                PointerPressed="OnDrawerScrimPointerPressed">
+          <Border.Transitions>
+            <Transitions>
+              <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+            </Transitions>
+          </Border.Transitions>
+        </Border>
+        <Border x:Name="NavigationDrawer" Width="320" HorizontalAlignment="Left"
+                Background="{DynamicResource AppSurface}"
+                BorderThickness="0,0,1,0" BorderBrush="{DynamicResource AppBorderStrong}">
+          <Border.Transitions>
+            <Transitions>
+              <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25"
+                                             Easing="0.215,0.61,0.355,1" />
+            </Transitions>
+          </Border.Transitions>
+          <views:NavigationPaneView />
+        </Border>
+      </Grid>
+
+      <!-- 正在播放覆盖层:整窗 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
+           RenderTransform 目标值由 MainWindow 代码后置按 MainViewModel.ShowNowPlaying 切换,
+           过渡(时长/缓动)在这里声明。不用 TransitioningContentControl(空→有内容会先露末帧再启动动画;
+           关闭时 IsVisible 直接隐藏会杀掉退出动画)。 -->
+      <Grid x:Name="NowPlayingOverlay" Grid.Row="0" Grid.RowSpan="2" ZIndex="100"
+            IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
+        <Grid.Transitions>
+          <Transitions>
+            <!-- 时长/缓动对齐原版 LyricEase:实际手感 0.4s 缓出;曲线取 Toolkit 默认缓出 cubic-bezier(0.215,0.61,0.355,1)。 -->
+            <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.4" Easing="0.215,0.61,0.355,1" />
+          </Transitions>
+        </Grid.Transitions>
+        <views:NowPlayingView DataContext="{Binding}" />
+      </Grid>
+
+      <!-- 登录对话框(WinUI3 ContentDialog 式窗口内弹层,代替原独立 LoginWindow):
+           烟雾层(#99000000)盖住整窗拦截输入 + 居中卡片(圆角 8、内边距 24、标题 20 SemiBold、
+           按钮右下:取消 + 强调色主按钮)。Esc=取消(取消按钮 HotKey,弹层隐藏时自动失效);
+           Enter=默认主按钮(卡片 KeyBinding,焦点在 TextBox/卡片内时触发;按钮自身处理 Enter 不会冒泡)。
+           ZIndex 200 高于正在播放覆盖层(100):播放详情页里点红心也能弹登录。 -->
+      <Grid x:Name="LoginDialogOverlay" IsVisible="{Binding IsLoginDialogOpen}"
+            Grid.Row="0" Grid.RowSpan="2" ZIndex="200">
+        <Grid.Styles>
+          <!-- 打开时 0→1 淡入由 code-behind 触发(IsVisible 翻转不跑过渡,先置 0 下一帧再置 1) -->
+          <Style Selector="Grid#LoginDialogOverlay">
+            <Setter Property="Transitions">
+              <Transitions>
+                <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+              </Transitions>
+            </Setter>
+          </Style>
+        </Grid.Styles>
+        <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
+        <Panel Background="#99000000" />
+        <Grid DataContext="{Binding Playlist}" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <Grid.KeyBindings>
+            <KeyBinding Gesture="Enter" Command="{Binding LoginCommand}" />
+          </Grid.KeyBindings>
+          <Border MaxWidth="440" MinWidth="320" Margin="24" Padding="24" CornerRadius="8"
+                  Background="{DynamicResource AppSurface}"
+                  BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                  BoxShadow="0 32 64 #66000000">
+            <StackPanel Spacing="12">
+              <TextBlock Text="登录 ALyricEase" FontSize="20" FontWeight="SemiBold" />
+              <TextBlock Text="使用网易云音乐 Cookie 登录。红心、我的歌单等账号功能需要登录。"
+                         FontSize="13" TextWrapping="Wrap"
+                         Foreground="{DynamicResource TextSecondary}" />
+              <StackPanel Spacing="6">
+                <TextBlock Text="MUSIC_U Cookie" FontSize="13" FontWeight="SemiBold" />
+                <!-- 单行:Enter 留给"默认按钮"语义(冒泡到卡片 KeyBinding 触发登录);
+                     粘贴的整段 cookie 由 SetMusicUCookie 解析,无需多行 -->
+                <TextBox x:Name="MusicUBox" Text="{Binding MusicUInput}"
+                         PlaceholderText="粘贴 MUSIC_U 的值"
+                         TextWrapping="Wrap" Height="64" FontSize="13" />
+              </StackPanel>
+              <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
+                <StackPanel Spacing="5">
+                  <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />
+                  <TextBlock Text="1. 用浏览器打开 music.163.com 并登录你的账号" FontSize="12"
+                             Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                  <TextBlock Text="2. 按 F12 → Application → Cookies → https://music.163.com" FontSize="12"
+                             Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                  <TextBlock Text="3. 复制 MUSIC_U 的值,粘贴到上方输入框后点登录" FontSize="12"
+                             Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Grid.Column="0" Text="{Binding Message}" FontSize="12"
+                           Foreground="{DynamicResource LyricEaseRed}" TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="取消"
+                        Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).CloseLoginDialogCommand}"
+                        HotKeyManager.HotKey="Escape"
+                        MinWidth="96" Height="32" />
+                <Button Grid.Column="2" Classes="dialog-primary" Content="登录"
+                        Command="{Binding LoginCommand}"
+                        MinWidth="96" Height="32" IsEnabled="{Binding !IsBusy}" />
+              </Grid>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Grid>
+    </Grid>
+
+</UserControl>

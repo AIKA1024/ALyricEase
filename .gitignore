@@ -10,3 +10,5 @@ riderModule.iml
 run-err.log
 .claude/
 tmpapi2/
+.vs/
+.zcode/

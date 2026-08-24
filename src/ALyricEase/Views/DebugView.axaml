@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:DebugViewModel"
+             mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.DebugView">
+  <!-- Debug 页(仅 DEBUG 构建有入口):测试卡片纵向排,每个卡片标题 + 说明 + 触发按钮 -->
+  <ScrollViewer>
+    <StackPanel Margin="28,16,24,28" Spacing="16">
+      <TextBlock Text="Debug" FontSize="20" FontWeight="Bold"
+                 Foreground="{DynamicResource TextPrimary}" />
+
+      <!-- 模态窗口(ContentDialog 式弹层)测试 -->
+      <Border MaxWidth="480" HorizontalAlignment="Left" Padding="16" CornerRadius="8"
+              Background="{DynamicResource AppSurface}"
+              BorderBrush="{DynamicResource AppBorder}" BorderThickness="1">
+        <StackPanel Spacing="10">
+          <TextBlock Text="模态窗口" FontSize="14" FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextPrimary}" />
+          <TextBlock Text="打开 WinUI3 ContentDialog 式登录弹层(与左下角账号入口同一个实例):烟雾层 + 居中卡片,Esc 取消、Enter 登录。"
+                     FontSize="12" TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSecondary}" />
+          <Button Content="打开测试模态窗口" HorizontalAlignment="Left"
+                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).OpenLoginDialogCommand}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

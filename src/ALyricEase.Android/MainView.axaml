@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             x:Class="ALyricEase.MainView">
+    <Grid RowDefinitions="48,*">
+        <!-- Android 顶部横幅:左侧固定汉堡按钮,右侧 20 间距 + 当前页面名称 -->
+        <Border Grid.Row="0" Background="{DynamicResource AppBackground}"
+                BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="48,20,*" Margin="4,0,12,0">
+                <Button Grid.Column="0" Classes="navigation-button" Width="40" Height="40"
+                        Command="{Binding ToggleNavigationDrawerCommand}" ToolTip.Tip="展开侧边栏"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <TextBlock Text="☰" FontSize="18" />
+                </Button>
+                <TextBlock Grid.Column="2" Text="{Binding CurrentPageTitle}" FontSize="18"
+                           FontWeight="SemiBold" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+        <views:AppShell Grid.Row="1" />
+    </Grid>
+</UserControl>

@@ -1,0 +1,193 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:views="using:ALyricEase.Views"
+             x:DataType="vm:PlayerViewModel"
+             mc:Ignorable="d"
+             d:DesignWidth="1200" d:DesignHeight="100"
+             x:Class="ALyricEase.Views.PlayerBarView"
+             ClipToBounds="False">
+  <UserControl.Styles>
+    <!-- hover 背景:整条播放条 hover 时低透明度高亮 -->
+    <Style Selector="Border#HoverBg">
+      <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Grid#PlayerRoot:pointerover Border#HoverBg">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+
+    <!-- 宽屏默认样式 -->
+    <Style Selector="Grid#PlayerRoot">
+      <Setter Property="Height" Value="100" />
+    </Style>
+    <Style Selector="Border#CoverContainer">
+      <Setter Property="Width" Value="60" />
+      <Setter Property="Height" Value="60" />
+    </Style>
+    <Style Selector="StackPanel#ButtonPanel">
+      <Setter Property="Spacing" Value="8" />
+    </Style>
+    <Style Selector="Button#PlayButton">
+      <Setter Property="Width" Value="50" />
+      <Setter Property="Height" Value="50" />
+    </Style>
+    <Style Selector="TextBlock#PlayIcon">
+      <Setter Property="FontSize" Value="28" />
+    </Style>
+    <Style Selector="TextBlock#PauseIcon">
+      <Setter Property="FontSize" Value="28" />
+    </Style>
+    <Style Selector="TextBlock#LoadingIcon">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="LetterSpacing" Value="2" />
+    </Style>
+
+    <!-- narrow 紧凑样式 -->
+    <Style Selector=".narrow Grid#PlayerRoot">
+      <Setter Property="Height" Value="56" />
+    </Style>
+    <Style Selector=".narrow Border#CoverContainer">
+      <Setter Property="Width" Value="48" />
+      <Setter Property="Height" Value="48" />
+    </Style>
+    <Style Selector=".narrow Border#HoverBg">
+      <Setter Property="Padding" Value="0 6 0 4"/>
+    </Style>
+    <Style Selector=".narrow StackPanel#ButtonPanel">
+      <Setter Property="Spacing" Value="2" />
+    </Style>
+    <Style Selector=".narrow Button#PlayButton">
+      <Setter Property="Width" Value="44" />
+      <Setter Property="Height" Value="44" />
+    </Style>
+    <Style Selector=".narrow TextBlock#PlayIcon">
+      <Setter Property="FontSize" Value="24" />
+    </Style>
+    <Style Selector=".narrow TextBlock#PauseIcon">
+      <Setter Property="FontSize" Value="24" />
+    </Style>
+    <Style Selector=".narrow TextBlock#LoadingIcon">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="LetterSpacing" Value="1" />
+    </Style>
+    <!-- narrow 时隐藏额外按钮(红心、模式、音量、更多) -->
+    <Style Selector=".narrow Button.like-button">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow Button.mode-button">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow Button.volume-button">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow Button.more-button">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}" ClipToBounds="False">
+    <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}" ClipToBounds="False">
+      <Grid x:Name="PlayerRoot" ClipToBounds="False" Background="Transparent">
+        <!-- hover 背景 -->
+        <Border x:Name="HoverBg" Margin="-12,0" />
+        <!-- 进度条 -->
+        <views:PlayerProgressBar Height="28" VerticalAlignment="Top" Margin="0,-14,0,0" ZIndex="1"
+                                 ShowBubble="True"
+                                 ScrubPositionMs="{Binding ScrubPositionMs}"
+                                 DurationMs="{Binding DurationMs}"
+                                 IsVisible="{Binding HasProgress}" />
+
+        <Border Padding="12,0" Background="Transparent" Tapped="OnTrackAreaTap">
+          <Grid ColumnDefinitions="70,*,Auto" ColumnSpacing="4" VerticalAlignment="Center">
+            <!-- 封面 -->
+            <Border x:Name="CoverContainer" Grid.Column="0" CornerRadius="4" ClipToBounds="True"
+                    Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+              <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                     Stretch="UniformToFill" />
+            </Border>
+            <!-- 标题/歌手 -->
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+              <TextBlock Classes="track-title" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" />
+              <TextBlock Classes="track-subtitle" Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <!-- 按钮区 -->
+            <StackPanel x:Name="ButtonPanel" Grid.Column="2" Orientation="Horizontal"
+                        VerticalAlignment="Center" HorizontalAlignment="Right"
+                        IsVisible="{Binding HasProgress}">
+              <!-- 红心 -->
+              <Button Classes="player-button like-button" RenderTransform="none" Width="40" Height="40"
+                      Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心">
+                <Grid>
+                  <TextBlock Text="&#xE931;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
+                             Foreground="#FFE74C3C" IsVisible="{Binding IsCurrentLiked}" />
+                  <TextBlock Text="&#xE94A;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
+                             IsVisible="{Binding !IsCurrentLiked}" />
+                </Grid>
+              </Button>
+              <!-- 上一曲 -->
+              <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                      Command="{Binding PlayPreviousCommand}" ToolTip.Tip="上一曲">
+                <TextBlock Text="&#xE914;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+              </Button>
+              <!-- 播放/暂停 -->
+              <Button x:Name="PlayButton" Classes="player-button" RenderTransform="none"
+                      Command="{Binding TogglePlayPauseCommand}">
+                <Grid>
+                  <TextBlock x:Name="PauseIcon" Text="&#xE90F;" FontFamily="{DynamicResource LyricEaseIcons}"
+                             IsVisible="{Binding ShowPauseIcon}" />
+                  <TextBlock x:Name="PlayIcon" Text="&#xE912;" FontFamily="{DynamicResource LyricEaseIcons}"
+                             IsVisible="{Binding ShowPlayIcon}" />
+                  <TextBlock x:Name="LoadingIcon" Text="•••" IsVisible="{Binding ShowLoadingIcon}" />
+                </Grid>
+              </Button>
+              <!-- 下一曲 -->
+              <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                      Command="{Binding PlayNextCommand}" ToolTip.Tip="下一曲">
+                <TextBlock Text="&#xE90E;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+              </Button>
+              <!-- 播放模式 -->
+              <Button Classes="player-button mode-button" RenderTransform="none" Width="40" Height="40"
+                      Command="{Binding TogglePlaybackModeCommand}"
+                      ToolTip.Tip="{Binding PlaybackModeName}">
+                <Grid>
+                  <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                             IsVisible="{Binding !IsFluentModeIcon}" />
+                  <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="16"
+                             IsVisible="{Binding IsFluentModeIcon}" />
+                </Grid>
+              </Button>
+              <!-- 音量 -->
+              <Button Classes="player-button volume-button" RenderTransform="none" Width="40" Height="40" ToolTip.Tip="音量">
+                <TextBlock Text="&#xE91B;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
+                <Button.Flyout>
+                  <Flyout Placement="Top">
+                    <StackPanel Spacing="8" Margin="4">
+                      <Slider Value="{Binding Volume}" Minimum="0" Maximum="100" Height="150" Orientation="Vertical" />
+                      <TextBlock Text="{Binding Volume}" HorizontalAlignment="Center" />
+                    </StackPanel>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+              <!-- 更多 -->
+              <Button Classes="player-button more-button" RenderTransform="none" Width="40" Height="40" IsEnabled="False">
+                <TextBlock Text="&#xE909;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
+    </ExperimentalAcrylicBorder>
+  </Border>
+</UserControl>

@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:Class="ALyricEase.Views.PlayerProgressBar"
+             x:DataType="vm:PlayerViewModel"
+             mc:Ignorable="d"
+             ClipToBounds="False">
+  <UserControl.Styles>
+    <!-- 原版进度条:已播放 #6FBAB3(球左)、未播放 #808080(球右)、球为两个圆叠加
+             (外层 20px 深色球 #454545 + 内层 10px 实心球 #5EA9A2);
+             hover(:pointerover)时轨道变亮 + 内层球放大到 14(Transitions 动画),外层球不变。 -->
+    <!-- 进度条默认值放样式(非内联),hover(:pointerover)时才能覆盖 -->
+    <Style Selector="Grid#Root Border#Fill">
+      <Setter Property="Background" Value="#FF6FBAB3" />
+    </Style>
+    <Style Selector="Grid#Root Border#TrackInactive">
+      <Setter Property="Background" Value="#FF808080" />
+    </Style>
+    <!-- 内层小球默认 10x10:放样式而非内联,hover 放大到 14 的样式才能覆盖 -->
+    <Style Selector="Grid#Root Ellipse#ThumbFill">
+      <Setter Property="Width" Value="10" />
+      <Setter Property="Height" Value="10" />
+    </Style>
+    <!-- hover:轨道变亮 + 内层球放大(Transitions 动画),外层球不变 -->
+    <Style Selector="Grid#Root:pointerover Border#Fill">
+      <Setter Property="Background" Value="#FF65A9A2" />
+    </Style>
+    <Style Selector="Grid#Root:pointerover Border#TrackInactive">
+      <Setter Property="Background" Value="#FFA7A7A7" />
+    </Style>
+    <!-- 球放大:仅 hover 球本身时触发,非 hover 轨道;内层小球 10→14,外层球不变 -->
+    <Style Selector="Grid#Thumb:pointerover Ellipse#ThumbFill">
+      <Setter Property="Width" Value="14" />
+      <Setter Property="Height" Value="14" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 命中区 = 整个控件:Background 透明但非 null → 可命中,:pointerover 才生效。
+       高度/边距由使用方定(宽屏 28/-14,紧凑 20/-10),球一半露在播放条外的效果由此而来。 -->
+  <Grid x:Name="Root" Background="Transparent"
+        PointerPressed="OnRootPointerPressed" PointerMoved="OnRootPointerMoved"
+        PointerReleased="OnRootPointerReleased">
+    <Grid x:Name="Track" Height="4" VerticalAlignment="Center" ClipToBounds="True">
+      <!-- 未播放段(整条) -->
+      <Border x:Name="TrackInactive" />
+      <!-- 已播放段(宽度=进度比例) -->
+      <Border x:Name="Fill" HorizontalAlignment="Left" IsHitTestVisible="False" />
+    </Grid>
+    <!-- 球:两个圆叠加 — 底层 20x20 深色大球(#454545),顶层 10px 强调色小球(#5EA9A2);
+         hover/动画只在球上触发 -->
+    <Grid x:Name="Thumb" Width="20" Height="20" Background="Transparent"
+          VerticalAlignment="Center" HorizontalAlignment="Left"
+          PointerEntered="OnThumbPointerEntered" PointerExited="OnThumbPointerExited">
+      <Ellipse x:Name="ThumbHalo" Fill="#FF454545" />
+      <Ellipse x:Name="ThumbFill" Fill="#FF5EA9A2"
+               HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Ellipse.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Width" Duration="0:0:0.1" />
+            <DoubleTransition Property="Height" Duration="0:0:0.1" />
+          </Transitions>
+        </Ellipse.Transitions>
+      </Ellipse>
+    </Grid>
+    <!-- 时间气泡:与球同属 Root(同一坐标系),固定宽高(不 Measure,避免拖动期间反复测量→布局抖动);
+         位置由 code-behind 按球的 Margin 对齐球心;仅 ShowBubble=true(宽屏)时显示。 -->
+    <Border x:Name="Bubble" IsVisible="False" Width="58" Height="24" Padding="6,3"
+            HorizontalAlignment="Left" VerticalAlignment="Top"
+            CornerRadius="4" Background="#FF1F1F1F" BoxShadow="0 2 8 #55000000"
+            IsHitTestVisible="False">
+      <TextBlock Text="{Binding PositionText}" FontSize="12" Foreground="#FFFFFFFF"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Border>
+  </Grid>
+</UserControl>

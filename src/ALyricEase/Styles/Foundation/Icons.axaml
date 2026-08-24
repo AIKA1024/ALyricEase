@@ -1,0 +1,33 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <FontFamily x:Key="LyricEaseIcons">avares://ALyricEase/Assets/Fonts/FluentUISystemIcons.ttf#FluentUISystemIcons</FontFamily>
+
+    <x:String x:Key="IconSearch">&#xE915;</x:String>
+    <x:String x:Key="IconRecommend">&#xE935;</x:String>
+    <x:String x:Key="IconBrowse">&#xE936;</x:String>
+    <x:String x:Key="IconRadio">&#xE945;</x:String>
+    <x:String x:Key="IconLibrary">&#xE92A;</x:String>
+    <x:String x:Key="IconCloud">&#xE934;</x:String>
+    <x:String x:Key="IconRecents">&#xE937;</x:String>
+    <x:String x:Key="IconHeart">&#xE931;</x:String>
+    <x:String x:Key="IconHeartPulse">&#xE944;</x:String>
+    <x:String x:Key="IconPerson">&#xE910;</x:String>
+    <x:String x:Key="IconSettings">&#xE917;</x:String>
+    <x:String x:Key="IconSingleArtist">&#xE921;</x:String>
+    <x:String x:Key="IconMultiArtists">&#xE920;</x:String>
+    <x:String x:Key="IconAlbum">&#xE922;</x:String>
+    <x:String x:Key="IconAdd">&#xE92B;</x:String>
+    <x:String x:Key="IconPrevious">&#xE914;</x:String>
+    <x:String x:Key="IconPlayFilled">&#xE912;</x:String>
+    <x:String x:Key="IconPause">&#xE90F;</x:String>
+    <x:String x:Key="IconNext">&#xE90E;</x:String>
+    <x:String x:Key="IconVolume">&#xE91B;</x:String>
+    <x:String x:Key="IconMore">&#xE909;</x:String>
+    <x:String x:Key="IconChevronDown">&#xE901;</x:String>
+    <x:String x:Key="IconLyrics">&#xE907;</x:String>
+    <x:String x:Key="IconPlaylist">&#xE905;</x:String>
+    <x:String x:Key="IconTranslation">&#xE91D;</x:String>
+    <x:String x:Key="IconFontSize">&#xE91C;</x:String>
+    <x:String x:Key="IconEnterFullScreen">&#xE924;</x:String>
+    <x:String x:Key="IconExitFullScreen">&#xE923;</x:String>
+</ResourceDictionary>

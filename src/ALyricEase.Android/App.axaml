@@ -1,0 +1,51 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:Class="ALyricEase.App"
+             RequestedThemeVariant="Default">
+    <Application.DataTemplates>
+        <DataTemplate DataType="vm:RecommendViewModel">
+            <views:RecommendView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:SearchViewModel">
+            <views:SearchView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:PlaylistViewModel">
+            <views:PlaylistView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:ArtistViewModel">
+            <views:ArtistView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:AlbumViewModel">
+            <views:AlbumView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:PlaceholderViewModel">
+            <views:PlaceholderView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:DebugViewModel">
+            <views:DebugView />
+        </DataTemplate>
+    </Application.DataTemplates>
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Colors.axaml" />
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Dimensions.axaml" />
+                <ResourceInclude Source="avares://ALyricEase/Styles/Foundation/Icons.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Thickness x:Key="MenuFlyoutPresenterThemePadding">4</Thickness>
+            <Thickness x:Key="MenuFlyoutScrollerMargin">0</Thickness>
+            <Thickness x:Key="FlyoutBorderThemePadding">4</Thickness>
+            <CornerRadius x:Key="OverlayCornerRadius">12</CornerRadius>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://ALyricEase/Styles/Foundation/Typography.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/Buttons.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/Common.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Views/TrackRow.axaml" />
+    </Application.Styles>
+</Application>

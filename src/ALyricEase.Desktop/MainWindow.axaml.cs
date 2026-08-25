@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Avalonia;
@@ -93,7 +93,7 @@ public partial class MainWindow : Window
     private void UpdateMaximizeGlyph()
     {
         if (MaxGlyph is not null)
-            MaxGlyph.Text = WindowState == WindowState.Maximized ? "" : "";
+            MaxGlyph.Text = WindowState == WindowState.Maximized ? "" : "";
     }
 
 #if WINDOWS

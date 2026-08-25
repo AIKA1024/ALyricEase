@@ -220,22 +220,22 @@
             <!-- 播放模式:大屏/中屏在次级行左,弹出单选菜单;小屏隐藏 -->
             <Button x:Name="ModeButton" Classes="player-button" Width="50" Height="50"
                     ToolTip.Tip="{Binding Player.PlaybackModeName}">
-                <TextBlock Text="{Binding Player.PlaybackModeGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="White" />
+                <TextBlock Text="{Binding Player.PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" Foreground="White" />
                 <Button.Flyout>
                     <MenuFlyout Placement="Top">
                         <MenuItem Header="列表循环" ToggleType="Radio" IsChecked="{Binding Player.IsListLoopMode}">
                             <MenuItem.Icon>
-                                <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                <TextBlock Text="{DynamicResource IconRepeatList}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
                             </MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="单曲循环" ToggleType="Radio" IsChecked="{Binding Player.IsSingleLoopMode}">
                             <MenuItem.Icon>
-                                <TextBlock Text="&#xE8ED;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                <TextBlock Text="{DynamicResource IconRepeatOne}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
                             </MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="随机播放" ToggleType="Radio" IsChecked="{Binding Player.IsShuffleMode}">
                             <MenuItem.Icon>
-                                <TextBlock Text="&#xE8B1;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                <TextBlock Text="{DynamicResource IconShuffle}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
                             </MenuItem.Icon>
                         </MenuItem>
                     </MenuFlyout>
@@ -345,7 +345,7 @@
                                             <Button Grid.Column="2" Classes="queue-remove" Width="40" Height="40"
                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
                                                     Command="{Binding RemoveCommand}" ToolTip.Tip="从播放列表移除">
-                                                <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#73FFFFFF" />
+                                                <TextBlock Text="{DynamicResource IconPin}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="12" Foreground="#73FFFFFF" />
                                             </Button>
                                         </Grid>
                                     </DataTemplate>

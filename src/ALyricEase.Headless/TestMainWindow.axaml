@@ -153,13 +153,13 @@
         <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0" VerticalAlignment="Center">
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
-            <TextBlock x:Name="BackGlyph" Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
+            <TextBlock x:Name="BackGlyph" Text="{DynamicResource IconBack}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="12" />
           </Button>
           <!-- 小屏汉堡按钮(仿原版 NavigationView Minimal):窄窗无侧栏,汉堡移入标题栏、在返回键右侧,点开抽屉。
                IsVisible 由代码后置按宽度控制(ResponsiveClasses 的 narrow)。 -->
           <Button x:Name="TitleBarHamburger" Classes="back-button" IsVisible="False"
                   Command="{Binding ToggleNavigationDrawerCommand}" ToolTip.Tip="展开侧边栏">
-            <TextBlock x:Name="TitleBarHamburgerGlyph" Text="☰" FontSize="16" />
+            <TextBlock x:Name="TitleBarHamburgerGlyph" Text="{DynamicResource IconHamburger}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
           </Button>
           <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" />
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
@@ -168,17 +168,17 @@
         <StackPanel Grid.Column="2" x:Name="WindowControls" Orientation="Horizontal">
           <Button Classes="window-control" Click="OnMinimizeClick" ToolTip.Tip="最小化"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="MinGlyph" Text="&#xE921;" FontSize="16" VerticalAlignment="Center"
-                       Margin="0 4 0 0" />
+            <TextBlock x:Name="MinGlyph" Text="{DynamicResource IconWindowMinimize}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                       VerticalAlignment="Center" Margin="0 4 0 0" />
           </Button>
           <Button Classes="window-control" Click="OnMaximizeClick" ToolTip.Tip="最大化"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="MaxGlyph" Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+            <TextBlock x:Name="MaxGlyph" Text="{DynamicResource IconWindowMaximize}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="15"
                        VerticalAlignment="Center" />
           </Button>
           <Button Classes="window-control close-control" Click="OnCloseClick" ToolTip.Tip="关闭"
                   HorizontalContentAlignment="Center">
-            <TextBlock x:Name="CloseGlyph" Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+            <TextBlock x:Name="CloseGlyph" Text="{DynamicResource IconClose}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
                        VerticalAlignment="Center" />
           </Button>
         </StackPanel>

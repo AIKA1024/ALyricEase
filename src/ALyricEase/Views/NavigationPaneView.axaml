@@ -30,7 +30,7 @@
                 <Button Classes="navigation-button" Command="{Binding GoDebugCommand}"
                         HorizontalAlignment="Stretch" IsVisible="{Binding IsDebug}">
                     <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
-                        <TextBlock Text="&#xEBE8;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                        <TextBlock Text="{DynamicResource IconHamburger}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
                                    VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1" Text="Debug" FontSize="14" VerticalAlignment="Center" />
                     </Grid>

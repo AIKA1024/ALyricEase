@@ -132,13 +132,8 @@
               <Button Classes="player-button mode-button" RenderTransform="none" Width="40" Height="40"
                       Command="{Binding TogglePlaybackModeCommand}"
                       ToolTip.Tip="{Binding PlaybackModeName}">
-                <Grid>
-                  <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                             IsVisible="{Binding !IsFluentModeIcon}" />
-                  <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}"
-                             FontSize="16"
-                             IsVisible="{Binding IsFluentModeIcon}" />
-                </Grid>
+                <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}"
+                           FontSize="16" />
               </Button>
               <!-- 音量 -->
               <Button Classes="player-button volume-button" RenderTransform="none" Width="40" Height="40" ToolTip.Tip="音量">

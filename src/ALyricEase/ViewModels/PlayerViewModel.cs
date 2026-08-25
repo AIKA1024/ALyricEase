@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -114,14 +114,14 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     partial void OnArtistChanged(string value) => OnPropertyChanged(nameof(DisplayArtist));
 
-    /// <summary>模式按钮图标:三个循环模式用 Segoe MDL2(原版 Symbol.RepeatAll/RepeatOne/Shuffle),
-    /// 心动模式用 Fluent 字体 E944(HeartPulse,与红心图标区分)。</summary>
+    /// <summary>模式按钮图标:统一用内嵌 Fluent 字体(E956/E957/E958 循环三态,
+    /// E944 HeartPulse 心动模式,码位见 Icons.axaml)。</summary>
     public string PlaybackModeGlyph => PlaybackMode switch
     {
-        PlaybackMode.SingleLoop => "",
-        PlaybackMode.Shuffle => "",
+        PlaybackMode.SingleLoop => "",
+        PlaybackMode.Shuffle => "",
         PlaybackMode.Heartbeat => "",
-        _ => "",
+        _ => "",
     };
 
     /// <summary>模式按钮 ToolTip。</summary>
@@ -133,14 +133,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _ => "列表循环",
     };
 
-    /// <summary>仅心动模式用 Fluent 图标字体(其余用 Segoe MDL2)。</summary>
-    public bool IsFluentModeIcon => PlaybackMode == PlaybackMode.Heartbeat;
 
     partial void OnPlaybackModeChanged(PlaybackMode value)
     {
         OnPropertyChanged(nameof(PlaybackModeGlyph));
         OnPropertyChanged(nameof(PlaybackModeName));
-        OnPropertyChanged(nameof(IsFluentModeIcon));
         OnPropertyChanged(nameof(IsListLoopMode));
         OnPropertyChanged(nameof(IsSingleLoopMode));
         OnPropertyChanged(nameof(IsShuffleMode));

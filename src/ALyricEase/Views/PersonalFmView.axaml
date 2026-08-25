@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:PlayerViewModel"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.PersonalFmView">
+
+  <!-- 居中:封面 + 曲名/歌手(播放控制走底部播放条/SMTC);未登录/失败时 Message 提示 -->
+  <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
+    <Border Width="300" Height="300" CornerRadius="8" ClipToBounds="True"
+            Background="{DynamicResource ArtFallback}" BoxShadow="0 8 24 #33000000">
+      <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+             Stretch="UniformToFill" />
+    </Border>
+    <StackPanel Spacing="4" IsVisible="{Binding CurrentSong, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"
+                 TextTrimming="CharacterEllipsis" MaxLines="1" />
+      <TextBlock Text="{Binding Artist}" FontSize="14" HorizontalAlignment="Center"
+                 Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+    </StackPanel>
+    <TextBlock Text="{Binding Message}" FontSize="13" HorizontalAlignment="Center"
+               Foreground="{DynamicResource TextSecondary}"
+               IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
+  </StackPanel>
+</UserControl>

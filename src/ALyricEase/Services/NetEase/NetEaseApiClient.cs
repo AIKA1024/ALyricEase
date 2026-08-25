@@ -350,9 +350,50 @@ public sealed class NetEaseApiClient
             .ToList();
     }
 
+    /// <summary>云盘歌曲分页(明文 POST /api/v1/cloud/get,需 MUSIC_U 登录态)。
+    /// 注:weapi/eapi 的云盘端点会被风控拦截(HTTP 200 空 body,实测 2026),明文通道可用,
+    /// 与 user/playlist 等账号接口一致直接走明文。返回本页曲目(simpleSong 映射,异常条目跳过)、
+    /// 云盘总数与是否还有下一页。</summary>
+    public async Task<(List<Song> Songs, int TotalCount, bool HasMore)> GetCloudListAsync(int limit, int offset, CancellationToken ct = default)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/api/v1/cloud/get");
+        ApplyCommonHeaders(req, includeRealIp: false);
+        req.Content = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("limit", limit.ToString()),
+            new KeyValuePair<string, string>("offset", offset.ToString()),
+        ]);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.CloudListResponse);
+        if (resp is null || resp.Code != 200)
+            throw new ApiException("获取云盘失败", resp?.Code ?? -1);
+        var songs = (resp.Data ?? new List<CloudSongItemDto>())
+            .Where(i => i.SimpleSong is not null)
+            .Select(i => MapSearchSong(i.SimpleSong!))
+            .ToList();
+        return (songs, resp.TotalCount, resp.HasMore);
+    }
+
     /// <summary>歌单轨道概览：v6 单次请求即可拿到全量 trackIds(权威顺序) + 前段曲目(登录态约 150 首)。
     /// 不做任何 song/detail 补齐,供歌单页增量加载使用。CoverUrl = 当前封面(随曲目变化)。</summary>
     public sealed record PlaylistTrackOverview(IReadOnlyList<long> TrackIds, IReadOnlyList<Song> PrefixTracks, string CoverUrl);
+
+    /// <summary>私人 FM 拉一批曲目(约 3 首;明文 GET /api/v1/radio/get,需 MUSIC_U 登录态。
+    /// weapi 同端点被风控拦截,与云盘一致走明文;每次调用返回一批新的推荐)。</summary>
+    public async Task<List<Song>> GetPersonalFmAsync(CancellationToken ct = default)
+    {
+        var url = $"{BaseUrl}/api/v1/radio/get";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.RadioResponse);
+        if (resp is null || resp.Code != 200)
+            throw new ApiException("获取私人FM失败", resp?.Code ?? -1);
+        return (resp.Data ?? new List<LegacySearchSong>())
+            .Where(s => s.Id != 0)
+            .Select(MapLegacySong)
+            .ToList();
+    }
 
     /// <summary>单次 v6 请求取歌单轨道概览,不补齐元数据。</summary>
     public async Task<PlaylistTrackOverview> GetPlaylistTrackOverviewAsync(long id, CancellationToken ct = default)
@@ -599,7 +640,7 @@ public sealed class NetEaseApiClient
     private static RecommendItem MapPlaylistCard(RecommendItemDto d)
     {
         var subtitle = string.IsNullOrEmpty(d.Copywriter) ? FormatPlayCount(d.PlayCount) : d.Copywriter;
-        return new RecommendItem(d.Id, d.Name, subtitle, d.PicUrl, (long)d.PlayCount);
+        return new RecommendItem(d.Id, d.Name, subtitle, d.PicUrl, (long)d.PlayCount, d.TrackCount);
     }
 
     private static RecommendItem MapSongCard(RecommendItemDto d)

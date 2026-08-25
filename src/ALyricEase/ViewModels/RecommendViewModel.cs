@@ -12,24 +12,35 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>首页推荐卡片(200x250):封面 + 标题 + 副标题 + 右上播放量角标。封面后台加载。</summary>
+/// <summary>首页推荐卡片(200x250):封面 + 标题 + 副标题 + 右上播放量角标。封面后台加载。
+/// activate 为点击行为:歌单卡片→打开歌单页,歌曲卡片→播放(队列=所在区块全部歌);null 不可点。</summary>
 public sealed partial class RecommendCardViewModel : ViewModelBase
 {
     private readonly string _coverUrl;
+    private readonly Func<Task>? _activate;
     private bool _coverRequested;
     private bool _coverRevealed;
 
-    public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0)
+    public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0, long id = 0, Func<Task>? activate = null)
     {
         Title = title;
         Subtitle = subtitle;
         _coverUrl = coverUrl;
         PlayCount = playCount;
+        Id = id;
+        _activate = activate;
     }
 
     public string Title { get; }
 
     public string Subtitle { get; }
+
+    /// <summary>歌单 id 或歌曲 id(仅点击行为用)。</summary>
+    public long Id { get; }
+
+    /// <summary>点击卡片(歌单→歌单页;歌曲→播放)。</summary>
+    [RelayCommand]
+    private Task OpenAsync() => _activate?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>播放量(歌曲卡片为 0,歌单卡片才有)。</summary>
     public long PlayCount { get; }
@@ -161,7 +172,7 @@ public sealed class RecommendViewModel : ViewModelBase
     {
         var playlistsTask = SafeAsync(_api.GetPersonalizedPlaylistsAsync(6));
         var hotTask = SafeAsync(LoadHotSongsAsync());
-        var newSongsTask = SafeAsync(_api.GetNewSongsAsync(6));
+        var newSongsTask = SafeAsync(LoadNewSongsAsync());
         var dailyTask = loggedIn ? SafeAsync(LoadDailyItemsAsync()) : Task.FromResult(new List<object>());
         await Task.WhenAll(playlistsTask, hotTask, newSongsTask, dailyTask).ConfigureAwait(false);
 
@@ -182,9 +193,9 @@ public sealed class RecommendViewModel : ViewModelBase
             }
             sections.Add(new RecommendSectionViewModel("每日歌曲推荐", daily, isBordered: true, playAll));
         }
-        if (playlists.Count > 0) sections.Add(new RecommendSectionViewModel("推荐歌单", playlists.Select(ToCard).ToList()));
-        if (hot.Count > 0) sections.Add(new RecommendSectionViewModel("热门歌曲", hot.Select(ToCard).ToList()));
-        if (newSongs.Count > 0) sections.Add(new RecommendSectionViewModel("猜你喜欢", newSongs.Select(ToCard).ToList()));
+        if (playlists.Count > 0) sections.Add(new RecommendSectionViewModel("推荐歌单", playlists.Select(ToPlaylistCard).ToList()));
+        if (hot.Count > 0) sections.Add(new RecommendSectionViewModel("热门歌曲", ToSongCards(hot, "热门歌曲")));
+        if (newSongs.Count > 0) sections.Add(new RecommendSectionViewModel("猜你喜欢", ToSongCards(newSongs, "猜你喜欢")));
 
         // 网络回调在线程池,集合更新必须回 UI 线程
         await _dispatcher.InvokeAsync(() =>
@@ -203,17 +214,53 @@ public sealed class RecommendViewModel : ViewModelBase
             return songs.Select(s => (object)new SongItemViewModel(s, _player.PlayFromList, queue: songs, api: _api, source: "每日歌曲推荐")).ToList();
 
         var playlists = await _api.GetDailyRecommendAsync().ConfigureAwait(false);
-        return playlists.Select(ToCard).ToList();
+        return playlists.Select(ToPlaylistCard).ToList();
     }
 
-    private async Task<List<RecommendItem>> LoadHotSongsAsync()
+    /// <summary>热门歌曲区块:热歌榜前 6 首完整曲目(点卡片播放需要完整 Song)。</summary>
+    private async Task<List<Song>> LoadHotSongsAsync()
     {
         // 只取前 6 首预览,不拉全量 200+ 首(避免启动时白拉 194 首)
-        var songs = await _api.GetPlaylistTracksAsync(HotPlaylistId, 6).ConfigureAwait(false);
-        return songs.Select(s => new RecommendItem(s.Id, s.Name, s.Artist, s.CoverUrl)).ToList();
+        return await _api.GetPlaylistTracksAsync(HotPlaylistId, 6).ConfigureAwait(false);
     }
 
-    private static object ToCard(RecommendItem i) => new RecommendCardViewModel(i.Title, i.Subtitle, i.CoverUrl, i.PlayCount);
+    /// <summary>猜你喜欢区块:newsong 接口只给卡片信息,按 id 批量补全 Song(专辑/时长/歌手 id);
+    /// 补全失败时退化为仅含播放必需字段的最小 Song(卡片仍可点播)。</summary>
+    private async Task<List<Song>> LoadNewSongsAsync()
+    {
+        var items = await _api.GetNewSongsAsync(6).ConfigureAwait(false);
+        if (items.Count == 0) return new();
+        var ids = items.Select(i => i.Id).ToList();
+        var byId = (await SafeAsync(_api.GetSongsByIdsAsync(ids)).ConfigureAwait(false))
+            .GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First());
+        return items
+            .Select(i => byId.TryGetValue(i.Id, out var s)
+                ? s
+                : new Song { Id = i.Id, Name = i.Title, Artist = i.Subtitle, CoverUrl = i.CoverUrl })
+            .ToList();
+    }
+
+    /// <summary>推荐歌单卡片:点击打开歌单详情(临时构造 PlaylistItemViewModel,复用"我的收藏"页的歌单加载)。</summary>
+    private object ToPlaylistCard(RecommendItem i)
+        => new RecommendCardViewModel(i.Title, i.Subtitle, i.CoverUrl, i.PlayCount, i.Id, () => OpenPlaylistAsync(i));
+
+    /// <summary>歌曲卡片(热门歌曲/猜你喜欢):点击播放该歌,队列 = 本区块全部歌(上一曲/下一曲在区块内切换)。</summary>
+    private List<object> ToSongCards(List<Song> songs, string source)
+        => songs.Select(s => (object)new RecommendCardViewModel(s.Name, s.Artist, s.CoverUrl, 0, s.Id,
+            () => _player.PlayFromList(s, songs, source))).ToList();
+
+    private Task OpenPlaylistAsync(RecommendItem item)
+    {
+        var playlist = new PlaylistItemViewModel(new Playlist
+        {
+            Id = item.Id,
+            Name = item.Title,
+            CoverUrl = item.CoverUrl,
+            TrackCount = item.TrackCount,
+        });
+        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistCommand.Execute(playlist);
+        return Task.CompletedTask;
+    }
 
     private static async Task<List<T>> SafeAsync<T>(Task<List<T>> task)
     {

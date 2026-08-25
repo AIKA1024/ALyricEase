@@ -158,12 +158,16 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private bool _isTransitionReversed;
 
 
-    /// <summary>内容区当前页(TransitioningContentControl 按 VM 类型选模板)。</summary>
+    /// <summary>内容区当前页(TransitioningContentControl 按 VM 类型选模板)。
+    /// 音乐云盘复用歌单页(PlaylistViewModel 云盘模式,见 OpenCloudAsync);
+    /// 私人FM 复用播放器 VM(播放器内 FM 无限流,页面绑定 PlayerViewModel)。</summary>
     public object? CurrentContent => ActivePage switch
     {
         "Recommend" => Recommend,
         "Search" => Search,
         "Favorites" => Playlist,
+        "CloudDrive" => Playlist,
+        "PersonalStation" => Player,
         "Artist" => Artist,
         "Album" => Album,
         "Debug" => Debug,
@@ -181,14 +185,12 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentContent));
 
         // 未完成页面使用明确占位，不伪装为可用功能。
-        if (value is "Browse" or "PersonalStation" or "CloudDrive" or "Recents" or "Account" or "Settings")
+        if (value is "Browse" or "Recents" or "Account" or "Settings")
         {
             Placeholder.ShowLogout = value == "Account";
             (Placeholder.Title, Placeholder.Description) = value switch
             {
                 "Browse" => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
-                "PersonalStation" => ("私人FM", "播放队列能力完成后接入私人FM"),
-                "CloudDrive" => ("音乐云盘", "网易云盘接口将在后续阶段接入"),
                 "Recents" => ("最近播放", "本地播放历史将在下一阶段接入"),
                 "Favorites" => ("我喜欢的音乐", "喜欢列表与收藏操作将在队列阶段接入"),
                 "Account" => ("账号", "登录与账户信息"),
@@ -201,6 +203,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (value == "Favorites")
             _ = _playlist.EnsureLoadedAsync(); // 已存 MUSIC_U 则恢复并打开“我喜欢的音乐”
+
+        if (value == "CloudDrive")
+            _ = _playlist.OpenCloudCommand.ExecuteAsync(null); // 云盘复用歌单页(未登录时由其内部跳过)
 
         // 从搜索/占位页切回导航项时同步选中;非导航页(搜索/账号/设置)清除选中。
         // 打开具体歌单时 ActivePage 也是 "Favorites",但 SelectedNav 当前是歌单子项,

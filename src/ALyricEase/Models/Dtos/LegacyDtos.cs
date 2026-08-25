@@ -84,6 +84,14 @@ public sealed record LegacySongDetailResponse
     public List<LegacySearchSong>? Songs { get; init; }
 }
 
+/// <summary>私人 FM(明文 /api/v1/radio/get)响应:data 为 legacy 风格曲目,复用 LegacySearchSong。</summary>
+public sealed record RadioResponse
+{
+    public int Code { get; init; }
+
+    public List<LegacySearchSong>? Data { get; init; }
+}
+
 // ---------- 首页推荐(明文 GET) ----------
 
 /// <summary>personalized/playlist、personalized/newsong、discovery/recommend/resource 的通用封面项。

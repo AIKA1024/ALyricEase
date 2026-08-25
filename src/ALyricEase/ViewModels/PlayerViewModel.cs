@@ -45,6 +45,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private PlaybackState _prevState;
     private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
 
+    // 私人FM:激活后"下一曲/播完自动切"持续从 FM 接口取歌(无限流);播放其他列表自动退出。
+    // 队列保持"当前曲后至少预补 2 首",详情页"接下来播放"能看到后续 FM 曲目。
+    private readonly Queue<Song> _fmBuffer = new();
+    private bool _fmFetching;
+
+    [ObservableProperty] private bool _isFmActive;
+
     public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, LyricViewModel lyric, ISmtcService smtc)
     {
         _player = player;
@@ -266,9 +273,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>从列表播放:先记录队列,再播当前曲。供 SongItemViewModel 的队列播放回调使用。
-    /// 无来源列表时退化为单曲队列:不能沿用旧队列,否则下一曲/播完自动切会跳回之前歌单里毫不相干的歌。</summary>
+    /// 无来源列表时退化为单曲队列:不能沿用旧队列,否则下一曲/播完自动切会跳回之前歌单里毫不相干的歌。
+    /// 播放任何其他列表都会退出私人FM。</summary>
     public Task PlayFromList(Song song, IReadOnlyList<Song>? queue, string? source = null)
     {
+        IsFmActive = false;
         if (queue is { Count: > 0 })
             SetQueue(queue, song, source);
         else
@@ -280,6 +289,89 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             RefreshUpcomingItems();
         }
         return PlayAsync(song);
+    }
+
+    // ---------- 私人FM ----------
+
+    /// <summary>开始私人FM:拉一批(约 3 首)入队播放第一首;之后"下一曲/播完自动切"持续从 FM 取歌。
+    /// 未登录时提示(不阻塞页面)。已在 FM 中则幂等。</summary>
+    [RelayCommand]
+    public async Task StartPersonalFmAsync()
+    {
+        if (IsFmActive) return;
+        if (!_api.IsLoggedIn)
+        {
+            Message = "登录后收听私人FM";
+            return;
+        }
+        Message = null;
+        if (!await FillFmBufferAsync())
+        {
+            Message = "私人FM获取失败,请稍后重试";
+            return;
+        }
+        var batch = new List<Song>();
+        while (_fmBuffer.Count > 0) batch.Add(_fmBuffer.Dequeue());
+        SetQueue(batch, batch[0], "私人FM");
+        IsFmActive = true;
+        _ = PrefetchFmAsync();
+        await PlayAsync(batch[0]);
+    }
+
+    /// <summary>进入 FM 页时调用(幂等):未激活才启动。</summary>
+    public Task EnsurePersonalFmStartedAsync() => IsFmActive ? Task.CompletedTask : StartPersonalFmAsync();
+
+    /// <summary>FM 下一曲:队列接近尾部时从缓冲预补(空则再拉一批),然后前进到下一首。</summary>
+    private async Task PlayFmNextAsync()
+    {
+        if (_queueIndex >= _queue.Count - 1)
+        {
+            while (_queue.Count - 1 - _queueIndex < 2)
+            {
+                if (_fmBuffer.Count == 0 && !await FillFmBufferAsync())
+                {
+                    Message = "私人FM获取失败,请稍后重试";
+                    return;
+                }
+                var song = _fmBuffer.Dequeue();
+                _queue.Add(song);
+                _queueVms.Add(new QueueItemViewModel(song, PlayQueueItem, RemoveFromQueue));
+            }
+            RefreshUpcomingItems();
+        }
+        _ = PrefetchFmAsync();
+        _queueIndex++;
+        await PlayAsync(_queue[_queueIndex]);
+    }
+
+    /// <summary>后台补充 FM 缓冲(缓冲剩余 ≤1 时拉一批)。</summary>
+    private async Task PrefetchFmAsync()
+    {
+        if (_fmBuffer.Count > 1) return;
+        await FillFmBufferAsync();
+    }
+
+    /// <summary>从 FM 接口拉一批入缓冲。并发单飞;失败返回 false(保留旧缓冲)。
+    /// 不用 ConfigureAwait(false):Enqueue 必须回 UI 线程,与 Dequeue(全部 UI 线程)互斥。</summary>
+    private async Task<bool> FillFmBufferAsync()
+    {
+        if (_fmFetching) return _fmBuffer.Count > 0;
+        _fmFetching = true;
+        try
+        {
+            var songs = await _api.GetPersonalFmAsync();
+            foreach (var s in songs)
+                _fmBuffer.Enqueue(s);
+            return _fmBuffer.Count > 0;
+        }
+        catch
+        {
+            return _fmBuffer.Count > 0;
+        }
+        finally
+        {
+            _fmFetching = false;
+        }
     }
 
     /// <summary>重建"接下来播放"列表:从当前曲下一首开始的循环顺序(当前曲不在列)。</summary>
@@ -380,11 +472,16 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnSmtcPrevious() => _ = PlayPreviousAsync();
 
-    /// <summary>播放队列中的下一首。按播放模式:列表循环(尾→头)、单曲循环(重播当前)、
-    /// 随机播放、心动模式(下一首红心,无红心则退回列表循环)。</summary>
+    /// <summary>播放队列中的下一首。FM 激活时无视播放模式持续从 FM 取歌;
+    /// 否则按播放模式:列表循环(尾→头)、单曲循环(重播当前)、随机播放、心动模式(下一首红心,无红心则退回列表循环)。</summary>
     [RelayCommand]
     public async Task PlayNextAsync()
     {
+        if (IsFmActive)
+        {
+            await PlayFmNextAsync();
+            return;
+        }
         if (_queue.Count == 0) return;
         switch (PlaybackMode)
         {
@@ -404,10 +501,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>播放队列中的上一首,按当前播放模式(列表循环头→尾、单曲重播、随机、心动上一首红心)。</summary>
+    /// <summary>播放队列中的上一首。FM 激活时在已播放的 FM 队列内回退;
+    /// 否则按当前播放模式(列表循环头→尾、单曲重播、随机、心动上一首红心)。</summary>
     [RelayCommand]
     public async Task PlayPreviousAsync()
     {
+        if (IsFmActive)
+        {
+            if (_queue.Count == 0) return;
+            _queueIndex = (_queueIndex - 1 + _queue.Count) % _queue.Count;
+            await PlayAsync(_queue[_queueIndex]);
+            return;
+        }
         if (_queue.Count == 0) return;
         switch (PlaybackMode)
         {

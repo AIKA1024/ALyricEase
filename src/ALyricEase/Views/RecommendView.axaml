@@ -9,9 +9,11 @@
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecommendView">
   <UserControl.DataTemplates>
-    <!-- 歌单/歌曲卡片(200x250):封面 + 右上播放量角标 + 标题/副标题 + 悬停黑遮罩(原版 ShadowMaskBorder) -->
+    <!-- 歌单/歌曲卡片(200x250):封面 + 右上播放量角标 + 标题/副标题 + 悬停黑遮罩(原版 ShadowMaskBorder)。
+         整卡为按钮(RowButtonTheme,同歌手页专辑卡):歌单卡点击进歌单页,歌曲卡点击播放 -->
     <DataTemplate DataType="vm:RecommendCardViewModel">
-      <Border Classes="card" CornerRadius="8" ClipToBounds="True" Background="Transparent">
+      <Button Classes="card" Theme="{StaticResource RowButtonTheme}" Command="{Binding OpenCommand}"
+              CornerRadius="8" ClipToBounds="True">
         <Grid RowDefinitions="Auto,50">
           <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}"
                   ClipToBounds="True">
@@ -37,7 +39,7 @@
           </StackPanel>
           <Border Classes="card-mask" Grid.RowSpan="2" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
         </Grid>
-      </Border>
+      </Button>
     </DataTemplate>
 
     <!-- 每日歌曲推荐行(400px):封面 + 歌名/歌手 + 时长;悬停时长隐藏,右侧浮现播放/更多按钮(仿原版 SearchResult 行)。
@@ -51,9 +53,12 @@
     <Style Selector="StackPanel#PageContent">
       <Setter Property="Margin" Value="48,0,32,116" />
     </Style>
-    <!-- 卡片:固定尺寸(断点缩放由 compact/narrow 覆盖),悬停用黑遮罩而非放大;不改鼠标指针 -->
-    <Style Selector="Border.card">
+    <!-- 卡片:固定尺寸(断点缩放由 compact/narrow 覆盖),整卡为透明按钮,悬停/按下用黑遮罩反馈 -->
+    <Style Selector="Button.card">
       <Setter Property="Width" Value="200" /><Setter Property="Height" Value="250" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
     </Style>
     <Style Selector="Border.card-art">
       <Setter Property="Width" Value="200" /><Setter Property="Height" Value="200" />
@@ -67,10 +72,10 @@
         </Transitions>
       </Setter>
     </Style>
-    <Style Selector="Border.card:pointerover Border.card-mask">
+    <Style Selector="Button.card:pointerover Border.card-mask">
       <Setter Property="Opacity" Value="0.2" />
     </Style>
-    <Style Selector="Border.card:pressed Border.card-mask">
+    <Style Selector="Button.card:pressed Border.card-mask">
       <Setter Property="Opacity" Value="0.4" />
     </Style>
     <!-- 播放量角标:原版 acrylic chip(右上,圆角4,深色半透明) -->
@@ -81,7 +86,7 @@
     <Style Selector=".compact StackPanel#PageContent">
       <Setter Property="Margin" Value="28,0,24,80" />
     </Style>
-    <Style Selector=".compact Border.card">
+    <Style Selector=".compact Button.card">
       <Setter Property="Width" Value="168" /><Setter Property="Height" Value="218" />
     </Style>
     <Style Selector=".compact Border.card-art">
@@ -90,7 +95,7 @@
     <Style Selector=".narrow StackPanel#PageContent">
       <Setter Property="Margin" Value="16,0,12,20" />
     </Style>
-    <Style Selector=".narrow Border.card">
+    <Style Selector=".narrow Button.card">
       <Setter Property="Width" Value="156" /><Setter Property="Height" Value="206" />
     </Style>
     <Style Selector=".narrow Border.card-art">

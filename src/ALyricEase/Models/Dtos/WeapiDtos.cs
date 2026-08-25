@@ -51,6 +51,31 @@ public sealed record SearchAlbum
     [JsonPropertyName("picUrl")] public string PicUrl { get; init; } = "";
 }
 
+// ---------- 云盘(weapi /api/v1/cloud/get,需登录) ----------
+
+/// <summary>云盘歌曲项:simpleSong 为 weapi 风格单曲(ar/al/dt),复用 SearchSong 映射。
+/// simpleSong 可为 null(异常条目),由调用方跳过。</summary>
+public sealed record CloudSongItemDto
+{
+    [JsonPropertyName("songId")] public long SongId { get; init; }
+
+    [JsonPropertyName("simpleSong")] public SearchSong? SimpleSong { get; init; }
+
+    [JsonPropertyName("fileName")] public string? FileName { get; init; }
+}
+
+public sealed record CloudListResponse
+{
+    public int Code { get; init; }
+
+    /// <summary>云盘曲目总数(头部"N 首"显示用)。</summary>
+    [JsonPropertyName("count")] public int TotalCount { get; init; }
+
+    public List<CloudSongItemDto>? Data { get; init; }
+
+    [JsonPropertyName("hasMore")] public bool HasMore { get; init; }
+}
+
 // ---------- 歌手 / 专辑详情(明文 GET) ----------
 
 public sealed record ArtistDetailResponse

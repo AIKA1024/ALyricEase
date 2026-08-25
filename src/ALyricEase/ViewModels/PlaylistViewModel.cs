@@ -86,6 +86,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         PlaylistTitle = "";
         Playlists.Clear();
         Tracks.Clear();
+        _isCloud = false;
     }
 
     // 增量加载状态:trackIds 是全量权威顺序;仅已解析的歌曲会物化进 Tracks。
@@ -97,6 +98,59 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private int _materialized;          // 已物化进 Tracks 的曲目数(按 trackIds 顺序)
     private bool _isLoadingMore;
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
+    private bool _isCloud;              // 当前展示的是音乐云盘(而非用户歌单)
+
+    /// <summary>音乐云盘:复用歌单页展示。分页拉全量云盘曲目(500/页,跟随 hasMore),
+    /// 行队列共享 → 播放全部/上一曲/下一曲都在云盘列表内。已在云盘页时跳过(保留现有内容)。</summary>
+    [RelayCommand]
+    private async Task OpenCloudAsync()
+    {
+        if (!IsLoggedIn || _isCloud) return;
+        var generation = ++_loadGeneration;
+        _isCloud = true;
+        SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘" });
+        Tracks.Clear();
+        PlaylistTitle = "音乐云盘";
+        _trackIds = new List<long>();
+        _known.Clear();
+        _queueSongs.Clear();
+        _materialized = 0;
+        IsBusy = true;
+        Message = null;
+        try
+        {
+            var offset = 0;
+            var hasMore = true;
+            while (hasMore)
+            {
+                var (songs, totalCount, more) = await _api.GetCloudListAsync(500, offset);
+                if (generation != _loadGeneration) return; // 期间打开了别的歌单,丢弃过期结果
+                if (offset == 0)
+                {
+                    // 首页拿到总数后重建头部(TrackCount/CoverUrl init-only);封面用第一首有封面的歌(仿歌单页)
+                    var cover = songs.FirstOrDefault(s => !string.IsNullOrEmpty(s.CoverUrl))?.CoverUrl ?? "";
+                    SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘", TrackCount = totalCount, CoverUrl = cover });
+                    SelectedPlaylist.EnsureCoverLoaded();
+                    _ = SelectedPlaylist.EnsureLargeCoverLoadedAsync(); // 头部 260px 大图
+                }
+                foreach (var s in songs)
+                {
+                    Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs, _api, "音乐云盘"));
+                    _queueSongs.Add(s);
+                }
+                offset += songs.Count;
+                hasMore = more && songs.Count > 0 && offset < 3000; // 3000 首兜底,防接口异常时死循环
+            }
+        }
+        catch (ApiException ex)
+        {
+            if (generation == _loadGeneration) Message = $"加载云盘失败:{ex.Message}";
+        }
+        finally
+        {
+            if (generation == _loadGeneration) IsBusy = false;
+        }
+    }
 
     /// <summary>点开歌单：只取 v6 一次 → 立即把前段曲目上屏；后续按滚动增量补齐。
     /// 首屏不清零、不阻塞；大歌单(如 1000+ 首“我喜欢的音乐”)不会因全量请求而假死。</summary>
@@ -105,6 +159,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         if (playlist is null) return;
         var generation = ++_loadGeneration;
+        _isCloud = false;
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded(); // 头部大封面
         _ = playlist.EnsureLargeCoverLoadedAsync(); // 600px 大图,保证头部 200px 显示清晰

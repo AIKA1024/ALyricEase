@@ -20,6 +20,9 @@
         <DataTemplate DataType="vm:AlbumViewModel">
             <views:AlbumView />
         </DataTemplate>
+        <DataTemplate DataType="vm:PlayerViewModel">
+            <views:PersonalFmView />
+        </DataTemplate>
         <DataTemplate DataType="vm:PlaceholderViewModel">
             <views:PlaceholderView />
         </DataTemplate>

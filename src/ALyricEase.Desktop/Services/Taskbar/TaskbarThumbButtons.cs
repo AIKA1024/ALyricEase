@@ -1,25 +1,29 @@
 #if WINDOWS
 using System.Drawing;
+using System.Drawing.Text;
 using System.Runtime.InteropServices;
+using Avalonia.Platform;
 
 namespace ALyricEase.Services.Taskbar;
 /// <summary>任务栏缩略图工具栏(ITaskbarList3::ThumbBarAddButtons):鼠标 hover 任务栏窗口图标时,
 /// 在缩略图下方显示上一曲/播放暂停/下一曲按钮。按钮点击经 WM_COMMAND(THBN_CLICKED)接收,
-/// 通过 SetWindowSubclass 子类化窗口挂 WndProc(不破坏 Avalonia 自身 WndProc)。与 SMTC 独立。</summary>
+/// 通过 SetWindowSubclass 子类化窗口挂 WndProc(不破坏 Avalonia 自身 WndProc)。与 SMTC 独立。
+/// 图标用内嵌 FluentUISystemIcons 字体渲染(与 UI 内 Icons.axaml 同一套字形),颜色随系统深浅色。</summary>
 public sealed class TaskbarThumbButtons : IDisposable
 {
-    public const uint ThbBitmaskIcon = 0x1;
-    public const uint ThbBitmaskTooltip = 0x2;
-    public const uint ThbBitmaskFlags = 0x4;
-    public const uint ThbBitmaskState = 0x8;
-    public const uint ThbBitmaskBitmap = 0x10;
+    // THUMBBUTTONMASK(shobjidl_core.h):THB_BITMAP=0x1 THB_ICON=0x2 THB_TOOLTIP=0x4 THB_FLAGS=0x8
+    public const uint ThbBitmaskBitmap = 0x1;
+    public const uint ThbBitmaskIcon = 0x2;
+    public const uint ThbBitmaskTooltip = 0x4;
+    public const uint ThbBitmaskFlags = 0x8;
     public const uint ThbFlagEnabled = 0x0;
     public const uint ThbFlagDisabled = 0x1;
     public const uint ThbFlagDismissonclick = 0x2;
     public const uint ThbFlagNobackground = 0x4;
     public const uint ThbFlagHidden = 0x8;
     public const uint ThbBhId = 1;      // 子类 id
-    public const int ThbnClicked = 0x1600;
+    // THBN_CLICKED(shobjidl_core.h):WM_COMMAND 的 HIWORD(wParam)
+    public const int ThbnClicked = 0x1800;
     public const uint IdPrevious = 0;
     public const uint IdPlayPause = 1;
     public const uint IdNext = 2;
@@ -69,7 +73,7 @@ public sealed class TaskbarThumbButtons : IDisposable
             Log($"HrInit hr=0x{hrInit:x}");
             if (hrInit != 0) return false;
 
-            // 图标:用 GDI 绘制媒体形状 → HICON(经 hIcon 直连,绕开 ImageList)
+            // 图标:内嵌 FluentUISystemIcons 字体渲染字形 → HICON(经 hIcon 直连,绕开 ImageList)
             _iconPrev = RenderGlyphIcon(MediaShape.Previous);
             _iconPlay = RenderGlyphIcon(MediaShape.Play);
             _iconPause = RenderGlyphIcon(MediaShape.Pause);
@@ -151,42 +155,65 @@ public sealed class TaskbarThumbButtons : IDisposable
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    private enum MediaShape { Previous, Play, Pause, Next }
+    /// <summary>Fluent UI System Icons 字形码位(ic_fluent_previous/play_filled/pause/next),
+    /// 与应用内 Styles/Foundation/Icons.axaml 的 IconPrevious/IconPlayFilled/IconPause/IconNext 一致。</summary>
+    private enum MediaShape
+    {
+        Previous = 0xE914,
+        Play = 0xE912,
+        Pause = 0xE90F,
+        Next = 0xE90E,
+    }
 
-    /// <summary>用 GDI 绘制标准媒体图标到透明位图 → HBITMAP(缩略图按钮图标,白色适配深色条)。</summary>
+    private const int IconSize = 48; // 高分辨率渲染,系统缩到按钮尺寸更清晰
+
+    private static PrivateFontCollection? _iconFontCollection;
+    private static FontFamily? _iconFontFamily;
+    private static IntPtr _fontMemory; // AddMemoryFont 要求内存在字体生命周期内存活
+
+    /// <summary>从 Avalonia 资源加载内嵌 FluentUISystemIcons.ttf → GDI+ FontFamily(仅一次)。</summary>
+    private static FontFamily GetIconFontFamily()
+    {
+        if (_iconFontFamily is { } family) return family;
+        using var stream = AssetLoader.Open(new Uri("avares://ALyricEase/Assets/Fonts/FluentUISystemIcons.ttf"));
+        using var ms = new System.IO.MemoryStream();
+        stream.CopyTo(ms);
+        var bytes = ms.ToArray();
+        _fontMemory = Marshal.AllocHGlobal(bytes.Length);
+        Marshal.Copy(bytes, 0, _fontMemory, bytes.Length);
+        _iconFontCollection = new PrivateFontCollection();
+        _iconFontCollection.AddMemoryFont(_fontMemory, bytes.Length);
+        return _iconFontFamily = _iconFontCollection.Families[0];
+    }
+
+    /// <summary>缩略图预览底色随系统深浅色:浅色主题用深色图标,深色主题用白色图标。
+    /// 读 AppsUseLightTheme;运行中切主题不刷新(重启生效)。</summary>
+    private static Color GetIconColor()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key?.GetValue("AppsUseLightTheme") is int light && light == 1)
+                return Color.FromArgb(0xE6, 0x1A, 0x1A, 0x1A);
+        }
+        catch { }
+        return Color.White;
+    }
+
+    /// <summary>用 FluentUISystemIcons 字体绘制媒体字形到透明位图 → HICON(经 hIcon 直连,绕开 ImageList)。</summary>
     private static IntPtr RenderGlyphIcon(MediaShape shape)
     {
         try
         {
-            const int size = 32; // 32x32,系统自动缩放,比 16x16 更可靠
-            using var bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using var bmp = new Bitmap(IconSize, IconSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.Transparent);
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                using var brush = new SolidBrush(Color.White);
-                var rect = new Rectangle(1, 1, size - 2, size - 2);
-                switch (shape)
-                {
-                    case MediaShape.Play:
-                        g.FillPolygon(brush, new[] { new Point(rect.Left + 1, rect.Top), new Point(rect.Right, rect.Top + rect.Height / 2), new Point(rect.Left + 1, rect.Bottom) });
-                        break;
-                    case MediaShape.Pause:
-                        var w = Math.Max(2, rect.Width / 4);
-                        g.FillRectangle(brush, rect.Left, rect.Top, w, rect.Height);
-                        g.FillRectangle(brush, rect.Right - w, rect.Top, w, rect.Height);
-                        break;
-                    case MediaShape.Previous:
-                        // 上一曲:|◀(左侧竖条 + 指向左的大三角,区别于播放的单个三角)
-                        g.FillRectangle(brush, rect.Left, rect.Top, 3, rect.Height);
-                        g.FillPolygon(brush, new[] { new Point(rect.Left + 3, rect.Top), new Point(rect.Left + rect.Width * 2 / 3, rect.Top + rect.Height / 2), new Point(rect.Left + 3, rect.Bottom) });
-                        break;
-                    case MediaShape.Next:
-                        // 下一曲:▶|(右侧竖条 + 指向右的大三角)
-                        g.FillRectangle(brush, rect.Right - 3, rect.Top, 3, rect.Height);
-                        g.FillPolygon(brush, new[] { new Point(rect.Right - 3, rect.Top), new Point(rect.Left + rect.Width / 3, rect.Top + rect.Height / 2), new Point(rect.Right - 3, rect.Bottom) });
-                        break;
-                }
+                g.TextRenderingHint = TextRenderingHint.AntiAlias;
+                using var font = new Font(GetIconFontFamily(), IconSize * 5f / 6, FontStyle.Regular, GraphicsUnit.Pixel);
+                using var brush = new SolidBrush(GetIconColor());
+                using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString(((char)shape).ToString(), font, brush, new RectangleF(0, 0, IconSize, IconSize), fmt);
             }
             return BitmapToAlphaIcon(bmp); // 手动构建带 alpha 的 HICON(CreateIconIndirect)
         }
@@ -254,6 +281,8 @@ public sealed class TaskbarThumbButtons : IDisposable
             RemoveWindowSubclass(_hwnd, _subclassProc, ThbBhId);
         if (_selfHandle.IsAllocated) _selfHandle.Free();
         if (_taskbar != IntPtr.Zero) { try { Marshal.Release(_taskbar); } catch { } _taskbar = IntPtr.Zero; }
+        foreach (var icon in new[] { _iconPrev, _iconPlay, _iconPause, _iconNext })
+            if (icon != IntPtr.Zero) DestroyIcon(icon);
         _initialized = false;
     }
 

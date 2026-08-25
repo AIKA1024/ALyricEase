@@ -3,6 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="using:ALyricEase.Views"
+             xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:PlaylistViewModel"
              mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
@@ -62,6 +64,9 @@
   <Grid>
     <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
+      <i:Interaction.Behaviors>
+        <b:SmoothWheelScrollBehavior />
+      </i:Interaction.Behaviors>
       <Grid Classes="detail-shell" RowDefinitions="Auto,*" IsVisible="{Binding IsLoggedIn}">
         <Border x:Name="HeroCard" Classes="playlist-hero" Grid.Row="0">
           <Grid>

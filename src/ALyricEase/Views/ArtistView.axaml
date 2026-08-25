@@ -3,6 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="using:ALyricEase.Views"
+             xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:ArtistViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
@@ -40,6 +42,9 @@
   </UserControl.Styles>
 
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <i:Interaction.Behaviors>
+      <b:SmoothWheelScrollBehavior />
+    </i:Interaction.Behaviors>
     <StackPanel Margin="48,20,32,116" Spacing="28">
       <!-- 头部(仿原版 ArtistDetailView):圆形头像水平居中在顶,名字在其下方靠左;右侧 teal 关注 + 更多 -->
       <Grid RowDefinitions="240,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="10">
@@ -66,6 +71,9 @@
       <StackPanel Spacing="12">
         <TextBlock Text="热门歌曲" FontSize="28" FontWeight="Bold" Margin="10" />
         <ScrollViewer Height="340" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <i:Interaction.Behaviors>
+            <b:CtrlHorizontalWheelBehavior />
+          </i:Interaction.Behaviors>
           <Border Classes="hot-songs-container">
             <!-- 显式 320 = 5 行 × (60 行高 + 2×2 边距):WrapPanel 测量高度不再依赖外层 340 的减法,
                  避免平台滚动条/舍入差挤掉第 5 行 -->
@@ -90,6 +98,9 @@
       <StackPanel Spacing="12" IsVisible="{Binding HasAlbums}">
         <TextBlock Text="专辑" FontSize="28" FontWeight="Bold" Margin="10" />
         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="0,0,0,14">
+          <i:Interaction.Behaviors>
+            <b:CtrlHorizontalWheelBehavior />
+          </i:Interaction.Behaviors>
           <ItemsControl ItemsSource="{Binding Albums}" ContainerPrepared="OnAlbumContainerPreparing">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
@@ -120,6 +131,9 @@
       <StackPanel Spacing="12" IsVisible="{Binding HasSingles}">
         <TextBlock Text="单曲与EP" FontSize="28" FontWeight="Bold" Margin="10" />
         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="0,0,0,14">
+          <i:Interaction.Behaviors>
+            <b:CtrlHorizontalWheelBehavior />
+          </i:Interaction.Behaviors>
           <ItemsControl ItemsSource="{Binding Singles}" ContainerPrepared="OnAlbumContainerPreparing">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>

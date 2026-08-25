@@ -110,9 +110,6 @@ public sealed partial class RecommendSectionViewModel : ViewModelBase
     /// <summary>是否套圆角边框容器(仿原版 DailyMix 的 HorizontalScrollableGridView)。</summary>
     public bool IsBordered { get; }
 
-    /// <summary>区块滚动区高度:每日区块固定 340(容纳 5 行,横向滚动条不压内容),其余区块自动。</summary>
-    public double ScrollViewerHeight => IsBordered ? 340 : double.NaN;
-
     public bool HasPlayAll => _playAll is not null;
 
     /// <summary>播放全部(每日歌曲区块:第一首 + 全量队列)。</summary>

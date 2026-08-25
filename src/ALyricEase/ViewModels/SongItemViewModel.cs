@@ -21,6 +21,9 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private bool _coverRequested;
     private bool _likedRequested;
 
+    /// <summary>红心/歌手专辑跳转为网易云能力;QQ 等其他音源的行不提供。</summary>
+    private bool IsNetEase => Song.Source == Services.MusicSource.NetEase;
+
     public SongItemViewModel(Song song, Func<Song, Task> playSong, int index = 0, NetEaseApiClient? api = null)
         : this(song, (s, _, _) => playSong(s), index, api: api) { }
 
@@ -57,7 +60,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
     /// <summary>容器 realized 时调用:首次才拉取红心状态(幂等)。未登录/未识别到喜欢歌单则保持未喜欢。</summary>
     public void EnsureLikedLoaded()
     {
-        if (_likedRequested || _api is null) return;
+        if (_likedRequested || _api is null || !IsNetEase) return;
         _likedRequested = true;
         _ = LoadLikedAsync();
     }
@@ -83,9 +86,18 @@ public sealed partial class SongItemViewModel : ViewModelBase
         }
     }
 
-    public bool HasArtist => Song.ArtistIds.Count > 0;
+    public bool HasArtist => IsNetEase && Song.ArtistIds.Count > 0;
 
-    public bool HasAlbum => Song.AlbumId != 0;
+    /// <summary>有歌手名(展示用):与 HasArtist(可跳转)区分——云盘等无版权歌曲有名字无 id。</summary>
+    public bool HasArtistName => !string.IsNullOrEmpty(Song.Artist);
+
+    public bool HasAlbum => IsNetEase && Song.AlbumId != 0;
+
+    /// <summary>有专辑名(展示用):与 HasAlbum(可跳转)区分——同上。</summary>
+    public bool HasAlbumName => !string.IsNullOrEmpty(Song.Album);
+
+    /// <summary>歌手或专辑至少有名(每日行歌名下组合链接按钮的显示条件:两者皆无则整个隐藏)。</summary>
+    public bool HasArtistOrAlbumName => HasArtistName || HasAlbumName;
 
     /// <summary>歌单内序号(1 起);非歌单场景为 0。</summary>
     public int Index { get; }
@@ -107,11 +119,11 @@ public sealed partial class SongItemViewModel : ViewModelBase
     [RelayCommand]
     private async Task PlayAsync() => await _playSong(Song, _queue, _source);
 
-    /// <summary>切换红心:乐观更新,失败回滚。</summary>
+    /// <summary>切换红心:乐观更新,失败回滚。仅网易云曲目(QQ 暂无红心能力)。</summary>
     [RelayCommand]
     private async Task LikeAsync()
     {
-        if (_api is null) return;
+        if (_api is null || !IsNetEase) return;
         var prev = IsInLikelist;
         IsInLikelist = !prev; // 乐观更新,立即反馈
         try
@@ -156,6 +168,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     private async Task LoadLikedAsync()
     {
+        if (!IsNetEase) return;
         try
         {
             await _api!.EnsureLikedIdsAsync();

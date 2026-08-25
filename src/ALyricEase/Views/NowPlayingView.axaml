@@ -2,7 +2,9 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:infra="using:ALyricEase.Infrastructure"
+              xmlns:infra="using:ALyricEase.Infrastructure"
+              xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
+              xmlns:i="using:Avalonia.Xaml.Interactivity"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:MainViewModel"
@@ -317,8 +319,16 @@
                     <Border Grid.Row="1" Background="#0DFFFFFF" BorderBrush="#14FFFFFF" BorderThickness="1"
                             CornerRadius="8" ClipToBounds="True">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                          <i:Interaction.Behaviors>
+                            <b:SmoothWheelScrollBehavior />
+                          </i:Interaction.Behaviors>
                             <ItemsControl x:Name="QueueList" ItemsSource="{Binding Player.UpcomingItems}"
                                           ContainerPrepared="OnQueueContainerPrepared">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:QueueItemViewModel">
                                         <Grid Classes="queue-row" ColumnDefinitions="60,*,60" Height="60"

@@ -3,6 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:RecommendViewModel"
@@ -137,6 +139,9 @@
       <TextBlock Text="个性推荐" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <i:Interaction.Behaviors>
+        <b:SmoothWheelScrollBehavior />
+      </i:Interaction.Behaviors>
       <StackPanel x:Name="PageContent" Spacing="34">
         <ItemsControl ItemsSource="{Binding Sections}">
           <ItemsControl.ItemTemplate>
@@ -153,15 +158,16 @@
                     </StackPanel>
                   </Button>
                 </Grid>
-                <!-- 区块内容:单个滚动区,两种面板按 IsBordered 互斥显隐 —— 每日=圆角容器+纵向换行,
-                     其余=横向单行。原先每个区块实例化两个 ScrollViewer(其中一个隐藏),
-                     合并后每区块省一个滚动区,首帧实化更轻。隐藏面板不参与布局(IsVisible=false 跳过测量)。 -->
-                <ScrollViewer Height="{Binding ScrollViewerHeight}"
-                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                  <Grid>
-                    <!-- 每日歌曲推荐:圆角边框容器 + 纵向换行网格(先竖向排满再换列,横向滚动) -->
-                    <Border Classes="daily-container" IsVisible="{Binding IsBordered}">
-                      <!-- 显式 320 = 5 行 × (60 行高 + 2×2 边距):WrapPanel 测量高度不再依赖外层 340 的减法,
+                <!-- 区块内容:两种面板按 IsBordered 互斥显隐 —— 每日=圆角容器(ScrollViewer 在容器内,
+                     水平滚动条贴卡片底边内侧),其余=横向单行。隐藏面板不参与布局(IsVisible=false 跳过测量)。 -->
+                <Grid>
+                  <!-- 每日歌曲推荐:圆角边框容器 + 纵向换行网格(先竖向排满再换列,横向滚动) -->
+                  <Border Classes="daily-container" IsVisible="{Binding IsBordered}">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                      <i:Interaction.Behaviors>
+                        <b:CtrlHorizontalWheelBehavior />
+                      </i:Interaction.Behaviors>
+                      <!-- 显式 320 = 5 行 × (60 行高 + 2×2 边距):WrapPanel 测量高度不再依赖外层减法,
                            避免平台滚动条/舍入差挤掉第 5 行 -->
                       <ItemsControl Classes="daily-items" Height="320" ItemsSource="{Binding Items}"
                                     ContainerPrepared="OnItemContainerPrepared">
@@ -171,10 +177,15 @@
                           </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                       </ItemsControl>
-                    </Border>
-                    <!-- 其余区块:单行横向滚动,无容器;面板底部留 14px 给水平滚动条,避免压住卡片标题 -->
-                    <ItemsControl ItemsSource="{Binding Items}" ContainerPrepared="OnItemContainerPrepared"
-                                  IsVisible="{Binding IsBordered, Converter={x:Static BoolConverters.Not}}">
+                    </ScrollViewer>
+                  </Border>
+                  <!-- 其余区块:单行横向滚动,无容器;面板底部留 14px 给水平滚动条,避免压住卡片标题 -->
+                  <ScrollViewer IsVisible="{Binding IsBordered, Converter={x:Static BoolConverters.Not}}"
+                                HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <i:Interaction.Behaviors>
+                      <b:CtrlHorizontalWheelBehavior />
+                    </i:Interaction.Behaviors>
+                    <ItemsControl ItemsSource="{Binding Items}" ContainerPrepared="OnItemContainerPrepared">
                       <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                           <!-- 列距 12px = 原版 GridViewItem 边距2 + 卡片 Margin右8 + 下一项边距2 -->
@@ -182,8 +193,8 @@
                         </ItemsPanelTemplate>
                       </ItemsControl.ItemsPanel>
                     </ItemsControl>
-                  </Grid>
-                </ScrollViewer>
+                  </ScrollViewer>
+                </Grid>
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

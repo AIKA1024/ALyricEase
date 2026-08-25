@@ -101,7 +101,7 @@
       <Setter Property="Width" Value="40" /><Setter Property="Height" Value="40" />
       <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="4" />
       <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
-      <Setter Property="FontSize" Value="12"/>
+
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
@@ -149,7 +149,7 @@
         <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0" VerticalAlignment="Center">
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
-            <TextBlock x:Name="BackGlyph" Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+            <TextBlock x:Name="BackGlyph" Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="12" />
           </Button>
           <!-- 小屏汉堡按钮(仿原版 NavigationView Minimal):窄窗无侧栏,汉堡移入标题栏、在返回键右侧,点开抽屉。
                IsVisible 由代码后置按宽度控制(ResponsiveClasses 的 narrow)。 -->
@@ -180,7 +180,7 @@
         </StackPanel>
       </Grid>
 
-            <views:AppShell Grid.Row="1" DataContext="{Binding}" />
+      <views:AppShell Grid.Row="1" DataContext="{Binding}" />
     </Grid>
   </ExperimentalAcrylicBorder>
 </Window>

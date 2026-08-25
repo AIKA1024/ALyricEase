@@ -70,15 +70,16 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     public string Album => Song.Album;
 
-    /// <summary>歌手 / 专辑 组合文本(每日行歌名下方按钮用)。</summary>
+    /// <summary>歌手 & 专辑 组合文本(每日行歌名下方按钮用):多歌手以 & 拼接,与专辑以 · 分隔。</summary>
     public string ArtistsAndAlbumText
     {
         get
         {
-            var hasArtist = !string.IsNullOrEmpty(Artist);
+            var artists = Song.ArtistNames is { Count: > 0 } names ? string.Join("&", names) : Artist;
+            var hasArtist = !string.IsNullOrEmpty(artists);
             var hasAlbum = !string.IsNullOrEmpty(Album);
-            if (hasArtist && hasAlbum) return $"{Artist} / {Album}";
-            return hasArtist ? Artist : Album;
+            if (hasArtist && hasAlbum) return $"{artists} · {Album}";
+            return hasArtist ? artists : Album;
         }
     }
 

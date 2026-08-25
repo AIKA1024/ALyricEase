@@ -7,8 +7,8 @@ using Avalonia;
 
 namespace ALyricEase.Views;
 
-/// <summary>底部播放条:宽屏完整布局 + narrow 紧凑三按钮布局,响应式类按窗口宽度切换。
-/// 进度条为共享的 PlayerProgressBar(自带拖动/气泡),本类只负责布局切换与"点空白打开正在播放页"。</summary>
+/// <summary>底部播放条:尺寸与宽屏一致,narrow 仅精简右侧按钮(隐藏红心/模式/音量/更多,留三键),
+/// 响应式类按窗口宽度切换。进度条为共享的 PlayerProgressBar(自带拖动/气泡),本类只负责布局切换与"点空白打开正在播放页"。</summary>
 public partial class PlayerBarView : UserControl
 {
     public PlayerBarView()

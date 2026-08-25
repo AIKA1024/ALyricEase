@@ -20,9 +20,6 @@
     <Style Selector=".narrow StackPanel.hero-vertical">
       <Setter Property="IsVisible" Value="True" />
     </Style>
-    <Style Selector=".narrow Border.playlist-hero">
-      <Setter Property="Height" Value="480" />
-    </Style>
     <Style Selector="Border.login-card">
       <Setter Property="MaxWidth" Value="600" /><Setter Property="MinWidth" Value="400" />
     </Style>
@@ -37,62 +34,18 @@
       <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
       <Setter Property="CornerRadius" Value="8" /><Setter Property="Padding" Value="20" />
     </Style>
-    <Style Selector=".compact Border.playlist-hero">
-      <Setter Property="Height" Value="300" /><Setter Property="Background" Value="Transparent" />
-      <Setter Property="Padding" Value="0,20" />
-    </Style>
-    <Style Selector=".compact Border.hero-art">
-      <Setter Property="Width" Value="300" /><Setter Property="Height" Value="300" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-    </Style>
-    <Style Selector=".compact StackPanel.hero-copy">
-      <Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="Margin" Value="0,18,0,0" />
-    </Style>
-    <Style Selector=".compact TextBlock.hero-title">
-      <Setter Property="TextAlignment" Value="Center" /><Setter Property="FontSize" Value="28" />
-    </Style>
-    <Style Selector=".compact Button.hero-creator">
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector=".compact StackPanel.hero-actions">
-      <Setter Property="HorizontalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Grid.hero-layout Border.hero-art">
-      <Setter Property="Grid.Column" Value="0" />
-      <Setter Property="Grid.Row" Value="0" />
-    </Style>
-    <Style Selector="Grid.hero-layout StackPanel.hero-copy">
-      <Setter Property="Grid.Column" Value="1" />
-      <Setter Property="Grid.Row" Value="0" />
-    </Style>
-    <Style Selector=".narrow Grid.detail-shell">
-      <Setter Property="Margin" Value="0,0,0,110" />
-    </Style>
+    <!-- 小屏:上下堆叠内容比水平排更高,卡片高度随内容自增,最低 480;背景透明只留内容 -->
     <Style Selector=".narrow Border.playlist-hero">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Height" Value="NaN" />
+      <Setter Property="MinHeight" Value="480" />
       <Setter Property="Padding" Value="0,14" />
     </Style>
-    <Style Selector=".narrow Border.hero-art">
-      <Setter Property="Width" Value="220" /><Setter Property="Height" Value="220" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="Grid.Column" Value="0" />
-      <Setter Property="Grid.Row" Value="0" />
-      <Setter Property="Grid.ColumnSpan" Value="2" />
-    </Style>
-    <Style Selector=".narrow StackPanel.hero-copy">
-      <Setter Property="Grid.Column" Value="0" />
-      <Setter Property="Grid.Row" Value="1" />
-      <Setter Property="Grid.ColumnSpan" Value="2" />
-      <Setter Property="Margin" Value="0,16,0,0" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-    </Style>
-    <Style Selector=".narrow TextBlock.hero-title">
-      <Setter Property="TextAlignment" Value="Center" />
-    </Style>
-    <Style Selector=".narrow Button.hero-creator">
-      <Setter Property="HorizontalAlignment" Value="Center" />
-    </Style>
-    <Style Selector=".narrow StackPanel.hero-actions">
-      <Setter Property="HorizontalAlignment" Value="Center" />
+    <!-- 小屏:曲目行切换为个性推荐/每日歌曲同款紧凑行(封面+歌名+歌手·专辑按钮+播放/更多);
+         主题自带定宽 400(每日列表两列布局用),此处重置为 NaN 让行撑满列表卡片 -->
+    <Style Selector=".narrow ItemsControl.tracks views|TrackRow">
+      <Setter Property="Theme" Value="{StaticResource TrackRowSearchTheme}" />
+      <Setter Property="Width" Value="NaN" />
     </Style>
     <!-- 曲目列表:ItemsControl 无选中逻辑(不可选中);悬停高亮交给行内样式(共享 TrackRow),容器只留行间距 -->
     <Style Selector="ItemsControl.tracks">
@@ -113,15 +66,15 @@
         <Border x:Name="HeroCard" Classes="playlist-hero" Grid.Row="0">
           <Grid>
             <!-- 宽/中屏：左右布局 -->
-            <Grid x:Name="HeroLayout" Classes="hero-horizontal hero-layout" ColumnDefinitions="260,*" RowDefinitions="Auto,Auto">
-              <Border x:Name="HeroArt" Classes="hero-art" Width="260" Height="260" CornerRadius="8" ClipToBounds="True"
+            <Grid x:Name="HeroLayout" Classes="hero-horizontal" ColumnDefinitions="260,*">
+              <Border x:Name="HeroArt" Grid.Column="0" Width="260" Height="260" CornerRadius="8" ClipToBounds="True"
                       Background="{DynamicResource ArtFallback}" HorizontalAlignment="Left" VerticalAlignment="Center">
                 <Image Source="{Binding SelectedPlaylist.LargeCover}" Stretch="UniformToFill" />
               </Border>
-              <StackPanel x:Name="HeroCopy" Classes="hero-copy" Margin="20,0,10,0" VerticalAlignment="Center" Spacing="8">
-                <TextBlock x:Name="HeroTitle" Classes="hero-title" Text="{Binding SelectedPlaylist.Name}" FontSize="28" FontWeight="Bold"
+              <StackPanel x:Name="HeroCopy" Grid.Column="1" Margin="20,0,10,0" VerticalAlignment="Center" Spacing="8">
+                <TextBlock x:Name="HeroTitle" Text="{Binding SelectedPlaylist.Name}" FontSize="28" FontWeight="Bold"
                            TextTrimming="CharacterEllipsis" MaxLines="2" />
-                <Button x:Name="HeroCreator" Classes="hero-creator" Content="{Binding UserName}" HorizontalAlignment="Left"
+                <Button x:Name="HeroCreator" Content="{Binding UserName}" HorizontalAlignment="Left"
                         Background="Transparent" BorderThickness="0" Padding="0"
                         Foreground="{DynamicResource LyricEaseTeal}" FontSize="18" ToolTip.Tip="打开用户页（后续接入）" />
                 <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="16"
@@ -129,7 +82,7 @@
                 <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="14"
                            Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" MaxLines="3"
                            IsVisible="{Binding SelectedPlaylist.HasDescription}" />
-                <StackPanel x:Name="HeroActions" Classes="hero-actions" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <StackPanel x:Name="HeroActions" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
                   <Button Classes="primary" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" Height="40"
                           Padding="18,0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
                   <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
@@ -150,7 +103,8 @@
             </Grid>
 
             <!-- 小屏：上下布局 -->
-            <StackPanel x:Name="HeroVertical" Classes="hero-vertical" IsVisible="False"
+            <!-- 小屏：上下布局(默认隐藏,由 .narrow 样式显示;不能写本地 IsVisible,本地值优先级高于样式) -->
+            <StackPanel x:Name="HeroVertical" Classes="hero-vertical"
                         HorizontalAlignment="Stretch" VerticalAlignment="Center" Spacing="8">
               <Border Width="220" Height="220" CornerRadius="8" ClipToBounds="True"
                       Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center">

@@ -52,35 +52,7 @@
       <Setter Property="LetterSpacing" Value="2" />
     </Style>
 
-    <!-- narrow 紧凑样式 -->
-    <Style Selector=".narrow Grid#PlayerRoot">
-      <Setter Property="Height" Value="56" />
-    </Style>
-    <Style Selector=".narrow Border#CoverContainer">
-      <Setter Property="Width" Value="48" />
-      <Setter Property="Height" Value="48" />
-    </Style>
-    <Style Selector=".narrow Border#HoverBg">
-      <Setter Property="Padding" Value="0 6 0 4"/>
-    </Style>
-    <Style Selector=".narrow StackPanel#ButtonPanel">
-      <Setter Property="Spacing" Value="2" />
-    </Style>
-    <Style Selector=".narrow Button#PlayButton">
-      <Setter Property="Width" Value="44" />
-      <Setter Property="Height" Value="44" />
-    </Style>
-    <Style Selector=".narrow TextBlock#PlayIcon">
-      <Setter Property="FontSize" Value="24" />
-    </Style>
-    <Style Selector=".narrow TextBlock#PauseIcon">
-      <Setter Property="FontSize" Value="24" />
-    </Style>
-    <Style Selector=".narrow TextBlock#LoadingIcon">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="LetterSpacing" Value="1" />
-    </Style>
-    <!-- narrow 时隐藏额外按钮(红心、模式、音量、更多) -->
+    <!-- narrow 只精简右侧按钮(红心、模式、音量、更多),高度/封面/按钮尺寸保持与宽屏一致 -->
     <Style Selector=".narrow Button.like-button">
       <Setter Property="IsVisible" Value="False" />
     </Style>

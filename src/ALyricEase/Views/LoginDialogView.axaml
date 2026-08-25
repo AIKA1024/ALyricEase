@@ -1,0 +1,141 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.LoginDialogView">
+    <!-- 登录对话框(WinUI3 ContentDialog 式窗口内弹层,代替原独立 LoginWindow):
+         烟雾层(#99000000)盖住整窗拦截输入 + 居中卡片(圆角 8、内边距 24、标题 20 SemiBold、
+         按钮右下:取消 + 强调色主按钮)。Esc=取消(取消按钮 HotKey,弹层隐藏时自动失效);
+         Enter=默认主按钮(卡片 KeyBinding,焦点在 TextBox/卡片内时触发;按钮自身处理 Enter 不会冒泡)。
+         宿主把本控件放在窗口网格顶层(ZIndex 高于正在播放覆盖层):播放详情页里点红心也能弹登录。
+         根 UserControl 的 DataContext 由宿主绑定为 MainViewModel,卡片自行切到 Playlist。 -->
+    <Grid x:Name="Root">
+        <Grid.Styles>
+            <!-- 打开时 0→1 淡入由 code-behind 触发(IsVisible 翻转不跑过渡,先置 0 下一帧再置 1) -->
+            <Style Selector="Grid#Root">
+                <Setter Property="Transitions">
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                    </Transitions>
+                </Setter>
+            </Style>
+            <!-- 音源页签按钮:未选中描边灰底,选中强调色 -->
+            <Style Selector="Button.tab-active">
+                <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+            </Style>
+            <Style Selector="Button.tab-active.active">
+                <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+        </Grid.Styles>
+        <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
+        <Panel Background="#99000000" />
+        <Grid DataContext="{Binding Playlist}" x:DataType="vm:PlaylistViewModel"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding LoginCommand}" />
+            </Grid.KeyBindings>
+            <Border MaxWidth="440" MinWidth="320" Margin="24" Padding="24" CornerRadius="8"
+                    Background="{DynamicResource AppSurface}"
+                    BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                    BoxShadow="0 32 64 #66000000">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="登录 ALyricEase" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="网易云登录解锁红心/歌单/私人FM;QQ音乐登录解锁 VIP 曲目与高音质播放。"
+                               FontSize="13" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondary}" />
+                    <!-- 音源页签:网易云 / QQ音乐 -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="网易云" MinWidth="88" Height="30" CornerRadius="15"
+                                Classes="tab-active" Classes.active="{Binding IsNetEaseLoginTab}"
+                                Command="{Binding SelectNetEaseLoginTabCommand}" />
+                        <Button Content="QQ音乐" MinWidth="88" Height="30" CornerRadius="15"
+                                Classes="tab-active" Classes.active="{Binding IsQQLoginTab}"
+                                Command="{Binding SelectQQLoginTabCommand}" />
+                    </StackPanel>
+                    <!-- 音源内容区:两个面板重叠(Grid 取两者较大高度),切换只改透明度 →
+                         弹窗尺寸恒定不跳变。隐藏面板 Opacity=0 + IsEnabled=false(不可聚焦/交互) -->
+                    <Grid>
+                        <Grid.Styles>
+                            <Style Selector="StackPanel.tabpane">
+                                <Setter Property="Opacity" Value="0" />
+                                <Setter Property="IsHitTestVisible" Value="False" />
+                                <Setter Property="Transitions">
+                                    <Transitions>
+                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+                                    </Transitions>
+                                </Setter>
+                            </Style>
+                            <Style Selector="StackPanel.tabpane.on">
+                                <Setter Property="Opacity" Value="1" />
+                                <Setter Property="IsHitTestVisible" Value="True" />
+                            </Style>
+                        </Grid.Styles>
+                        <!-- 网易云:MUSIC_U 输入 -->
+                        <StackPanel Classes="tabpane" Classes.on="{Binding IsNetEaseLoginTab}"
+                                    IsEnabled="{Binding IsNetEaseLoginTab}" Spacing="6">
+                            <TextBlock Text="MUSIC_U Cookie" FontSize="13" FontWeight="SemiBold" />
+                            <!-- 单行:Enter 留给"默认按钮"语义(冒泡到卡片 KeyBinding 触发登录);
+                                 粘贴的整段 cookie 由 SetMusicUCookie 解析,无需多行 -->
+                            <TextBox x:Name="MusicUBox" Text="{Binding MusicUInput}"
+                                     PlaceholderText="粘贴 MUSIC_U 的值"
+                                     TextWrapping="Wrap" Height="64" FontSize="13" />
+                            <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock Text="1. 用浏览器打开 music.163.com 并登录你的账号" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                    <TextBlock Text="2. 按 F12 → Application → Cookies → https://music.163.com" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                    <TextBlock Text="3. 复制 MUSIC_U 的值,粘贴到上方输入框后点登录" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                        <!-- QQ音乐:uin 与 qqmusic_key 分开输入 -->
+                        <StackPanel Classes="tabpane" Classes.on="{Binding IsQQLoginTab}"
+                                    IsEnabled="{Binding IsQQLoginTab}" Spacing="6">
+                            <TextBlock Text="QQ 音乐登录" FontSize="13" FontWeight="SemiBold" />
+                            <TextBox x:Name="QQBox" Text="{Binding QqUinInput}"
+                                     PlaceholderText="uin"
+                                     Height="36" FontSize="13" VerticalContentAlignment="Center" />
+                            <TextBox Text="{Binding QqKeyInput}"
+                                     PlaceholderText="qqmusic_key(Q_H_L_ 开头的长串)"
+                                     Height="36" FontSize="13" VerticalContentAlignment="Center" />
+                            <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="如何获取" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock Text="1. 用浏览器打开 y.qq.com 并登录你的 QQ 账号" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                    <TextBlock Text="2. 按 F12 → Application(应用)→ Cookies → https://y.qq.com" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                    <TextBlock Text="3. 把 uin 与 qqmusic_key 两项的值分别填入上方两个输入框后点登录" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Grid.Column="0" Text="{Binding Message}" FontSize="12"
+                                   Foreground="{DynamicResource LyricEaseRed}" TextWrapping="Wrap"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="取消"
+                                Command="{Binding $parent[views:LoginDialogView].((vm:MainViewModel)DataContext).CloseLoginDialogCommand}"
+                                HotKeyManager.HotKey="Escape"
+                                MinWidth="96" Height="32" />
+                        <Button Grid.Column="2" Classes="dialog-primary" Content="登录"
+                                Command="{Binding LoginCommand}"
+                                MinWidth="96" Height="32" IsEnabled="{Binding !IsBusy}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

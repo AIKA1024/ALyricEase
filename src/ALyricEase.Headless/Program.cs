@@ -37,6 +37,20 @@ public static class Program
             return;
         }
 
+        // TEMP-DIAG:正在播放覆盖层是否盖住标题栏
+        if (args.Length > 0 && args[0] == "--npcover")
+        {
+            NpCoverProbe.Run(args.Length > 1 && args[1] == "anim");
+            return;
+        }
+
+        // TEMP-DIAG:真实 MainWindow.axaml 解析验证
+        if (args.Length > 0 && args[0] == "--realwin")
+        {
+            RealWindowProbe.Run();
+            return;
+        }
+
         _window = new Window
         {
             Content = new AppShell { DataContext = ServiceLocator.Get<MainViewModel>() },
@@ -311,3 +325,4 @@ public static class Program
     private static int CountButtons(Grid root) =>
         root.GetVisualDescendants().OfType<Button>().Count(b => b.IsVisible);
 }
+

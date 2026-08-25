@@ -6,41 +6,28 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Transformation;
-using Avalonia.Threading;
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
 /// <summary>共享主界面壳:导航(宽/紧凑/抽屉) + 内容区 + 播放条。
-/// Desktop 的 MainWindow 和 Android 的 MainView 都承载这个壳。</summary>
+/// Desktop 的 MainWindow 和 Android 的 MainView 都承载这个壳。
+/// 正在播放覆盖层与登录弹层是窗口级元素(桌面端要盖住标题栏),不在本壳内,
+/// 由宿主(MainWindow/MainView)直接挂载并由 NowPlayingOverlayController / LoginDialogView 驱动。</summary>
 public partial class AppShell : UserControl
 {
     private MainViewModel? _vm;
 
-    private static readonly double s_offScreenGuard = 100000;
-    private const double s_slideMargin = 8;
-
-    private double NowPlayingClosedY
-    {
-        get
-        {
-            var h = Bounds.Height;
-            return (h > 0 ? h : s_offScreenGuard) + s_slideMargin;
-        }
-    }
-
     public AppShell()
     {
         InitializeComponent();
-        SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
         SizeChanged += OnSizeChanged;
         DataContextChanged += OnDataContextChanged;
         AttachedToVisualTree += (_, _) =>
         {
             ResponsiveClasses.Apply(this, Bounds.Width);
             UpdateNavigationVisibility();
-            SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
         };
     }
 
@@ -69,28 +56,12 @@ public partial class AppShell : UserControl
         if (e.PropertyName is nameof(MainViewModel.IsNavigationExpanded)
             or nameof(MainViewModel.IsNavigationDrawerOpen))
             UpdateNavigationVisibility();
-
-        if (e.PropertyName == nameof(MainViewModel.ShowNowPlaying) && _vm is not null)
-            NowPlayingOverlay.RenderTransform = TranslateY(_vm.ShowNowPlaying ? 0 : NowPlayingClosedY);
-
-        if (e.PropertyName == nameof(MainViewModel.IsLoginDialogOpen)
-            && _vm is { IsLoginDialogOpen: true })
-        {
-            LoginDialogOverlay.Opacity = 0;
-            Dispatcher.UIThread.Post(() =>
-            {
-                LoginDialogOverlay.Opacity = 1;
-                MusicUBox.Focus();
-            }, DispatcherPriority.Render);
-        }
     }
 
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         ResponsiveClasses.Apply(this, e.NewSize.Width);
         UpdateNavigationVisibility();
-        if (!NowPlayingOverlay.IsHitTestVisible)
-            SetOverlayTransformNoTransition(TranslateY(NowPlayingClosedY));
     }
 
     /// <summary>侧边栏形态按宽度 + VM 状态切换。</summary>
@@ -140,31 +111,21 @@ public partial class AppShell : UserControl
     private void OnDrawerScrimPointerPressed(object? sender, PointerPressedEventArgs e)
         => (DataContext as MainViewModel)?.CloseNavigationDrawerCommand.Execute(null);
 
+    /// <summary>网易云或 QQ 音乐登录成功(对应 IsLoggedIn/IsQqLoggedIn 翻 true)自动关闭登录弹窗。</summary>
     private void OnPlaylistPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PlaylistViewModel.IsLoggedIn)
-            && sender is PlaylistViewModel { IsLoggedIn: true }
-            && _vm is not null)
+        var success = e.PropertyName switch
+        {
+            nameof(PlaylistViewModel.IsLoggedIn) => sender is PlaylistViewModel { IsLoggedIn: true },
+            nameof(PlaylistViewModel.IsQqLoggedIn) => sender is PlaylistViewModel { IsQqLoggedIn: true },
+            _ => false,
+        };
+        if (success && _vm is not null)
             _vm.IsLoginDialogOpen = false;
     }
 
     private void OnPlayerLoginRequired()
         => _vm?.OpenLoginDialogCommand.Execute(null);
-
-    private void SetOverlayTransformNoTransition(TransformOperations transform)
-    {
-        var transitions = NowPlayingOverlay.Transitions;
-        NowPlayingOverlay.Transitions = null;
-        NowPlayingOverlay.RenderTransform = transform;
-        NowPlayingOverlay.Transitions = transitions;
-    }
-
-    private static TransformOperations TranslateY(double y)
-    {
-        var builder = TransformOperations.CreateBuilder(1);
-        builder.AppendTranslate(0, y);
-        return builder.Build();
-    }
 
     private static TransformOperations TranslateX(double x)
     {

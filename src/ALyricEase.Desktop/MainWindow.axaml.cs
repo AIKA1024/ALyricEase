@@ -21,6 +21,7 @@ public partial class MainWindow : Window
 #if WINDOWS
     private Win32Properties.CustomWndProcHookCallback? _wndProcHook;
 #endif
+    private NowPlayingOverlayController? _nowPlayingController;
 
     public MainWindow()
     {
@@ -50,6 +51,17 @@ public partial class MainWindow : Window
         UpdateTitleBarHamburgerVisibility();
         UpdateFullScreenChrome();
         UpdateMaximizeGlyph();
+        // 布局完成、ClientSize 有效:把覆盖层"屏幕外"位置从兜底值更新为真实高度(仍无过渡,不可见)。
+        _nowPlayingController?.UpdateClosedPosition();
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        _nowPlayingController?.Dispose();
+        _nowPlayingController = DataContext is MainViewModel vm
+            ? new NowPlayingOverlayController(NowPlayingOverlay, vm)
+            : null;
     }
 
     private void UpdateTitleBarHamburgerVisibility()
@@ -117,6 +129,8 @@ public partial class MainWindow : Window
     {
         ResponsiveClasses.Apply(this, e.NewSize.Width);
         UpdateTitleBarHamburgerVisibility();
+        // 关闭态(覆盖层在屏幕外)时随窗口高度同步屏幕外位置;打开态保持原位即可。
+        _nowPlayingController?.UpdateClosedPosition();
     }
 
     private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)

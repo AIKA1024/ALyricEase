@@ -9,8 +9,9 @@ using ALyricEase.Services.Crypto;
 namespace ALyricEase.Services.NetEase;
 
 /// <summary>网易云 API 客户端:weapi/eapi 加密请求、匿名 cookie 管理、CN IP 风控头、各端点方法。
-/// 所有端点集中在类内,接口字段变动只改这一处。</summary>
-public sealed class NetEaseApiClient
+/// 所有端点集中在类内,接口字段变动只改这一处。实现 IMusicApi 抽象(搜索/播放地址/歌词/详情),
+/// 由 MusicApiProvider 注册路由;账号类功能(歌单/红心/FM/云盘)为网易云特有,留在具体类上。</summary>
+public sealed class NetEaseApiClient : IMusicApi
 {
     private const string BaseUrl = "https://music.163.com";
     private const string UserAgent =
@@ -56,6 +57,19 @@ public sealed class NetEaseApiClient
     }
 
     public bool IsLoggedIn => _cookie.MusicU is { Length: > 0 };
+
+    // ---------- IMusicApi 抽象实现 ----------
+
+    public MusicSource Source => MusicSource.NetEase;
+
+    public string DisplayName => "网易云";
+
+    /// <summary>接口入口(按 Song 路由):委托给按 id 的具体实现。</summary>
+    public Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
+        => GetPlayUrlAsync(song.Id, level, ct);
+
+    public Task<LyricResult?> GetLyricAsync(Song song, CancellationToken ct = default)
+        => GetLyricAsync(song.Id, ct);
 
     /// <summary>设置登录用户的 MUSIC_U 并持久化。</summary>
     public void SetMusicUCookie(string musicU)

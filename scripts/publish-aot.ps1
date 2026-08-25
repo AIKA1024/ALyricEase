@@ -4,7 +4,7 @@
 
     Usage:
         powershell -File scripts\publish-aot.ps1 [-Configuration Release] [-Runtime win-x64] [-Output <dir>]
-            [-SkipAndroid] [-AndroidNoAot]
+            [-SkipAndroid] [-AndroidNoAot] [-AndroidNativeAot]
 
     Desktop:
         Produces a self-contained single-file exe under artifacts\aot-<RID> via
@@ -14,18 +14,28 @@
 
     Android:
         Also publishes the Android app to an APK under artifacts\aot-android
-        (or artifacts\android when -AndroidNoAot). Android AOT uses the Android
-        toolchain (RunAOTCompilation=true, IL -> native via LLVM) -- this is NOT
-        .NET NativeAOT, which is incompatible with the Android/Java interop used
-        by Avalonia.Android. Requires a JDK 17+ (JAVA_HOME, or a JDK found in the
-        usual locations; Rider's bundled JBR under D:\Software\JetBrains* works).
+        (or artifacts\android when -AndroidNoAot).
+        Default mode uses the Mono toolchain: RunAOTCompilation=true compiles all
+        IL to native ahead of time (full Mono AOT) -- this is NOT .NET NativeAOT.
+        With -AndroidNativeAot the script passes PublishAot=true targeting
+        android-arm64. KNOWN BROKEN WITH AVALONIA (tested 2026-08): the build
+        succeeds but the app dies on the splash screen with UnsatisfiedLinkError
+        ("No implementation found ... n_onCreate") -- the .NET Android NativeAOT
+        pipeline never generates/registers marshal-methods callbacks for
+        library assemblies like Avalonia.Android. Microsoft also documents
+        Android NativeAOT as "Experimental, no built-in Java interop". Kept only
+        for future retries (dotnet/android or Avalonia may fix this); use the
+        default Mono full-AOT path for real deployments.
+        Requires a JDK 17+ (JAVA_HOME, or a JDK found in the usual locations;
+        Rider's bundled JBR under D:\Software\JetBrains* works).
 #>
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$Output = "",
     [switch]$SkipAndroid = $false,
-    [switch]$AndroidNoAot = $false
+    [switch]$AndroidNoAot = $false,
+    [switch]$AndroidNativeAot = $false
 )
 $ErrorActionPreference = "Stop"
 
@@ -93,8 +103,32 @@ else {
 
 # ---- Android APK ----
 if (-not $SkipAndroid) {
+    if ($AndroidNoAot -and $AndroidNativeAot) {
+        throw "-AndroidNoAot and -AndroidNativeAot are mutually exclusive."
+    }
+
     $androidProject = Join-Path $repoRoot "src\ALyricEase.Android\ALyricEase.Android.csproj"
-    $androidOutput = if ($AndroidNoAot) { Join-Path $repoRoot "artifacts\android" } else { Join-Path $repoRoot "artifacts\aot-android" }
+
+    [string[]]$aotArgs = @()
+    if ($AndroidNativeAot) {
+        Write-Host "   WARNING: Android NativeAOT is known-broken with Avalonia.Android" -ForegroundColor Red
+        Write-Host "   (UnsatisfiedLinkError at Application.OnCreate). Building anyway..." -ForegroundColor Red
+    }
+    elseif ($AndroidNoAot) {
+        $androidOutput = Join-Path $repoRoot "artifacts\android"
+        Write-Host "   AOT: off (JIT APK)" -ForegroundColor DarkGray
+    }
+    else {
+        # Best available production mode: full Mono AOT, arm64 only.
+        $androidOutput = Join-Path $repoRoot "artifacts\aot-android"
+        $aotArgs = @(
+            "-r", "android-arm64",
+            "--self-contained", "true",
+            "-p:RunAOTCompilation=true",
+            "-p:AndroidStripILAfterAOT=true"
+        )
+        Write-Host "   AOT: on (Mono full AOT, android-arm64, IL stripped)" -ForegroundColor DarkGray
+    }
 
     $jdk = Resolve-Jdk
     if (-not $jdk) {
@@ -104,9 +138,28 @@ if (-not $SkipAndroid) {
     $env:JAVA_HOME = $jdk
     if ($env:PATH -notlike "$jdk*") { $env:PATH = "$jdk\bin;$env:PATH" }
 
-    [string[]]$aotArgs = @()
-    if (-not $AndroidNoAot) { $aotArgs += "-p:RunAOTCompilation=true" }
-    Write-Host "   AOT: $(if ($AndroidNoAot) { 'off (JIT APK)' } else { 'on (RunAOTCompilation=true)' })" -ForegroundColor DarkGray
+    if ($AndroidNativeAot) {
+        # NativeAOT links through the NDK's clang; locate it in the usual spots.
+        [string]$ndk = $env:ANDROID_NDK_ROOT
+        $clangExe = "toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe"
+        if (-not $ndk -or -not (Test-Path (Join-Path $ndk $clangExe))) {
+            $sdkCandidates = @("$env:LOCALAPPDATA\Android\Sdk\ndk\*")
+            if ($env:ANDROID_HOME) { $sdkCandidates += "$env:ANDROID_HOME\ndk\*" }
+            $sdkCandidates += "C:\Program Files (x86)\Android\android-sdk\ndk\*"
+            $ndkHit = Get-ChildItem -Path $sdkCandidates -Directory -ErrorAction SilentlyContinue |
+                Where-Object { Test-Path (Join-Path $_.FullName $clangExe) } |
+                Sort-Object Name -Descending | Select-Object -First 1
+            if ($ndkHit) { $ndk = $ndkHit.FullName }
+        }
+        if (-not $ndk -or -not (Test-Path (Join-Path $ndk $clangExe))) {
+            throw ("NDK not found (required for -AndroidNativeAot). Install one with:`n" +
+                   "  sdkmanager --sdk_root=`"$env:LOCALAPPDATA\Android\Sdk`" --install `"ndk;28.2.13676358`"")
+        }
+        Write-Host "   NDK: $ndk" -ForegroundColor DarkGray
+        $env:ANDROID_NDK_ROOT = $ndk
+        $ndkBin = Join-Path $ndk "toolchains\llvm\prebuilt\windows-x86_64\bin"
+        if (($env:PATH -split ';') -notcontains $ndkBin) { $env:PATH = "$ndkBin;$env:PATH" }
+    }
 
     dotnet publish $androidProject `
         -c $Configuration `

@@ -18,5 +18,6 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Lottie" Version="12.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
+    <PackageReference Include="Xaml.Behaviors.Avalonia" Version="12.0.7" />
   </ItemGroup>
 </Project>

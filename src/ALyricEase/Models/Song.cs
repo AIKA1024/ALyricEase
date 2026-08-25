@@ -5,6 +5,12 @@ public sealed class Song
 {
     public long Id { get; init; }
 
+    /// <summary>来源音源(决定播放地址/歌词路由到哪个 API 客户端)。默认网易云。</summary>
+    public Services.MusicSource Source { get; init; } = Services.MusicSource.NetEase;
+
+    /// <summary>音源内字符串主键(QQ 音乐 songmid 等;网易云不用,留空)。</summary>
+    public string Mid { get; init; } = "";
+
     public string Name { get; init; } = "";
 
     /// <summary>展示用:多个艺术家以 / 拼接。</summary>

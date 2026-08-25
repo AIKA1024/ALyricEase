@@ -30,6 +30,11 @@
         <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
+        <!-- 音源切换按钮选中态 -->
+        <Style Selector="Button.chip.active">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
         <!-- 结果行 56px -->
         <Style Selector="ListBox > ListBoxItem">
             <Setter Property="Height" Value="56" />
@@ -68,6 +73,13 @@
                     </Grid>
                 </Border>
             </Grid>
+            <!-- 音源切换:网易云 / QQ 音乐 -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+                <Button Classes="chip" Classes.active="{Binding IsNetEaseSource}" Content="网易云"
+                        Command="{Binding SelectNetEaseSourceCommand}" MinWidth="88" />
+                <Button Classes="chip" Classes.active="{Binding IsQQSource}" Content="QQ音乐"
+                        Command="{Binding SelectQQSourceCommand}" MinWidth="88" />
+            </StackPanel>
             <StackPanel Spacing="10">
                 <TextBlock Text="热门搜索" FontSize="20" FontWeight="Bold" LetterSpacing="-0.02"
                            HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />

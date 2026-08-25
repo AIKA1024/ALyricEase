@@ -4,6 +4,7 @@ using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,16 +12,19 @@ using CommunityToolkit.Mvvm.Input;
 namespace ALyricEase.ViewModels;
 
 /// <summary>歌单 VM:MUSIC_U 粘贴登录 → 用户歌单 → 点开歌单看曲目(双击播放)。
-/// 未登录显示登录卡片;已登录显示用户信息 + 歌单列表 + 选中歌单的曲目。</summary>
+/// 未登录显示登录卡片;已登录显示用户信息 + 歌单列表 + 选中歌单的曲目。
+/// 登录对话框支持双音源切换:网易云(MUSIC_U)与 QQ 音乐(uin+qqmusic_key cookie,解锁 VIP 音质)。</summary>
 public sealed partial class PlaylistViewModel : ViewModelBase
 {
     private readonly NetEaseApiClient _api;
+    private readonly QQMusicApiClient _qqApi;
     private readonly CookieStore _cookie;
     private readonly PlayerViewModel _player;
 
-    public PlaylistViewModel(NetEaseApiClient api, CookieStore cookie, PlayerViewModel player)
+    public PlaylistViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, CookieStore cookie, PlayerViewModel player)
     {
         _api = api;
+        _qqApi = qqApi;
         _cookie = cookie;
         _player = player;
     }
@@ -36,6 +40,27 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [ObservableProperty] private SongItemViewModel? _selectedTrack;
     [ObservableProperty] private IImage? _avatarImage;
 
+    // ---- 登录对话框双音源 ----
+
+    /// <summary>登录弹窗当前选中的音源页签:false=网易云(默认),true=QQ音乐。</summary>
+    [ObservableProperty] private bool _isQQLoginTab;
+
+    /// <summary>QQ音乐登录输入:uin 与 qqmusic_key 分开填写。</summary>
+    [ObservableProperty] private string _qqUinInput = "";
+
+    [ObservableProperty] private string _qqKeyInput = "";
+
+    /// <summary>QQ音乐已登录(本地 cookie 有效;解锁 VIP/320k 播放)。</summary>
+    [ObservableProperty] private bool _isQqLoggedIn;
+
+    public bool IsNetEaseLoginTab => !IsQQLoginTab;
+
+    partial void OnIsQQLoginTabChanged(bool value) => OnPropertyChanged(nameof(IsNetEaseLoginTab));
+
+    [RelayCommand] private void SelectNetEaseLoginTab() => IsQQLoginTab = false;
+
+    [RelayCommand] private void SelectQQLoginTab() => IsQQLoginTab = true;
+
     public bool ShowLogin => !IsLoggedIn;
 
     public ObservableCollection<PlaylistItemViewModel> Playlists { get; } = new();
@@ -43,9 +68,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     partial void OnIsLoggedInChanged(bool value) => OnPropertyChanged(nameof(ShowLogin));
 
-    /// <summary>进入页面时调用:已存 MUSIC_U 则恢复登录态(不阻塞 UI,失败静默)。</summary>
+    /// <summary>进入页面时调用:恢复本地登录态(QQ cookie 纯本地解析;网易云拉资料,不阻塞 UI,失败静默)。</summary>
     public async Task EnsureLoadedAsync()
     {
+        if (!IsQqLoggedIn && _cookie.QQCookieRaw is { Length: > 0 })
+            IsQqLoggedIn = _qqApi.IsLoggedIn;
         if (IsLoggedIn || _cookie.MusicU is null) return;
         await LoadProfileAndPlaylistsAsync();
     }
@@ -53,6 +80,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [RelayCommand]
     private async Task LoginAsync()
     {
+        if (IsQQLoginTab)
+        {
+            LoginQQ();
+            return;
+        }
         var raw = MusicUInput.Trim();
         if (raw.Length == 0) { Message = "请粘贴 MUSIC_U cookie"; return; }
 
@@ -74,12 +106,36 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
     }
 
+    /// <summary>QQ音乐 Cookie 登录:uin + qqmusic_key 拼成标准 cookie 交给客户端解析持久化;
+    /// 成功即视为完成(无账号资料页,效果是 VIP/320k 曲目可播)。AppShell 监听 IsQqLoggedIn 自动关弹窗。</summary>
+    private void LoginQQ()
+    {
+        var uin = QqUinInput.Trim();
+        var key = QqKeyInput.Trim();
+        if (uin.Length == 0 || key.Length == 0) { Message = "请填写 uin 和 qqmusic_key 两项"; return; }
+
+        try
+        {
+            _qqApi.SetCookie($"uin={uin}; qqmusic_key={key}");
+            IsQqLoggedIn = true;
+            QqUinInput = "";
+            QqKeyInput = "";
+            Message = null;
+        }
+        catch (ApiException ex)
+        {
+            Message = $"登录失败:{ex.Message}";
+        }
+    }
+
     [RelayCommand]
-    /// <summary>清除本地 Cookie 并重置登录态(账号页"删除本地Cookie"按钮调用)。</summary>
+    /// <summary>清除本地 Cookie 并重置登录态(账号页"删除本地Cookie"按钮调用);网易云与 QQ 一并清除。</summary>
     public void Logout()
     {
         _cookie.MusicU = null;
         _cookie.Save();
+        _qqApi.ClearCookie();
+        IsQqLoggedIn = false;
         IsLoggedIn = false;
         UserName = "";
         AvatarUrl = "";

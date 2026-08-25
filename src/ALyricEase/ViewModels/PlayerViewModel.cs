@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.Audio;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.Smtc;
@@ -29,6 +30,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 {
     private readonly IAudioPlayer _player;
     private readonly NetEaseApiClient _api;
+    private readonly MusicApiProvider _sources;
     private readonly LyricViewModel _lyric;
     private readonly ISmtcService _smtc;
 
@@ -52,10 +54,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty] private bool _isFmActive;
 
-    public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, LyricViewModel lyric, ISmtcService smtc)
+    public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, MusicApiProvider sources, LyricViewModel lyric, ISmtcService smtc)
     {
         _player = player;
         _api = api;
+        _sources = sources;
         _lyric = lyric;
         _smtc = smtc;
         _smtc.PlayPauseRequested += OnSmtcPlayPause;
@@ -198,10 +201,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _ = LoadCurrentLikedAsync();
     }
 
-    /// <summary>当前曲红心状态(后台加载;未登录/失败保持未喜欢)。</summary>
+    /// <summary>当前曲红心状态(后台加载;未登录/失败保持未喜欢)。红心为网易云能力,QQ 曲目跳过。</summary>
     private async Task LoadCurrentLikedAsync()
     {
         if (CurrentSong is not { } song) return;
+        if (song.Source != MusicSource.NetEase) return;
         try
         {
             await _api.EnsureLikedIdsAsync();
@@ -222,6 +226,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private async Task ToggleLikeAsync()
     {
         if (CurrentSong is null) return;
+        if (CurrentSong.Source != MusicSource.NetEase)
+        {
+            Message = "QQ音乐歌曲暂不支持红心收藏";
+            return;
+        }
         if (_api.LikedPlaylistId == 0) // 未登录:没有"我喜欢的音乐"歌单
         {
             LoginRequired?.Invoke();
@@ -423,14 +432,17 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         IsLoading = true;
         IsPlaying = false;
         _ = LoadCoverAsync(song.CoverUrl);
-        _ = _lyric.LoadAsync(song.Id); // 并发加载歌词,失败不阻塞播放
+        _ = _lyric.LoadAsync(song); // 并发加载歌词(按音源路由),失败不阻塞播放
 
         try
         {
-            var item = await _api.GetPlayUrlAsync(song.Id, "higher");
+            var api = _sources.Resolve(song);
+            var item = await api.GetPlayUrlAsync(song, "higher");
             if (item is null || string.IsNullOrEmpty(item.Url))
             {
-                Message = "该歌曲需会员或不可播放(海外 IP 可能受限)";
+                Message = song.Source == MusicSource.QQ && !api.IsLoggedIn
+                    ? "该歌曲需 QQ 音乐会员,登录 QQ 音乐 Cookie 可解锁"
+                    : "该歌曲需会员或不可播放(海外 IP 可能受限)";
                 return;
             }
 

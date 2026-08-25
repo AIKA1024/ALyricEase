@@ -19,5 +19,24 @@
             </Grid>
         </Border>
         <views:AppShell Grid.Row="1" />
+
+        <!-- 正在播放覆盖层:内容区 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
+             RenderTransform 目标值由 NowPlayingOverlayController 按 MainViewModel.ShowNowPlaying 切换。
+             Android 顶部横幅是应用内容不是窗口标题栏 → 覆盖层只挂第 1 行,不往上盖。 -->
+        <Grid x:Name="NowPlayingOverlay" Grid.Row="1" ZIndex="100"
+              IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
+            <Grid.Transitions>
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.4"
+                                                   Easing="0.215,0.61,0.355,1" />
+                </Transitions>
+            </Grid.Transitions>
+            <views:NowPlayingView DataContext="{Binding}" />
+        </Grid>
+
+        <!-- 登录对话框(共享 LoginDialogView):ZIndex 200 高于正在播放覆盖层(100),
+             播放详情页里点红心也能弹登录。 -->
+        <views:LoginDialogView IsVisible="{Binding IsLoginDialogOpen}"
+                               Grid.Row="1" ZIndex="200" />
     </Grid>
 </UserControl>

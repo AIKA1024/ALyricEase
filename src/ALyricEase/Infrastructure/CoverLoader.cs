@@ -81,9 +81,15 @@ public static class CoverLoader
     private static long EstimateBytes(IImage? img) =>
         img is Bitmap b ? (long)b.PixelSize.Width * b.PixelSize.Height * 4 : 0;
 
-    /// <summary>给网易封面 URL 追加缩略参数(param=WxH)。</summary>
+    /// <summary>按目标尺寸改写封面 URL:网易云追加 param=WxH;
+    /// QQ 音乐(y.gtimg.cn)改写路径里的 R{w}x{h} 尺寸段。</summary>
     public static string BuildSizedUrl(string url, int size)
     {
+        if (url.Contains("y.gtimg.cn", StringComparison.OrdinalIgnoreCase))
+        {
+            return System.Text.RegularExpressions.Regex.Replace(
+                url, @"R\d+x\d+M000", $"R{size}x{size}M000");
+        }
         var sep = url.Contains('?') ? '&' : '?';
         return $"{url}{sep}param={size}y{size}";
     }

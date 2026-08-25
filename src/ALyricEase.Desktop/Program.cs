@@ -2,10 +2,12 @@ using System.Threading;
 using Avalonia;
 using Avalonia.Threading;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using ALyricEase.Services.Audio;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.Crypto;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using ALyricEase.Services.Smtc;
 using ALyricEase.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,6 +65,11 @@ class Program
     services.AddSingleton<CnIpPool>();
     services.AddSingleton<CryptoService>();
     services.AddSingleton<NetEaseApiClient>();
+    // 音源抽象:网易云 + QQ 音乐,MusicApiProvider 按 Song.Source 路由
+    services.AddSingleton<QQMusicApiClient>();
+    services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<NetEaseApiClient>());
+    services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
+    services.AddSingleton<MusicApiProvider>();
 #if ANDROID
     services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
     services.AddSingleton<ISmtcService, SmtcServiceStub>();

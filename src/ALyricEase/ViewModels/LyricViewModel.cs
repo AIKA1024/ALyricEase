@@ -1,24 +1,25 @@
 using System.Collections.ObjectModel;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.Lrc;
-using ALyricEase.Services.NetEase;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ALyricEase.ViewModels;
 
 /// <summary>歌词 VM:加载解析 LRC(原文+翻译),按播放进度二分定位当前句。
-/// 加载是异步的,集合更新统一回 UI 线程;切歌用版本号丢弃过期结果。</summary>
+/// 加载是异步的,集合更新统一回 UI 线程;切歌用版本号丢弃过期结果。
+/// 歌词请求经 MusicApiProvider 按歌曲音源路由(网易云/QQ 音乐)。</summary>
 public sealed partial class LyricViewModel : ViewModelBase
 {
-    private readonly NetEaseApiClient _api;
+    private readonly MusicApiProvider _sources;
     private readonly DispatcherService _dispatcher;
     private LyricDocument? _doc;
     private int _loadVersion;
 
-    public LyricViewModel(NetEaseApiClient api, DispatcherService dispatcher)
+    public LyricViewModel(MusicApiProvider sources, DispatcherService dispatcher)
     {
-        _api = api;
+        _sources = sources;
         _dispatcher = dispatcher;
     }
 
@@ -46,8 +47,8 @@ public sealed partial class LyricViewModel : ViewModelBase
 
     partial void OnHasLyricChanged(bool value) => OnPropertyChanged(nameof(ShowEmpty));
 
-    /// <summary>切歌/首播时调用:拉取并解析歌词。不阻塞播放,失败静默显示空态。</summary>
-    public async Task LoadAsync(long songId)
+    /// <summary>切歌/首播时调用:按音源路由拉取并解析歌词。不阻塞播放,失败静默显示空态。</summary>
+    public async Task LoadAsync(Song song)
     {
         var version = ++_loadVersion;
         Reset();
@@ -55,7 +56,8 @@ public sealed partial class LyricViewModel : ViewModelBase
         LyricDocument? doc = null;
         try
         {
-            var lrc = await _api.GetLyricAsync(songId).ConfigureAwait(false);
+            var api = _sources.Resolve(song);
+            var lrc = await api.GetLyricAsync(song).ConfigureAwait(false);
             if (lrc is not null)
                 doc = LrcParser.Parse(lrc.Original, lrc.Translation);
         }

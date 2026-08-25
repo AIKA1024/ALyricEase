@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Preserves Java interop infrastructure that the marshal-methods rewriter
+     looks up by name AFTER IL trimming; nothing references it statically, so
+     TrimMode=full removes it and publish fails with XARMM7009. -->
+<linker>
+  <assembly fullname="Mono.Android">
+    <type fullname="Java.Interop.ManagedMarshalMethodsLookupTable" preserve="all" />
+  </assembly>
+</linker>

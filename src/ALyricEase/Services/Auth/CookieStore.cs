@@ -19,6 +19,9 @@ public sealed class CookieStore
 
     public DateTime AnonymousExpiresUtc { get; set; } = DateTime.MinValue;
 
+    /// <summary>QQ 音乐登录 cookie 原文(需含 uin 与 qqmusic_key,由 QQMusicApiClient 解析)。</summary>
+    public string? QQCookieRaw { get; set; }
+
     public CookieStore()
     {
 #if ANDROID
@@ -54,6 +57,7 @@ public sealed class CookieStore
             MusicU = dto.MusicU;
             AnonymousMusicA = dto.AnonymousMusicA;
             AnonymousExpiresUtc = dto.AnonymousExpiresUtc;
+            QQCookieRaw = dto.QQCookieRaw;
         }
         catch
         {
@@ -70,6 +74,7 @@ public sealed class CookieStore
                 MusicU = MusicU,
                 AnonymousMusicA = AnonymousMusicA,
                 AnonymousExpiresUtc = AnonymousExpiresUtc,
+                QQCookieRaw = QQCookieRaw,
             };
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, NetEaseJsonContext.Default.CookieFile));
@@ -88,5 +93,7 @@ public sealed class CookieStore
         public string? AnonymousMusicA { get; set; }
 
         public DateTime AnonymousExpiresUtc { get; set; }
+
+        public string? QQCookieRaw { get; set; }
     }
 }

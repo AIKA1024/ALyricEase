@@ -1,10 +1,12 @@
 using Avalonia;
 using Avalonia.Markup.Xaml;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using ALyricEase.Services.Audio;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.Crypto;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using ALyricEase.Services.Smtc;
 using ALyricEase.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,6 +43,10 @@ public partial class HeadlessApp : Application
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
         services.AddSingleton<NetEaseApiClient>();
+        services.AddSingleton<QQMusicApiClient>();
+        services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<NetEaseApiClient>());
+        services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
+        services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<IAudioPlayer, StubAudioPlayer>();
         services.AddSingleton<ISmtcService, SmtcServiceStub>();
         services.AddSingleton<LyricViewModel>();

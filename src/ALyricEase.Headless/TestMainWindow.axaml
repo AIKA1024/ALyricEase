@@ -6,7 +6,7 @@
         xmlns:vm="using:ALyricEase.ViewModels"
         x:DataType="vm:MainViewModel"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
-        x:Class="ALyricEase.MainWindow"
+        x:Class="ALyricEase.Headless.TestMainWindow"
         Title="ALyricEase" Width="1200" Height="720" MinWidth="360" MinHeight="560"
         Icon="avares://ALyricEase/Assets/app.ico" Background="Transparent" TransparencyLevelHint="AcrylicBlur"
         WindowDecorations="BorderOnly"

@@ -20,6 +20,10 @@
     </AndroidResource>
   </ItemGroup>
 
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <TrimmerRootDescriptor Include="NativeAotRoots.xml" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ALyricEase\ALyricEase.csproj" />
   </ItemGroup>

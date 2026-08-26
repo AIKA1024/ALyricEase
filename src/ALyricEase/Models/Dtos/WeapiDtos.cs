@@ -123,6 +123,9 @@ public sealed record ArtistAlbumItem
 {
     public long Id { get; init; }
 
+    /// <summary>专辑 mid(QQ 音乐填,专辑页按 mid 取数据;网易云留空)。</summary>
+    public string Mid { get; init; } = "";
+
     public string Name { get; init; } = "";
 
     [JsonPropertyName("picUrl")] public string PicUrl { get; init; } = "";

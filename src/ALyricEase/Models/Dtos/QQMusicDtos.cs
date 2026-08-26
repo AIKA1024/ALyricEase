@@ -54,8 +54,14 @@ public sealed record QQAlbumRefDto
 
 public sealed record QQPayDto
 {
-    /// <summary>0 = 免费可播,其余 VIP/付费。</summary>
+    /// <summary>0 = 免费可播,其余 VIP/付费。track_info 形态为 payplay。</summary>
     [JsonPropertyName("payplay")] public int PayPlay { get; init; }
+
+    /// <summary>雷达 Track 形态为 snake_case(pay_play)。</summary>
+    [JsonPropertyName("pay_play")] public int PayPlaySnake { get; init; }
+
+    /// <summary>两命名形态合并取值(0=免费)。</summary>
+    public int EffectivePayPlay => PayPlay != 0 ? PayPlay : PayPlaySnake;
 }
 
 public sealed record QQTrackDto
@@ -177,4 +183,236 @@ public sealed record QQDetailReq
 public sealed record QQDetailData
 {
     [JsonPropertyName("track_info")] public QQTrackDto? TrackInfo { get; init; }
+}
+
+// ---------- 账号能力(用户主页 / 歌单曲目)----------
+
+public sealed record QQHomepageResponse
+{
+    /// <summary>0 成功;1000 = 登录失效/凭据不完整。</summary>
+    public int Code { get; init; }
+
+    public QQHomepageData? Data { get; init; }
+}
+
+public sealed record QQHomepageData
+{
+    public QQCreatorDto? Creator { get; init; }
+
+    public QQMyDiss? Mydiss { get; init; }
+}
+
+/// <summary>主页创建者资料。字段随端版本漂移,nick/avatar 多候选兜底。</summary>
+public sealed record QQCreatorDto
+{
+    public string? Nick { get; init; }
+
+    public string? Nickname { get; init; }
+
+    public long Uin { get; init; }
+
+    public string? Avatar { get; init; }
+
+    [JsonPropertyName("faceurl")] public string? FaceUrl { get; init; }
+
+    [JsonPropertyName("headpic")] public string? Headpic { get; init; }
+}
+
+public sealed record QQMyDiss
+{
+    public List<QQDissItem>? List { get; init; }
+}
+
+/// <summary>歌单项。id 兼容 dissid/disstid,名兼容 dissname/dirname,封面兼容 picurl/logo。</summary>
+public sealed record QQDissItem
+{
+    [JsonPropertyName("dissid")] public long DissId { get; init; }
+
+    [JsonPropertyName("disstid")] public long DissTid { get; init; }
+
+    [JsonPropertyName("dissname")] public string? DissName { get; init; }
+
+    [JsonPropertyName("dirname")] public string? Dirname { get; init; }
+
+    [JsonPropertyName("picurl")] public string? Picurl { get; init; }
+
+    public string? Logo { get; init; }
+
+    [JsonPropertyName("song_count")] public int SongCount { get; init; }
+
+    [JsonPropertyName("songcount")] public int SongcountAlt { get; init; }
+
+    public string? Intro { get; init; }
+}
+
+public sealed record QQCdListResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("cdlist")] public List<QQCdInfo>? Cdlist { get; init; }
+}
+
+public sealed record QQCdInfo
+{
+    [JsonPropertyName("disstid")] public long DissTid { get; init; }
+
+    [JsonPropertyName("dissname")] public string? Dissname { get; init; }
+
+    public string? Logo { get; init; }
+
+    [JsonPropertyName("songcount")] public int SongCount { get; init; }
+
+    [JsonPropertyName("songlist")] public List<QQTrackDto>? Songlist { get; init; }
+}
+
+// ---------- 雷达每日推荐(music.recommend.TrackRelationServer/GetRadarSong)----------
+
+public sealed record QQRadarResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQRadarReq? Req0 { get; init; }
+}
+
+public sealed record QQRadarReq
+{
+    public int Code { get; init; }
+
+    public QQRadarData? Data { get; init; }
+}
+
+public sealed record QQRadarData
+{
+    [JsonPropertyName("vecSongs")] public List<QQRadarEntry>? VecSongs { get; init; }
+
+    /// <summary>还有下一页(单页仅约 5 首,翻页拼满)。</summary>
+    [JsonPropertyName("hasMore")] public bool HasMore { get; init; }
+}
+
+public sealed record QQRadarEntry
+{
+    [JsonPropertyName("track")] public QQTrackDto? Track { get; init; }
+}
+
+// ---------- 歌手/专辑(mid 维度,QQ 导航页)----------
+
+public sealed record QQSongEntriesResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQSongEntriesReq? Req0 { get; init; }
+}
+
+public sealed record QQSongEntriesReq
+{
+    public int Code { get; init; }
+
+    public QQSongEntriesData? Data { get; init; }
+}
+
+public sealed record QQSongEntriesData
+{
+    /// <summary>歌手歌曲/专辑曲目共用外壳。</summary>
+    [JsonPropertyName("songList")] public List<QQSongEntryDto>? SongList { get; init; }
+
+    public int TotalNum { get; init; }
+}
+
+public sealed record QQSongEntryDto
+{
+    /// <summary>包裹层,内为标准曲目结构(track_info 同构)。</summary>
+    [JsonPropertyName("songInfo")] public QQTrackDto? SongInfo { get; init; }
+}
+
+public sealed record QQAlbumListResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQAlbumListReq? Req0 { get; init; }
+}
+
+public sealed record QQAlbumListReq
+{
+    public int Code { get; init; }
+
+    public QQAlbumListData? Data { get; init; }
+}
+
+public sealed record QQAlbumListData
+{
+    [JsonPropertyName("albumList")] public List<QQAlbumItemDto>? AlbumList { get; init; }
+}
+
+public sealed record QQAlbumItemDto
+{
+    [JsonPropertyName("albumID")] public long AlbumId { get; init; }
+
+    [JsonPropertyName("albumMid")] public string? AlbumMid { get; init; }
+
+    [JsonPropertyName("albumName")] public string? AlbumName { get; init; }
+
+    [JsonPropertyName("publishDate")] public string? PublishDate { get; init; }
+
+    [JsonPropertyName("totalNum")] public int TotalNum { get; init; }
+
+    [JsonPropertyName("singerName")] public string? SingerName { get; init; }
+
+    [JsonPropertyName("albumType")] public string? AlbumType { get; init; }
+}
+
+public sealed record QQAlbumDetailResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQAlbumDetailReq? Req0 { get; init; }
+}
+
+public sealed record QQAlbumDetailReq
+{
+    public int Code { get; init; }
+
+    public QQAlbumDetailData? Data { get; init; }
+}
+
+public sealed record QQAlbumDetailData
+{
+    [JsonPropertyName("basicInfo")] public QQAlbumBasicInfoDto? BasicInfo { get; init; }
+}
+
+public sealed record QQAlbumBasicInfoDto
+{
+    [JsonPropertyName("albumName")] public string? AlbumName { get; init; }
+
+    [JsonPropertyName("publishDate")] public string? PublishDate { get; init; }
+
+    [JsonPropertyName("desc")] public string? Desc { get; init; }
+
+    [JsonPropertyName("language")] public string? Language { get; init; }
+}
+
+/// <summary>专辑基础信息(客户端映射后的领域形态,非上游响应)。</summary>
+public sealed record QQAlbumInfo(string Name, string PublishDate, string Description);
+
+// ---------- 今日私享歌单(官方客户端"每日30曲",music.srfDissInfo.DissInfo/CgiGetDiss)----------
+
+public sealed record QQCgiGetDissResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQCgiGetDissReq? Req0 { get; init; }
+}
+
+public sealed record QQCgiGetDissReq
+{
+    public int Code { get; init; }
+
+    public QQCgiGetDissData? Data { get; init; }
+}
+
+public sealed record QQCgiGetDissData
+{
+    /// <summary>曲目为标准 track_info 同构,直接复用 QQTrackDto。</summary>
+    [JsonPropertyName("songlist")] public List<QQTrackDto>? Songlist { get; init; }
+
+    [JsonPropertyName("total_song_num")] public int TotalSongNum { get; init; }
 }

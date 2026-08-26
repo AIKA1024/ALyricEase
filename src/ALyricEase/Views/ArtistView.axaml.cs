@@ -13,16 +13,6 @@ public partial class ArtistView : UserControl
         AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
     }
 
-    /// <summary>热门歌曲容器 realized 时加载封面/红心(幂等)。</summary>
-    private void OnTrackContainerPreparing(object? sender, ContainerPreparedEventArgs e)
-    {
-        if (e.Container?.DataContext is SongItemViewModel song)
-        {
-            song.EnsureCoverLoaded();
-            song.EnsureLikedLoaded();
-        }
-    }
-
     /// <summary>专辑/单曲卡片容器 realized 时加载封面(幂等)。</summary>
     private void OnAlbumContainerPreparing(object? sender, ContainerPreparedEventArgs e)
     {

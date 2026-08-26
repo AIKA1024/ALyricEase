@@ -134,6 +134,13 @@
                 </Button>
               </Grid>
             </Grid>
+            <!-- 音源角标(网易云/QQ 标签页 favicon):钉在 item 左下角,悬停浮现,不可命中。
+                 无垫片,图标 HighQuality 插值缩放抗锯齿 -->
+            <Panel Classes="source-badge" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                   Margin="2,0,0,2" Width="16" Height="16" IsHitTestVisible="False">
+              <Image Source="{Binding SourceBadge}" Stretch="Uniform"
+                     RenderOptions.BitmapInterpolationMode="HighQuality" />
+            </Panel>
           </Grid>
         </ControlTemplate>
       </Setter>
@@ -442,5 +449,16 @@
   </Style>
   <Style Selector="views|TrackRow:pointerover Button.row-heart">
     <Setter Property="IsVisible" Value="True" />
+  </Style>
+
+  <!-- 音源角标(每日行 item 左下):默认隐藏;悬停显现规则由各页面局部样式定义
+       (仅推荐页混排两音源需要角标,歌手/歌单页单源无意义,见 RecommendView.axaml) -->
+  <Style Selector="views|TrackRow Panel.source-badge">
+    <Setter Property="Opacity" Value="0" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+      </Transitions>
+    </Setter>
   </Style>
 </Styles>

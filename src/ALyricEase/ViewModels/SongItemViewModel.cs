@@ -5,6 +5,8 @@ using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.NetEase;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -24,6 +26,33 @@ public sealed partial class SongItemViewModel : ViewModelBase
     /// <summary>红心/歌手专辑跳转为网易云能力;QQ 等其他音源的行不提供。</summary>
     private bool IsNetEase => Song.Source == Services.MusicSource.NetEase;
 
+    private static IImage? s_neBadge;
+    private static IImage? s_qqBadge;
+
+    /// <summary>音源角标(hover 时封面左下角显示):取自两站点浏览器标签页 favicon,
+    /// 静态缓存按音源共享一份位图。资源缺失返回 null(Image 空源不渲染)。</summary>
+    public IImage? SourceBadge
+    {
+        get
+        {
+            if (IsNetEase) return s_neBadge ??= LoadBadge("avares://ALyricEase/Assets/TrackTags/SourceNetease.png");
+            return s_qqBadge ??= LoadBadge("avares://ALyricEase/Assets/TrackTags/SourceQQ.png");
+        }
+    }
+
+    private static IImage? LoadBadge(string uri)
+    {
+        try
+        {
+            using var stream = AssetLoader.Open(new Uri(uri));
+            return new Bitmap(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public SongItemViewModel(Song song, Func<Song, Task> playSong, int index = 0, NetEaseApiClient? api = null)
         : this(song, (s, _, _) => playSong(s), index, api: api) { }
 
@@ -35,11 +64,15 @@ public sealed partial class SongItemViewModel : ViewModelBase
         _source = source;
         _api = api;
         Index = index;
-        // 歌手子菜单项:按 id/名一一配对(数量不一致时取短的)
+        // 歌手子菜单项:按 id/mid 与名字一一配对(数量不一致时取短的)
         var artists = new List<ArtistNavItem>();
-        var n = Math.Min(song.ArtistIds.Count, song.ArtistNames.Count);
+        var isQq = song.Source == Services.MusicSource.QQ;
+        var keys = isQq ? song.ArtistMids.Count : song.ArtistIds.Count;
+        var n = Math.Min(song.ArtistNames.Count, keys);
         for (var i = 0; i < n; i++)
-            artists.Add(new ArtistNavItem(song.ArtistIds[i], song.ArtistNames[i]));
+            artists.Add(isQq
+                ? new ArtistNavItem(0, song.ArtistNames[i], song.ArtistMids[i])
+                : new ArtistNavItem(song.ArtistIds[i], song.ArtistNames[i]));
         Artists = artists;
         // 封面懒加载:列表项可见(容器 realized)时才拉,配合虚拟化,避免上千首并发下载
     }
@@ -86,12 +119,14 @@ public sealed partial class SongItemViewModel : ViewModelBase
         }
     }
 
-    public bool HasArtist => IsNetEase && Song.ArtistIds.Count > 0;
+    /// <summary>有可跳转的歌手:网易云按数字 id,QQ 按 singer mid。</summary>
+    public bool HasArtist => (IsNetEase && Song.ArtistIds.Count > 0) || Song.ArtistMids.Count > 0;
 
     /// <summary>有歌手名(展示用):与 HasArtist(可跳转)区分——云盘等无版权歌曲有名字无 id。</summary>
     public bool HasArtistName => !string.IsNullOrEmpty(Song.Artist);
 
-    public bool HasAlbum => IsNetEase && Song.AlbumId != 0;
+    /// <summary>有可跳转的专辑:网易云按数字 id,QQ 按 album mid。</summary>
+    public bool HasAlbum => (IsNetEase && Song.AlbumId != 0) || Song.AlbumMid.Length > 0;
 
     /// <summary>有专辑名(展示用):与 HasAlbum(可跳转)区分——同上。</summary>
     public bool HasAlbumName => !string.IsNullOrEmpty(Song.Album);
@@ -138,17 +173,25 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(Song.CoverUrl, 100);
 
-    /// <summary>点击歌手 → 歌手页(经服务定位器避免把导航回调穿遍所有创建处)。</summary>
+    /// <summary>点击歌手 → 歌手页(经服务定位器避免把导航回调穿遍所有创建处)。QQ 按 mid 路由。</summary>
     [RelayCommand]
     private async Task OpenArtistAsync()
     {
+        // FirstOrDefault 无匹配时返回 null(而非 ""),必须用 IsNullOrEmpty 判断
+        var mid = Song.ArtistMids.FirstOrDefault(m => !string.IsNullOrEmpty(m));
+        if (!string.IsNullOrEmpty(mid))
+        {
+            try { await ServiceLocator.Get<MainViewModel>().OpenQqArtistCommand.ExecuteAsync(mid); }
+            catch { /* 未初始化/导航失败:忽略 */ }
+            return;
+        }
         var id = Song.ArtistIds.FirstOrDefault();
         if (id == 0) return;
         try { await ServiceLocator.Get<MainViewModel>().OpenArtistCommand.ExecuteAsync(id); }
         catch { /* 未初始化/导航失败:忽略 */ }
     }
 
-    /// <summary>多歌手子菜单:点击某个歌手 → 该歌手页。</summary>
+    /// <summary>多歌手子菜单:点击某个歌手 → 该歌手页。QQ 项 id 为 0,按 mid 路由。</summary>
     [RelayCommand]
     private async Task OpenArtistByIdAsync(long? id)
     {
@@ -157,10 +200,16 @@ public sealed partial class SongItemViewModel : ViewModelBase
         catch { /* 未初始化/导航失败:忽略 */ }
     }
 
-    /// <summary>点击专辑 → 专辑页。</summary>
+    /// <summary>点击专辑 → 专辑页(网易云按 id,QQ 按 mid)。</summary>
     [RelayCommand]
     private async Task OpenAlbumAsync()
     {
+        if (Song.AlbumMid.Length > 0 && !IsNetEase)
+        {
+            try { await ServiceLocator.Get<MainViewModel>().OpenQqAlbumCommand.ExecuteAsync(Song.AlbumMid); }
+            catch { /* 未初始化/导航失败:忽略 */ }
+            return;
+        }
         if (Song.AlbumId == 0) return;
         try { await ServiceLocator.Get<MainViewModel>().OpenAlbumCommand.ExecuteAsync(Song.AlbumId); }
         catch { /* 未初始化/导航失败:忽略 */ }

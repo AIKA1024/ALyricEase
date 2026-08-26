@@ -36,9 +36,10 @@
     <x:String x:Key="IconWindowMaximize">&#xE952;</x:String>
     <x:String x:Key="IconWindowRestore">&#xE953;</x:String>
     <x:String x:Key="IconClose">&#xE954;</x:String>
-    <x:String x:Key="IconHamburger">&#xE955;</x:String>
     <x:String x:Key="IconRepeatList">&#xE956;</x:String>
     <x:String x:Key="IconRepeatOne">&#xE957;</x:String>
     <x:String x:Key="IconShuffle">&#xE958;</x:String>
     <x:String x:Key="IconPin">&#xE959;</x:String>
+    <!-- Debug 入口(字体原生 E940=Code,见原版 FontIcons 映射) -->
+    <x:String x:Key="IconCode">&#xE940;</x:String>
 </ResourceDictionary>

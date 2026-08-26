@@ -11,7 +11,7 @@ namespace ALyricEase.Services.NetEase;
 /// <summary>网易云 API 客户端:weapi/eapi 加密请求、匿名 cookie 管理、CN IP 风控头、各端点方法。
 /// 所有端点集中在类内,接口字段变动只改这一处。实现 IMusicApi 抽象(搜索/播放地址/歌词/详情),
 /// 由 MusicApiProvider 注册路由;账号类功能(歌单/红心/FM/云盘)为网易云特有,留在具体类上。</summary>
-public sealed class NetEaseApiClient : IMusicApi
+public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 {
     private const string BaseUrl = "https://music.163.com";
     private const string UserAgent =
@@ -70,6 +70,19 @@ public sealed class NetEaseApiClient : IMusicApi
 
     public Task<LyricResult?> GetLyricAsync(Song song, CancellationToken ct = default)
         => GetLyricAsync(song.Id, ct);
+
+    // ---------- IUserMusicApi 账号能力(委托给既有实现) ----------
+
+    /// <summary>接口入口:先取资料拿到 uid,再拉歌单列表。</summary>
+    async Task<List<Playlist>> IUserMusicApi.GetUserPlaylistsAsync(CancellationToken ct)
+    {
+        var profile = await GetUserProfileAsync(ct).ConfigureAwait(false);
+        return await GetUserPlaylistsAsync(profile.UserId, 50, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>接口入口:全量曲目(count 上限)。</summary>
+    Task<List<Song>> IUserMusicApi.GetPlaylistTracksAsync(long id, CancellationToken ct)
+        => GetPlaylistTracksAsync(id, int.MaxValue, ct);
 
     /// <summary>设置登录用户的 MUSIC_U 并持久化。</summary>
     public void SetMusicUCookie(string musicU)

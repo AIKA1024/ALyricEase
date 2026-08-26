@@ -2,26 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:views="using:ALyricEase.Views"
-             xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
-             xmlns:i="using:Avalonia.Xaml.Interactivity"
-             xmlns:vm="using:ALyricEase.ViewModels"
+              xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
+              xmlns:i="using:Avalonia.Xaml.Interactivity"
+              xmlns:vm="using:ALyricEase.ViewModels"
+              xmlns:controls="using:ALyricEase.Controls"
              x:DataType="vm:ArtistViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.ArtistView">
   <UserControl.Styles>
-    <!-- 热门歌曲横向网格容器(仿原版 HorizontalScrollableGridView,圆角8+1px边框+列表背景) -->
-    <Style Selector="Border.hot-songs-container">
-      <Setter Property="Background" Value="{DynamicResource AppListBackground}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="6 6 6 12" />
-      <Setter Property="ClipToBounds" Value="True" />
-    </Style>
-    <Style Selector="ItemsControl.hot-songs-items > ContentPresenter">
-      <Setter Property="Margin" Value="2" />
-    </Style>
     <!-- 专辑/单曲卡片:200 宽,封面黑遮罩悬停(同推荐卡片),点击跳专辑页 -->
     <Style Selector="Button.album-card">
       <Setter Property="Background" Value="Transparent" />
@@ -67,31 +55,11 @@
         </StackPanel>
       </Grid>
 
-      <!-- 热门歌曲:横向滚动换行网格(5 行),仿原版 HotSongsGridView -->
+      <!-- 热门歌曲:横向滚动换行网格(5 行),仿原版 HotSongsGridView;
+           容器与个性推荐"每日歌曲推荐"共用 Controls/SongGridView -->
       <StackPanel Spacing="12">
         <TextBlock Text="热门歌曲" FontSize="28" FontWeight="Bold" Margin="10" />
-        <ScrollViewer Height="340" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-          <i:Interaction.Behaviors>
-            <b:CtrlHorizontalWheelBehavior />
-          </i:Interaction.Behaviors>
-          <Border Classes="hot-songs-container">
-            <!-- 显式 320 = 5 行 × (60 行高 + 2×2 边距):WrapPanel 测量高度不再依赖外层 340 的减法,
-                 避免平台滚动条/舍入差挤掉第 5 行 -->
-            <ItemsControl Classes="hot-songs-items" Height="320" ItemsSource="{Binding Songs}"
-                          ContainerPrepared="OnTrackContainerPreparing">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <WrapPanel Orientation="Vertical" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:SongItemViewModel">
-                  <views:TrackRow Theme="{StaticResource TrackRowSearchTheme}" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </Border>
-        </ScrollViewer>
+        <controls:SongGridView ItemsSource="{Binding Songs}" />
       </StackPanel>
 
       <!-- 专辑:横向卡片网格 -->

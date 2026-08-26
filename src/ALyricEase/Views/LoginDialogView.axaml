@@ -104,7 +104,7 @@
                                     IsEnabled="{Binding IsQQLoginTab}" Spacing="6">
                             <TextBlock Text="QQ 音乐登录" FontSize="13" FontWeight="SemiBold" />
                             <TextBox x:Name="QQBox" Text="{Binding QqUinInput}"
-                                     PlaceholderText="uin"
+                                     PlaceholderText="uin(如 1343707921)或直接粘贴完整 Cookie"
                                      Height="36" FontSize="13" VerticalContentAlignment="Center" />
                             <TextBox Text="{Binding QqKeyInput}"
                                      PlaceholderText="qqmusic_key(Q_H_L_ 开头的长串)"
@@ -116,8 +116,10 @@
                                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
                                     <TextBlock Text="2. 按 F12 → Application(应用)→ Cookies → https://y.qq.com" FontSize="12"
                                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="3. 把 uin 与 qqmusic_key 两项的值分别填入上方两个输入框后点登录" FontSize="12"
+                                    <TextBlock Text="3. 把 uin 与 qqmusic_key 分别填入上方两框;或把整段 Cookie 粘进第一框" FontSize="12"
                                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                    <TextBlock Text="仅两项可解锁 VIP 播放;整段完整 Cookie(含 p_skey 等)才能使用歌单与每日推荐" FontSize="11.5"
+                                               Foreground="{DynamicResource SystemAccentColor}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>

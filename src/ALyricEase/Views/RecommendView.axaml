@@ -5,8 +5,9 @@
              xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
              xmlns:i="using:Avalonia.Xaml.Interactivity"
-             xmlns:vm="using:ALyricEase.ViewModels"
-             xmlns:views="using:ALyricEase.Views"
+              xmlns:vm="using:ALyricEase.ViewModels"
+              xmlns:views="using:ALyricEase.Views"
+              xmlns:controls="using:ALyricEase.Controls"
              x:DataType="vm:RecommendViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecommendView">
@@ -43,12 +44,6 @@
         </Grid>
       </Button>
     </DataTemplate>
-
-    <!-- 每日歌曲推荐行(400px):封面 + 歌名/歌手 + 时长;悬停时长隐藏,右侧浮现播放/更多按钮(仿原版 SearchResult 行)。
-         复用 TrackRow 控件套 Search 主题(播放按钮靠右);悬停高亮/操作浮现由共享样式驱动 -->
-    <DataTemplate DataType="vm:SongItemViewModel">
-      <views:TrackRow Theme="{StaticResource TrackRowSearchTheme}" />
-    </DataTemplate>
   </UserControl.DataTemplates>
 
   <UserControl.Styles>
@@ -84,6 +79,10 @@
     <Style Selector="Border.play-count-badge">
       <Setter Property="Background" Value="#59000000" />
     </Style>
+    <!-- 音源角标:仅本页(每日歌曲推荐混排网易云+QQ)悬停行时浮现;基础隐藏/过渡在 TrackRow.axaml -->
+    <Style Selector="views|TrackRow:pointerover Panel.source-badge">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
     <!-- 每日歌曲行的悬停高亮/操作浮现/圆形按钮等样式已统一到共享 TrackRow 控件(Views/TrackRow.axaml) -->
     <Style Selector=".compact StackPanel#PageContent">
       <Setter Property="Margin" Value="28,0,24,80" />
@@ -102,21 +101,6 @@
     </Style>
     <Style Selector=".narrow Border.card-art">
       <Setter Property="Width" Value="156" /><Setter Property="Height" Value="156" />
-    </Style>
-
-    <!-- 每日歌曲推荐容器:仿原版 HorizontalScrollableGridView(圆角8 + 1px 边框 + 列表背景 + 内边距6),
-         内部滚动区 PresenterHeight=320 → 正好 5 行(60px 行 + 2px 边距 = 64px × 5) -->
-    <Style Selector="Border.daily-container">
-      <Setter Property="Background" Value="{DynamicResource AppListBackground}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="6 6 6 12" />
-      <Setter Property="ClipToBounds" Value="True" />
-    </Style>
-    <!-- 每日歌曲行间距 2px,与原版 GridViewItem Margin="2" 一致 -->
-    <Style Selector="ItemsControl.daily-items > ContentPresenter">
-      <Setter Property="Margin" Value="2" />
     </Style>
 
     <!-- 播放全部按钮:原版 AccentFluentButton(红胶囊 + 播放图标) -->
@@ -158,27 +142,11 @@
                     </StackPanel>
                   </Button>
                 </Grid>
-                <!-- 区块内容:两种面板按 IsBordered 互斥显隐 —— 每日=圆角容器(ScrollViewer 在容器内,
-                     水平滚动条贴卡片底边内侧),其余=横向单行。隐藏面板不参与布局(IsVisible=false 跳过测量)。 -->
+                <!-- 区块内容:两种面板按 IsBordered 互斥显隐 —— 每日=SongGridView 圆角容器,其余=横向单行。
+                     隐藏面板不参与布局(IsVisible=false 跳过测量)。 -->
                 <Grid>
-                  <!-- 每日歌曲推荐:圆角边框容器 + 纵向换行网格(先竖向排满再换列,横向滚动) -->
-                  <Border Classes="daily-container" IsVisible="{Binding IsBordered}">
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                      <i:Interaction.Behaviors>
-                        <b:CtrlHorizontalWheelBehavior />
-                      </i:Interaction.Behaviors>
-                      <!-- 显式 320 = 5 行 × (60 行高 + 2×2 边距):WrapPanel 测量高度不再依赖外层减法,
-                           避免平台滚动条/舍入差挤掉第 5 行 -->
-                      <ItemsControl Classes="daily-items" Height="320" ItemsSource="{Binding Items}"
-                                    ContainerPrepared="OnItemContainerPrepared">
-                        <ItemsControl.ItemsPanel>
-                          <ItemsPanelTemplate>
-                            <WrapPanel Orientation="Vertical" />
-                          </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                      </ItemsControl>
-                    </ScrollViewer>
-                  </Border>
+                  <!-- 每日歌曲推荐:共享容器控件(Controls/SongGridView),歌手页热门歌曲同款 -->
+                  <controls:SongGridView IsVisible="{Binding IsBordered}" ItemsSource="{Binding Items}" />
                   <!-- 其余区块:单行横向滚动,无容器;面板底部留 14px 给水平滚动条,避免压住卡片标题 -->
                   <ScrollViewer IsVisible="{Binding IsBordered, Converter={x:Static BoolConverters.Not}}"
                                 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">

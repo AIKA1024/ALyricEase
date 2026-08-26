@@ -28,4 +28,7 @@ public sealed class MusicApiProvider
 
     /// <summary>按歌曲来源路由。</summary>
     public IMusicApi Resolve(Song song) => Resolve(song.Source);
+
+    /// <summary>按音源取账号能力(资料/用户歌单/每日推荐)。两个实现均支持。</summary>
+    public IUserMusicApi User(MusicSource source) => (IUserMusicApi)Resolve(source);
 }

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -118,22 +119,26 @@ public sealed partial class RecommendSectionViewModel : ViewModelBase
 }
 
 /// <summary>首页(每日歌曲推荐/推荐歌单/热门歌曲/猜你喜欢)。进入首页时从真实 API 拉各区块;
-/// 单区块失败不影响其他;每日歌曲推荐需登录,未登录时不显示该区块。</summary>
+/// 单区块失败不影响其他;每日歌曲推荐合并网易云与 QQ 音乐两源(各自需对应登录,全空时不显示该区块)。</summary>
 public sealed class RecommendViewModel : ViewModelBase
 {
     /// <summary>热歌榜歌单 id(热门歌曲区块数据源)。</summary>
     private const long HotPlaylistId = 3778678;
 
     private readonly NetEaseApiClient _api;
+    private readonly QQMusicApiClient _qq;
     private readonly PlayerViewModel _player;
     private readonly DispatcherService _dispatcher;
     private bool _loading;
     private bool _loaded;
-    private bool _lastWasLoggedIn;
 
-    public RecommendViewModel(NetEaseApiClient api, DispatcherService dispatcher, PlayerViewModel player)
+    /// <summary>上次加载时的双端登录态:任一端登录/登出都触发首页刷新。</summary>
+    private (bool Ne, bool Qq) _lastLoginState;
+
+    public RecommendViewModel(NetEaseApiClient api, QQMusicApiClient qq, DispatcherService dispatcher, PlayerViewModel player)
     {
         _api = api;
+        _qq = qq;
         _dispatcher = dispatcher;
         _player = player;
         Sections = new ObservableCollection<RecommendSectionViewModel>();
@@ -141,17 +146,17 @@ public sealed class RecommendViewModel : ViewModelBase
 
     public ObservableCollection<RecommendSectionViewModel> Sections { get; }
 
-    /// <summary>进入首页时调用:首载或登录态变化时刷新(幂等;网络失败静默保持现状)。</summary>
+    /// <summary>进入首页时调用:首载或任一音源登录态变化时刷新(幂等;网络失败静默保持现状)。</summary>
     public async Task EnsureLoadedAsync()
     {
         if (_loading) return;
-        var loggedIn = _api.IsLoggedIn;
-        if (_loaded && loggedIn == _lastWasLoggedIn) return;
-        _lastWasLoggedIn = loggedIn;
+        var state = (_api.IsLoggedIn, _qq.IsLoggedIn);
+        if (_loaded && state == _lastLoginState) return;
+        _lastLoginState = state;
         _loading = true;
         try
         {
-            await LoadAllSectionsAsync(loggedIn).ConfigureAwait(false);
+            await LoadAllSectionsAsync().ConfigureAwait(false);
             _loaded = true;
         }
         catch
@@ -164,54 +169,68 @@ public sealed class RecommendViewModel : ViewModelBase
         }
     }
 
-    /// <summary>并发拉取各区块(各自容错),完成后一次性替换 Section 列表避免逐个闪烁。</summary>
-    private async Task LoadAllSectionsAsync(bool loggedIn)
+    /// <summary>并发拉取各区块(各自容错);数据一到即上屏(固定顺序逐个插入),不等最慢的区块整体刷新。
+    /// 首个非空区块就绪时才清空旧内容:全部失败则保留旧内容不闪空。</summary>
+    private async Task LoadAllSectionsAsync()
     {
+        var dailyTask = SafeAsync(LoadDailyItemsAsync());
         var playlistsTask = SafeAsync(_api.GetPersonalizedPlaylistsAsync(6));
         var hotTask = SafeAsync(LoadHotSongsAsync());
         var newSongsTask = SafeAsync(LoadNewSongsAsync());
-        var dailyTask = loggedIn ? SafeAsync(LoadDailyItemsAsync()) : Task.FromResult(new List<object>());
-        await Task.WhenAll(playlistsTask, hotTask, newSongsTask, dailyTask).ConfigureAwait(false);
 
-        var sections = new List<RecommendSectionViewModel>();
+        var cleared = false;
+        async Task EnsureClearedAsync()
+        {
+            if (cleared) return;
+            await _dispatcher.InvokeAsync(() => Sections.Clear()).ConfigureAwait(false);
+            cleared = true;
+        }
+        async Task AddAsync(string title, IReadOnlyList<object> items, bool isBordered = false, Func<Task>? playAll = null)
+        {
+            await EnsureClearedAsync().ConfigureAwait(false);
+            var section = new RecommendSectionViewModel(title, items, isBordered, playAll);
+            await _dispatcher.InvokeAsync(() => Sections.Add(section)).ConfigureAwait(false);
+        }
+
+        // 每日歌曲推荐:播全部 = 第一首 + 全量队列(仅歌曲行;兜底歌单卡片无此按钮)
         var daily = await dailyTask.ConfigureAwait(false);
-        var playlists = await playlistsTask.ConfigureAwait(false);
-        var hot = await hotTask.ConfigureAwait(false);
-        var newSongs = await newSongsTask.ConfigureAwait(false);
         if (daily.Count > 0)
         {
-            // 每日歌曲推荐:播全部 = 第一首 + 全量队列(仅当是歌曲行时;兜底歌单卡片无此按钮)
             var dailySongs = daily.OfType<SongItemViewModel>().Select(s => s.Song).ToList();
-            Func<Task>? playAll = null;
-            if (dailySongs.Count > 0)
-            {
-                var queue = dailySongs;
-                playAll = () => _player.PlayFromList(queue[0], queue, "每日歌曲推荐");
-            }
-            sections.Add(new RecommendSectionViewModel("每日歌曲推荐", daily, isBordered: true, playAll));
+            Func<Task>? playAll = dailySongs.Count > 0
+                ? () => _player.PlayFromList(dailySongs[0], dailySongs, "每日歌曲推荐")
+                : null;
+            await AddAsync("每日歌曲推荐", daily, isBordered: true, playAll).ConfigureAwait(false);
         }
-        if (playlists.Count > 0) sections.Add(new RecommendSectionViewModel("推荐歌单", playlists.Select(ToPlaylistCard).ToList()));
-        if (hot.Count > 0) sections.Add(new RecommendSectionViewModel("热门歌曲", ToSongCards(hot, "热门歌曲")));
-        if (newSongs.Count > 0) sections.Add(new RecommendSectionViewModel("猜你喜欢", ToSongCards(newSongs, "猜你喜欢")));
 
-        // 网络回调在线程池,集合更新必须回 UI 线程
-        await _dispatcher.InvokeAsync(() =>
-        {
-            Sections.Clear();
-            foreach (var s in sections) Sections.Add(s);
-        }).ConfigureAwait(false);
+        var playlists = await playlistsTask.ConfigureAwait(false);
+        if (playlists.Count > 0) await AddAsync("推荐歌单", playlists.Select(ToPlaylistCard).ToList()).ConfigureAwait(false);
+
+        var hot = await hotTask.ConfigureAwait(false);
+        if (hot.Count > 0) await AddAsync("热门歌曲", ToSongCards(hot, "热门歌曲")).ConfigureAwait(false);
+
+        var newSongs = await newSongsTask.ConfigureAwait(false);
+        if (newSongs.Count > 0) await AddAsync("猜你喜欢", ToSongCards(newSongs, "猜你喜欢")).ConfigureAwait(false);
     }
 
-    /// <summary>每日歌曲推荐区块:优先取每日歌曲(行),接口不可用时兜底为每日推荐歌单(卡片)。
-    /// 每行都带全量每日歌曲队列:点任意一行播放,上一曲/下一曲/播完自动切都在每日推荐列表内进行。</summary>
+    /// <summary>每日歌曲推荐区块:网易云与 QQ 音乐的每日推荐并行拉取,合并进同一个容器(网易云在前)。
+    /// 每行都带全量合并队列:点任意一行播放,上一曲/下一曲/播完自动切跨两源连续进行。
+    /// 两源皆空且网易云已登录时,兜底为网易云每日推荐歌单(卡片);单源失败不影响另一源。</summary>
     private async Task<List<object>> LoadDailyItemsAsync()
     {
-        var songs = await _api.GetDailyRecommendSongsAsync().ConfigureAwait(false);
-        if (songs.Count > 0)
-            return songs.Select(s => (object)new SongItemViewModel(s, _player.PlayFromList, queue: songs, api: _api, source: "每日歌曲推荐")).ToList();
+        var neTask = _api.IsLoggedIn ? SafeAsync(_api.GetDailyRecommendSongsAsync()) : Task.FromResult(new List<Song>());
+        var qqTask = _qq.IsLoggedIn ? SafeAsync(_qq.GetDailyRecommendSongsAsync()) : Task.FromResult(new List<Song>());
+        await Task.WhenAll(neTask, qqTask).ConfigureAwait(false);
 
-        var playlists = await _api.GetDailyRecommendAsync().ConfigureAwait(false);
-        return playlists.Select(ToPlaylistCard).ToList();
+        var queue = (await neTask.ConfigureAwait(false)).Concat(await qqTask.ConfigureAwait(false)).ToList();
+        if (queue.Count > 0)
+            return queue.Select(s => (object)new SongItemViewModel(s, _player.PlayFromList,
+                queue: queue, api: _api, source: "每日歌曲推荐")).ToList();
+
+        // 兜底:网易云每日推荐歌单卡片(需登录;未登录接口回 code 301 → 空列表)
+        if (_api.IsLoggedIn)
+            return (await _api.GetDailyRecommendAsync().ConfigureAwait(false)).Select(ToPlaylistCard).ToList();
+        return new();
     }
 
     /// <summary>热门歌曲区块:热歌榜前 6 首完整曲目(点卡片播放需要完整 Song)。</summary>

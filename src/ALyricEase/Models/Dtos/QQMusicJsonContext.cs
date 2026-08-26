@@ -10,6 +10,13 @@ namespace ALyricEase.Models.Dtos;
 [JsonSerializable(typeof(QQLyricFcgResponse))]
 [JsonSerializable(typeof(QQMusicuLyricResponse))]
 [JsonSerializable(typeof(QQDetailResponse))]
+[JsonSerializable(typeof(QQHomepageResponse))]
+[JsonSerializable(typeof(QQCdListResponse))]
+[JsonSerializable(typeof(QQRadarResponse))]
+[JsonSerializable(typeof(QQSongEntriesResponse))]
+[JsonSerializable(typeof(QQAlbumListResponse))]
+[JsonSerializable(typeof(QQAlbumDetailResponse))]
+[JsonSerializable(typeof(QQCgiGetDissResponse))]
 internal sealed partial class QQMusicJsonContext : JsonSerializerContext
 {
 }

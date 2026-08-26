@@ -172,8 +172,7 @@
                IsVisible 由代码后置按宽度控制(ResponsiveClasses 的 narrow)。 -->
           <Button x:Name="TitleBarHamburger" Classes="back-button" IsVisible="False"
                   Command="{Binding ToggleNavigationDrawerCommand}" ToolTip.Tip="展开侧边栏">
-            <TextBlock x:Name="TitleBarHamburgerGlyph" Text="{DynamicResource IconHamburger}"
-                       FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+            <TextBlock x:Name="TitleBarHamburgerGlyph" Text="☰" FontSize="16" />
           </Button>
           <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" />
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"

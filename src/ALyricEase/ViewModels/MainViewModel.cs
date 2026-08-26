@@ -295,6 +295,16 @@ public sealed partial class MainViewModel : ViewModelBase
         catch { /* 网络失败:停留在歌手页空内容 */ }
     }
 
+    /// <summary>QQ 音乐曲目点击歌手 → 歌手页(按 singer mid)。</summary>
+    [RelayCommand]
+    private async Task OpenQqArtistAsync(string? singerMid)
+    {
+        if (string.IsNullOrEmpty(singerMid)) return;
+        ActivePage = "Artist";
+        try { await Artist.LoadQqAsync(singerMid); }
+        catch { /* 网络失败:停留在歌手页空内容 */ }
+    }
+
     /// <summary>歌单行/歌手页点击专辑 → 专辑页。</summary>
     [RelayCommand]
     private async Task OpenAlbumAsync(long? albumId)
@@ -302,6 +312,16 @@ public sealed partial class MainViewModel : ViewModelBase
         if (albumId is null or 0) return;
         ActivePage = "Album";
         try { await Album.LoadAsync(albumId.Value); }
+        catch { /* 网络失败:停留在专辑页空内容 */ }
+    }
+
+    /// <summary>QQ 音乐曲目点击专辑 → 专辑页(按 album mid)。</summary>
+    [RelayCommand]
+    private async Task OpenQqAlbumAsync(string? albumMid)
+    {
+        if (string.IsNullOrEmpty(albumMid)) return;
+        ActivePage = "Album";
+        try { await Album.LoadQqAsync(albumMid); }
         catch { /* 网络失败:停留在专辑页空内容 */ }
     }
 

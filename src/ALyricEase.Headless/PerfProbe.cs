@@ -13,6 +13,7 @@ using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
 
@@ -43,6 +44,7 @@ public static class PerfProbe
         // ── 真实网络:启动即拉首页 + 封面下载期 UI 停顿 ──
         var realVm = new RecommendViewModel(
             ServiceLocator.Get<NetEaseApiClient>(),
+            ServiceLocator.Get<QQMusicApiClient>(),
             ServiceLocator.Get<DispatcherService>(),
             _vm.Player);
         var swReal = Stopwatch.StartNew();
@@ -91,6 +93,7 @@ public static class PerfProbe
 
         var preVm = new RecommendViewModel(
             ServiceLocator.Get<NetEaseApiClient>(),
+            ServiceLocator.Get<QQMusicApiClient>(),
             ServiceLocator.Get<DispatcherService>(),
             _vm.Player);
         var sections = new List<RecommendSectionViewModel>();

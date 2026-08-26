@@ -106,17 +106,23 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
     }
 
-    /// <summary>QQ音乐 Cookie 登录:uin + qqmusic_key 拼成标准 cookie 交给客户端解析持久化;
-    /// 成功即视为完成(无账号资料页,效果是 VIP/320k 曲目可播)。AppShell 监听 IsQqLoggedIn 自动关弹窗。</summary>
+    /// <summary>QQ音乐 Cookie 登录:两框分开填 uin / qqmusic_key;也兼容在 uin 框直接粘贴
+    /// 整段完整 Cookie(含 p_skey 等,账号接口需要)。AppShell 监听 IsQqLoggedIn 自动关弹窗。</summary>
     private void LoginQQ()
     {
         var uin = QqUinInput.Trim();
         var key = QqKeyInput.Trim();
-        if (uin.Length == 0 || key.Length == 0) { Message = "请填写 uin 和 qqmusic_key 两项"; return; }
+        // 完整 Cookie 粘进 uin 框:直接整段交给客户端解析
+        var raw = uin.Contains('=') ? uin : $"uin={uin}; qqmusic_key={key}";
+        if ((uin.Length == 0 || key.Length == 0) && !uin.Contains('='))
+        {
+            Message = "请填写 uin 和 qqmusic_key 两项";
+            return;
+        }
 
         try
         {
-            _qqApi.SetCookie($"uin={uin}; qqmusic_key={key}");
+            _qqApi.SetCookie(raw);
             IsQqLoggedIn = true;
             QqUinInput = "";
             QqKeyInput = "";

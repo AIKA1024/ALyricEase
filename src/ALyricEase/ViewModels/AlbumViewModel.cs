@@ -1,23 +1,28 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>专辑页:封面 + 名字 + 歌手 + 全量曲目。从歌单行/歌手页的专辑入口进入。</summary>
+/// <summary>专辑页:封面 + 名字 + 歌手 + 全量曲目。从歌单行/歌手页的专辑入口进入。
+/// 网易云按数字 id、QQ 按 album mid 取数(两套 Load)。</summary>
 public sealed partial class AlbumViewModel : ViewModelBase
 {
     private readonly NetEaseApiClient _api;
+    private readonly QQMusicApiClient _qqApi;
     private readonly PlayerViewModel _player;
 
-    public AlbumViewModel(NetEaseApiClient api, PlayerViewModel player)
+    public AlbumViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player)
     {
         _api = api;
+        _qqApi = qqApi;
         _player = player;
     }
 
@@ -67,5 +72,37 @@ public sealed partial class AlbumViewModel : ViewModelBase
     {
         if (Songs.Count == 0) return;
         await Songs[0].PlayCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>QQ 音乐专辑页(按 album mid):信息 + 曲目并行拉;发行日期为 "yyyy-MM-dd" 文本。
+    /// 歌手名取自曲目(详情接口的 singer 结构不稳定)。失败静默。</summary>
+    public async Task LoadQqAsync(string albumMid)
+    {
+        try
+        {
+            var infoTask = _qqApi.GetAlbumInfoByMidAsync(albumMid);
+            var songsTask = _qqApi.GetAlbumSongsByMidAsync(albumMid);
+            await Task.WhenAll(infoTask, songsTask).ConfigureAwait(true);
+            var info = infoTask.Result;
+            var songs = songsTask.Result;
+
+            Name = info.Name;
+            ArtistName = songs.FirstOrDefault()?.Artist ?? "";
+            TrackCountText = $"{songs.Count} 首";
+            PublishTimeMs = DateTimeOffset.TryParse(info.PublishDate, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var d) ? d.ToUnixTimeMilliseconds() : 0;
+            Description = info.Description;
+            Cover = await CoverLoader.LoadAsync(
+                $"https://y.gtimg.cn/music/photo_new/T002R300x300M000{albumMid}.jpg", 300);
+
+            Songs.Clear();
+            var i = 1;
+            foreach (var s in songs)
+                Songs.Add(new SongItemViewModel(s, _player.PlayFromList, i++, songs, source: info.Name));
+        }
+        catch
+        {
+            // 网络失败静默:保留旧内容,不崩
+        }
     }
 }

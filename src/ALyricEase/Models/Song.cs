@@ -26,12 +26,18 @@ public sealed class Song
     /// <summary>0 免费,其余为 VIP/付费(展示用)。</summary>
     public int Fee { get; init; }
 
-    /// <summary>歌手 id 列表(点击歌手跳歌手页;显示名用 Artist)。</summary>
+    /// <summary>歌手 id 列表(点击歌手跳歌手页;显示名用 Artist。网易云填,QQ 留空)。</summary>
     public IReadOnlyList<long> ArtistIds { get; init; } = Array.Empty<long>();
 
-    /// <summary>歌手名列表(多歌手时子菜单逐项用,与 ArtistIds 一一对应)。</summary>
+    /// <summary>歌手名列表(多歌手时子菜单逐项用,与 ArtistIds/ArtistMids 一一对应)。</summary>
     public IReadOnlyList<string> ArtistNames { get; init; } = Array.Empty<string>();
 
-    /// <summary>专辑 id(点击专辑跳专辑页;显示名用 Album)。</summary>
+    /// <summary>歌手 mid 列表(QQ 音乐填,与 ArtistNames 一一对应;网易云留空)。</summary>
+    public IReadOnlyList<string> ArtistMids { get; init; } = Array.Empty<string>();
+
+    /// <summary>专辑 id(点击专辑跳专辑页;显示名用 Album。网易云填)。</summary>
     public long AlbumId { get; init; }
+
+    /// <summary>专辑 mid(QQ 音乐填;网易云留空)。</summary>
+    public string AlbumMid { get; init; } = "";
 }

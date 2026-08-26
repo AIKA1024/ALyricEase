@@ -160,7 +160,7 @@
                 <Button Classes="icon-button" Command="{Binding GoDebugCommand}" Width="48" Height="40"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                         IsVisible="{Binding IsDebug}" ToolTip.Tip="Debug">
-                  <TextBlock Text="{DynamicResource IconHamburger}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                  <TextBlock Text="{DynamicResource IconCode}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
               </StackPanel>

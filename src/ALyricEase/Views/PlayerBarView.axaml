@@ -141,7 +141,12 @@
                 <Button.Flyout>
                   <Flyout Placement="Top">
                     <StackPanel Spacing="8" Margin="4">
-                      <Slider Value="{Binding Volume}" Minimum="0" Maximum="100" Height="150" Orientation="Vertical" />
+                      <!-- WinUI3 风格滑块 + 刻度(每 20 一格);模板列宽非星号,拉伸会贴左,须按内容宽居中 -->
+                      <Slider Theme="{StaticResource WinUISliderTheme}"
+                              Value="{Binding Volume}" Minimum="0" Maximum="100"
+                              Height="150" Orientation="Vertical"
+                              HorizontalAlignment="Center"
+                              TickPlacement="Outside" TickFrequency="20" />
                       <TextBlock Text="{Binding Volume}" HorizontalAlignment="Center" />
                     </StackPanel>
                   </Flyout>

@@ -1,0 +1,358 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- WinUI/FluentAvalonia 风格滚动条(参考 amwx/FluentAvalonia 的 ScrollBarStyles/ScrollViewerStyles):
+       12px 条,滑块 8px 居中于轨道(两侧各留 2px 缝隙),平时收成细线(scale 0.35 + 离边缘留缝),
+       悬停展开全长轨道(含箭头区)与步进箭头;
+       内容始终从滚动条下方穿过(WinUI overlay 式),右下分隔块仅展开时浮现。
+       配色键全部来自 FluentTheme 内置调色板(FluentControlResources),无需额外包。 -->
+  <Styles.Resources>
+    <!-- 收起态细线:缩窄后向内收 2px(WinUI 动画近似)/ 展开态复原 -->
+    <TransformOperations x:Key="VerticalThumbScale">scaleX(0.35) translateX(-2px)</TransformOperations>
+    <TransformOperations x:Key="HorizontalThumbScale">scaleY(0.35) translateY(-2px)</TransformOperations>
+    <x:Double x:Key="ScrollBarSize">12</x:Double>
+    <x:Double x:Key="ScrollBarVerticalThumbMinHeight">20</x:Double>
+    <x:Double x:Key="ScrollBarVerticalThumbMinWidth">8</x:Double>
+    <x:Double x:Key="ScrollBarHorizontalThumbMinWidth">20</x:Double>
+    <x:Double x:Key="ScrollBarHorizontalThumbMinHeight">8</x:Double>
+    <x:Double x:Key="ScrollBarThumbStrokeThickness">1</x:Double>
+    <x:Double x:Key="ScrollBarButtonArrowIconFontSize">10</x:Double>
+    <CornerRadius x:Key="ScrollBarCornerRadius">3</CornerRadius>
+
+    <!-- 滑块:Rectangle(WinUI 观感),收起/展开形变过渡。
+         注意:Fluent 调色板没有 ScrollBarThumbBackground/ScrollBarThumbBorderBrush 键
+         (只有 *ThumbFill* 与 PanningThumbBackground),不要引用不存在的键(会静默透明)。 -->
+    <ControlTheme x:Key="ScrollBarThumb" TargetType="Thumb">
+      <Setter Property="Background" Value="{DynamicResource ScrollBarPanningThumbBackground}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate>
+            <Rectangle Name="ThumbVisual"
+                       Fill="{TemplateBinding Background}"
+                       RadiusX="2" RadiusY="2" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.1" />
+        </Transitions>
+      </Setter>
+      <Style Selector="^:pointerover /template/ Rectangle#ThumbVisual">
+        <Setter Property="Fill" Value="{DynamicResource ScrollBarThumbFillPointerOver}" />
+      </Style>
+      <Style Selector="^:pressed /template/ Rectangle#ThumbVisual">
+        <Setter Property="Fill" Value="{DynamicResource ScrollBarThumbFillPressed}" />
+      </Style>
+      <Style Selector="^:disabled /template/ Rectangle#ThumbVisual">
+        <Setter Property="Fill" Value="{DynamicResource ScrollBarThumbFillDisabled}" />
+      </Style>
+    </ControlTheme>
+
+    <!-- 翻页按钮:透明占位(点击轨道翻页用),不画任何视觉 -->
+    <ControlTheme x:Key="ScrollBarPageButton" TargetType="RepeatButton">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate>
+            <Border Background="{TemplateBinding Background}" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </ControlTheme>
+
+    <!-- 步进箭头按钮:仅悬停滚动条展开时浮现 -->
+    <ControlTheme x:Key="ScrollBarLineButton" TargetType="RepeatButton">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate>
+            <Border Background="{DynamicResource ScrollBarButtonBackground}"
+                    BorderBrush="{DynamicResource ScrollBarButtonBorderBrush}"
+                    CornerRadius="{DynamicResource ScrollBarCornerRadius}">
+              <TextBlock Name="ArrowGlyph"
+                         Text="{TemplateBinding Content}"
+                         FontFamily="Segoe MDL2 Assets"
+                         FontSize="{DynamicResource ScrollBarButtonArrowIconFontSize}"
+                         Foreground="{DynamicResource ScrollBarButtonArrowForeground}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Setter Property="RenderTransform" Value="scale(1)" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+        </Transitions>
+      </Setter>
+      <Style Selector="^:pointerover /template/ TextBlock#ArrowGlyph">
+        <Setter Property="Foreground" Value="{DynamicResource ScrollBarButtonArrowForegroundPointerOver}" />
+      </Style>
+      <Style Selector="^:pressed /template/ TextBlock#ArrowGlyph">
+        <Setter Property="Foreground" Value="{DynamicResource ScrollBarButtonArrowForegroundPressed}" />
+      </Style>
+      <Style Selector="^:disabled /template/ TextBlock#ArrowGlyph">
+        <Setter Property="Foreground" Value="{DynamicResource ScrollBarButtonArrowForegroundDisabled}" />
+      </Style>
+    </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type ScrollBar}" TargetType="ScrollBar">
+    <Setter Property="MinWidth" Value="{DynamicResource ScrollBarSize}" />
+    <Setter Property="MinHeight" Value="{DynamicResource ScrollBarSize}" />
+    <Setter Property="Background" Value="{DynamicResource ScrollBarBackground}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ScrollBarBorderBrush}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ScrollBarCornerRadius}" />
+
+    <Style Selector="^:vertical">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate>
+            <Grid x:Name="Root">
+              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}">
+                <Grid RowDefinitions="Auto,*,Auto">
+                  <!-- 轨道:平时隐藏,展开时浮现;全长覆盖(含上下箭头区),滑块居中且窄于轨道 -->
+                  <Rectangle Name="TrackRect"
+                             Fill="{DynamicResource ScrollBarTrackFill}"
+                             Stroke="{DynamicResource ScrollBarTrackStroke}"
+                             StrokeThickness="{DynamicResource ScrollBarTrackBorderThemeThickness}"
+                             Opacity="0"
+                             RadiusX="2" RadiusY="2"
+                             Grid.RowSpan="3">
+                    <Rectangle.Transitions>
+                      <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+                      </Transitions>
+                    </Rectangle.Transitions>
+                  </Rectangle>
+
+                  <RepeatButton Name="PART_LineUpButton"
+                                HorizontalAlignment="Center"
+                                Theme="{StaticResource ScrollBarLineButton}"
+                                Grid.Row="0"
+                                Opacity="0"
+                                Focusable="False"
+                                MinWidth="{DynamicResource ScrollBarSize}"
+                                Height="{DynamicResource ScrollBarSize}"
+                                Content="&#xEDDB;"
+                                Interval="50"
+                                AutomationProperties.Name="向上微滚" />
+
+                  <Track Grid.Row="1"
+                         Minimum="{TemplateBinding Minimum}"
+                         Maximum="{TemplateBinding Maximum}"
+                         Value="{TemplateBinding Value, Mode=TwoWay}"
+                         DeferThumbDrag="{TemplateBinding ScrollViewer.IsDeferredScrollingEnabled}"
+                         ViewportSize="{TemplateBinding ViewportSize}"
+                         Orientation="{TemplateBinding Orientation}"
+                         IsDirectionReversed="True">
+                    <Track.DecreaseButton>
+                      <RepeatButton Name="PART_PageUpButton"
+                                    Classes="largeChange"
+                                    Theme="{StaticResource ScrollBarPageButton}"
+                                    Focusable="False"
+                                    Opacity="0"
+                                    AutomationProperties.Name="向上翻页" />
+                    </Track.DecreaseButton>
+                    <Track.IncreaseButton>
+                      <RepeatButton Name="PART_PageDownButton"
+                                    Classes="largeChange"
+                                    Theme="{StaticResource ScrollBarPageButton}"
+                                    Focusable="False"
+                                    Opacity="0"
+                                    AutomationProperties.Name="向下翻页" />
+                    </Track.IncreaseButton>
+                    <Thumb Theme="{StaticResource ScrollBarThumb}"
+                           Opacity="1"
+                           Background="{DynamicResource ScrollBarPanningThumbBackground}"
+                           Width="{StaticResource ScrollBarVerticalThumbMinWidth}"
+                           MinHeight="{StaticResource ScrollBarVerticalThumbMinHeight}"
+                           CornerRadius="{TemplateBinding CornerRadius}"
+                           RenderTransformOrigin="100%,50%" />
+                  </Track>
+
+                  <RepeatButton Name="PART_LineDownButton"
+                                HorizontalAlignment="Center"
+                                Theme="{StaticResource ScrollBarLineButton}"
+                                Grid.Row="2"
+                                Focusable="False"
+                                MinWidth="{DynamicResource ScrollBarSize}"
+                                Height="{DynamicResource ScrollBarSize}"
+                                Interval="50"
+                                Opacity="0"
+                                Content="&#xEDDC;"
+                                AutomationProperties.Name="向下微滚" />
+                </Grid>
+              </Border>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style Selector="^ /template/ Thumb">
+        <Setter Property="RenderTransform" Value="{DynamicResource VerticalThumbScale}" />
+      </Style>
+    </Style>
+
+    <Style Selector="^:horizontal">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate>
+            <Grid x:Name="Root">
+              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                              <Rectangle Name="TrackRect"
+                                         Fill="{DynamicResource ScrollBarTrackFill}"
+                                         Stroke="{DynamicResource ScrollBarTrackStroke}"
+                                         StrokeThickness="{DynamicResource ScrollBarTrackBorderThemeThickness}"
+                                         Opacity="0"
+                                         RadiusX="2" RadiusY="2"
+                                         Grid.ColumnSpan="3">
+                    <Rectangle.Transitions>
+                      <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+                      </Transitions>
+                    </Rectangle.Transitions>
+                  </Rectangle>
+
+                  <RepeatButton Name="PART_LineUpButton"
+                                HorizontalAlignment="Center"
+                                Theme="{StaticResource ScrollBarLineButton}"
+                                Opacity="0"
+                                Focusable="False"
+                                MinHeight="{DynamicResource ScrollBarSize}"
+                                Width="{DynamicResource ScrollBarSize}"
+                                Content="&#xEDD9;"
+                                Interval="50"
+                                AutomationProperties.Name="向左微滚" />
+
+                  <Track Grid.Column="1"
+                         Minimum="{TemplateBinding Minimum}"
+                         Maximum="{TemplateBinding Maximum}"
+                         Value="{TemplateBinding Value, Mode=TwoWay}"
+                         DeferThumbDrag="{TemplateBinding ScrollViewer.IsDeferredScrollingEnabled}"
+                         ViewportSize="{TemplateBinding ViewportSize}"
+                         Orientation="{TemplateBinding Orientation}">
+                    <Track.DecreaseButton>
+                      <RepeatButton Name="PART_PageUpButton"
+                                    Classes="largeChange"
+                                    Theme="{StaticResource ScrollBarPageButton}"
+                                    Focusable="False"
+                                    Opacity="0"
+                                    AutomationProperties.Name="向左翻页" />
+                    </Track.DecreaseButton>
+                    <Track.IncreaseButton>
+                      <RepeatButton Name="PART_PageDownButton"
+                                    Classes="largeChange"
+                                    Theme="{StaticResource ScrollBarPageButton}"
+                                    Focusable="False"
+                                    Opacity="0"
+                                    AutomationProperties.Name="向右翻页" />
+                    </Track.IncreaseButton>
+                    <Thumb Theme="{StaticResource ScrollBarThumb}"
+                           Opacity="1"
+                           Background="{DynamicResource ScrollBarPanningThumbBackground}"
+                           MinWidth="{DynamicResource ScrollBarHorizontalThumbMinWidth}"
+                           Height="{DynamicResource ScrollBarHorizontalThumbMinHeight}"
+                           CornerRadius="{TemplateBinding CornerRadius}"
+                           RenderTransformOrigin="50%,100%" />
+                  </Track>
+
+                  <RepeatButton Name="PART_LineDownButton"
+                                HorizontalAlignment="Center"
+                                Theme="{StaticResource ScrollBarLineButton}"
+                                Grid.Column="2"
+                                Focusable="False"
+                                MinWidth="{DynamicResource ScrollBarSize}"
+                                Height="{DynamicResource ScrollBarSize}"
+                                Interval="50"
+                                Opacity="0"
+                                Content="&#xEDDA;"
+                                AutomationProperties.Name="向右微滚" />
+                </Grid>
+              </Border>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style Selector="^ /template/ Thumb">
+        <Setter Property="RenderTransform" Value="{DynamicResource HorizontalThumbScale}" />
+      </Style>
+    </Style>
+
+    <!-- 展开(指针悬停在滚动条上/拖拽中):轨道浮现、滑块恢复全宽、箭头按钮出现 -->
+    <Style Selector="^[IsExpanded=true]">
+      <Style Selector="^ /template/ Grid#Root">
+        <Setter Property="Background" Value="{DynamicResource ScrollBarBackgroundPointerOver}" />
+      </Style>
+      <Style Selector="^ /template/ Rectangle#TrackRect">
+        <Setter Property="Fill" Value="{DynamicResource ScrollBarTrackFillPointerOver}" />
+        <Setter Property="Stroke" Value="{DynamicResource ScrollBarTrackStrokePointerOver}" />
+        <Setter Property="Opacity" Value="1" />
+      </Style>
+      <Style Selector="^ /template/ Thumb">
+        <Setter Property="RenderTransform" Value="none" />
+        <Setter Property="Background" Value="{DynamicResource ScrollBarThumbFillPointerOver}" />
+      </Style>
+      <Style Selector="^ /template/ RepeatButton">
+        <Setter Property="Opacity" Value="1" />
+      </Style>
+    </Style>
+
+    <Style Selector="^:disabled /template/ Grid#Root">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+  </ControlTheme>
+
+  <!-- ScrollViewer:内容跨满两行两列(从滚动条下方穿过,WinUI overlay 式),右下分隔块展开时浮现 -->
+  <ControlTheme x:Key="{x:Type ScrollViewer}" TargetType="ScrollViewer">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate>
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+            <ScrollContentPresenter Name="PART_ContentPresenter"
+                                    Grid.RowSpan="2"
+                                    Grid.ColumnSpan="2"
+                                    Background="{TemplateBinding Background}"
+                                    HorizontalSnapPointsType="{TemplateBinding HorizontalSnapPointsType}"
+                                    VerticalSnapPointsType="{TemplateBinding VerticalSnapPointsType}"
+                                    HorizontalSnapPointsAlignment="{TemplateBinding HorizontalSnapPointsAlignment}"
+                                    VerticalSnapPointsAlignment="{TemplateBinding VerticalSnapPointsAlignment}"
+                                    Margin="{TemplateBinding Padding}"
+                                    ScrollViewer.IsScrollInertiaEnabled="{TemplateBinding IsScrollInertiaEnabled}">
+              <ScrollContentPresenter.GestureRecognizers>
+                <ScrollGestureRecognizer CanHorizontallyScroll="{Binding CanHorizontallyScroll, ElementName=PART_ContentPresenter}"
+                                         CanVerticallyScroll="{Binding CanVerticallyScroll, ElementName=PART_ContentPresenter}"
+                                         IsScrollInertiaEnabled="{Binding (ScrollViewer.IsScrollInertiaEnabled), ElementName=PART_ContentPresenter}"
+                                         Offset="{Binding Offset, ElementName=PART_ContentPresenter}"
+                                         Viewport="{Binding Viewport, ElementName=PART_ContentPresenter}"
+                                         Extent="{Binding Extent, ElementName=PART_ContentPresenter}" />
+              </ScrollContentPresenter.GestureRecognizers>
+            </ScrollContentPresenter>
+            <ScrollBar Name="PART_HorizontalScrollBar"
+                       Orientation="Horizontal"
+                       Grid.Row="1" />
+            <ScrollBar Name="PART_VerticalScrollBar"
+                       Orientation="Vertical"
+                       Grid.Column="1" />
+            <Panel Name="PART_ScrollBarsSeparator"
+                   Grid.Row="1" Grid.Column="1"
+                   Background="{DynamicResource ScrollViewerScrollBarsSeparatorBackground}"
+                   Opacity="0">
+              <Panel.Transitions>
+                <Transitions>
+                  <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+                </Transitions>
+              </Panel.Transitions>
+            </Panel>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style Selector="^[IsExpanded=true] /template/ Panel#PART_ScrollBarsSeparator">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+  </ControlTheme>
+  </Styles.Resources>
+</Styles>

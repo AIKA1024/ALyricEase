@@ -45,13 +45,18 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>登录弹窗当前选中的音源页签:false=网易云(默认),true=QQ音乐。</summary>
     [ObservableProperty] private bool _isQQLoginTab;
 
-    /// <summary>QQ音乐登录输入:uin 与 qqmusic_key 分开填写。</summary>
-    [ObservableProperty] private string _qqUinInput = "";
-
-    [ObservableProperty] private string _qqKeyInput = "";
+    /// <summary>QQ音乐登录输入:y.qq.com 的整段完整 Cookie(客户端解析 uin/qqmusic_key 并原文保存;
+    /// 账号接口依赖完整字段,精简两项过不了服务端校验)。</summary>
+    [ObservableProperty] private string _qqCookieInput = "";
 
     /// <summary>QQ音乐已登录(本地 cookie 有效;解锁 VIP/320k 播放)。</summary>
     [ObservableProperty] private bool _isQqLoggedIn;
+
+    /// <summary>QQ 登录用户昵称(歌单详情页创建者显示用;拉歌单时顺带缓存)。</summary>
+    [ObservableProperty] private string _qqUserName = "";
+
+    /// <summary>歌单详情页 hero 显示的创建者:网易云歌单 = 网易云昵称,QQ 歌单 = QQ 昵称。</summary>
+    [ObservableProperty] private string _creatorName = "";
 
     public bool IsNetEaseLoginTab => !IsQQLoginTab;
 
@@ -63,18 +68,60 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     public bool ShowLogin => !IsLoggedIn;
 
+    /// <summary>歌单详情页内容可见性:任一音源登录即可(只登 QQ 时网易云未登录也要能看 QQ 歌单)。</summary>
+    public bool HasAnyLogin => IsLoggedIn || IsQqLoggedIn;
+
     public ObservableCollection<PlaylistItemViewModel> Playlists { get; } = new();
+
+    /// <summary>QQ 登录用户的歌单(侧边栏"QQ音乐"分组;一次全量拉取,失败静默可重试)。</summary>
+    public ObservableCollection<PlaylistItemViewModel> QqPlaylists { get; } = new();
+
+    private bool _qqPlaylistsLoaded;
+
     public ObservableCollection<SongItemViewModel> Tracks { get; } = new();
 
-    partial void OnIsLoggedInChanged(bool value) => OnPropertyChanged(nameof(ShowLogin));
+    partial void OnIsLoggedInChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowLogin));
+        OnPropertyChanged(nameof(HasAnyLogin));
+    }
 
-    /// <summary>进入页面时调用:恢复本地登录态(QQ cookie 纯本地解析;网易云拉资料,不阻塞 UI,失败静默)。</summary>
+    partial void OnIsQqLoggedInChanged(bool value) => OnPropertyChanged(nameof(HasAnyLogin));
+
+    /// <summary>进入页面时调用:恢复本地登录态(网易云拉资料,不阻塞 UI,失败静默),QQ 侧由 EnsureQqLoadedAsync 处理。</summary>
     public async Task EnsureLoadedAsync()
+    {
+        await EnsureQqLoadedAsync();
+        if (IsLoggedIn || _cookie.MusicU is null) return;
+        await LoadProfileAndPlaylistsAsync();
+    }
+
+    /// <summary>恢复 QQ 登录态(cookie 纯本地解析)并按需拉取 QQ 用户歌单(失败静默,下次进入重试)。</summary>
+    public async Task EnsureQqLoadedAsync()
     {
         if (!IsQqLoggedIn && _cookie.QQCookieRaw is { Length: > 0 })
             IsQqLoggedIn = _qqApi.IsLoggedIn;
-        if (IsLoggedIn || _cookie.MusicU is null) return;
-        await LoadProfileAndPlaylistsAsync();
+        if (!IsQqLoggedIn || _qqPlaylistsLoaded) return;
+        await LoadQqPlaylistsAsync();
+    }
+
+    /// <summary>拉取 QQ 用户歌单填入 QqPlaylists(一次全量),昵称一并缓存。失败静默且不标记已加载。</summary>
+    private async Task LoadQqPlaylistsAsync()
+    {
+        try
+        {
+            var profile = await _qqApi.GetUserProfileAsync();
+            QqUserName = profile.Nickname;
+            var playlists = await _qqApi.GetUserPlaylistsAsync();
+            QqPlaylists.Clear();
+            foreach (var p in playlists)
+                QqPlaylists.Add(new PlaylistItemViewModel(p));
+            _qqPlaylistsLoaded = true;
+        }
+        catch (ApiException)
+        {
+            // Cookie 失效/网络失败:分组保持空,下次进入或重启重试
+        }
     }
 
     [RelayCommand]
@@ -82,7 +129,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         if (IsQQLoginTab)
         {
-            LoginQQ();
+            await LoginQQAsync();
             return;
         }
         var raw = MusicUInput.Trim();
@@ -106,31 +153,35 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
     }
 
-    /// <summary>QQ音乐 Cookie 登录:两框分开填 uin / qqmusic_key;也兼容在 uin 框直接粘贴
-    /// 整段完整 Cookie(含 p_skey 等,账号接口需要)。AppShell 监听 IsQqLoggedIn 自动关弹窗。</summary>
-    private void LoginQQ()
+    /// <summary>QQ音乐 Cookie 登录:粘贴 y.qq.com 的整段完整 Cookie(含 uin/qqmusic_key/p_skey 等)。
+    /// 本地解析通过后立即调一次服务端资料接口验证 —— 现网对不完整/失效的 Cookie 会"静默保存成登录态",
+    /// 不验证会出现 UI 已登录而账号接口全 401 型假象;验证失败回滚本地与持久化 Cookie。
+    /// AppShell 监听 IsQqLoggedIn 自动关弹窗。</summary>
+    private async Task LoginQQAsync()
     {
-        var uin = QqUinInput.Trim();
-        var key = QqKeyInput.Trim();
-        // 完整 Cookie 粘进 uin 框:直接整段交给客户端解析
-        var raw = uin.Contains('=') ? uin : $"uin={uin}; qqmusic_key={key}";
-        if ((uin.Length == 0 || key.Length == 0) && !uin.Contains('='))
-        {
-            Message = "请填写 uin 和 qqmusic_key 两项";
-            return;
-        }
+        var raw = QqCookieInput.Trim();
+        if (raw.Length == 0) { Message = "请粘贴 y.qq.com 的整段 Cookie"; return; }
 
+        IsBusy = true;
+        Message = null;
         try
         {
             _qqApi.SetCookie(raw);
+            var profile = await _qqApi.GetUserProfileAsync();
             IsQqLoggedIn = true;
-            QqUinInput = "";
-            QqKeyInput = "";
-            Message = null;
+            QqUserName = profile.Nickname;
+            _ = LoadQqPlaylistsAsync(); // 侧边栏"QQ音乐"分组随后出现(MainViewModel 监听集合变化)
+            QqCookieInput = "";
         }
         catch (ApiException ex)
         {
+            _qqApi.ClearCookie(); // 服务端不认:不留半残登录态(内存 + 存档一并清)
+            IsQqLoggedIn = false;
             Message = $"登录失败:{ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 
@@ -147,6 +198,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         AvatarUrl = "";
         PlaylistTitle = "";
         Playlists.Clear();
+        QqPlaylists.Clear();
+        QqUserName = "";
+        CreatorName = "";
+        _qqPlaylistsLoaded = false;
         Tracks.Clear();
         _isCloud = false;
     }
@@ -227,6 +282,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _ = playlist.EnsureLargeCoverLoadedAsync(); // 600px 大图,保证头部 200px 显示清晰
         Tracks.Clear();
         PlaylistTitle = playlist.Name;
+        CreatorName = UserName;
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
@@ -247,6 +303,46 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
             // 后台静默补充到 ~200 首,让首屏滚动不断档(至多一次 song/detail 请求,不阻塞 UI)
             await LoadMoreAsync(fillTo: 200, generation: generation);
+        }
+        catch (ApiException ex)
+        {
+            if (generation == _loadGeneration) Message = $"加载歌单失败:{ex.Message}";
+        }
+        finally
+        {
+            if (generation == _loadGeneration) IsBusy = false;
+        }
+    }
+
+    /// <summary>点开 QQ 歌单:一次拉全量曲目(QQ 无 trackIds 增量协议,fcg 按歌单 id 整页返回)。
+    /// 复用网易云歌单页 UI:hero/曲目列表/共享队列;_trackIds 留空即无增量补充,播放全部直接用已物化列表。</summary>
+    [RelayCommand]
+    private async Task OpenQqPlaylistAsync(PlaylistItemViewModel? playlist)
+    {
+        if (playlist is null) return;
+        var generation = ++_loadGeneration;
+        _isCloud = false;
+        SelectedPlaylist = playlist;
+        playlist.EnsureCoverLoaded();
+        _ = playlist.EnsureLargeCoverLoadedAsync();
+        Tracks.Clear();
+        PlaylistTitle = playlist.Name;
+        CreatorName = QqUserName;
+        _trackIds = new List<long>();
+        _known.Clear();
+        _queueSongs.Clear();
+        _materialized = 0;
+        IsBusy = true;
+        Message = null;
+        try
+        {
+            var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id);
+            if (generation != _loadGeneration) return; // 期间切了别的歌单,丢弃过期结果
+            foreach (var s in songs)
+            {
+                Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs, null, playlist.Name));
+                _queueSongs.Add(s);
+            }
         }
         catch (ApiException ex)
         {
@@ -334,6 +430,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var profile = await _api.GetUserProfileAsync();
             IsLoggedIn = true;
             UserName = profile.Nickname;
+            CreatorName = profile.Nickname;
             AvatarUrl = profile.AvatarUrl;
             _ = LoadAvatarAsync();
 

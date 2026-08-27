@@ -223,7 +223,7 @@ public sealed record QQMyDiss
     public List<QQDissItem>? List { get; init; }
 }
 
-/// <summary>歌单项。id 兼容 dissid/disstid,名兼容 dissname/dirname,封面兼容 picurl/logo。</summary>
+/// <summary>歌单项(老主页通道回落用)。id 兼容 dissid/disstid,名兼容 dissname/dirname,封面兼容 picurl/logo。</summary>
 public sealed record QQDissItem
 {
     [JsonPropertyName("dissid")] public long DissId { get; init; }
@@ -245,27 +245,48 @@ public sealed record QQDissItem
     public string? Intro { get; init; }
 }
 
-public sealed record QQCdListResponse
+// ---------- 官方"每日30首"入口(music.recommend.RecommendFeed/get_recommend_feed)----------
+
+public sealed record QQRecommendFeedResponse
 {
     public int Code { get; init; }
 
-    [JsonPropertyName("cdlist")] public List<QQCdInfo>? Cdlist { get; init; }
+    [JsonPropertyName("req_0")] public QQRecommendFeedReq? Req0 { get; init; }
 }
 
-public sealed record QQCdInfo
+public sealed record QQRecommendFeedReq
 {
-    [JsonPropertyName("disstid")] public long DissTid { get; init; }
+    public int Code { get; init; }
 
-    [JsonPropertyName("dissname")] public string? Dissname { get; init; }
-
-    public string? Logo { get; init; }
-
-    [JsonPropertyName("songcount")] public int SongCount { get; init; }
-
-    [JsonPropertyName("songlist")] public List<QQTrackDto>? Songlist { get; init; }
+    public QQRecommendFeedData? Data { get; init; }
 }
 
-// ---------- 雷达每日推荐(music.recommend.TrackRelationServer/GetRadarSong)----------
+public sealed record QQRecommendFeedData
+{
+    /// <summary>首页货架;shelf[0].niche[0].v_card 为"每日30首/新歌推荐"等入口卡片。</summary>
+    [JsonPropertyName("v_shelf")] public List<QQFeedShelfDto>? VShelf { get; init; }
+}
+
+public sealed record QQFeedShelfDto
+{
+    [JsonPropertyName("v_niche")] public List<QQFeedNicheDto>? VNiche { get; init; }
+}
+
+public sealed record QQFeedNicheDto
+{
+    [JsonPropertyName("v_card")] public List<QQFeedCardDto>? VCard { get; init; }
+}
+
+public sealed record QQFeedCardDto
+{
+    /// <summary>入口名("每日30首"等);部分卡片无标题。</summary>
+    public string? Title { get; init; }
+
+    /// <summary>卡片目标 id("每日30首" → 当日动态 disstid,每日轮换)。</summary>
+    public long Id { get; init; }
+}
+
+// ---------- 雷达每日推荐(music.recommend.TrackRelationServer/GetRadarSong;官方路径回落)----------
 
 public sealed record QQRadarResponse
 {
@@ -283,15 +304,12 @@ public sealed record QQRadarReq
 
 public sealed record QQRadarData
 {
-    [JsonPropertyName("vecSongs")] public List<QQRadarEntry>? VecSongs { get; init; }
+    /// <summary>推荐曲目数字 id(现网行为:ReqType=2 每页稳定回 5 个去重 id;旧 vec_songs 轨道流已停止下发,
+    /// 字段不再建模)。</summary>
+    [JsonPropertyName("RecommendSongIds")] public List<long>? RecommendSongIds { get; init; }
 
     /// <summary>还有下一页(单页仅约 5 首,翻页拼满)。</summary>
     [JsonPropertyName("hasMore")] public bool HasMore { get; init; }
-}
-
-public sealed record QQRadarEntry
-{
-    [JsonPropertyName("track")] public QQTrackDto? Track { get; init; }
 }
 
 // ---------- 歌手/专辑(mid 维度,QQ 导航页)----------
@@ -393,26 +411,128 @@ public sealed record QQAlbumBasicInfoDto
 /// <summary>专辑基础信息(客户端映射后的领域形态,非上游响应)。</summary>
 public sealed record QQAlbumInfo(string Name, string PublishDate, string Description);
 
-// ---------- 今日私享歌单(官方客户端"每日30曲",music.srfDissInfo.DissInfo/CgiGetDiss)----------
+// ---------- 歌单详情(music.srfDissInfo.aiDissInfo/uniform_get_Dissinfo;与网页端同源,
+// 旧 DissInfo/CgiGetDiss 缺 userinfo/tag/orderlist 时现网只回 code=0 但 songlist 为空)----------
 
-public sealed record QQCgiGetDissResponse
+public sealed record QQUniformDissResponse
 {
     public int Code { get; init; }
 
-    [JsonPropertyName("req_0")] public QQCgiGetDissReq? Req0 { get; init; }
+    [JsonPropertyName("req_0")] public QQUniformDissReq? Req0 { get; init; }
 }
 
-public sealed record QQCgiGetDissReq
+public sealed record QQUniformDissReq
 {
     public int Code { get; init; }
 
-    public QQCgiGetDissData? Data { get; init; }
+    public QQUniformDissData? Data { get; init; }
 }
 
-public sealed record QQCgiGetDissData
+public sealed record QQUniformDissData
 {
+    /// <summary>内部业务码:-100006 歌单不存在/不可见;通常与 songlist 空伴随出现。</summary>
+    public int Code { get; init; }
+
     /// <summary>曲目为标准 track_info 同构,直接复用 QQTrackDto。</summary>
     [JsonPropertyName("songlist")] public List<QQTrackDto>? Songlist { get; init; }
 
-    [JsonPropertyName("total_song_num")] public int TotalSongNum { get; init; }
+    /// <summary>歌单总曲数(分页终止条件;个别形态漂移时为 0)。</summary>
+    [JsonPropertyName("total_song_num")] public long TotalSongNum { get; init; }
+
+    /// <summary>歌单元信息(title/picurl/host_nick),备用。</summary>
+    [JsonPropertyName("dirinfo")] public QQDirInfoDto? DirInfo { get; init; }
+}
+
+public sealed record QQDirInfoDto
+{
+    [JsonPropertyName("title")] public string? Title { get; init; }
+
+    [JsonPropertyName("picurl")] public string? PicUrl { get; init; }
+
+    [JsonPropertyName("host_nick")] public string? HostNick { get; init; }
+}
+
+// ---------- 用户歌单(music.musicasset.PlaylistBaseRead/GetPlaylistByUin 自建 +
+// music.musicasset.PlaylistFavRead/GetPlaylistFavInfo 收藏;老 homepage mydiss 不再稳定下发歌单名)----------
+
+public sealed record QQCreatedPlaylistsResponse
+{
+    public int Code { get; init; }
+
+    public QQCreatedPlaylistsData? Data { get; init; }
+}
+
+public sealed record QQCreatedPlaylistsData
+{
+    [JsonPropertyName("v_playlist")] public List<QQCreatedPlaylistDto>? VPlaylist { get; init; }
+}
+
+public sealed record QQCreatedPlaylistDto
+{
+    /// <summary>歌单数字 id(即 disstid)。</summary>
+    public long Tid { get; init; }
+
+    [JsonPropertyName("dirName")] public string? DirName { get; init; }
+
+    [JsonPropertyName("picUrl")] public string? PicUrl { get; init; }
+
+    [JsonPropertyName("songNum")] public int SongNum { get; init; }
+
+    public string? Desc { get; init; }
+}
+
+public sealed record QQFavPlaylistsResponse
+{
+    public int Code { get; init; }
+
+    public QQFavPlaylistsData? Data { get; init; }
+}
+
+public sealed record QQFavPlaylistsData
+{
+    [JsonPropertyName("v_list")] public List<QQFavPlaylistDto>? VList { get; init; }
+}
+
+public sealed record QQFavPlaylistDto
+{
+    public long Tid { get; init; }
+
+    public string? Name { get; init; }
+
+    public string? Logo { get; init; }
+
+    [JsonPropertyName("songnum")] public int SongNum { get; init; }
+
+    public string? Desc { get; init; }
+}
+
+// ---------- 用户基础资料(userInfo.BaseUserInfoServer/get_user_baseinfo_v2;按 uin 键回 map)----------
+
+public sealed record QQUserInfoResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQUserInfoReq? Req0 { get; init; }
+}
+
+public sealed record QQUserInfoReq
+{
+    public int Code { get; init; }
+
+    public QQUserInfoData? Data { get; init; }
+}
+
+public sealed record QQUserInfoData
+{
+    /// <summary>map_userinfo 以 uin 字符串为键取唯一条目;未登录/凭据缺失时为 null。</summary>
+    [JsonPropertyName("map_userinfo")] public Dictionary<string, QQUserBaseInfoDto>? MapUserinfo { get; init; }
+}
+
+public sealed record QQUserBaseInfoDto
+{
+    public string? Nick { get; init; }
+
+    [JsonPropertyName("headurl")] public string? HeadUrl { get; init; }
+
+    [JsonPropertyName("ifpicurl")] public string? IfPicUrl { get; init; }
 }

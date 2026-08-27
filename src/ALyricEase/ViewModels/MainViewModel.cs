@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
+using ALyricEase.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -21,7 +23,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -31,10 +33,17 @@ public sealed partial class MainViewModel : ViewModelBase
         Artist = artist;
         Album = album;
         _playlist = playlist;
+        AppState = appState;
+        // 折叠状态必须先于首次 RebuildShellNavigation 恢复(静态分组头实例随即被导航渲染消费)
+        NetEasePlaylistsHeader.IsExpanded = appState.IsNetEaseGroupExpanded;
+        QqPlaylistsHeader.IsExpanded = appState.IsQqGroupExpanded;
         RebuildShellNavigation();
         Playlist.Playlists.CollectionChanged += OnPlaylistsChanged;
+        Playlist.QqPlaylists.CollectionChanged += OnPlaylistsChanged;
+        Playlist.PropertyChanged += OnPlaylistLoginChanged;
         _selectedNav = ShellNavItems.First(item => item.Key == _activePage);
         _ = Recommend.EnsureLoadedAsync(); // 启动即拉首页区块(幂等,失败静默)
+        _ = Playlist.EnsureQqLoadedAsync(); // 启动恢复 QQ 登录态并拉侧边栏"QQ音乐"分组(失败静默)
     }
 
     public SearchViewModel Search { get; }
@@ -44,6 +53,9 @@ public sealed partial class MainViewModel : ViewModelBase
     public RecommendViewModel Recommend { get; }
     public ArtistViewModel Artist { get; }
     public AlbumViewModel Album { get; }
+
+    /// <summary>界面状态存储(折叠状态;主窗口大小/位置由 MainWindow 读写同一实例)。</summary>
+    public Services.AppStateStore AppState { get; }
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
@@ -69,8 +81,12 @@ public sealed partial class MainViewModel : ViewModelBase
         new("Library", "我的收藏", ""),
         new("CloudDrive", "音乐云盘", ""),
         new("Recents", "最近播放", ""),
-        new("PlaylistsHeader", "我的歌单", isHeader: true),
     ];
+
+    /// <summary>网易云/QQ 歌单分组标题:均登录后才显示,故不进静态 NavItems,由 RebuildShellNavigation 按登录态插入。
+    /// 头部是静态共享实例,展开/收起状态随实例保留,跨导航重建与登录变化不丢。</summary>
+    private static readonly NavItemViewModel NetEasePlaylistsHeader = new("PlaylistsHeader", "网易云", isHeader: true, isToggleGroup: true);
+    private static readonly NavItemViewModel QqPlaylistsHeader = new("QqPlaylistsHeader", "QQ音乐", isHeader: true, isToggleGroup: true);
 
     public ObservableCollection<NavItemViewModel> ShellNavItems { get; } = new();
 
@@ -221,14 +237,62 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void OnPlaylistsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildShellNavigation();
 
+    /// <summary>网易云/QQ 登录态变化 → 重建导航:登录后出现对应歌单分组,退出后消失。</summary>
+    private void OnPlaylistLoginChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(PlaylistViewModel.IsLoggedIn) or nameof(PlaylistViewModel.IsQqLoggedIn))
+            RebuildShellNavigation();
+    }
+
+    /// <summary>静态导航 + 登录音源各自的歌单分组(网易云/QQ 均登录后才显示;QQ 键加前缀防与网易云 id 撞键)。
+    /// 歌单子项经 OwnerKey 挂到所属分组头,并继承其当前开合态。</summary>
     private void RebuildShellNavigation()
     {
         ShellNavItems.Clear();
         foreach (var item in NavItems)
             ShellNavItems.Add(item);
 
-        foreach (var playlist in Playlist.Playlists)
-            ShellNavItems.Add(new NavItemViewModel($"Playlist:{playlist.Id}", playlist.Name, "", playlist: playlist));
+        if (Playlist.IsLoggedIn)
+        {
+            ShellNavItems.Add(NetEasePlaylistsHeader);
+            foreach (var playlist in Playlist.Playlists)
+                ShellNavItems.Add(new NavItemViewModel($"Playlist:{playlist.Id}", playlist.Name, "", playlist: playlist)
+                {
+                    OwnerKey = NetEasePlaylistsHeader.Key,
+                    ShowAsChild = NetEasePlaylistsHeader.IsExpanded,
+                });
+        }
+
+        if (Playlist.IsQqLoggedIn)
+        {
+            ShellNavItems.Add(QqPlaylistsHeader);
+            foreach (var playlist in Playlist.QqPlaylists)
+                ShellNavItems.Add(new NavItemViewModel($"QQPlaylist:{playlist.Id}", playlist.Name, "", playlist: playlist)
+                {
+                    OwnerKey = QqPlaylistsHeader.Key,
+                    ShowAsChild = QqPlaylistsHeader.IsExpanded,
+                });
+        }
+    }
+
+    /// <summary>展开/收起一个歌单分组(网易云/QQ 头部按钮)。子项只隐藏不清除:
+    /// 已打开的歌单详情页与选中态保持不变;分组头是静态实例,状态跨导航重建保留。</summary>
+    [RelayCommand]
+    private void ToggleNavGroup(string? key)
+    {
+        var header = ShellNavItems.FirstOrDefault(i => i.IsHeader && i.Key == key);
+        if (header is null) return;
+        header.IsExpanded = !header.IsExpanded;
+        foreach (var child in ShellNavItems.Where(i => i.OwnerKey == header.Key))
+            child.ShowAsChild = header.IsExpanded;
+
+        // 记住折叠状态(state.json 原子小文件,同步写无感)
+        switch (header.Key)
+        {
+            case "PlaylistsHeader": AppState.IsNetEaseGroupExpanded = header.IsExpanded; break;
+            case "QqPlaylistsHeader": AppState.IsQqGroupExpanded = header.IsExpanded; break;
+        }
+        AppState.Save();
     }
 
     /// <summary>当前选中导航项(ListBox 双向)。</summary>
@@ -245,7 +309,11 @@ public sealed partial class MainViewModel : ViewModelBase
         IsNavigationDrawerOpen = false;
         if (value.Playlist is { } playlist)
         {
-            OpenShellPlaylistCommand.Execute(playlist);
+            // 按 Playlist.Source 路由:QQ 歌单走一次拉全量,网易云维持 trackIds 增量加载
+            if (playlist.Playlist.Source == MusicSource.QQ)
+                OpenShellQqPlaylistCommand.Execute(playlist);
+            else
+                OpenShellPlaylistCommand.Execute(playlist);
             // OpenShellPlaylist 会把 ActivePage 设为 “Favorites”,
             // 这里再强制把选中项设回歌单子项,防止被”我的收藏”同步逻辑覆盖。
             SelectedNav = value;
@@ -283,6 +351,15 @@ public sealed partial class MainViewModel : ViewModelBase
         if (playlist is null) return;
         ActivePage = "Favorites";
         Playlist.OpenPlaylistCommand.Execute(playlist);
+    }
+
+    /// <summary>侧边栏打开 QQ 歌单:同样复用歌单详情页(Favorites),由 QQ 客户端一次拉全量曲目。</summary>
+    [RelayCommand]
+    private void OpenShellQqPlaylist(PlaylistItemViewModel? playlist)
+    {
+        if (playlist is null) return;
+        ActivePage = "Favorites";
+        Playlist.OpenQqPlaylistCommand.Execute(playlist);
     }
 
     /// <summary>歌单行/专辑行点击歌手 → 歌手页。</summary>

@@ -1,6 +1,9 @@
 using System;
+using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 
@@ -11,7 +14,13 @@ namespace ALyricEase.Views;
 /// (宽屏内联栏顶部 / 中屏图标栏顶部 / 小屏标题栏),抽屉复用时不带它。</summary>
 public partial class NavigationPaneView : UserControl
 {
-    public NavigationPaneView() => InitializeComponent();
+    public NavigationPaneView()
+    {
+        InitializeComponent();
+        // 分组头行已启用(IsInteractive)以获得 hover 反馈;这里在隧道阶段拦截其按压,
+        // 先于 ListBox/ListBoxItem 的内部处理 → 只做开合,永不进入选中流程
+        NavList.AddHandler(PointerPressedEvent, OnNavListPointerPressed, RoutingStrategies.Tunnel);
+    }
 
     private void OnAccountClick(object? sender, RoutedEventArgs e)
     {
@@ -24,5 +33,24 @@ public partial class NavigationPaneView : UserControl
             return;
         }
         vm.GoAccountCommand.Execute(null);
+    }
+
+    /// <summary>分组头(网易云/QQ 音乐)点按展开/收起其歌单子项:坐标命中可折叠分组头的容器。
+    /// 纯标题("发现/我的音乐")行保持禁用,不会命中。只响应主键。</summary>
+    private void OnNavListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        var props = e.GetCurrentPoint(NavList).Properties;
+        if (!props.IsLeftButtonPressed) return;
+
+        foreach (var container in NavList.GetVisualDescendants().OfType<ListBoxItem>())
+        {
+            if (container.DataContext is not NavItemViewModel { IsToggleGroup: true } header) continue;
+            var p = e.GetPosition(container);
+            if (p.X < 0 || p.Y < 0 || p.X >= container.Bounds.Width || p.Y >= container.Bounds.Height) continue;
+            vm.ToggleNavGroupCommand.Execute(header.Key);
+            e.Handled = true;
+            return;
+        }
     }
 }

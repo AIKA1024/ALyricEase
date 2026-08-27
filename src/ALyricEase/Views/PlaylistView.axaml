@@ -67,8 +67,10 @@
       <i:Interaction.Behaviors>
         <b:SmoothWheelScrollBehavior />
       </i:Interaction.Behaviors>
-      <Grid Classes="detail-shell" RowDefinitions="Auto,*" IsVisible="{Binding IsLoggedIn}">
-        <Border x:Name="HeroCard" Classes="playlist-hero" Grid.Row="0">
+      <Grid Classes="detail-shell" RowDefinitions="Auto,*" IsVisible="{Binding HasAnyLogin}">
+        <!-- 未选中歌单(QQ 单独登录首次进入)时整卡隐藏,只留居中提示文案 -->
+        <Border x:Name="HeroCard" Classes="playlist-hero" Grid.Row="0"
+                IsVisible="{Binding SelectedPlaylist, Converter={x:Static ObjectConverters.IsNotNull}}">
           <Grid>
             <!-- 宽/中屏：左右布局 -->
             <Grid x:Name="HeroLayout" Classes="hero-horizontal" ColumnDefinitions="260,*">
@@ -79,7 +81,7 @@
               <StackPanel x:Name="HeroCopy" Grid.Column="1" Margin="20,0,10,0" VerticalAlignment="Center" Spacing="8">
                 <TextBlock x:Name="HeroTitle" Text="{Binding SelectedPlaylist.Name}" FontSize="28" FontWeight="Bold"
                            TextTrimming="CharacterEllipsis" MaxLines="2" />
-                <Button x:Name="HeroCreator" Content="{Binding UserName}" HorizontalAlignment="Left"
+                <Button x:Name="HeroCreator" Content="{Binding CreatorName}" HorizontalAlignment="Left"
                         Background="Transparent" BorderThickness="0" Padding="0"
                         Foreground="{DynamicResource LyricEaseTeal}" FontSize="18" ToolTip.Tip="打开用户页（后续接入）" />
                 <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="16"

@@ -99,26 +99,23 @@
                                 </StackPanel>
                             </Border>
                         </StackPanel>
-                        <!-- QQ音乐:uin 与 qqmusic_key 分开输入 -->
+                        <!-- QQ音乐:整段完整 Cookie 粘贴(账号接口要求完整字段,精简两项过不了校验) -->
                         <StackPanel Classes="tabpane" Classes.on="{Binding IsQQLoginTab}"
                                     IsEnabled="{Binding IsQQLoginTab}" Spacing="6">
                             <TextBlock Text="QQ 音乐登录" FontSize="13" FontWeight="SemiBold" />
-                            <TextBox x:Name="QQBox" Text="{Binding QqUinInput}"
-                                     PlaceholderText="uin(如 1343707921)或直接粘贴完整 Cookie"
-                                     Height="36" FontSize="13" VerticalContentAlignment="Center" />
-                            <TextBox Text="{Binding QqKeyInput}"
-                                     PlaceholderText="qqmusic_key(Q_H_L_ 开头的长串)"
-                                     Height="36" FontSize="13" VerticalContentAlignment="Center" />
+                            <TextBox x:Name="QQBox" Text="{Binding QqCookieInput}"
+                                     PlaceholderText="粘贴 y.qq.com 的整段 Cookie"
+                                     TextWrapping="Wrap" Height="64" FontSize="13" />
                             <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
                                 <StackPanel Spacing="5">
-                                    <TextBlock Text="如何获取" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />
                                     <TextBlock Text="1. 用浏览器打开 y.qq.com 并登录你的 QQ 账号" FontSize="12"
                                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="2. 按 F12 → Application(应用)→ Cookies → https://y.qq.com" FontSize="12"
+                                    <TextBlock Text="2. 按 F12 → Network(网络)→ 任选一个 y.qq.com 请求 → Request Headers(请求标头)" FontSize="12"
                                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="3. 把 uin 与 qqmusic_key 分别填入上方两框;或把整段 Cookie 粘进第一框" FontSize="12"
+                                    <TextBlock Text="3. 复制其中整段 Cookie 粘贴到上方输入框后点登录" FontSize="12"
                                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="仅两项可解锁 VIP 播放;整段完整 Cookie(含 p_skey 等)才能使用歌单与每日推荐" FontSize="11.5"
+                                    <TextBlock Text="必须粘贴整段 Cookie(含 uin、qqmusic_key 等全部字段)才能通过服务端校验,解锁 VIP 播放、歌单与每日推荐" FontSize="11.5"
                                                Foreground="{DynamicResource SystemAccentColor}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>

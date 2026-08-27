@@ -37,6 +37,15 @@ public static class Program
             return;
         }
 
+        // QQ 音乐 API 冒烟:匿名打真实接口验证歌单修复(不依赖登录 Cookie)
+        if (args.Length > 0 && args[0] == "--qqapi")
+        {
+            // 放线程池执行:STA Main + Avalonia SyncContext 下直接阻塞等待会与 await 延续互等(死锁)
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqApiProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // TEMP-DIAG:正在播放覆盖层是否盖住标题栏
         if (args.Length > 0 && args[0] == "--npcover")
         {
@@ -325,4 +334,3 @@ public static class Program
     private static int CountButtons(Grid root) =>
         root.GetVisualDescendants().OfType<Button>().Count(b => b.IsVisible);
 }
-

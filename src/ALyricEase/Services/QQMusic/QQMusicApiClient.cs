@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
 using ALyricEase.Services.NetEase;
@@ -188,6 +187,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             {
                 ["songmid"] = mid,
                 ["songid"] = song.Id.ToString(),
+                // 缺省返回 MusicJsonCallback(...) JSONP 包裹,纯 JSON 解析会失败
+                ["format"] = "json",
                 ["outCharset"] = "utf-8",
                 ["pcachetime"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
             };
@@ -263,6 +264,37 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     public async Task<UserProfile> GetUserProfileAsync(CancellationToken ct = default)
     {
+        // 官方 asset 通道:userInfo.BaseUserInfoServer/get_user_baseinfo_v2,按 uin 键回 map_userinfo。
+        try
+        {
+            using var doc = await PostMusicuAsync(w =>
+            {
+                WriteModuleReq(w, "userInfo.BaseUserInfoServer", "get_user_baseinfo_v2", p =>
+                {
+                    p.WriteStartArray("vec_uin");
+                    p.WriteStringValue(_uin);
+                    p.WriteEndArray();
+                });
+            }, ct).ConfigureAwait(false);
+            var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQUserInfoResponse);
+            if (resp?.Req0?.Code == 0 &&
+                resp.Req0.Data?.MapUserinfo is { } map && map.TryGetValue(_uin, out var me))
+            {
+                var assetNick = FirstNonEmpty(me.Nick);
+                if (assetNick.Length > 0)
+                    return new UserProfile
+                    {
+                        UserId = long.TryParse(_uin, out var assetUin) ? assetUin : 0,
+                        Nickname = assetNick,
+                        AvatarUrl = FirstNonEmpty(me.HeadUrl, me.IfPicUrl),
+                    };
+            }
+        }
+        catch (ApiException)
+        {
+            // asset 通道失败(凭据形态漂移等)→ 回落用户主页 fcg
+        }
+
         var home = await GetHomepageAsync(ct).ConfigureAwait(false);
         var c = home.Data?.Creator;
         var nick = FirstNonEmpty(c?.Nick, c?.Nickname);
@@ -274,15 +306,80 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         };
     }
 
-    /// <summary>用户歌单:主页 mydiss.list(dissid/dissname/song_count/picurl,字段随版本有漂移取兜底)。</summary>
+    /// <summary>用户歌单:官方 asset 双模块一次复合拉取 —— PlaylistBaseRead/GetPlaylistByUin(自建,
+    /// tid/dirName/picUrl/songNum)+ PlaylistFavRead/GetPlaylistFavInfo(收藏,tid/name/logo/songnum),
+    /// 参考开源 multiPlatformMusicApi。老 homepage mydiss 通道对部分账号不再下发歌单名(界面呈现空名),
+    /// 仅作为 asset 整体失败时的回落。</summary>
     public async Task<List<Playlist>> GetUserPlaylistsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var doc = await PostMusicuMultiAsync(
+            [
+                w => WriteModuleReq(w, "req_0", "music.musicasset.PlaylistBaseRead", "GetPlaylistByUin",
+                    p => p.WriteString("uin", _uin)),
+                w => WriteModuleReq(w, "req_1", "music.musicasset.PlaylistFavRead", "GetPlaylistFavInfo",
+                    p => p.WriteString("uin", _uin)),
+            ], ct).ConfigureAwait(false);
+
+            var root = doc.RootElement;
+            var created = root.TryGetProperty("req_0", out var c)
+                ? c.Deserialize(QQMusicJsonContext.Default.QQCreatedPlaylistsResponse) : null;
+            var fav = root.TryGetProperty("req_1", out var f)
+                ? f.Deserialize(QQMusicJsonContext.Default.QQFavPlaylistsResponse) : null;
+
+            // 任一模块回负/非零业务码(80030/80050=凭据残缺或失效)→ 抛出走 homepage 回落;
+            // 双码皆 0 才认作成功(新账号无歌单返回空列表是合法状态)。
+            if (created is null || fav is null || created.Code != 0 || fav.Code != 0)
+                throw new ApiException(
+                    $"获取用户歌单失败(created={created?.Code ?? -1},fav={fav?.Code ?? -1})",
+                    PickErrorCode(created?.Code, fav?.Code));
+
+            var list = new List<Playlist>();
+            foreach (var d in created.Data?.VPlaylist ?? [])
+            {
+                if (d.Tid == 0) continue;
+                list.Add(new Playlist
+                {
+                    Id = d.Tid,
+                    Source = MusicSource.QQ,
+                    Name = OrUnnamed(FirstNonEmpty(d.DirName)),
+                    TrackCount = d.SongNum,
+                    CoverUrl = FirstNonEmpty(d.PicUrl),
+                    Description = d.Desc ?? "",
+                });
+            }
+            foreach (var d in fav.Data?.VList ?? [])
+            {
+                if (d.Tid == 0) continue;
+                list.Add(new Playlist
+                {
+                    Id = d.Tid,
+                    Source = MusicSource.QQ,
+                    Name = OrUnnamed(FirstNonEmpty(d.Name)),
+                    TrackCount = d.SongNum,
+                    CoverUrl = FirstNonEmpty(d.Logo),
+                    Description = d.Desc ?? "",
+                });
+            }
+            return list;
+        }
+        catch (ApiException)
+        {
+            return await GetUserPlaylistsViaHomepageAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>回落:老主页通道 mydiss.list(字段随版本漂移取兜底;可能缺名,置占位文案)。</summary>
+    private async Task<List<Playlist>> GetUserPlaylistsViaHomepageAsync(CancellationToken ct)
     {
         var home = await GetHomepageAsync(ct).ConfigureAwait(false);
         return (home.Data?.Mydiss?.List ?? new List<QQDissItem>())
             .Select(d => new Playlist
             {
                 Id = d.DissId != 0 ? d.DissId : d.DissTid,
-                Name = FirstNonEmpty(d.DissName, d.Dirname),
+                Source = MusicSource.QQ,
+                Name = OrUnnamed(FirstNonEmpty(d.DissName, d.Dirname)),
                 TrackCount = d.SongCount != 0 ? d.SongCount : d.SongcountAlt,
                 CoverUrl = FirstNonEmpty(d.Picurl, d.Logo),
                 Description = d.Intro ?? "",
@@ -291,129 +388,123 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             .ToList();
     }
 
-    /// <summary>歌单全量曲目:fcg_ucc_getcdinfo_byids_cp(new_format=1),曲目字段兼容两套命名。</summary>
+    /// <summary>歌单全量曲目:music.srfDissInfo.aiDissInfo/uniform_get_Dissinfo(与网页端同源,
+    /// 条目为 track_info 同构复用 MapTrack)。旧 DissInfo/CgiGetDiss 与 qzone fcg_ucc 均已失效 ——
+    /// CgiGetDiss 现网对缺 userinfo/tag/orderlist 的请求只回 code=0 但 songlist 空(详情页白屏);
+    /// 按 song_begin/song_num 分页拉齐 total_song_num。</summary>
     public async Task<List<Song>> GetPlaylistTracksAsync(long id, CancellationToken ct = default)
     {
-        var query = new Dictionary<string, string?>
-        {
-            ["disstid"] = id.ToString(),
-            ["type"] = "1",
-            ["json"] = "1",
-            ["utf8"] = "1",
-            ["onlysong"] = "0",
-            ["new_format"] = "1",
-        };
-        using var doc = await GetCAsync("/qzone/fcgi-bin/fcg_ucc_getcdinfo_byids_cp.fcg", query, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQCdListResponse);
-        if (resp is null || resp.Code != 0 || resp.Cdlist is null)
-            throw new ApiException(resp?.Code == 1000
-                ? "登录已失效或 Cookie 不完整,请重新登录"
-                : "获取歌单曲目失败", resp?.Code ?? -1);
+        const int PageSize = 300;
         var songs = new List<Song>();
-        foreach (var cd in resp.Cdlist)
-            foreach (var t in cd.Songlist ?? Enumerable.Empty<QQTrackDto>())
+        for (var begin = 0; ; begin += PageSize)
+        {
+            using var doc = await PostMusicuAsync(w =>
+            {
+                WriteModuleReq(w, "music.srfDissInfo.aiDissInfo", "uniform_get_Dissinfo", p =>
+                {
+                    p.WriteNumber("disstid", id);
+                    p.WriteNumber("userinfo", 1);
+                    p.WriteNumber("tag", 1);
+                    p.WriteNumber("orderlist", 1);
+                    p.WriteNumber("song_begin", begin);
+                    p.WriteNumber("song_num", PageSize);
+                    p.WriteNumber("onlysonglist", 0);
+                    p.WriteString("enc_host_uin", "");
+                });
+            }, ct).ConfigureAwait(false);
+
+            var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQUniformDissResponse);
+            var req = resp?.Req0;
+            if (resp is null || req is null || req.Code != 0 || req.Data is null || req.Data.Code != 0)
+                throw new ApiException(req?.Code == 1000 || req is { Code: 0, Data.Code: 1000 }
+                    ? "登录已失效或 Cookie 不完整,请重新登录"
+                    : $"获取歌单曲目失败(code={req?.Code ?? -1}/{req?.Data?.Code ?? -1},可能是无效或不可见的歌单)",
+                    PickErrorCode(req?.Code, req?.Data?.Code));
+
+            var pageSonglist = req.Data.Songlist ?? [];
+            foreach (var t in pageSonglist)
             {
                 var s = MapTrack(t);
                 if (s.Id != 0 || s.Mid.Length > 0) songs.Add(s);
             }
+
+            // 终止:本页不满一页(没有更多);total 已知且已达总量同理(total 缺省为 0 时靠页长判断)
+            var total = req.Data.TotalSongNum;
+            var hasMore = pageSonglist.Count >= PageSize && (total <= 0 || songs.Count < total);
+            if (!hasMore) break;
+        }
         return songs;
     }
 
-    /// <summary>每日推荐歌曲:首选官方客户端"今日私享"歌单(每日30曲,一次拉全,约 0.5s);
-    /// 失败(未登录/页面改版)回落雷达流串行翻页(约 2-3s)。两源均为个性化日推,条目 track_info 同构。</summary>
+    /// <summary>每日推荐歌曲:官方"每日30首"歌单(与 PC 客户端同源)——RecommendFeed 首页货架取
+    /// "每日30首"卡片的当日动态 disstid,再走 CgiGetDiss 拉全曲目。接口异常/卡片缺失回落
+    /// 雷达流 GetRadarSong;两条路径都失败才抛 ApiException。</summary>
     public async Task<List<Song>> GetDailyRecommendSongsAsync(CancellationToken ct = default)
     {
         try
         {
-            var songs = await GetDailyFromSrfDissAsync(ct).ConfigureAwait(false);
-            if (songs.Count > 0) return songs;
+            return await GetDaily30FromFeedAsync(ct).ConfigureAwait(false);
         }
         catch (ApiException)
         {
-            // 今日私享不可用(未登录/改版):回落雷达
+            return await GetDailyFromRadarAsync(ct).ConfigureAwait(false);
         }
-        return await GetDailyFromRadarAsync(ct).ConfigureAwait(false);
     }
 
-    /// <summary>今日私享歌单(官方"每日30曲"):Mac 客户端首页 HTML 解析当日 rid(每日更换,当日缓存),
-    /// 再走 music.srfDissInfo.DissInfo/CgiGetDiss 一次拉全(条目为 track_info 同构,复用 MapTrack)。</summary>
-    private async Task<List<Song>> GetDailyFromSrfDissAsync(CancellationToken ct)
+    /// <summary>官方每日30首:feed 货架 → "每日30首"卡片 → 当日 disstid → CgiGetDiss。
+    /// disstid 每日轮换;当日个别曲目下架时歌单可少于 30 首,空歌单按异常处理走回落。</summary>
+    private async Task<List<Song>> GetDaily30FromFeedAsync(CancellationToken ct)
     {
-        var rid = await GetSrfDissRidAsync(ct).ConfigureAwait(false);
-        using var doc = await PostMusicuAsync(w =>
+        long dissTid;
+        using (var doc = await PostMusicuAsync(w =>
         {
-            WriteModuleReq(w, "music.srfDissInfo.DissInfo", "CgiGetDiss", p =>
+            WriteModuleReq(w, "music.recommend.RecommendFeed", "get_recommend_feed", p =>
             {
-                p.WriteNumber("disstid", rid);
-                p.WriteNumber("dirid", 0);
-                p.WriteBoolean("tag", true);
-                p.WriteNumber("song_begin", 0);
-                p.WriteNumber("song_num", 50);
-                p.WriteBoolean("userinfo", true);
-                p.WriteBoolean("orderlist", true);
-                p.WriteBoolean("onlysonglist", false);
+                p.WriteNumber("direction", 0);
+                p.WriteNumber("page", 1);
+                p.WriteStartArray("v_cache");
+                p.WriteEndArray();
+                p.WriteStartArray("v_uniq");
+                p.WriteEndArray();
+                p.WriteNumber("s_num", 0);
             });
-        }, ct).ConfigureAwait(false);
-
-        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQCgiGetDissResponse);
-        var data = resp?.Req0?.Data;
-        if (resp?.Req0 is null || resp.Req0.Code != 0 || data?.Songlist is null)
-            throw new ApiException($"获取今日私享失败(code={resp?.Req0?.Code ?? -1})", resp?.Req0?.Code ?? -1);
-
-        var songs = new List<Song>();
-        foreach (var t in data.Songlist)
+        }, ct).ConfigureAwait(false))
         {
-            var s = MapTrack(t);
-            if (s.Id != 0 || s.Mid.Length > 0) songs.Add(s);
+            var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQRecommendFeedResponse);
+            var req = resp?.Req0;
+            if (req is null || req.Code != 0)
+                throw new ApiException($"获取每日推荐入口失败(code={req?.Code ?? -1})", req?.Code ?? -1);
+            dissTid = (req.Data?.VShelf ?? [])
+                .SelectMany(s => s.VNiche ?? [])
+                .SelectMany(n => n.VCard ?? [])
+                .FirstOrDefault(c => c.Title == "每日30首" && c.Id != 0)?.Id ?? 0;
         }
+        if (dissTid == 0)
+            throw new ApiException("feed 中未找到\"每日30首\"入口卡片", -1);
+
+        var songs = await GetPlaylistTracksAsync(dissTid, ct).ConfigureAwait(false);
+        if (songs.Count == 0)
+            throw new ApiException("每日30首歌单返回为空", -1);
         return songs;
     }
 
-    /// <summary>今日私享 rid:从 c.y.qq.com Mac 客户端首页 HTML 解析(rid 每日更换,按本地日期缓存)。</summary>
-    private (DateOnly Day, long Rid)? _srfRidCache;
-
-    private async Task<long> GetSrfDissRidAsync(CancellationToken ct)
-    {
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        if (_srfRidCache is { } hit && hit.Day == today) return hit.Rid;
-
-        using var req = new HttpRequestMessage(HttpMethod.Get, "https://c.y.qq.com/node/musicmac/v6/index.html");
-        if (IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
-        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
-        var html = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-
-        // "今日私享"文案两侧的 <a data-rid="..."> 即歌单 id;取邻近窗口内首个命中
-        long rid = 0;
-        var anchor = html.IndexOf("今日私享", StringComparison.Ordinal);
-        while (anchor >= 0 && rid == 0)
-        {
-            var window = html[Math.Max(0, anchor - 600)..Math.Min(html.Length, anchor + 600)];
-            var m = Regex.Match(window, "data-rid=\"(\\d+)\"");
-            if (m.Success) rid = long.Parse(m.Groups[1].Value);
-            anchor = html.IndexOf("今日私享", anchor + 4, StringComparison.Ordinal);
-        }
-        if (rid == 0) throw new ApiException("未在首页找到今日私享歌单(未登录或页面改版)", -1);
-        _srfRidCache = (today, rid);
-        return rid;
-    }
-
-    /// <summary>雷达流日推(兜底):music.recommend.TrackRelationServer.GetRadarSong,登录后按听歌偏好生成。
-    /// 单页仅约 5 首且服务端按时间窗随机洗牌(并发/密集请求返回高度重叠的结果),只能串行翻页拼至 30 首;
-    /// 业务码非 0 抛 ApiException(500003 = 未登录/Cookie 失效)。</summary>
+    /// <summary>雷达流日推(官方路径回落):GetRadarSong ReqType=2 串行翻页收集 RecommendSongIds
+    /// (每页约 5 首,时间窗内随机洗牌、跨页基本不重叠),攒够超额样本后经 pf_song_detail_svr
+    /// 批量解析前 30 首。业务码非 0 抛 ApiException;零数据同样抛 —— 现网对未登录/新账号
+    /// 返回的是"空成功"而非错误码。</summary>
     private async Task<List<Song>> GetDailyFromRadarAsync(CancellationToken ct)
     {
-        const int TargetCount = 30, MaxPages = 6;
-        var songs = new List<Song>();
-        var seen = new HashSet<string>();
-        for (var page = 1; page <= MaxPages && songs.Count < TargetCount; page++)
+        const int TargetCount = 30, Oversample = 40, MaxPages = 12;
+        var ids = new List<long>();
+        var seen = new HashSet<long>();
+        for (var page = 1; page <= MaxPages && ids.Count < Oversample; page++)
         {
             using var doc = await PostMusicuAsync(w =>
             {
                 WriteModuleReq(w, "music.recommend.TrackRelationServer", "GetRadarSong", p =>
                 {
                     p.WriteNumber("Page", page);
-                    p.WriteNumber("ReqType", 0);
+                    p.WriteNumber("ReqType", 2);
                     p.WriteStartArray("FavSongs");
                     p.WriteEndArray();
                     p.WriteStartArray("EntranceSongs");
@@ -428,17 +519,71 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                     ? "未登录或登录已失效,每日推荐需要有效的 QQ 音乐 Cookie"
                     : $"获取每日推荐失败(code={req?.Code ?? -1})", req?.Code ?? -1);
 
-            foreach (var entry in req.Data?.VecSongs ?? new List<QQRadarEntry>())
-            {
-                if (entry.Track is null) continue;
-                var s = MapTrack(entry.Track);
-                if ((s.Id == 0 && s.Mid.Length == 0) || !seen.Add(s.Mid.Length > 0 ? s.Mid : s.Id.ToString())) continue;
-                songs.Add(s);
-                if (songs.Count >= TargetCount) break;
-            }
+            foreach (var id in req.Data?.RecommendSongIds ?? new List<long>())
+                if (id != 0 && seen.Add(id)) ids.Add(id);
             if (req.Data?.HasMore != true) break;
         }
+        if (ids.Count == 0)
+            throw new ApiException("QQ 音乐未返回每日推荐数据(未登录或账号暂无推荐内容)", -1);
+        return await ResolveSongsByIdsAsync(ids.Take(TargetCount), ct).ConfigureAwait(false);
+    }
+
+    /// <summary>按数字 id 批量取完整曲目:pf_song_detail_svr/get_song_detail_yqq 一条一个子请求,
+    /// 单 POST 合并 ≤15 条省 RTT;单个子请求失败静默跳过。顺带填充 mid 缓存(MapTrack)。</summary>
+    private async Task<List<Song>> ResolveSongsByIdsAsync(IEnumerable<long> ids, CancellationToken ct)
+    {
+        var songs = new List<Song>();
+        foreach (var chunk in ChunkList(ids.ToList(), 15))
+        {
+            using var doc = await PostMusicuMultiAsync(chunk.Select((id, i) =>
+                (Action<Utf8JsonWriter>)(w => WriteModuleReq(w, $"req_{i}",
+                    "music.pf_song_detail_svr", "get_song_detail_yqq", p =>
+                    {
+                        p.WriteNumber("song_type", 0);
+                        p.WriteString("song_mid", "");
+                        p.WriteNumber("song_id", id);
+                    }))).ToList(), ct).ConfigureAwait(false);
+
+            foreach (var t in ExtractTracksByKeyPrefix(doc.RootElement, "req_"))
+            {
+                if (t is null) continue;
+                var s = MapTrack(t);
+                if (s.Id != 0 || s.Mid.Length > 0) songs.Add(s);
+            }
+        }
         return songs;
+    }
+
+    private static List<List<T>> ChunkList<T>(List<T> source, int size)
+    {
+        var chunks = new List<List<T>>();
+        for (var i = 0; i < source.Count; i += size)
+            chunks.Add(source.GetRange(i, Math.Min(size, source.Count - i)));
+        return chunks;
+    }
+
+    /// <summary>从 musicu 复合响应里提取所有 req_* 子节点的 track_info(容错:缺字段/非 0 码的子请求跳过)。</summary>
+    private static List<QQTrackDto?> ExtractTracksByKeyPrefix(JsonElement root, string keyPrefix)
+    {
+        var tracks = new List<QQTrackDto?>();
+        foreach (var sub in root.EnumerateObject())
+        {
+            if (!sub.Name.StartsWith(keyPrefix, StringComparison.Ordinal) || sub.Value.ValueKind != JsonValueKind.Object)
+                continue;
+            var node = sub.Value;
+            try
+            {
+                if (!node.TryGetProperty("code", out var codeEl) || codeEl.GetInt32() != 0) continue;
+                if (!node.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object) continue;
+                if (!data.TryGetProperty("track_info", out var tr) || tr.ValueKind == JsonValueKind.Null) continue;
+                tracks.Add(tr.Deserialize(QQMusicJsonContext.Default.QQTrackDto));
+            }
+            catch
+            {
+                // 形状漂移的子请求跳过,不影响其余曲目
+            }
+        }
+        return tracks;
     }
 
     // ---------- 歌手/专辑(mid 维度,QQ 专属导航页)----------
@@ -650,8 +795,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return ParseJson(body);
     }
 
-    /// <summary>musicu.fcg JSON POST:{ 手写请求体(NativeAOT 安全),"loginUin","comm" };登录态带 Cookie。</summary>
-    private async Task<JsonDocument> PostMusicuAsync(Action<Utf8JsonWriter> writeReqs, CancellationToken ct)
+    /// <summary>musicu.fcg JSON POST(单模块):{ 手写请求体(NativeAOT 安全),"loginUin","comm" };登录态带 Cookie。</summary>
+    private Task<JsonDocument> PostMusicuAsync(Action<Utf8JsonWriter> writeReqs, CancellationToken ct)
+        => PostMusicuMultiAsync(new List<Action<Utf8JsonWriter>> { writeReqs }, ct);
+
+    /// <summary>musicu.fcg JSON POST(多模块复合):reqs[i] 各自写入一个 "req_{i}" 子对象;
+    /// 服务端在同一响应里按相同键回包。</summary>
+    private async Task<JsonDocument> PostMusicuMultiAsync(IReadOnlyList<Action<Utf8JsonWriter>> reqs, CancellationToken ct)
     {
         string json;
         using (var ms = new MemoryStream())
@@ -659,7 +809,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             using (var w = new Utf8JsonWriter(ms))
             {
                 w.WriteStartObject();
-                writeReqs(w);
+                for (var i = 0; i < reqs.Count; i++)
+                    reqs[i](w);
                 w.WriteString("loginUin", _uin);
                 w.WriteStartObject("comm");
                 w.WriteString("uin", _uin);
@@ -672,7 +823,15 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             json = Encoding.UTF8.GetString(ms.ToArray());
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, MusicuUrl)
+        // 登录态双通道鉴权:Cookie 头之外同时在 URL 附 uin/qm_keyst/g_tk —— asset 类模块(用户歌单/
+        // 资料等)服务端可能从查询串取凭据(参考 multiPlatformMusicApi 的 query 认证方式),缺了会回 8xxxx。
+        var url = MusicuUrl;
+        if (IsLoggedIn)
+            url += "?uin=" + Uri.EscapeDataString(_uin)
+                   + "&qm_keyst=" + Uri.EscapeDataString(_authst)
+                   + "&g_tk=" + ComputeGtk();
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
@@ -683,10 +842,14 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return ParseJson(body);
     }
 
-    /// <summary>写一个命名模块请求:"req_0":{ module, method, param:{...} }。</summary>
+    /// <summary>写一个默认键(req_0)的模块子请求:"req_0":{ module, method, param:{...} }。</summary>
     private static void WriteModuleReq(Utf8JsonWriter w, string module, string method, Action<Utf8JsonWriter> writeParam)
+        => WriteModuleReq(w, "req_0", module, method, writeParam);
+
+    /// <summary>写一个自定义键的模块子请求(多模块复合 POST 用)。</summary>
+    private static void WriteModuleReq(Utf8JsonWriter w, string key, string module, string method, Action<Utf8JsonWriter> writeParam)
     {
-        w.WriteStartObject("req_0");
+        w.WriteStartObject(key);
         w.WriteString("module", module);
         w.WriteString("method", method);
         w.WriteStartObject("param");
@@ -800,4 +963,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrEmpty(v)) ?? "";
+
+    /// <summary>从多个模块业务码中挑一个代表性异常码:优先负数(协议错),其次任意非零,全零则 -1。</summary>
+    private static int PickErrorCode(params int?[] codes)
+        => codes.FirstOrDefault(c => c < 0) ?? codes.FirstOrDefault(c => c != 0) ?? -1;
+
+    /// <summary>歌单名缺省占位:老通道偶发不下发名字,避免 UI 出现空白行。</summary>
+    private static string OrUnnamed(string name) => name.Length > 0 ? name : "(未命名歌单)";
 }

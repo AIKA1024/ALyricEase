@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -23,8 +24,18 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private bool _coverRequested;
     private bool _likedRequested;
 
-    /// <summary>红心/歌手专辑跳转为网易云能力;QQ 等其他音源的行不提供。</summary>
+    /// <summary>红心按钮与跳转是按音源路由的账号能力;红心两音源均支持,歌手/专辑跳转仍仅网易云为纯本地判定。</summary>
     private bool IsNetEase => Song.Source == Services.MusicSource.NetEase;
+
+    /// <summary>按曲目音源解析红心能力客户端:网易云直连构造注入实例;其他音源经服务定位器取
+    /// MusicApiProvider 路由(与 OpenArtistAsync 的用法一致)。宿主未初始化/未注册该音源时返回 null,
+    /// 红心按钮静默降级为无操作(SelfTest/Headless 等无宿主环境安全)。</summary>
+    private IUserMusicApi? GetLikeApi()
+    {
+        if (IsNetEase) return _api;
+        try { return ServiceLocator.Get<MusicApiProvider>().User(Song.Source); }
+        catch { return null; }
+    }
 
     private static IImage? s_neBadge;
     private static IImage? s_qqBadge;
@@ -90,12 +101,13 @@ public sealed partial class SongItemViewModel : ViewModelBase
         _ = LoadCoverAsync();
     }
 
-    /// <summary>容器 realized 时调用:首次才拉取红心状态(幂等)。未登录/未识别到喜欢歌单则保持未喜欢。</summary>
+    /// <summary>容器 realized 时调用:首次才拉取红心状态(幂等)。未登录/服务未就绪则保持未喜欢。</summary>
     public void EnsureLikedLoaded()
     {
-        if (_likedRequested || _api is null || !IsNetEase) return;
+        var api = GetLikeApi();
+        if (_likedRequested || api is null) return;
         _likedRequested = true;
-        _ = LoadLikedAsync();
+        _ = LoadLikedAsync(api);
     }
 
     public Song Song { get; }
@@ -154,16 +166,25 @@ public sealed partial class SongItemViewModel : ViewModelBase
     [RelayCommand]
     private async Task PlayAsync() => await _playSong(Song, _queue, _source);
 
-    /// <summary>切换红心:乐观更新,失败回滚。仅网易云曲目(QQ 暂无红心能力)。</summary>
+    /// <summary>切换红心:乐观更新,失败回滚。按音源路由到对应平台的"喜欢"能力;
+    /// 未登录时引导弹登录弹层(无宿主环境静默忽略)。</summary>
     [RelayCommand]
     private async Task LikeAsync()
     {
-        if (_api is null || !IsNetEase) return;
+        var api = GetLikeApi();
+        if (api is null) return;
+        if (!api.CanToggleLike)
+        {
+            try { ServiceLocator.Get<MainViewModel>().OpenLoginDialogCommand.Execute(null); }
+            catch { /* SelfTest/Headless 等无宿主环境 */ }
+            return;
+        }
+
         var prev = IsInLikelist;
         IsInLikelist = !prev; // 乐观更新,立即反馈
         try
         {
-            IsInLikelist = await _api.LikeToggleAsync(Song.Id);
+            IsInLikelist = await api.LikeToggleAsync(Song.Id);
         }
         catch
         {
@@ -215,13 +236,12 @@ public sealed partial class SongItemViewModel : ViewModelBase
         catch { /* 未初始化/导航失败:忽略 */ }
     }
 
-    private async Task LoadLikedAsync()
+    private async Task LoadLikedAsync(IUserMusicApi api)
     {
-        if (!IsNetEase) return;
         try
         {
-            await _api!.EnsureLikedIdsAsync();
-            IsInLikelist = _api.IsLiked(Song.Id);
+            await api.EnsureLikedIdsAsync();
+            IsInLikelist = api.IsLiked(Song.Id);
         }
         catch
         {

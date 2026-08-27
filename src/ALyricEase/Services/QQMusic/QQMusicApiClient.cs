@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ALyricEase.Models;
@@ -80,6 +81,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _uin = uin.TrimStart('o');
         _authst = key;
         _cookieHeader = rawCookie; // 保留原文:账号接口依赖 p_skey/euin 等附加字段
+        // 换号后已喜欢集合/tid 缓存全部失效
+        _likedDissTid = 0;
+        _likedIds = null;
         _cookie.QQCookieRaw = rawCookie;
         _cookie.Save();
     }
@@ -90,6 +94,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _uin = "0";
         _authst = "";
         _cookieHeader = "";
+        // 登出后已喜欢集合/tid 缓存失效
+        _likedDissTid = 0;
+        _likedIds = null;
         if (_cookie.QQCookieRaw is not null)
         {
             _cookie.QQCookieRaw = null;
@@ -231,6 +238,281 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return MapTrack(resp.Req0.Data.TrackInfo);
     }
 
+    // ---------- 红心/喜欢(音乐资产目录 dirId=201,即"我喜欢") ----------
+
+    /// <summary>QQ 音乐"我喜欢"资产目录 id:网页版红心的固定写入目标(musicasset 写接口的 dirId)。
+    /// 用户歌单列表(GetPlaylistByUin)中"我喜欢"一项的 dirId 也是它;普通歌单的 dirId 与其 tid 一致。</summary>
+    public const int LikedDirId = 201;
+
+    /// <summary>"我喜欢"歌单 tid(用于经歌单详情拉取已喜欢曲目集合;0 = 未识别到)。</summary>
+    private long _likedDissTid;
+
+    /// <summary>已喜欢曲目 songid 集合(null = 未加载)。</summary>
+    private HashSet<long>? _likedIds;
+
+    private bool _likedLoading;
+    private Task? _likedLoadTask;
+
+    public bool CanToggleLike => IsLoggedIn;
+
+    /// <summary>懒加载已喜欢集合(幂等,单飞):在用户歌单中定位"我喜欢"(优先按资产目录
+    /// dirId=201 判定,其次名称匹配——个别账号可改名)拿 tid,再走歌单详情按页收集 songid。</summary>
+    public Task EnsureLikedIdsAsync(CancellationToken ct = default)
+    {
+        if (_likedIds is not null || !IsLoggedIn) return Task.CompletedTask;
+        if (_likedLoading) return _likedLoadTask ?? Task.CompletedTask;
+        _likedLoading = true;
+        return _likedLoadTask = LoadLikedIdsAsync(ct);
+    }
+
+    private async Task LoadLikedIdsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var playlists = await GetUserPlaylistsAsync(ct).ConfigureAwait(false);
+            // 权威标识是资产目录 dirId=201;找不到(改名/字段漂移)再按名称匹配。
+            // 绝不能回退到"任取第一个歌单":那是普通用户歌单,拿它当喜欢集合会显示错误红心,
+            // 还会把集合污染进后续 toggle 的目标判定。
+            var liked = playlists.FirstOrDefault(p => p.DirId == LikedDirId)
+                        ?? playlists.FirstOrDefault(p => p.Name == "我喜欢");
+            if (liked is null)
+            {
+                _likedIds ??= new HashSet<long>(); // 空账号/未识别:视为空集(合法状态,不再重试)
+                return;
+            }
+            _likedDissTid = liked.Id;
+            var tracks = await GetPlaylistTracksAsync(liked.Id, ct).ConfigureAwait(false);
+            _likedIds = new HashSet<long>(tracks.Where(t => t.Id != 0).Select(t => t.Id));
+        }
+        catch
+        {
+            // 拉取失败降级空集:初始态一律未喜欢,toggle 以"添加"为先(fail-safe 不会误删用户的收藏)
+            _likedIds ??= new HashSet<long>();
+        }
+        finally
+        {
+            _likedLoading = false;
+        }
+    }
+
+    /// <summary>已喜欢集合是否含该曲目(集合未加载时返回 false)。</summary>
+    public bool IsLiked(long id) => _likedIds?.Contains(id) ?? false;
+
+    /// <summary>切换红心:返回切换后的状态;失败抛 ApiException(调用方回滚 UI)。
+    /// 协议参考开源 multiPlatformMusicApi 的 qqmusic like 模块:music.musicasset.PlaylistDetailWrite
+    /// 的 AddSonglist/DelSonglist,param 为 { dirId:201("我喜欢"), v_songInfo:[{songType:0,songId}] }。
+    /// 注意 QQ 的红心不是"加入某个用户歌单",而是音乐资产的固定喜欢目录操作:
+    /// 写目标恒为 dirId=201,"我喜欢"歌单 tid 只用于读取已喜欢集合,绝不能当写目标
+    /// (AddSonglist 按资产目录定位,传 tid 会指向不存在的目录或误写其他歌单)。</summary>
+    public async Task<bool> LikeToggleAsync(long id, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("QQ音乐未登录,无法切换红心", -1);
+        if (id == 0)
+            throw new ApiException("无效曲目 id", -1);
+
+        await EnsureLikedIdsAsync(ct).ConfigureAwait(false); // 尽力加载;失败按空集处理 → 目标为添加
+        var target = !IsLiked(id);
+        var mid = _midById.TryGetValue(id, out var m) ? m : "";
+
+        await SecureLikeRequestAsync(target, id, mid, LikedDirId, ct).ConfigureAwait(false);
+
+        _likedIds ??= new HashSet<long>();
+        if (target) _likedIds.Add(id); else _likedIds.Remove(id);
+        return target;
+    }
+
+    // ---------- 红心写操作的加密签名通道(musics.fcg / ag-1) ----------
+    // 网页版对写类 asset 接口走加密通道:明文 musicu.fcg 网关对 PlaylistDetailWrite/AddSonglist 返回
+    // 80105(明文写被拒)。此处端口移植开源 multiPlatformMusicApi 的 qqmusic 请求封装:
+    //   comm + req_0(module=music.musicasset.PlaylistDetailWrite, method=AddSonglist/DelSonglist,
+    //   param={ dirId:201, v_songInfo:[{songType:0, songId}] }) 整体 AES-128-GCM 加密 →
+    //   zzcSign 派生签名 → POST u6.y.qq.com/cgi-bin/musics.fcg?encoding=ag-1&sign=...;
+    //   响应体按固定 21B 密钥循环 XOR 解出明文 JSON。
+    private const string MusicsUrl = "https://u6.y.qq.com/cgi-bin/musics.fcg";
+    private const string GAlertRequestKeyHex = "bd305f10d0ff74b6ef54dab835b5e1cf"; // 16B AES-128-GCM 密钥
+    private const string Ag1ResponseKeyHex = "7a3f8c1d5e9b2f0a6c4d7e8b1f3a5c9d0e2b6f4a81"; // 21B XOR 响应密钥
+
+    /// <summary>向"我喜欢"目录写红心。失败(code!=0 / 网络 / 解密失败)抛 ApiException。</summary>
+    private async Task SecureLikeRequestAsync(bool add, long songId, string songMid, long dirId, CancellationToken ct)
+    {
+        // 1) 明文 JSON:comm 全量字段(参考实现) + req_0(module/method/param)
+        var dataStr = BuildAg1Json(add, songId, songMid, dirId).Replace("\r", "").Replace("\n", "");
+        var sign = BuildZzcSign(dataStr);
+
+        // 2) AES-128-GCM 加密 → base64(IV||CT||TAG)
+        var body = AesGcmEncrypt(dataStr);
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{MusicsUrl}?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}&encoding=ag-1&sign={sign}");
+        req.Headers.TryAddWithoutValidation("Accept", "application/octet-stream");
+        req.Headers.TryAddWithoutValidation("Content-Type", "text/plain");
+        req.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/");
+        if (IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
+        req.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(body));
+
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+            throw new ApiException($"红心{(add ? "收藏" : "取消")}失败:HTTP {(int)resp.StatusCode}", (int)resp.StatusCode);
+        var raw = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+        var json = Ag1XorDecrypt(raw);
+
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(json); }
+        catch (JsonException) { throw new ApiException("红心响应无法解析", -1); }
+        using (doc)
+        {
+            var code = PickReqCode(doc.RootElement);
+            if (code != 0)
+            {
+                var detail = DescribeFailure(doc.RootElement);
+                throw new ApiException(
+                    TryPickMessage(doc.RootElement) is { } msg
+                        ? $"红心{(add ? "收藏" : "取消")}失败:{msg}"
+                        : $"红心{(add ? "收藏" : "取消")}失败(code={code}){detail}",
+                    code);
+            }
+        }
+    }
+
+    /// <summary>构造 ag-1 请求 JSON(comm 全量 + 单个 req_0),与参考实现逐字段对齐。
+    /// param 对齐现网(L-1124/QQMusicApi 实测形态):dirId + tid(红心恒 0)+ bFmtUtf8:true
+    /// (必须保留布尔原形,服务端按真布尔校验,缺失/整型会回 80105/500026)+ v_songInfo。
+    /// songMid 尽量带上:服务端对部分资产目录要求 mid,否则回 500026。</summary>
+    private string BuildAg1Json(bool add, long songId, string songMid, long dirId)
+    {
+        using var ms = new MemoryStream();
+        using (var w = new Utf8JsonWriter(ms))
+        {
+            w.WriteStartObject();
+            w.WriteStartObject("comm");
+            w.WriteNumber("cv", 4747474);
+            w.WriteNumber("ct", 24);
+            w.WriteString("format", "json");
+            w.WriteString("inCharset", "utf-8");
+            w.WriteString("outCharset", "utf-8");
+            w.WriteNumber("notice", 0);
+            w.WriteString("platform", "yqq.json");
+            w.WriteNumber("needNewCode", 1);
+            w.WriteString("uin", _uin);
+            w.WriteNumber("g_tk_new_20200303", ComputeGtk());
+            w.WriteNumber("g_tk", ComputeGtk());
+            w.WriteEndObject();
+            w.WriteStartObject("req_0");
+            w.WriteString("module", "music.musicasset.PlaylistDetailWrite");
+            w.WriteString("method", add ? "AddSonglist" : "DelSonglist");
+            w.WriteStartObject("param");
+            w.WriteNumber("dirId", dirId);
+            w.WriteNumber("tid", 0);
+            w.WriteBoolean("bFmtUtf8", true);
+            w.WriteStartArray("v_songInfo");
+            w.WriteStartObject();
+            w.WriteNumber("songType", 0);
+            w.WriteNumber("songId", songId);
+            if (songMid.Length > 0) w.WriteString("songMid", songMid);
+            w.WriteEndObject();
+            w.WriteEndArray();
+            w.WriteEndObject(); // param
+            w.WriteEndObject(); // req_0
+            w.WriteEndObject(); // root
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    /// <summary>zzcSign:对请求明文做 SHA1,按固定索引/混淆表派生,输出以 zzc 开头、小写。</summary>
+    private static string BuildZzcSign(string payload)
+    {
+        var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(payload)));
+
+        // JS 对索引 <40 才取字符(40 越界跳过);逐字拼接以复刻该剪裁
+        var part1 = "";
+        int[] part1Idx = { 23, 14, 6, 36, 16, 40, 7, 19 };
+        foreach (var i in part1Idx) if (i < hash.Length) part1 += hash[i];
+
+        var part2 = "";
+        int[] part2Idx = { 16, 1, 32, 12, 19, 27, 8, 5 };
+        foreach (var i in part2Idx) part2 += hash[i];
+
+        int[] scramble = { 89, 39, 179, 150, 218, 82, 58, 252, 177, 52, 186, 123, 120, 64, 242, 133, 143, 161, 121, 179 };
+        var part3 = new byte[scramble.Length];
+        for (var i = 0; i < scramble.Length; i++)
+        {
+            var hashByte = Convert.ToByte(hash.Substring(i * 2, 2), 16);
+            part3[i] = (byte)(scramble[i] ^ hashByte);
+        }
+        var b64 = Convert.ToBase64String(part3).Replace("/", "").Replace("+", "").Replace("=", "");
+
+        return $"zzc{new string(part1)}{b64}{new string(part2)}".ToLowerInvariant();
+    }
+
+    /// <summary>AES-128-GCM 加密请求体 → base64(IV||CT||TAG)。</summary>
+    private static string AesGcmEncrypt(string plaintext)
+    {
+        using var aes = new AesGcm(Convert.FromHexString(GAlertRequestKeyHex), 16);
+        var iv = RandomNumberGenerator.GetBytes(12);
+        var pt = Encoding.UTF8.GetBytes(plaintext);
+        var ct = new byte[pt.Length];
+        var tag = new byte[16];
+        aes.Encrypt(iv, pt, ct, tag);
+        var outb = new byte[iv.Length + ct.Length + tag.Length];
+        Buffer.BlockCopy(iv, 0, outb, 0, iv.Length);
+        Buffer.BlockCopy(ct, 0, outb, iv.Length, ct.Length);
+        Buffer.BlockCopy(tag, 0, outb, iv.Length + ct.Length, tag.Length);
+        return Convert.ToBase64String(outb);
+    }
+
+    /// <summary>响应体按固定 21B 密钥循环 XOR 解出 UTF-8 明文(16 进制串解码为 21 字节)。</summary>
+    private static string Ag1XorDecrypt(byte[] data)
+    {
+        var key = Convert.FromHexString(Ag1ResponseKeyHex); // hex 解码 → 21B
+        var outb = new byte[data.Length];
+        for (var i = 0; i < data.Length; i++)
+            outb[i] = (byte)(data[i] ^ key[i % key.Length]);
+        return Encoding.UTF8.GetString(outb);
+    }
+
+    /// <summary>musicu.fcg 单模块业务码:req_0.code,缺失时回退 req_0.data.code(不同 asset 模块层级不一)。</summary>
+    private static int PickReqCode(JsonElement root)
+    {
+        if (root.TryGetProperty("req_0", out var r0) && r0.ValueKind == JsonValueKind.Object)
+        {
+            if (r0.TryGetProperty("code", out var c) && c.TryGetInt32(out var v)) return v;
+            if (r0.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object &&
+                d.TryGetProperty("code", out var dc) && dc.TryGetInt32(out var dv)) return dv;
+        }
+        return -1;
+    }
+
+    /// <summary>从写请求响应里捞人读错误信息(data.code_msg / data.msg),缺省 null。</summary>
+    private static string? TryPickMessage(JsonElement root)
+    {
+        if (root.TryGetProperty("req_0", out var r0) &&
+            r0.ValueKind == JsonValueKind.Object &&
+            r0.TryGetProperty("data", out var d) &&
+            d.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in new[] { "code_msg", "msg", "message" })
+                if (d.TryGetProperty(name, out var m) && m.ValueKind == JsonValueKind.String &&
+                    m.GetString() is { Length: > 0 } s)
+                    return s;
+        }
+        return null;
+    }
+
+    /// <summary>诊断:拼出响应紧凑摘要(优先 req_0 原文,缺省整棵根),便于定位网关拒绝原因。</summary>
+    private static string DescribeFailure(JsonElement root)
+    {
+        try
+        {
+            JsonElement target = root;
+            if (root.TryGetProperty("req_0", out var r0) && r0.ValueKind == JsonValueKind.Object)
+                target = r0;
+            var text = target.GetRawText();
+            return text.Length > 200 ? $" |resp:{text[..200]}" : $" |resp:{text}";
+        }
+        catch { /* 忽略 */ }
+        return "";
+    }
+
     // ---------- IUserMusicApi 账号能力(需有效登录 Cookie) ----------
 
     /// <summary>c6.y.qq.com 用户主页:一次返回 creator 资料 + mydiss.list 歌单列表。</summary>
@@ -342,6 +624,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 list.Add(new Playlist
                 {
                     Id = d.Tid,
+                    DirId = d.DirId,
                     Source = MusicSource.QQ,
                     Name = OrUnnamed(FirstNonEmpty(d.DirName)),
                     TrackCount = d.SongNum,
@@ -816,7 +1099,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 w.WriteString("uin", _uin);
                 w.WriteString("format", "json");
                 w.WriteNumber("ct", 24);
-                w.WriteNumber("cv", 0);
+                w.WriteNumber("cv", 4747474);
+                w.WriteNumber("g_tk", ComputeGtk());
+                w.WriteNumber("g_tk_new_20200303", ComputeGtk());
                 w.WriteEndObject();
                 w.WriteEndObject();
             }
@@ -901,15 +1186,24 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     private static bool HasNegativeBizCode(params int[] codes) => codes.Any(c => c < 0);
 
-    /// <summary>g_tk(bkn):有 p_skey 时按标准哈希计算(账号接口校验用),否则退回开源实现用的固定值。</summary>
+    /// <summary>g_tk(bkn):按登录模型取哈希输入 —— 旧模型(p_skey 在 cookie 里)用 p_skey;
+    /// 新模型(无 p_skey,凭据是 qm_keyst/musickey,本机现网形态)用 qm_keyst,
+    /// 与现网客户端(L-1124/QQMusicApi)一致。两者皆无(匿名)退回参考实现的固定值。
+    /// 写类 asset 接口(红心 ag-1 通道)会严格校验 g_tk,给错回 500026。</summary>
     private int ComputeGtk()
     {
-        var pskey = ExtractCookieValue(_cookieHeader, "p_skey");
-        if (string.IsNullOrEmpty(pskey)) return 1124214810;
+        var input = ExtractCookieValue(_cookieHeader, "p_skey");
+        if (string.IsNullOrEmpty(input))
+        {
+            input = ExtractCookieValue(_cookieHeader, "qm_keyst")
+                    ?? ExtractCookieValue(_cookieHeader, "qqmusic_key")
+                    ?? _authst;
+        }
+        if (string.IsNullOrEmpty(input)) return 1124214810;
         unchecked
         {
             var hash = 5381;
-            foreach (var ch in pskey) hash += (hash << 5) + ch;
+            foreach (var ch in input) hash += (hash << 5) + ch;
             return hash & 0x7fffffff;
         }
     }

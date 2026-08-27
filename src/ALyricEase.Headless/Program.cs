@@ -46,6 +46,14 @@ public static class Program
             return;
         }
 
+        // QQ 音乐红心端到端实测(需本机有效 Cookie):AddSonglist→云端复检→DelSonglist 还原
+        if (args.Length > 0 && args[0] == "--qqlike")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqApiProbe.RunLikeProbeAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // TEMP-DIAG:正在播放覆盖层是否盖住标题栏
         if (args.Length > 0 && args[0] == "--npcover")
         {

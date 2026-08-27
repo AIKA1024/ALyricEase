@@ -198,16 +198,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _ = LoadCurrentLikedAsync();
     }
 
-    /// <summary>当前曲红心状态(后台加载;未登录/失败保持未喜欢)。红心为网易云能力,QQ 曲目跳过。</summary>
+    /// <summary>当前曲红心状态(后台加载;未登录/失败保持未喜欢)。红心按音源路由到对应平台。</summary>
     private async Task LoadCurrentLikedAsync()
     {
         if (CurrentSong is not { } song) return;
-        if (song.Source != MusicSource.NetEase) return;
+        IUserMusicApi api;
+        try { api = _sources.User(song.Source); }
+        catch { return; }
         try
         {
-            await _api.EnsureLikedIdsAsync();
+            await api.EnsureLikedIdsAsync();
             if (CurrentSong?.Id == song.Id) // 切歌后丢弃过期结果
-                IsCurrentLiked = _api.IsLiked(song.Id);
+                IsCurrentLiked = api.IsLiked(song.Id);
         }
         catch
         {
@@ -223,12 +225,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private async Task ToggleLikeAsync()
     {
         if (CurrentSong is null) return;
-        if (CurrentSong.Source != MusicSource.NetEase)
-        {
-            Message = "QQ音乐歌曲暂不支持红心收藏";
-            return;
-        }
-        if (_api.LikedPlaylistId == 0) // 未登录:没有"我喜欢的音乐"歌单
+        IUserMusicApi api;
+        try { api = _sources.User(CurrentSong.Source); }
+        catch { return; }
+        if (!api.CanToggleLike)
         {
             LoginRequired?.Invoke();
             return;
@@ -237,11 +237,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         IsCurrentLiked = !prev; // 乐观更新,立即反馈
         try
         {
-            IsCurrentLiked = await _api.LikeToggleAsync(CurrentSong.Id);
+            IsCurrentLiked = await api.LikeToggleAsync(CurrentSong.Id);
         }
-        catch
+        catch (Exception ex)
         {
             IsCurrentLiked = prev; // 失败回滚
+            if (CurrentSong.Source != MusicSource.NetEase)
+                Message = $"QQ 红心写入未生效({(ex as ApiException)?.Message ?? ex.Message})";
         }
     }
 

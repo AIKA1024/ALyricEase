@@ -92,6 +92,16 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public async Task EnsureLoadedAsync()
     {
         await EnsureQqLoadedAsync();
+        // QQ 单独登录且未选中歌单时,自动打开"我喜欢"——"我的收藏"页直出喜欢列表
+        // (与网易云登录后自动打开"我喜欢的音乐"行为对齐;双登录时网易云分支优先)
+        if (IsQqLoggedIn && !IsLoggedIn && SelectedPlaylist is null)
+        {
+            var liked = QqPlaylists.FirstOrDefault(p => p.Playlist.DirId == QQMusicApiClient.LikedDirId)
+                        ?? QqPlaylists.FirstOrDefault(p => p.Playlist.Name == "我喜欢")
+                        ?? QqPlaylists.FirstOrDefault();
+            if (liked is not null)
+                await OpenQqPlaylistAsync(liked);
+        }
         if (IsLoggedIn || _cookie.MusicU is null) return;
         await LoadProfileAndPlaylistsAsync();
     }

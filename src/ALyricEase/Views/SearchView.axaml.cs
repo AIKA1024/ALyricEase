@@ -22,7 +22,10 @@ public partial class SearchView : UserControl
     private void OnResultContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
         if (e.Container?.DataContext is SongItemViewModel item)
+        {
             item.EnsureCoverLoaded();
+            item.EnsureLikedLoaded(); // 搜索结果行红心状态(两音源按源路由,未登录保持未喜欢)
+        }
     }
 
     private void OnListDoubleTapped(object? sender, TappedEventArgs e)

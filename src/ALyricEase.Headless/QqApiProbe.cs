@@ -93,4 +93,63 @@ public static class QqApiProbe
         Console.WriteLine(exit == 0 ? "[qqapi] 全部通过" : "[qqapi] 存在失败项");
         return exit;
     }
+
+    /// <summary>红心端到端探针(--qqlike):取"我喜欢"tid → 对一首未喜欢曲目 AddSonglist → 云端复检 →
+    /// DelSonglist 恢复原状(结束状态与开始一致,零净副作用)。需要本机已存有效 QQ Cookie。
+    /// 选曲规则:优先从公开每日30首歌单取首曲(不在用户喜欢集合内 → 实测 Add 路径),
+    /// 失败再走对既有喜欢集合尾曲的 cancel→restore 路线。</summary>
+    public static async Task<int> RunLikeProbeAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var api = new QQMusicApiClient(new CookieStore());
+        if (!api.IsLoggedIn)
+        {
+            Console.WriteLine("[qqlike][FAIL] 本机无有效 QQ Cookie,无法实测红心写入");
+            return 1;
+        }
+        var exit = 0;
+        try
+        {
+            // 1) 读链路:定位"我喜欢" + 已喜欢集合
+            await api.EnsureLikedIdsAsync();
+            Console.WriteLine($"[qqlike] EnsureLikedIdsAsync 完成,CanToggleLike={api.CanToggleLike}");
+            const long dailyTid = 7294917175; // 公开每日30首动态歌单(与 --qqapi 同源,匿名可读)
+            var probeSong = (await api.GetPlaylistTracksAsync(dailyTid)).FirstOrDefault(s => s.Id != 0);
+            if (probeSong is null)
+            {
+                Console.WriteLine("[qqlike][FAIL] 每日歌单无可选样例曲目");
+                return 1;
+            }
+            Console.WriteLine($"[qqlike] 样例 #{probeSong.Id}/{probeSong.Mid} [{probeSong.Name} - {probeSong.Artist}] 当前红心={api.IsLiked(probeSong.Id)}(期望 False)");
+
+            // 找到"我喜欢"tid(用于云端复检;仅供观察,校验以 QQMusicApiClient 内部同一路径为准)
+            var likedPl = (await api.GetUserPlaylistsAsync()).FirstOrDefault(p => p.Name == "我喜欢");
+            Console.WriteLine($"[qqlike] 我喜欢歌单 tid={likedPl?.Id.ToString() ?? "(未找到)"} 标称{likedPl?.TrackCount ?? -1}首");
+
+            // 2) Add:应返回 true 且云端出现
+            var added = await api.LikeToggleAsync(probeSong.Id);
+            Console.WriteLine($"[qqlike] AddSonglist 返回={added}(期望 True),内存集合含它={api.IsLiked(probeSong.Id)}(期望 True)");
+            var afterAdd = await api.GetPlaylistTracksAsync(likedPl!.Id);
+            bool inCloud = afterAdd.Any(t => t.Id == probeSong.Id);
+            Console.WriteLine($"[qqlike] 云端复检(Add 后): 曲目 {afterAdd.Count} 首, 含样例={inCloud}(期望 True)");
+
+            // 3) Del:恢复原状
+            var removed = await api.LikeToggleAsync(probeSong.Id);
+            Console.WriteLine($"[qqlike] DelSonglist 返回={removed}(期望 False)");
+            var afterDel = await api.GetPlaylistTracksAsync(likedPl.Id);
+            bool goneCloud = !afterDel.Any(t => t.Id == probeSong.Id);
+            Console.WriteLine($"[qqlike] 云端复检(Del 后): 曲目 {afterDel.Count} 首, 含样例={(!goneCloud)}(期望 False)");
+
+            exit = added && inCloud && !removed && goneCloud ? 0 : 1;
+            Console.WriteLine(exit == 0 ? "[qqlike] 全部通过(状态已还原)" : "[qqlike][FAIL] 校验未全过(请核对上面的期望标注)");
+            if (!(added && inCloud)) exit |= 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[qqlike][FAIL] {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            exit = 1;
+        }
+        return exit;
+    }
 }

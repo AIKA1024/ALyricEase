@@ -453,6 +453,9 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>登录后"我喜欢的音乐"歌单 id(0 = 未识别到/未登录)。</summary>
     public long LikedPlaylistId => _likedPlaylistId;
 
+    /// <summary>当前登录态能否执行红心操作(未登录时没有"我喜欢的音乐"歌单,UI 应引导登录)。</summary>
+    public bool CanToggleLike => _likedPlaylistId != 0;
+
     /// <summary>懒加载已喜欢曲目 id 集合(单飞,幂等)。未登录或未识别到喜欢歌单时为空集。</summary>
     public Task EnsureLikedIdsAsync(CancellationToken ct = default)
     {

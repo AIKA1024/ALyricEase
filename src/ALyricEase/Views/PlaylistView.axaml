@@ -60,6 +60,24 @@
     <Style Selector="ScrollViewer.tracks-scroller ScrollBar">
       <Setter Property="Margin" Value="0,0,0,100" />
     </Style>
+    <!-- 聚合歌单右上角齿轮设置按钮:32px 透明底,悬停浅底+teal 字形 -->
+    <Style Selector="Button.hero-settings">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.hero-settings:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.hero-settings:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+    </Style>
   </UserControl.Styles>
   <Grid>
     <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
@@ -140,6 +158,12 @@
                 </Button>
               </StackPanel>
             </StackPanel>
+            <!-- 聚合歌单右上角齿轮设置按钮:仅聚合页显示,悬浮于卡片右上角 -->
+            <Button Classes="hero-settings" Command="{Binding OpenAggregateSettingsCommand}"
+                    IsVisible="{Binding IsAggregate}" ToolTip.Tip="聚合歌单设置"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,16,0">
+              <TextBlock Text="&#xE917;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+            </Button>
           </Grid>
         </Border>
         <Grid Grid.Row="1" Margin="0,12,0,0">

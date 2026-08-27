@@ -81,9 +81,12 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _uin = uin.TrimStart('o');
         _authst = key;
         _cookieHeader = rawCookie; // 保留原文:账号接口依赖 p_skey/euin 等附加字段
-        // 换号后已喜欢集合/tid 缓存全部失效
+        // 换号后已喜欢集合/tid/会员状态缓存全部失效
         _likedDissTid = 0;
         _likedIds = null;
+        _vipLoaded = false;
+        _vipLoading = false;
+        IsVip = false;
         _cookie.QQCookieRaw = rawCookie;
         _cookie.Save();
     }
@@ -94,9 +97,12 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _uin = "0";
         _authst = "";
         _cookieHeader = "";
-        // 登出后已喜欢集合/tid 缓存失效
+        // 登出后已喜欢集合/tid/会员状态缓存失效
         _likedDissTid = 0;
         _likedIds = null;
+        _vipLoaded = false;
+        _vipLoading = false;
+        IsVip = false;
         if (_cookie.QQCookieRaw is not null)
         {
             _cookie.QQCookieRaw = null;
@@ -254,6 +260,50 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private Task? _likedLoadTask;
 
     public bool CanToggleLike => IsLoggedIn;
+
+    // ---------- 会员状态(VipLogin.VipLoginInter/vip_login_base)----------
+
+    private bool _vipLoaded;
+    private bool _vipLoading;
+    private Task? _vipLoadTask;
+
+    /// <summary>当前登录用户是否为 QQ 音乐会员(绿钻 identity.vip/huge_vip;未登录/未加载为 false)。
+    /// 播放 VIP 歌曲失败消息用;经 EnsureVipStatusAsync 惰性加载。</summary>
+    public bool IsVip { get; private set; }
+
+    /// <summary>会员状态是否已确认(vip_login_base 已返回或未登录)。</summary>
+    public bool IsVipLoaded => _vipLoaded || !IsLoggedIn;
+
+    /// <summary>确保会员状态已加载(幂等,单飞):首次发 vip_login_base,失败按非会员处理不抛。</summary>
+    public Task EnsureVipStatusAsync(CancellationToken ct = default)
+    {
+        if (_vipLoaded || !IsLoggedIn) return Task.CompletedTask;
+        if (_vipLoading) return _vipLoadTask ?? Task.CompletedTask;
+        _vipLoading = true;
+        return _vipLoadTask = LoadVipStatusAsync(ct);
+    }
+
+    private async Task LoadVipStatusAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var doc = await PostMusicuAsync(w =>
+                WriteModuleReq(w, "VipLogin.VipLoginInter", "vip_login_base", _ => { }), ct).ConfigureAwait(false);
+            var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQVipLoginResponse);
+            var identity = resp?.Req0?.Data?.Identity;
+            IsVip = resp is { Code: 0 } && resp.Req0 is { Code: 0 } &&
+                    ((identity?.Vip ?? 0) != 0 || (identity?.HugeVip ?? 0) != 0);
+        }
+        catch
+        {
+            IsVip = false; // 网络失败按非会员(播放消息兜底;下次登录重载)
+        }
+        finally
+        {
+            _vipLoaded = true;
+            _vipLoading = false;
+        }
+    }
 
     /// <summary>懒加载已喜欢集合(幂等,单飞):在用户歌单中定位"我喜欢"(优先按资产目录
     /// dirId=201 判定,其次名称匹配——个别账号可改名)拿 tid,再走歌单详情按页收集 songid。</summary>
@@ -564,12 +614,16 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             {
                 var assetNick = FirstNonEmpty(me.Nick);
                 if (assetNick.Length > 0)
+                {
+                    // 资料返回时同步确认会员状态:登录/启动后歌单与歌曲行渲染前即可预判可播性
+                    await EnsureVipStatusAsync(ct).ConfigureAwait(false);
                     return new UserProfile
                     {
                         UserId = long.TryParse(_uin, out var assetUin) ? assetUin : 0,
                         Nickname = assetNick,
                         AvatarUrl = FirstNonEmpty(me.HeadUrl, me.IfPicUrl),
                     };
+                }
             }
         }
         catch (ApiException)
@@ -580,6 +634,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         var home = await GetHomepageAsync(ct).ConfigureAwait(false);
         var c = home.Data?.Creator;
         var nick = FirstNonEmpty(c?.Nick, c?.Nickname);
+        await EnsureVipStatusAsync(ct).ConfigureAwait(false); // 同上:会员状态随资料确认
         return new UserProfile
         {
             UserId = long.TryParse(_uin, out var u) ? u : 0,

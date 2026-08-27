@@ -40,6 +40,9 @@ public sealed record LegacyProfile
     public string Nickname { get; init; } = "";
 
     [JsonPropertyName("avatarUrl")] public string AvatarUrl { get; init; } = "";
+
+    /// <summary>会员类型:0=无,10/11=音乐包,111=黑胶VIP(非 0 即开通了某种会员)。</summary>
+    [JsonPropertyName("vipType")] public int VipType { get; init; }
 }
 
 public sealed record LegacyUserPlaylistResponse

@@ -216,6 +216,14 @@
            播放详情页里点红心也能弹登录。 -->
       <views:LoginDialogView IsVisible="{Binding IsLoginDialogOpen}"
                              Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+      <!-- 添加聚合歌单对话框(与登录弹层同层,声明在其后 → 同时可见时盖在其上) -->
+      <views:AddAggregateDialogView IsVisible="{Binding IsAggregateDialogOpen}"
+                                    Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+      <!-- 聚合歌单设置对话框(齿轮;同层最末 → 同时可见时盖在最上) -->
+      <views:AggregateSettingsDialogView IsVisible="{Binding IsAggregateSettingsDialogOpen}"
+                                         Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
     </Grid>
   </ExperimentalAcrylicBorder>
 </Window>

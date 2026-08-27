@@ -186,7 +186,7 @@ public static class PerfProbe
         var daily = Enumerable.Range(0, 6)
             .Select(i => (object)new SongItemViewModel(
                 new Song { Id = i + 1, Name = $"每日歌曲 {i}", Artist = "歌手", Album = "专辑", DurationMs = 200_000 },
-                (_, _, _) => Task.CompletedTask, api: null, source: "每日歌曲推荐"))
+                (_, _, _) => Task.FromResult(true), api: null, source: "每日歌曲推荐"))
             .ToList();
         vm.Recommend.Sections.Add(new RecommendSectionViewModel("每日歌曲推荐", daily, isBordered: true));
 
@@ -200,7 +200,7 @@ public static class PerfProbe
         for (var i = 0; i < 30; i++)
             vm.Search.Results.Add(new SongItemViewModel(
                 new Song { Id = 100 + i, Name = $"搜索结果 {i}", Artist = "歌手", Album = "专辑", DurationMs = 180_000 },
-                (_, _, _) => Task.CompletedTask));
+                (_, _, _) => Task.FromResult(true)));
 
         // 我的收藏:200 首
         vm.Playlist.PlaylistTitle = "我喜欢的音乐";
@@ -208,7 +208,7 @@ public static class PerfProbe
         for (var i = 0; i < 200; i++)
             vm.Playlist.Tracks.Add(new SongItemViewModel(
                 new Song { Id = 200 + i, Name = $"收藏歌曲 {i}", Artist = "歌手", Album = "专辑", DurationMs = 210_000 },
-                (_, _, _) => Task.CompletedTask, index: i + 1));
+                (_, _, _) => Task.FromResult(true), index: i + 1));
     }
 
     private static void MeasureSwitch(string name, string page)

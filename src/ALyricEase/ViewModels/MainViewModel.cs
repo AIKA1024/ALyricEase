@@ -34,6 +34,8 @@ public sealed partial class MainViewModel : ViewModelBase
         Album = album;
         _playlist = playlist;
         AppState = appState;
+        AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed);
+        AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
         // 折叠状态必须先于首次 RebuildShellNavigation 恢复(静态分组头实例随即被导航渲染消费)
         NetEasePlaylistsHeader.IsExpanded = appState.IsNetEaseGroupExpanded;
         QqPlaylistsHeader.IsExpanded = appState.IsQqGroupExpanded;
@@ -56,6 +58,12 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>界面状态存储(折叠状态;主窗口大小/位置由 MainWindow 读写同一实例)。</summary>
     public Services.AppStateStore AppState { get; }
+
+    /// <summary>添加聚合歌单对话框 VM(宿主绑定 AddAggregateDialogView;打开前 Refresh)。</summary>
+    public AddAggregateDialogViewModel AddAggregateDialog { get; }
+
+    /// <summary>聚合歌单设置对话框 VM(宿主绑定 AggregateSettingsDialogView;打开前 Refresh)。</summary>
+    public AggregateSettingsDialogViewModel AggregateSettingsDialog { get; }
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
@@ -84,9 +92,11 @@ public sealed partial class MainViewModel : ViewModelBase
     ];
 
     /// <summary>网易云/QQ 歌单分组标题:均登录后才显示,故不进静态 NavItems,由 RebuildShellNavigation 按登录态插入。
-    /// 头部是静态共享实例,展开/收起状态随实例保留,跨导航重建与登录变化不丢。</summary>
-    private static readonly NavItemViewModel NetEasePlaylistsHeader = new("PlaylistsHeader", "网易云", isHeader: true, isToggleGroup: true);
+    /// 头部是静态共享实例,展开/收起状态随实例保留,跨导航重建与登录变化不丢。
+    /// 聚合歌单在两者之上:任一音源登录即出现(占位,展开空;"+"后续接入选择两源歌单加入聚合)。</summary>
+    private static readonly NavItemViewModel NetEasePlaylistsHeader = new("PlaylistsHeader", "网易云音乐", isHeader: true, isToggleGroup: true);
     private static readonly NavItemViewModel QqPlaylistsHeader = new("QqPlaylistsHeader", "QQ音乐", isHeader: true, isToggleGroup: true);
+    private static readonly NavItemViewModel AggregatePlaylistsHeader = new("AggregatePlaylistsHeader", "聚合歌单", isHeader: true, isToggleGroup: true, hasAddButton: true);
 
     public ObservableCollection<NavItemViewModel> ShellNavItems { get; } = new();
 
@@ -241,16 +251,35 @@ public sealed partial class MainViewModel : ViewModelBase
     private void OnPlaylistLoginChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(PlaylistViewModel.IsLoggedIn) or nameof(PlaylistViewModel.IsQqLoggedIn))
+        {
+            // 登录态变化:重算各页歌曲行可播性(登录成会员后 VIP 行恢复可点;登出则禁用)
+            Search.RefreshPlayability();
+            Playlist.RefreshPlayability();
+            Recommend.RefreshPlayability();
             RebuildShellNavigation();
+        }
     }
 
     /// <summary>静态导航 + 登录音源各自的歌单分组(网易云/QQ 均登录后才显示;QQ 键加前缀防与网易云 id 撞键)。
-    /// 歌单子项经 OwnerKey 挂到所属分组头,并继承其当前开合态。</summary>
+    /// 聚合歌单(任一音源登录即显示)置于两个分组之上。歌单子项经 OwnerKey 挂到所属分组头,
+    /// 并继承其当前开合态。</summary>
     private void RebuildShellNavigation()
     {
         ShellNavItems.Clear();
         foreach (var item in NavItems)
             ShellNavItems.Add(item);
+
+        // 聚合歌单:两源任一登录即出现(子项 = 用户创建的聚合歌单,占位期可空)
+        if (Playlist.IsLoggedIn || Playlist.IsQqLoggedIn)
+        {
+            ShellNavItems.Add(AggregatePlaylistsHeader);
+            foreach (var agg in AppState.AggregatePlaylists)
+                ShellNavItems.Add(new NavItemViewModel($"Aggregate:{agg.Id}", agg.Name, "", aggregate: agg)
+                {
+                    OwnerKey = AggregatePlaylistsHeader.Key,
+                    ShowAsChild = AggregatePlaylistsHeader.IsExpanded,
+                });
+        }
 
         if (Playlist.IsLoggedIn)
         {
@@ -275,7 +304,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>展开/收起一个歌单分组(网易云/QQ 头部按钮)。子项只隐藏不清除:
+    /// <summary>展开/收起一个可折叠分组(聚合歌单/网易云音乐/QQ 音乐)。子项只隐藏不清除:
     /// 已打开的歌单详情页与选中态保持不变;分组头是静态实例,状态跨导航重建保留。</summary>
     [RelayCommand]
     private void ToggleNavGroup(string? key)
@@ -307,6 +336,14 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentPageTitle));
         // 中/小屏抽屉内点击导航项后自动收起(原版 NavigationView Compact/Minimal 语义:选中即收起抽屉)
         IsNavigationDrawerOpen = false;
+        if (value.Aggregate is { } aggregate)
+        {
+            // 聚合歌单:合并各成员歌单曲目展示(复用歌单详情页)
+            ActivePage = "Favorites";
+            Playlist.OpenAggregateCommand.Execute(aggregate);
+            SelectedNav = value;
+            return;
+        }
         if (value.Playlist is { } playlist)
         {
             // 按 Playlist.Source 路由:QQ 歌单走一次拉全量,网易云维持 trackIds 增量加载
@@ -443,6 +480,57 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>关闭登录对话框(取消/Esc;登录成功由 MainWindow 监听 IsLoggedIn 自动关闭)。</summary>
     [RelayCommand] private void CloseLoginDialog() => IsLoginDialogOpen = false;
+
+    // ---- 添加聚合歌单对话框 ----
+
+    /// <summary>添加聚合歌单对话框(WinUI3 ContentDialog 式窗口内弹层):true=显示。</summary>
+    [ObservableProperty] private bool _isAggregateDialogOpen;
+
+    /// <summary>打开聚合歌单对话框:先按两源已加载的歌单重建候选,再显示。</summary>
+    [RelayCommand]
+    private void OpenAggregateDialog()
+    {
+        AddAggregateDialog.Refresh();
+        IsAggregateDialogOpen = true;
+    }
+
+    /// <summary>关闭聚合歌单对话框(取消/Esc)。</summary>
+    [RelayCommand] private void CloseAggregateDialog() => IsAggregateDialogOpen = false;
+
+    /// <summary>对话框确认回调:聚合歌单入库(state.json 持久化)并重建侧栏聚合分组,然后关弹窗。</summary>
+    private void OnAggregateConfirmed(Models.AggregatePlaylist aggregate)
+    {
+        AppState.AggregatePlaylists.Add(aggregate);
+        AppState.Save();
+        RebuildShellNavigation(); // 聚合分组下新增子项
+        IsAggregateDialogOpen = false;
+    }
+
+    // ---- 聚合歌单设置对话框 ----
+
+    /// <summary>聚合歌单设置对话框(WinUI3 ContentDialog 式窗口内弹层):true=显示。</summary>
+    [ObservableProperty] private bool _isAggregateSettingsDialogOpen;
+
+    /// <summary>打开聚合歌单设置对话框(齿轮按钮;按当前聚合歌单初始化单选)。</summary>
+    [RelayCommand]
+    private void OpenAggregateSettings(Models.AggregatePlaylist? aggregate)
+    {
+        if (aggregate is null) return;
+        AggregateSettingsDialog.Refresh(aggregate);
+        IsAggregateSettingsDialogOpen = true;
+    }
+
+    /// <summary>关闭聚合歌单设置对话框(取消/Esc)。</summary>
+    [RelayCommand] private void CloseAggregateSettingsDialog() => IsAggregateSettingsDialogOpen = false;
+
+    /// <summary>设置保存回调:持久化;若当前页正展示该聚合歌单,按新顺序重新打开;然后关弹窗。</summary>
+    private void OnAggregateSettingsSaved(Models.AggregatePlaylist aggregate)
+    {
+        AppState.Save();
+        if (ReferenceEquals(Playlist.CurrentAggregate, aggregate))
+            Playlist.OpenAggregateCommand.Execute(aggregate);
+        IsAggregateSettingsDialogOpen = false;
+    }
 
     /// <summary>左下角 Debug 入口(仅 DEBUG 构建可见)。</summary>
     [RelayCommand] private void GoDebug() => ActivePage = "Debug";

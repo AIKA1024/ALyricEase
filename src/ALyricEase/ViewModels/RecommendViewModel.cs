@@ -108,6 +108,13 @@ public sealed partial class RecommendSectionViewModel : ViewModelBase
 
     public ObservableCollection<object> Items { get; }
 
+    /// <summary>登录态变化后重算区块内歌曲行的可播性。</summary>
+    public void RefreshPlayability()
+    {
+        foreach (var item in Items)
+            if (item is SongItemViewModel song) song.RefreshPlayability();
+    }
+
     /// <summary>是否套圆角边框容器(仿原版 DailyMix 的 HorizontalScrollableGridView)。</summary>
     public bool IsBordered { get; }
 
@@ -145,6 +152,12 @@ public sealed class RecommendViewModel : ViewModelBase
     }
 
     public ObservableCollection<RecommendSectionViewModel> Sections { get; }
+
+    /// <summary>登录态变化后重算各区块歌曲行的可播性(整页刷新前先恢复/禁用,立即生效)。</summary>
+    public void RefreshPlayability()
+    {
+        foreach (var section in Sections) section.RefreshPlayability();
+    }
 
     /// <summary>进入首页时调用:首载或任一音源登录态变化时刷新(幂等;网络失败静默保持现状)。</summary>
     public async Task EnsureLoadedAsync()

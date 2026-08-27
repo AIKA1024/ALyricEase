@@ -22,6 +22,7 @@ namespace ALyricEase.Models.Dtos;
 [JsonSerializable(typeof(QQCreatedPlaylistsResponse))]
 [JsonSerializable(typeof(QQFavPlaylistsResponse))]
 [JsonSerializable(typeof(QQUserInfoResponse))]
+[JsonSerializable(typeof(QQVipLoginResponse))]
 internal sealed partial class QQMusicJsonContext : JsonSerializerContext
 {
 }

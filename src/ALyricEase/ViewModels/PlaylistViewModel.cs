@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
@@ -79,6 +81,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private bool _qqPlaylistsLoaded;
 
     public ObservableCollection<SongItemViewModel> Tracks { get; } = new();
+
+    /// <summary>登录态变化后重算各曲目行可播性(登录成会员后 VIP 歌曲行恢复可点)。</summary>
+    public void RefreshPlayability()
+    {
+        foreach (var t in Tracks) t.RefreshPlayability();
+    }
 
     partial void OnIsLoggedInChanged(bool value)
     {
@@ -214,6 +222,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _qqPlaylistsLoaded = false;
         Tracks.Clear();
         _isCloud = false;
+        _currentAggregate = null;
+        IsAggregate = false;
     }
 
     // 增量加载状态:trackIds 是全量权威顺序;仅已解析的歌曲会物化进 Tracks。
@@ -227,6 +237,24 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
     private bool _isCloud;              // 当前展示的是音乐云盘(而非用户歌单)
 
+    /// <summary>当前展示的聚合歌单(null = 非聚合页)。齿轮设置按钮按它显隐/定位。</summary>
+    private Models.AggregatePlaylist? _currentAggregate;
+
+    /// <summary>当前页是否为聚合歌单(驱动右上角齿轮设置按钮显隐)。</summary>
+    [ObservableProperty] private bool _isAggregate;
+
+    /// <summary>当前展示的聚合歌单(供设置弹窗引用;null = 非聚合页)。</summary>
+    public Models.AggregatePlaylist? CurrentAggregate => _currentAggregate;
+
+    /// <summary>聚合歌单页右上角齿轮:打开排列顺序设置弹窗(经宿主 MainViewModel 弹窗状态)。</summary>
+    [RelayCommand]
+    private void OpenAggregateSettings()
+    {
+        if (_currentAggregate is null) return;
+        try { ServiceLocator.Get<MainViewModel>().OpenAggregateSettingsCommand.Execute(_currentAggregate); }
+        catch { /* SelfTest/Headless 等无宿主环境 */ }
+    }
+
     /// <summary>音乐云盘:复用歌单页展示。分页拉全量云盘曲目(500/页,跟随 hasMore),
     /// 行队列共享 → 播放全部/上一曲/下一曲都在云盘列表内。已在云盘页时跳过(保留现有内容)。</summary>
     [RelayCommand]
@@ -235,6 +263,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         if (!IsLoggedIn || _isCloud) return;
         var generation = ++_loadGeneration;
         _isCloud = true;
+        _currentAggregate = null;
+        IsAggregate = false;
         SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘" });
         Tracks.Clear();
         PlaylistTitle = "音乐云盘";
@@ -287,6 +317,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         if (playlist is null) return;
         var generation = ++_loadGeneration;
         _isCloud = false;
+        _currentAggregate = null;
+        IsAggregate = false;
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded(); // 头部大封面
         _ = playlist.EnsureLargeCoverLoadedAsync(); // 600px 大图,保证头部 200px 显示清晰
@@ -332,6 +364,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         if (playlist is null) return;
         var generation = ++_loadGeneration;
         _isCloud = false;
+        _currentAggregate = null;
+        IsAggregate = false;
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded();
         _ = playlist.EnsureLargeCoverLoadedAsync();
@@ -357,6 +391,83 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (ApiException ex)
         {
             if (generation == _loadGeneration) Message = $"加载歌单失败:{ex.Message}";
+        }
+        finally
+        {
+            if (generation == _loadGeneration) IsBusy = false;
+        }
+    }
+
+    /// <summary>点开聚合歌单:按 SourceOrder 排序成员(网易云在前/QQ在前,组内保持原序),
+    /// 依次拉取各成员歌单全量曲目(网易云 GetPlaylistDetailAsync / QQ GetPlaylistTracksAsync)
+    /// 合并进同一个列表与共享队列;单成员失败不影响其余(Message 提示),
+    /// 合并完成后重建头部显示合计曲目数与成员歌单名。</summary>
+    [RelayCommand]
+    private async Task OpenAggregateAsync(Models.AggregatePlaylist? aggregate)
+    {
+        if (aggregate is null) return;
+        var generation = ++_loadGeneration;
+        _isCloud = false;
+        _currentAggregate = aggregate;
+        IsAggregate = true;
+        SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = aggregate.Name });
+        Tracks.Clear();
+        PlaylistTitle = aggregate.Name;
+        CreatorName = $"聚合歌单 · {aggregate.Members.Count} 个歌单";
+        _trackIds = new List<long>();
+        _known.Clear();
+        _queueSongs.Clear();
+        _materialized = 0;
+        IsBusy = true;
+        Message = null;
+        var failed = 0;
+        try
+        {
+            // 按来源分组排序(稳定排序:同源成员保持原顺序)
+            var members = aggregate.SourceOrder == AggregateSourceOrder.QqFirst
+                ? aggregate.Members.OrderBy(m => m.Source == MusicSource.QQ ? 0 : 1).ToList()
+                : aggregate.Members.OrderBy(m => m.Source == MusicSource.NetEase ? 0 : 1).ToList();
+            foreach (var member in members)
+            {
+                if (generation != _loadGeneration) return; // 期间切了别的歌单,丢弃过期结果
+                List<Song> songs;
+                try
+                {
+                    songs = member.Source == MusicSource.QQ
+                        ? await _qqApi.GetPlaylistTracksAsync(member.PlaylistId)
+                        : await _api.GetPlaylistDetailAsync(member.PlaylistId);
+                }
+                catch (ApiException ex)
+                {
+                    failed++;
+                    Message = $"歌单[{member.PlaylistName}]拉取失败:{ex.Message}";
+                    continue;
+                }
+                foreach (var s in songs)
+                {
+                    Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs,
+                        member.Source == MusicSource.QQ ? null : _api, PlaylistTitle));
+                    _queueSongs.Add(s);
+                }
+            }
+            if (generation != _loadGeneration) return;
+            // 合并完成:重建头部显示合计曲目数;封面取显示顺序第一首歌曲的封面
+            // (走 400px 大图加载,QQ 图床自动就近升档到 500,避免直接用小缩略图 URL 发糊),
+            // 简介按显示顺序列成员歌单名
+            var cover = Tracks.Count > 0 ? Tracks[0].Song.CoverUrl : "";
+            SelectedPlaylist = new PlaylistItemViewModel(new Playlist
+            {
+                Name = aggregate.Name,
+                TrackCount = Tracks.Count,
+                CoverUrl = cover,
+                Description = string.Join(" · ", members.Select(m => m.PlaylistName)),
+            });
+            if (cover.Length > 0)
+            {
+                SelectedPlaylist.EnsureCoverLoaded();
+                _ = SelectedPlaylist.EnsureLargeCoverLoadedAsync(); // 头部 260px 大图
+            }
+            if (failed > 0 && Message is null) Message = $"{failed} 个歌单拉取失败,已展示其余成员";
         }
         finally
         {

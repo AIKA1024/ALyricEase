@@ -35,7 +35,7 @@
       <Setter Property="Template">
         <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
           <!-- 根 Grid 画控件的 Background(透明):否则行内空白不可命中,hover 只在内层控件上生效 -->
-          <Grid Background="{TemplateBinding Background}">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" IsEnabled="{Binding IsPlayable}">
             <!-- 悬停高亮画在内容之后(背景色,仿原版 Grid.Background 动画),不遮罩封面/红心;圆角 4 仿原版 GridViewItemPresenter -->
             <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
             <!-- 仿原版 SearchResultTrackListItemStyle:50/*/32/32 + 内容左右留白 8(原版 Padding 8,0)+ ColumnSpacing 8 -->
@@ -151,7 +151,7 @@
     <ControlTheme x:Key="TrackRowPlaylistWideTheme" TargetType="views:TrackRow">
       <Setter Property="Template">
         <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
-          <Grid Background="{TemplateBinding Background}">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" IsEnabled="{Binding IsPlayable}">
             <!-- 悬停高亮画在内容之后(背景色,仿原版 Grid.Background 动画),不遮罩封面/红心;圆角 4 仿原版 ListViewItemPresenter -->
             <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
             <!-- 仿原版 PlaylistTrackListItemWideStyle:30/50/3*/32/2*/3*/32 + 内容左右留白 8 + ColumnSpacing 8
@@ -259,7 +259,7 @@
     <ControlTheme x:Key="TrackRowAlbumTheme" TargetType="views:TrackRow">
       <Setter Property="Template">
         <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
-          <Grid Background="{TemplateBinding Background}">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" IsEnabled="{Binding IsPlayable}">
             <!-- 悬停高亮 -->
             <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
             <Grid ColumnDefinitions="64,3*,32,2*,3*,32" Margin="8,0" ColumnSpacing="8">
@@ -460,5 +460,15 @@
         <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
       </Transitions>
     </Setter>
+  </Style>
+
+  <!-- 不可播放歌曲行:整行禁用置灰(IsPlayable=false),输入与双击播放一并失效。
+       注意必须禁用 TrackRow 控件本身(而非只禁模板内 Grid):悬停高亮/操作按钮浮现都是
+       TrackRow:pointerover 驱动,控件禁用后 :pointerover 不再触发,hover 一并消失 -->
+  <Style Selector="views|TrackRow" x:DataType="vm:SongItemViewModel">
+    <Setter Property="IsEnabled" Value="{Binding IsPlayable}" />
+  </Style>
+  <Style Selector="views|TrackRow Grid.track-root:disabled">
+    <Setter Property="Opacity" Value="0.45" />
   </Style>
 </Styles>

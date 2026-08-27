@@ -38,6 +38,15 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>当前登录用户 uid(GetUserProfileAsync 填充,红心接口 userid 参数用)。</summary>
     private long _currentUserId;
 
+    /// <summary>会员状态是否已从资料接口加载(未登录/未加载时 false)。</summary>
+    private bool _vipLoaded;
+
+    /// <summary>当前登录用户是否开通会员(vipType≠0;播放 VIP 歌曲失败消息用)。</summary>
+    public bool IsVip { get; private set; }
+
+    /// <summary>会员状态是否已确认(资料接口返回过 vipType;未登录亦视为已确认)。</summary>
+    public bool IsVipLoaded => _vipLoaded || !IsLoggedIn;
+
     public NetEaseApiClient(CryptoService crypto, CnIpPool ipPool, CookieStore cookie)
     {
         _crypto = crypto;
@@ -102,6 +111,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         _cookie.MusicU = musicU;
         _cookie.Save();
         AddCookie("MUSIC_U", musicU);
+        _vipLoaded = false;
+        IsVip = false; // 换号后会员状态作废,待资料接口重载
     }
 
     /// <summary>确保有未过期的匿名 cookie;无则调 /weapi/register/anonimous 注册。</summary>
@@ -342,12 +353,23 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (resp is null || resp.Code != 200 || resp.Profile is null)
             throw new ApiException("获取用户信息失败(未登录或 cookie 失效)", resp?.Code ?? -1);
         _currentUserId = resp.Profile.UserId;
+        _vipLoaded = true;
+        IsVip = resp.Profile.VipType != 0; // 10/11 音乐包,111 黑胶VIP
         return new UserProfile
         {
             UserId = resp.Profile.UserId,
             Nickname = resp.Profile.Nickname,
             AvatarUrl = resp.Profile.AvatarUrl,
         };
+    }
+
+    /// <summary>确保会员状态已加载:网易云会员随资料接口返回,未加载时补一次资料请求(幂等)。</summary>
+    public async Task EnsureVipStatusAsync(CancellationToken ct = default)
+    {
+        if (_vipLoaded || !IsLoggedIn) return;
+        _vipLoaded = true;
+        try { await GetUserProfileAsync(ct).ConfigureAwait(false); }
+        catch { IsVip = false; } // 失败按非会员(播放消息兜底)
     }
 
     /// <summary>用户创建/收藏的歌单列表。</summary>

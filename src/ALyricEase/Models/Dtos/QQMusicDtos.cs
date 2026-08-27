@@ -539,3 +539,36 @@ public sealed record QQUserBaseInfoDto
 
     [JsonPropertyName("ifpicurl")] public string? IfPicUrl { get; init; }
 }
+
+// ---------- 会员状态(VipLogin.VipLoginInter/vip_login_base;identity 字段为大写)----------
+
+public sealed record QQVipLoginResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQVipLoginReq? Req0 { get; init; }
+}
+
+public sealed record QQVipLoginReq
+{
+    public int Code { get; init; }
+
+    public QQVipLoginData? Data { get; init; }
+}
+
+public sealed record QQVipLoginData
+{
+    public QQVipIdentityDto? Identity { get; init; }
+
+    public int Svip { get; init; }
+
+    public int Star { get; init; }
+}
+
+/// <summary>会员身份明细:Vip=绿钻,HugeVip=豪华绿钻(音乐会员;实测该接口字段为大写)。</summary>
+public sealed record QQVipIdentityDto
+{
+    [JsonPropertyName("Vip")] public int Vip { get; init; }
+
+    [JsonPropertyName("HugeVip")] public int HugeVip { get; init; }
+}

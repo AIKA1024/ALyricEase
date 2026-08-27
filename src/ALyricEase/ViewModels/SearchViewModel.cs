@@ -76,6 +76,12 @@ public sealed partial class SearchViewModel : ViewModelBase
 
     public ObservableCollection<SongItemViewModel> Results { get; } = new();
 
+    /// <summary>登录态变化后重算各行可播性(登录成会员后 VIP 歌曲行恢复可点)。</summary>
+    public void RefreshPlayability()
+    {
+        foreach (var r in Results) r.RefreshPlayability();
+    }
+
     /// <summary>热门搜索关键词(登录页 chips,点按直接搜索);随音源切换刷新。</summary>
     public IReadOnlyList<string> TrendingKeywords => IsQQSource
         ? ["周杰伦", "晴天", "林俊杰", "陈奕迅", "稻香", "QQ音乐热歌"]

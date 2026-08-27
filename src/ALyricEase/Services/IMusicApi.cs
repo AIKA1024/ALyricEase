@@ -17,6 +17,18 @@ public interface IMusicApi
     /// <summary>是否已登录(影响可播音质与账号能力)。</summary>
     bool IsLoggedIn { get; }
 
+    /// <summary>当前登录用户是否为该音源会员(VIP 歌曲播放能力;未登录/未加载为 false)。
+    /// 网易云 vipType≠0;QQ 音乐绿钻(identity.vip/huge_vip)。</summary>
+    bool IsVip { get; }
+
+    /// <summary>会员状态是否已确认(区别于 IsVip 的默认 false:未加载时不应据此判"非会员")。
+    /// 未登录时亦为 true(无需确认)。</summary>
+    bool IsVipLoaded { get; }
+
+    /// <summary>确保会员状态已加载(幂等,单飞)。网易云随资料接口即时返回;QQ 首次会发一次
+    /// vip_login_base 请求。失败按非会员处理不抛(播放失败消息用)。</summary>
+    Task EnsureVipStatusAsync(CancellationToken ct = default);
+
     /// <summary>关键词搜索歌曲,映射为统一 Song 模型(Source/Mid 由实现填充)。</summary>
     Task<List<Song>> SearchAsync(string keyword, int limit = 30, int offset = 0, CancellationToken ct = default);
 

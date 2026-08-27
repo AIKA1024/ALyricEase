@@ -77,7 +77,7 @@ internal static class SelfTest
         var plSongs = await api.GetPlaylistDetailAsync(19723756);
         var items = new List<SongItemViewModel>();
         foreach (var s in plSongs)
-            items.Add(new SongItemViewModel(s, _ => System.Threading.Tasks.Task.CompletedTask));
+            items.Add(new SongItemViewModel(s, _ => System.Threading.Tasks.Task.FromResult(true)));
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();

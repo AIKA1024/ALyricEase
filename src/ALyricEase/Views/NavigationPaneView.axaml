@@ -4,6 +4,8 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
+             xmlns:behaviors="clr-namespace:ALyricEase.Infrastructure.Behaviors"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
              x:DataType="vm:MainViewModel"
              mc:Ignorable="d" d:DesignWidth="320" d:DesignHeight="600"
              x:Class="ALyricEase.Views.NavigationPaneView">
@@ -21,6 +23,24 @@
             <Setter Property="RenderTransform">
                 <RotateTransform Angle="0" />
             </Setter>
+        </Style>
+        <!-- 聚合歌单"+"按钮:小方块透明底,悬停浅底+teal 字形(占位期禁用,点击不触发分组开合) -->
+        <Style Selector="Button.nav-add-button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.nav-add-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <Style Selector="Button.nav-add-button:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
         </Style>
     </UserControl.Styles>
     <DockPanel>
@@ -61,6 +81,21 @@
                  Background="Transparent" BorderThickness="0" Margin="0,4,0,4"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.Styles>
+                <!-- 平滑滚轮:ListBox 模板是 ListBox > Border > ScrollViewer(PART_ScrollViewer),
+                     SmoothWheelScrollBehavior 是 Behavior&lt;ScrollViewer&gt;,不能直接挂到 ListBox 上;
+                     用后代选择器命中内部滚动容器,行为经 BehaviorCollectionTemplate 定义在样式里
+                     (模板语义:每个命中目标各自实例化集合,与显式 ScrollViewer 页面同效) -->
+                <Style Selector="ListBox ScrollViewer">
+                    <Setter Property="(i:Interaction.Behaviors)">
+                        <BehaviorCollectionTemplate>
+                            <BehaviorCollection>
+                                <behaviors:SmoothWheelScrollBehavior />
+                            </BehaviorCollection>
+                        </BehaviorCollectionTemplate>
+                    </Setter>
+                </Style>
+            </ListBox.Styles>
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Spacing="4" />
@@ -88,15 +123,23 @@
                                    VerticalAlignment="Center" IsVisible="{Binding IsItem}" />
                         <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14" VerticalAlignment="Center"
                                    IsVisible="{Binding IsItem}" />
-                        <TextBlock Classes="nav-header" Text="{Binding Label}" Grid.ColumnSpan="2" Margin="0,4,0,-2"
-                                   IsVisible="{Binding IsHeader}" />
-                        <!-- 折叠指示箭头:仅可折叠分组头(网易云/QQ 音乐)显示;E901(↓) 展开朝下,收起转 -90° 朝右 -->
-                        <TextBlock Grid.Column="2" Classes="nav-chevron"
-                                   Text="{DynamicResource IconChevronDown}"
-                                   FontFamily="{DynamicResource LyricEaseIcons}" FontSize="10"
-                                   Margin="0,3,2,0" VerticalAlignment="Center"
-                                   IsVisible="{Binding IsToggleGroup}"
-                                   Classes.expanded="{Binding IsExpanded}" />
+                        <TextBlock Classes="nav-header" Text="{Binding Label}" Grid.ColumnSpan="2"
+                                   VerticalAlignment="Center" IsVisible="{Binding IsHeader}" />
+                        <!-- 右侧:聚合歌单的"+"添加入口(位于箭头左边)+ 折叠箭头。
+                             箭头仅可折叠分组头显示;E901(↓) 展开朝下,收起转 -90° 朝右 -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                            <Button Classes="nav-add-button" IsVisible="{Binding HasAddButton}"
+                                    Command="{Binding $parent[views:NavigationPaneView].((vm:MainViewModel)DataContext).OpenAggregateDialogCommand}"
+                                    ToolTip.Tip="添加歌单到聚合">
+                                <TextBlock Text="+" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </Button>
+                            <TextBlock Classes="nav-chevron"
+                                       Text="{DynamicResource IconChevronDown}"
+                                       FontFamily="{DynamicResource LyricEaseIcons}" FontSize="10"
+                                       Margin="0,3,2,0" VerticalAlignment="Center"
+                                       IsVisible="{Binding IsToggleGroup}"
+                                       Classes.expanded="{Binding IsExpanded}" />
+                        </StackPanel>
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>

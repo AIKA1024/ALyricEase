@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -281,9 +281,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>从列表播放:先记录队列,再播当前曲。供 SongItemViewModel 的队列播放回调使用。
+    /// 返回是否真正开始播放(false = 该曲当前不可播,调用方把歌曲行置为禁用)。
     /// 无来源列表时退化为单曲队列:不能沿用旧队列,否则下一曲/播完自动切会跳回之前歌单里毫不相干的歌。
     /// 播放任何其他列表都会退出私人FM。</summary>
-    public Task PlayFromList(Song song, IReadOnlyList<Song>? queue, string? source = null)
+    public Task<bool> PlayFromList(Song song, IReadOnlyList<Song>? queue, string? source = null)
     {
         IsFmActive = false;
         if (queue is { Count: > 0 })
@@ -412,11 +413,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>播放一首歌:查播放地址(higher→standard 自动降级),null 提示 VIP/不可播。
-    /// 队列在 SongItemViewModel 播放前经 SetQueue 注入,这里只播单曲。</summary>
+    /// 队列在 SongItemViewModel 播放前经 SetQueue 注入,这里只播单曲。
+    /// 返回 true=已开始播放(含试听),false=该曲当前不可播(调用方把歌曲行置为禁用)。
+    /// 网络/接口瞬时异常返回 true(不视为"不可播放",行保持可点)。</summary>
     [RelayCommand]
-    public async Task PlayAsync(Song? song)
+    public async Task<bool> PlayAsync(Song? song)
     {
-        if (song is null) return;
+        if (song is null) return false;
 
         _advancing++; // 到 finally 才减:PlayUrl 内部 Stop() 会瞬时置 Idle,别把它当"播完"触发自动切歌
         CurrentSong = song;
@@ -439,25 +442,48 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             var item = await api.GetPlayUrlAsync(song, "higher");
             if (item is null || string.IsNullOrEmpty(item.Url))
             {
-                Message = song.Source == MusicSource.QQ && !api.IsLoggedIn
-                    ? "该歌曲需 QQ 音乐会员,登录 QQ 音乐 Cookie 可解锁"
-                    : "该歌曲需会员或不可播放(海外 IP 可能受限)";
-                return;
+                // 区分"未登录/非会员"与"版权限制":VIP 歌曲失败先确保会员状态已加载再给文案
+                if (song.Fee != 0 && api.IsLoggedIn)
+                    await api.EnsureVipStatusAsync();
+                Message = BuildUnplayableMessage(song, api);
+                return false;
             }
 
             if (item.IsTrial == true)
                 Message = "VIP 歌曲仅试听 30 秒";
             _player.PlayUrl(item.Url);
+            return true;
         }
         catch (ApiException ex)
         {
             Message = $"播放失败:{ex.Message}";
+            return true; // 瞬时异常:不判"不可播放"
         }
         finally
         {
             _advancing--;
             IsLoading = false;
         }
+    }
+
+    /// <summary>播放地址为空时的提示文案:按"歌曲是否 VIP × 是否登录 × 是否会员"区分,
+    /// 免费歌/会员仍不可播 → 版权或区域限制(不再笼统归因会员)。</summary>
+    private static string BuildUnplayableMessage(Song song, IMusicApi api)
+    {
+        if (song.Fee == 0)
+            return "该歌曲暂不可播放(版权或区域限制)";
+        if (song.Source == MusicSource.QQ)
+        {
+            if (!api.IsLoggedIn) return "该歌曲为 QQ 音乐 VIP 歌曲,登录 QQ 音乐后解锁";
+            return api.IsVip
+                ? "该歌曲暂不可播放(版权或区域限制)"
+                : "该歌曲为 VIP 歌曲,当前账号未开通 QQ 音乐会员(绿钻)";
+        }
+        // 网易云
+        if (!api.IsLoggedIn) return "该歌曲为网易云 VIP 歌曲,登录后解锁";
+        return api.IsVip
+            ? "该歌曲暂不可播放(版权或区域限制)"
+            : "该歌曲为 VIP 歌曲,当前账号未开通网易云会员(音乐包/黑胶)";
     }
 
     [RelayCommand]

@@ -13,10 +13,12 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>搜索结果单行:展示歌曲信息 + 双击播放。封面/红心状态后台加载。</summary>
+/// <summary>搜索结果单行:展示歌曲信息 + 双击播放。封面/红心状态后台加载。
+/// 可播性预判:VIP 歌曲在未登录/已确认非会员时直接禁用整行(播放前可知);
+/// 版权/区域等只有播放时才知道的,播放失败后补标禁用。</summary>
 public sealed partial class SongItemViewModel : ViewModelBase
 {
-    private readonly Func<Song, IReadOnlyList<Song>?, string?, Task> _playSong;
+    private readonly Func<Song, IReadOnlyList<Song>?, string?, Task<bool>> _playSong;
     private readonly IReadOnlyList<Song>? _queue;
     private readonly string? _source;
     private readonly NetEaseApiClient? _api;
@@ -64,10 +66,10 @@ public sealed partial class SongItemViewModel : ViewModelBase
         }
     }
 
-    public SongItemViewModel(Song song, Func<Song, Task> playSong, int index = 0, NetEaseApiClient? api = null)
+    public SongItemViewModel(Song song, Func<Song, Task<bool>> playSong, int index = 0, NetEaseApiClient? api = null)
         : this(song, (s, _, _) => playSong(s), index, api: api) { }
 
-    public SongItemViewModel(Song song, Func<Song, IReadOnlyList<Song>?, string?, Task> playSong, int index = 0, IReadOnlyList<Song>? queue = null, NetEaseApiClient? api = null, string? source = null)
+    public SongItemViewModel(Song song, Func<Song, IReadOnlyList<Song>?, string?, Task<bool>> playSong, int index = 0, IReadOnlyList<Song>? queue = null, NetEaseApiClient? api = null, string? source = null)
     {
         Song = song;
         _playSong = playSong;
@@ -85,7 +87,26 @@ public sealed partial class SongItemViewModel : ViewModelBase
                 ? new ArtistNavItem(0, song.ArtistNames[i], song.ArtistMids[i])
                 : new ArtistNavItem(song.ArtistIds[i], song.ArtistNames[i]));
         Artists = artists;
+        // 可播性预判:播放前即可确定的(未登录/已确认非会员的 VIP 歌曲)直接禁用整行
+        RefreshPlayability();
         // 封面懒加载:列表项可见(容器 realized)时才拉,配合虚拟化,避免上千首并发下载
+    }
+
+    /// <summary>整行是否可播放(不可播时行禁用置灰)。预判 + 播放实测两路更新。</summary>
+    [ObservableProperty]
+    private bool _isPlayable = true;
+
+    /// <summary>按当前登录/会员状态重算可播性(数据驱动,播放前即可确定的部分):
+    /// 免费歌恒可点(能否播由播放实测);VIP 歌曲在未登录、或会员状态已确认且非会员时禁用。
+    /// 会员状态未加载(IsVipLoaded=false)时不下结论保持可点,由播放实测兜底。
+    /// 登录态变化后可重调(行集合重建时 ctor 已自动跑一次)。</summary>
+    public void RefreshPlayability()
+    {
+        if (Song.Fee == 0) { IsPlayable = true; return; }
+        var api = GetLikeApi();
+        if (api is null) { IsPlayable = true; return; } // 无宿主环境保持可点
+        if (!api.IsLoggedIn) { IsPlayable = false; return; } // 未登录 + VIP:必然不可播
+        IsPlayable = !api.IsVipLoaded || api.IsVip; // 已登录:仅确认非会员才禁用
     }
 
     /// <summary>歌手子菜单项(多歌手时用)。</summary>
@@ -164,7 +185,12 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private bool _isInLikelist;
 
     [RelayCommand]
-    private async Task PlayAsync() => await _playSong(Song, _queue, _source);
+    private async Task PlayAsync()
+    {
+        var ok = await _playSong(Song, _queue, _source);
+        // 播放实测不可播(版权/区域/播放前预判漏网的):该曲整行禁用
+        if (!ok) IsPlayable = false;
+    }
 
     /// <summary>切换红心:乐观更新,失败回滚。按音源路由到对应平台的"喜欢"能力;
     /// 未登录时引导弹登录弹层(无宿主环境静默忽略)。</summary>

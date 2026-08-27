@@ -22,6 +22,12 @@ public partial class MainWindow : Window
     private Win32Properties.CustomWndProcHookCallback? _wndProcHook;
 #endif
     private NowPlayingOverlayController? _nowPlayingController;
+    private MainViewModel? _vm;
+
+    /// <summary>常规态几何快照(仅 Normal 态更新;最大化/全屏/最小化时保留旧值供关闭落盘)。</summary>
+    private double _normalWidth, _normalHeight;
+    private int _normalX, _normalY;
+    private bool _hasNormalBounds;
 
     public MainWindow()
     {
@@ -43,10 +49,13 @@ public partial class MainWindow : Window
         SizeChanged += OnSizeChanged;
         Opened += OnOpened;
         PropertyChanged += OnWindowPropertyChanged;
+        PositionChanged += OnWindowPositionChanged;
+        Closing += OnMainWindowClosing;
     }
 
     private void OnOpened(object? sender, EventArgs e)
     {
+        RestorePersistedWindowBounds();
         ResponsiveClasses.Apply(this, ClientSize.Width);
         UpdateTitleBarHamburgerVisibility();
         UpdateFullScreenChrome();
@@ -55,9 +64,58 @@ public partial class MainWindow : Window
         _nowPlayingController?.UpdateClosedPosition();
     }
 
+    /// <summary>恢复上次会话的窗口大小/位置/最大化。Screens 需要平台句柄,故在 Opened 里做;
+    /// 位置仅当左上角落在任一显示器内才采用,否则保持默认居中(防止换显示器后窗口丢失)。</summary>
+    private void RestorePersistedWindowBounds()
+    {
+        var st = _vm?.AppState;
+        if (st is null) return;
+        if (st.WindowWidth is { } w && w is >= 320 and <= 7680) Width = w;
+        if (st.WindowHeight is { } h && h is >= 240 and <= 4320) Height = h;
+        if (st.WindowX is { } x && st.WindowY is { } y)
+        {
+            var pos = new PixelPoint(x, y);
+            foreach (var s in Screens.All)
+            {
+                if (!s.Bounds.Contains(pos)) continue;
+                Position = pos;
+                break;
+            }
+        }
+        if (st.WindowMaximized) WindowState = WindowState.Maximized;
+        TrackNormalBounds(); // 初始化快照,首次未动过的关闭也能落盘
+    }
+
+    /// <summary>仅在常规态记录当前几何(最大化/全屏/最小化跳过,快照保留上一个常规态)。</summary>
+    private void TrackNormalBounds()
+    {
+        if (WindowState != WindowState.Normal) return;
+        _normalWidth = Width;
+        _normalHeight = Height;
+        var p = Position;
+        _normalX = p.X;
+        _normalY = p.Y;
+        _hasNormalBounds = true;
+    }
+
+    /// <summary>关闭时把折叠状态之外的窗口几何落盘(state.json 原子小文件,同步写无感)。</summary>
+    private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        TrackNormalBounds();
+        var st = _vm?.AppState;
+        if (st is null || !_hasNormalBounds) return;
+        st.WindowWidth = _normalWidth;
+        st.WindowHeight = _normalHeight;
+        st.WindowX = _normalX;
+        st.WindowY = _normalY;
+        st.WindowMaximized = WindowState == WindowState.Maximized;
+        st.Save();
+    }
+
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+        _vm = DataContext as MainViewModel;
         _nowPlayingController?.Dispose();
         _nowPlayingController = DataContext is MainViewModel vm
             ? new NowPlayingOverlayController(NowPlayingOverlay, vm)
@@ -76,8 +134,13 @@ public partial class MainWindow : Window
         {
             UpdateFullScreenChrome();
             UpdateMaximizeGlyph();
+            // 离开最大化回常规:新几何随后的 Size/Position 事件再刷新快照
+            TrackNormalBounds();
         }
     }
+
+    private void OnWindowPositionChanged(object? sender, PixelPointEventArgs e)
+        => TrackNormalBounds();
 
     /// <summary>全屏时隐藏右上角窗口控制按钮,并禁止标题栏拖拽。</summary>
     private void UpdateFullScreenChrome()
@@ -127,6 +190,7 @@ public partial class MainWindow : Window
 
     private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
+        TrackNormalBounds();
         ResponsiveClasses.Apply(this, e.NewSize.Width);
         UpdateTitleBarHamburgerVisibility();
         // 关闭态(覆盖层在屏幕外)时随窗口高度同步屏幕外位置;打开态保持原位即可。

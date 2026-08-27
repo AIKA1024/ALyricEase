@@ -62,6 +62,7 @@ class Program
     var services = new ServiceCollection();
     services.AddSingleton<DispatcherService>();
     services.AddSingleton<CookieStore>();
+    services.AddSingleton<AppStateStore>();
     services.AddSingleton<CnIpPool>();
     services.AddSingleton<CryptoService>();
     services.AddSingleton<NetEaseApiClient>();

@@ -40,6 +40,8 @@ public partial class HeadlessApp : Application
         var services = new ServiceCollection();
         services.AddSingleton<DispatcherService>();
         services.AddSingleton<CookieStore>();
+        // MainViewModel 构造注入的状态持久化存储(探测程序解析 MainViewModel 需要)
+        services.AddSingleton<AppStateStore>();
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
         services.AddSingleton<NetEaseApiClient>();

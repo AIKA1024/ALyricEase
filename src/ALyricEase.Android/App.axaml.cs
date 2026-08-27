@@ -59,6 +59,8 @@ public partial class App : Avalonia.Application
         var services = new ServiceCollection();
         services.AddSingleton<DispatcherService>();
         services.AddSingleton<CookieStore>();
+        // 主窗口几何 + 侧栏分组折叠状态持久化(MainViewModel 构造注入)
+        services.AddSingleton<AppStateStore>();
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
         services.AddSingleton<NetEaseApiClient>();

@@ -36,10 +36,13 @@ public sealed class CryptoService
     }
 
     /// <summary>eapi 加密,返回单个 params(encSecKey 空串)。
-    /// urlPath 为明文里的 /api/... 路径,如 /api/song/enhance/player/url/v1。</summary>
-    public string EncryptEapi(string urlPath, IReadOnlyDictionary<string, object?> payload)
+    /// urlPath 为明文里的 /api/... 路径,如 /api/song/enhance/player/url/v1。
+    /// header 可选(eapi 明文体顶层附 header,服务端取其 MUSIC_U/deviceId 注入请求上下文),
+    /// 写类端点(如 playlist/create)需要。</summary>
+    public string EncryptEapi(string urlPath, IReadOnlyDictionary<string, object?> payload,
+        IReadOnlyDictionary<string, object?>? header = null)
     {
-        var text = SerializeEapiBody(urlPath, payload);
+        var text = SerializeEapiBody(urlPath, payload, header);
         var message = "nobody{use}{this}" + text;
         return AesEcbEncryptToHex(message, EapiKey);
     }
@@ -62,8 +65,9 @@ public sealed class CryptoService
         return Encoding.UTF8.GetString(ms.ToArray());
     }
 
-    /// <summary>eapi body:{ method="POST", url=urlPath, params=payload }。</summary>
-    private static string SerializeEapiBody(string urlPath, IReadOnlyDictionary<string, object?> payload)
+    /// <summary>eapi body:{ method="POST", url=urlPath, params=payload, header=header? }。</summary>
+    private static string SerializeEapiBody(string urlPath, IReadOnlyDictionary<string, object?> payload,
+        IReadOnlyDictionary<string, object?>? header)
     {
         using var ms = new MemoryStream();
         using (var writer = new Utf8JsonWriter(ms))
@@ -72,16 +76,26 @@ public sealed class CryptoService
             writer.WriteString("method", "POST");
             writer.WriteString("url", urlPath);
             writer.WritePropertyName("params");
-            writer.WriteStartObject();
-            foreach (var (key, value) in payload)
+            WriteObject(writer, payload);
+            if (header is not null)
             {
-                writer.WritePropertyName(key);
-                WriteValue(writer, value);
+                writer.WritePropertyName("header");
+                WriteObject(writer, header);
             }
-            writer.WriteEndObject();
             writer.WriteEndObject();
         }
         return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    private static void WriteObject(Utf8JsonWriter writer, IReadOnlyDictionary<string, object?> obj)
+    {
+        writer.WriteStartObject();
+        foreach (var (key, value) in obj)
+        {
+            writer.WritePropertyName(key);
+            WriteValue(writer, value);
+        }
+        writer.WriteEndObject();
     }
 
     private static void WriteValue(Utf8JsonWriter writer, object? value)
@@ -94,7 +108,17 @@ public sealed class CryptoService
             case int i: writer.WriteNumberValue(i); break;
             case long l: writer.WriteNumberValue(l); break;
             case double d: writer.WriteNumberValue(d); break;
+            case IReadOnlyDictionary<string, object?> nested: writer.WriteStartObject(); WriteNested(writer, nested); writer.WriteEndObject(); break;
             default: throw new InvalidOperationException($"payload 不支持的值类型 {value.GetType().Name}");
+        }
+    }
+
+    private static void WriteNested(Utf8JsonWriter writer, IReadOnlyDictionary<string, object?> obj)
+    {
+        foreach (var (key, value) in obj)
+        {
+            writer.WritePropertyName(key);
+            WriteValue(writer, value);
         }
     }
 

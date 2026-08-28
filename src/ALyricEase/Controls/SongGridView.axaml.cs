@@ -1,9 +1,12 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using ALyricEase.ViewModels;
 
 namespace ALyricEase.Controls;
@@ -38,6 +41,9 @@ public partial class SongGridView : UserControl
         set => SetValue(RowsPerColumnProperty, value);
     }
 
+    /// <summary>当前订阅的集合变更源(ItemsSource 实例),卸载时退订。</summary>
+    private INotifyCollectionChanged? _observedSource;
+
     public SongGridView()
     {
         InitializeComponent();
@@ -46,8 +52,55 @@ public partial class SongGridView : UserControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs e)
     {
         base.OnPropertyChanged(e);
-        if (e.Property == ItemsSourceProperty || e.Property == RowsPerColumnProperty)
+        if (e.Property == ItemsSourceProperty)
+        {
+            ObserveItemsSource();
             RebuildColumns();
+        }
+        else if (e.Property == RowsPerColumnProperty)
+        {
+            RebuildColumns();
+        }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // 歌手页/专辑页每次进入都重建视图并立即绑定,重挂时按最新数据重建一次
+        ObserveItemsSource();
+        RebuildColumns();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        UnobserveItemsSource();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    /// <summary>订阅 ItemsSource 的集合变更。页级 VM 多为单例且集合实例长期不变(只 Clear+Add),
+    /// 只听属性变化的话界面会停在"绑定那一刻"的快照:首位歌手空白,其后一直显示上一位歌手的歌。</summary>
+    private void ObserveItemsSource()
+    {
+        UnobserveItemsSource();
+        if (ItemsSource is INotifyCollectionChanged ncc)
+        {
+            _observedSource = ncc;
+            ncc.CollectionChanged += OnItemsSourceCollectionChanged;
+        }
+    }
+
+    private void UnobserveItemsSource()
+    {
+        if (_observedSource is null) return;
+        _observedSource.CollectionChanged -= OnItemsSourceCollectionChanged;
+        _observedSource = null;
+    }
+
+    /// <summary>集合内容变化后重建列分块;可能在非 UI 线程触发,统一切回 UI 线程。</summary>
+    private void OnItemsSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) RebuildColumns();
+        else Dispatcher.UIThread.Post(RebuildColumns);
     }
 
     /// <summary>ItemsSource/RowsPerColumn 变化后重建列分块(尾部不足一列的也成列)。</summary>

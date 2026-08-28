@@ -40,9 +40,11 @@ public sealed partial class ArtistViewModel : ViewModelBase
     /// <summary>单曲与EP(横向卡片)。</summary>
     public ObservableCollection<AlbumCardViewModel> Singles { get; } = new();
 
-    /// <summary>进入歌手页时调用:拉歌手信息 + 热门歌曲 + 专辑/单曲。失败静默(保留旧内容)。</summary>
+    /// <summary>进入歌手页时调用:先清掉上一位歌手的内容,再拉歌手信息 + 热门歌曲 + 专辑/单曲。
+    /// 失败静默(页面停在空态,而不是上一位歌手的数据)。</summary>
     public async Task LoadAsync(long artistId)
     {
+        ClearContent();
         try
         {
             var info = await _api.GetArtistAsync(artistId);
@@ -52,13 +54,10 @@ public sealed partial class ArtistViewModel : ViewModelBase
             var songs = await _api.GetArtistSongsAsync(artistId, 30);
             Subtitle = $"{songs.Count} 首单曲";
             var queue = songs;
-            Songs.Clear();
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, api: _api, queue: queue, source: info.Name));
 
             var albums = await _api.GetArtistAlbumsAsync(artistId, 50);
-            Albums.Clear();
-            Singles.Clear();
             foreach (var a in albums)
             {
                 var card = new AlbumCardViewModel(a.Id, a.Name, a.PicUrl);
@@ -71,7 +70,7 @@ public sealed partial class ArtistViewModel : ViewModelBase
         }
         catch
         {
-            // 网络失败静默:保留旧内容,不崩
+            // 网络失败静默:停在空态,不崩
         }
     }
 
@@ -86,6 +85,7 @@ public sealed partial class ArtistViewModel : ViewModelBase
     /// 专辑/单曲按 albumType 粗分(EP/单曲 → 单曲与EP,其余 → 专辑)。失败静默。</summary>
     public async Task LoadQqAsync(string singerMid)
     {
+        ClearContent();
         try
         {
             Avatar = await CoverLoader.LoadAsync(
@@ -94,13 +94,10 @@ public sealed partial class ArtistViewModel : ViewModelBase
             var songs = await _qqApi.GetArtistSongsAsync(singerMid, 30);
             Name = ResolveSingerName(songs, singerMid);
             Subtitle = $"{songs.Count} 首单曲";
-            Songs.Clear();
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, queue: songs, source: Name));
 
             var albums = await _qqApi.GetArtistAlbumsAsync(singerMid, 50);
-            Albums.Clear();
-            Singles.Clear();
             foreach (var a in albums)
             {
                 var card = new AlbumCardViewModel(a.Id, a.Name, a.PicUrl, a.Mid);
@@ -115,8 +112,22 @@ public sealed partial class ArtistViewModel : ViewModelBase
         }
         catch
         {
-            // 网络失败静默:保留旧内容,不崩
+            // 网络失败静默:停在空态,不崩
         }
+    }
+
+    /// <summary>清空上一位歌手的内容。歌手页每次进入都重建视图并立即绑定现有内容,
+    /// 不清的话新页面会先渲染出上一位歌手的歌(加载失败时更会整页停在错位数据上)。</summary>
+    private void ClearContent()
+    {
+        Name = "";
+        Subtitle = "";
+        Avatar = null;
+        Songs.Clear();
+        Albums.Clear();
+        Singles.Clear();
+        HasAlbums = false;
+        HasSingles = false;
     }
 
     /// <summary>从热门歌曲里取该 mid 对应的歌手展示名(取不到退化为第一首的 Artist)。</summary>

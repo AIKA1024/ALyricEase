@@ -42,9 +42,11 @@ public sealed partial class AlbumViewModel : ViewModelBase
 
     public ObservableCollection<SongItemViewModel> Songs { get; } = new();
 
-    /// <summary>进入专辑页时调用:拉专辑信息 + 全量曲目。失败静默(保留旧内容)。</summary>
+    /// <summary>进入专辑页时调用:先清掉上一位(上一张专辑)的内容,再拉专辑信息 + 全量曲目。
+    /// 失败静默(页面停在空态,而不是上一张专辑的数据)。</summary>
     public async Task LoadAsync(long albumId)
     {
+        ClearContent();
         try
         {
             var album = await _api.GetAlbumAsync(albumId);
@@ -56,14 +58,13 @@ public sealed partial class AlbumViewModel : ViewModelBase
             if (album.Info.PicUrl is { Length: > 0 } pic) Cover = await CoverLoader.LoadAsync(pic, 300);
 
             var queue = album.Songs;
-            Songs.Clear();
             var i = 1;
             foreach (var s in album.Songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, i++, queue, _api, album.Info.Name));
         }
         catch
         {
-            // 网络失败静默:保留旧内容,不崩
+            // 网络失败静默:停在空态,不崩
         }
     }
 
@@ -75,9 +76,10 @@ public sealed partial class AlbumViewModel : ViewModelBase
     }
 
     /// <summary>QQ 音乐专辑页(按 album mid):信息 + 曲目并行拉;发行日期为 "yyyy-MM-dd" 文本。
-    /// 歌手名取自曲目(详情接口的 singer 结构不稳定)。失败静默。</summary>
+    /// 歌手名取自曲目(详情接口的 singer 结构不稳定)。失败静默(停在空态)。</summary>
     public async Task LoadQqAsync(string albumMid)
     {
+        ClearContent();
         try
         {
             var infoTask = _qqApi.GetAlbumInfoByMidAsync(albumMid);
@@ -95,14 +97,28 @@ public sealed partial class AlbumViewModel : ViewModelBase
             Cover = await CoverLoader.LoadAsync(
                 $"https://y.gtimg.cn/music/photo_new/T002R300x300M000{albumMid}.jpg", 300);
 
-            Songs.Clear();
             var i = 1;
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, i++, songs, source: info.Name));
         }
         catch
         {
-            // 网络失败静默:保留旧内容,不崩
+            // 网络失败静默:停在空态,不崩
         }
+    }
+
+    /// <summary>清空上一张专辑的内容。专辑页每次进入都重建视图并立即绑定现有内容,
+    /// 不清的话新页面会先渲染出上一张专辑的曲目(加载失败时更会整页停在错位数据上)。</summary>
+    private void ClearContent()
+    {
+        Name = "";
+        ArtistName = "";
+        TrackCountText = "";
+        PublishTimeMs = 0;
+        Description = "";
+        Cover = null;
+        Songs.Clear();
+        OnPropertyChanged(nameof(HasDescription));
+        OnPropertyChanged(nameof(PublishDateText));
     }
 }

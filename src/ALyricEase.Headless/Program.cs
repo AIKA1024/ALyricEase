@@ -68,6 +68,22 @@ public static class Program
             return;
         }
 
+        // 创建/删除歌单端到端实测(需本机有效 Cookie):两平台 Create→复检→Delete 还原
+        if (args.Length > 0 && args[0] == "--createpl")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(CreatePlaylistProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 网易云加密通道诊断:定位 playlist/create 空响应成因(匿名注册晴雨表/明文写/weapi 原始响应)
+        if (args.Length > 0 && args[0] == "--nediag")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(NetEaseDiagProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // TEMP-DIAG:正在播放覆盖层是否盖住标题栏
         if (args.Length > 0 && args[0] == "--npcover")
         {

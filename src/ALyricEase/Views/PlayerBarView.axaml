@@ -101,24 +101,24 @@
               <Button Classes="player-button like-button" RenderTransform="none" Width="40" Height="40"
                       Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心">
                 <Grid>
-                  <TextBlock Text="&#xE931;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
+                  <TextBlock Text="{DynamicResource IconHeartFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}" FontSize="20"
                              Foreground="#FFE74C3C" IsVisible="{Binding IsCurrentLiked}" />
-                  <TextBlock Text="&#xE94A;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20"
+                  <TextBlock Text="{DynamicResource IconHeartOutline}" FontFamily="{DynamicResource LyricEaseIconsOutline}" FontSize="20"
                              IsVisible="{Binding !IsCurrentLiked}" />
                 </Grid>
               </Button>
               <!-- 上一曲 -->
               <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
                       Command="{Binding PlayPreviousCommand}" ToolTip.Tip="上一曲">
-                <TextBlock Text="&#xE914;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                <TextBlock Text="{DynamicResource IconPrevious}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
               </Button>
               <!-- 播放/暂停 -->
               <Button x:Name="PlayButton" Classes="player-button" RenderTransform="none"
                       Command="{Binding TogglePlayPauseCommand}">
                 <Grid>
-                  <TextBlock x:Name="PauseIcon" Text="&#xE90F;" FontFamily="{DynamicResource LyricEaseIcons}"
+                  <TextBlock x:Name="PauseIcon" Text="{DynamicResource IconPause}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                              IsVisible="{Binding ShowPauseIcon}" />
-                  <TextBlock x:Name="PlayIcon" Text="&#xE912;" FontFamily="{DynamicResource LyricEaseIcons}"
+                  <TextBlock x:Name="PlayIcon" Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                              IsVisible="{Binding ShowPlayIcon}" />
                   <TextBlock x:Name="LoadingIcon" Text="•••" IsVisible="{Binding ShowLoadingIcon}" />
                 </Grid>
@@ -126,7 +126,7 @@
               <!-- 下一曲 -->
               <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
                       Command="{Binding PlayNextCommand}" ToolTip.Tip="下一曲">
-                <TextBlock Text="&#xE90E;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                <TextBlock Text="{DynamicResource IconNext}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
               </Button>
               <!-- 播放模式 -->
               <Button Classes="player-button mode-button" RenderTransform="none" Width="40" Height="40"
@@ -137,7 +137,7 @@
               </Button>
               <!-- 音量 -->
               <Button Classes="player-button volume-button" RenderTransform="none" Width="40" Height="40" ToolTip.Tip="音量">
-                <TextBlock Text="&#xE91B;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
+                <TextBlock Text="{DynamicResource IconVolume}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
                 <Button.Flyout>
                   <Flyout Placement="Top">
                     <StackPanel Spacing="8" Margin="4">
@@ -154,7 +154,7 @@
               </Button>
               <!-- 更多 -->
               <Button Classes="player-button more-button" RenderTransform="none" Width="40" Height="40" IsEnabled="False">
-                <TextBlock Text="&#xE909;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
+                <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
               </Button>
             </StackPanel>
           </Grid>

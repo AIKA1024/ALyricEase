@@ -8,7 +8,7 @@ namespace ALyricEase.ViewModels;
 /// 两个可变属性走最小 INPC 实现:仅这两处需要绑定刷新,其余属性只读。</summary>
 public sealed class NavItemViewModel : INotifyPropertyChanged
 {
-    public NavItemViewModel(string key, string label, string? iconGlyph = null, bool isHeader = false, bool isAccent = false, PlaylistItemViewModel? playlist = null, bool isToggleGroup = false, bool hasAddButton = false, Models.AggregatePlaylist? aggregate = null)
+    public NavItemViewModel(string key, string label, string? iconGlyph = null, bool isHeader = false, bool isAccent = false, PlaylistItemViewModel? playlist = null, bool isToggleGroup = false, bool hasAddButton = false, string? addToolTip = null, Models.AggregatePlaylist? aggregate = null)
     {
         Key = key;
         Label = label;
@@ -18,6 +18,7 @@ public sealed class NavItemViewModel : INotifyPropertyChanged
         Playlist = playlist;
         IsToggleGroup = isToggleGroup;
         HasAddButton = hasAddButton;
+        AddToolTip = addToolTip;
         Aggregate = aggregate;
     }
 
@@ -35,8 +36,12 @@ public sealed class NavItemViewModel : INotifyPropertyChanged
     /// 与普通纯标题("发现/我的音乐")区分。</summary>
     public bool IsToggleGroup { get; }
 
-    /// <summary>折叠分组头右侧是否带"+"添加入口(聚合歌单用;点击向聚合添加歌单,暂为占位)。</summary>
+    /// <summary>折叠分组头右侧是否带"+"添加入口(聚合歌单/网易云音乐/QQ 音乐分组头用,
+    /// 点击经 MainViewModel.NavHeaderAddCommand 按 Key 分发)。</summary>
     public bool HasAddButton { get; }
+
+    /// <summary>"+"按钮的 ToolTip 文案(配合 HasAddButton)。</summary>
+    public string? AddToolTip { get; }
 
     /// <summary>容器行是否启用交互:普通导航项与折叠分组头启用,纯标题保持禁用(无 hover/选中)。</summary>
     public bool IsInteractive => !IsHeader || IsToggleGroup;

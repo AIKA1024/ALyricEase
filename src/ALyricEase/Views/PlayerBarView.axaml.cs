@@ -28,7 +28,7 @@ public partial class PlayerBarView : UserControl
         // 无当前曲目时点击不打开正在播放页(占位标题不可点击)
         if (DataContext is not PlayerViewModel { CurrentSong: not null }) return;
 
-        // 用 AppShell 而非 Window 找 MainViewModel:安卓端由 Activity 承载,可视树里没有 Window
+        // 用 AppShell 而非 Window 找 MainViewModel:移动端由 Activity/ViewController 承载,可视树里没有 Window
         if (this.FindAncestorOfType<AppShell>()?.DataContext is MainViewModel { ShowNowPlaying: false } vm)
             vm.OpenNowPlayingCommand.Execute(null);
         e.Handled = true;

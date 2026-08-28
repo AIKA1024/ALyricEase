@@ -24,23 +24,29 @@
                 <RotateTransform Angle="0" />
             </Setter>
         </Style>
-        <!-- 聚合歌单"+"按钮:小方块透明底,悬停浅底+teal 字形(占位期禁用,点击不触发分组开合) -->
+        <!-- 分组头"+"按钮(聚合歌单/网易云音乐/QQ 音乐):对齐原版我的歌单新增按钮
+             (FluentButton 30x30、Padding=0、图标 E92B 字号 20、透明底圆角 4、悬停浅底) -->
         <Style Selector="Button.nav-add-button">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource AppControlFill}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+            <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Width" Value="22" />
-            <Setter Property="Height" Value="22" />
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
+        <!-- 悬停/按下需显式重设 BorderBrush:内置 Button 主题的 :pointerover 会以
+             ButtonBorderBrushPointerOver(未定义,解析为透明)覆盖模板边框,导致描边消失 -->
         <Style Selector="Button.nav-add-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+            <Setter Property="Background" Value="{DynamicResource AppControlFillHover}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
         </Style>
-        <Style Selector="Button.nav-add-button:pointerover">
-            <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+        <Style Selector="Button.nav-add-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppControlFillPressed}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppControlStrokePressed}" />
         </Style>
     </UserControl.Styles>
     <DockPanel>
@@ -50,7 +56,7 @@
                 <Button Classes="navigation-button" Click="OnAccountClick"
                         HorizontalAlignment="Stretch">
                     <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
-                        <TextBlock Text="&#xE910;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                        <TextBlock Text="{DynamicResource IconPerson}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16"
                                    VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1" Text="账号" FontSize="14" VerticalAlignment="Center" />
                     </Grid>
@@ -58,7 +64,7 @@
                 <Button Classes="navigation-button" Command="{Binding GoSettingsCommand}"
                         HorizontalAlignment="Stretch">
                     <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
-                        <TextBlock Text="&#xE917;" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                        <TextBlock Text="{DynamicResource IconSettings}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16"
                                    VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1" Text="设置" FontSize="14" VerticalAlignment="Center" />
                     </Grid>
@@ -67,20 +73,24 @@
                 <Button Classes="navigation-button" Command="{Binding GoDebugCommand}"
                         HorizontalAlignment="Stretch" IsVisible="{Binding IsDebug}">
                     <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">
-                        <TextBlock Text="{DynamicResource IconCode}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                        <TextBlock Text="{DynamicResource IconCode}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16"
                                    VerticalAlignment="Center" />
                         <TextBlock Grid.Column="1" Text="Debug" FontSize="14" VerticalAlignment="Center" />
                     </Grid>
                 </Button>
             </StackPanel>
         </Border>
-        <!-- 侧栏列表:分组头行保持禁用态(无 hover/选中背景,旧行为),点按开合在代码后置按坐标命中;
+        <!-- 侧栏列表:所有行"按下不动作、点击(Tapped)才动作"——分组头开合、普通行选中导航,
+             逻辑在 NavListTapBehavior(替代被关闭的 IsHoldWithMouseEnabled 方案);
              歌单子项按所属分组开合显示/隐藏(ShowAsChild) -->
         <ListBox x:Name="NavList" Classes="shell-navigation" ItemsSource="{Binding ShellNavItems}"
                  SelectedItem="{Binding SelectedNav}"
                  Background="Transparent" BorderThickness="0" Margin="0,4,0,4"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <i:Interaction.Behaviors>
+                <behaviors:NavListTapBehavior />
+            </i:Interaction.Behaviors>
             <ListBox.Styles>
                 <!-- 平滑滚轮:ListBox 模板是 ListBox > Border > ScrollViewer(PART_ScrollViewer),
                      SmoothWheelScrollBehavior 是 Behavior&lt;ScrollViewer&gt;,不能直接挂到 ListBox 上;
@@ -119,23 +129,27 @@
             <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:NavItemViewModel">
                     <Grid ColumnDefinitions="24,*,Auto" ColumnSpacing="10">
-                        <TextBlock Text="{Binding IconGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16"
+                        <TextBlock Text="{Binding IconGlyph}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16"
                                    VerticalAlignment="Center" IsVisible="{Binding IsItem}" />
                         <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="14" VerticalAlignment="Center"
                                    IsVisible="{Binding IsItem}" />
                         <TextBlock Classes="nav-header" Text="{Binding Label}" Grid.ColumnSpan="2"
                                    VerticalAlignment="Center" IsVisible="{Binding IsHeader}" />
-                        <!-- 右侧:聚合歌单的"+"添加入口(位于箭头左边)+ 折叠箭头。
+                        <!-- 右侧:分组头"+"添加入口(位于箭头左边)+ 折叠箭头。
+                             右边距 -8 对齐原版(抵消行内边距贴边,原版 HeaderPlaylists 同款);
                              箭头仅可折叠分组头显示;E901(↓) 展开朝下,收起转 -90° 朝右 -->
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center"
+                                    Margin="0,0,-8,0">
                             <Button Classes="nav-add-button" IsVisible="{Binding HasAddButton}"
-                                    Command="{Binding $parent[views:NavigationPaneView].((vm:MainViewModel)DataContext).OpenAggregateDialogCommand}"
-                                    ToolTip.Tip="添加歌单到聚合">
-                                <TextBlock Text="+" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    Command="{Binding $parent[views:NavigationPaneView].((vm:MainViewModel)DataContext).NavHeaderAddCommand}"
+                                    CommandParameter="{Binding Key}"
+                                    ToolTip.Tip="{Binding AddToolTip}">
+                                <TextBlock Text="{DynamicResource IconAdd}" FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                                           FontSize="20" VerticalAlignment="Center" />
                             </Button>
                             <TextBlock Classes="nav-chevron"
                                        Text="{DynamicResource IconChevronDown}"
-                                       FontFamily="{DynamicResource LyricEaseIcons}" FontSize="10"
+                                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10"
                                        Margin="0,3,2,0" VerticalAlignment="Center"
                                        IsVisible="{Binding IsToggleGroup}"
                                        Classes.expanded="{Binding IsExpanded}" />

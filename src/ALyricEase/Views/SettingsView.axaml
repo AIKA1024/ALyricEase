@@ -1,0 +1,244 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:SettingsViewModel"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="1200"
+             x:Class="ALyricEase.Views.SettingsView">
+  <!-- 设置页(参考网易云 UWP 设置):分区标题 + 逐项卡片(图标/标题/副标题 + 右侧控件)。
+       外观/交互/播放/网络/存储/关于;主题下拉即时切换全局 RequestedThemeVariant。 -->
+  <UserControl.Styles>
+    <!-- 设置卡片 -->
+    <Style Selector="Border.setting-card">
+      <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="MinHeight" Value="64" />
+    </Style>
+    <!-- 卡片行内左侧图标 -->
+    <Style Selector="TextBlock.setting-icon">
+      <Setter Property="FontFamily" Value="{DynamicResource LyricEaseIcons}" />
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,16,0" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <!-- 行标题 -->
+    <Style Selector="TextBlock.setting-title">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <!-- "关于该选项"青色下划线链接(悬停提示说明) -->
+    <Style Selector="TextBlock.about-link">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,2,8,0" />
+    </Style>
+    <!-- 分区标题 -->
+    <Style Selector="TextBlock.section-header">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+      <Setter Property="Margin" Value="0,28,0,10" />
+    </Style>
+    <!-- 卡片内普通按钮(选择设备/代理设置等) -->
+    <Style Selector="Border.setting-card Button.setting-action">
+      <Setter Property="MinWidth" Value="100" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="14,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <!-- 开源项目链接按钮 -->
+    <Style Selector="Button.link-button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+    </Style>
+    <Style Selector="Button.link-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer>
+    <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="28,16,24,40">
+
+      <TextBlock Text="设置" FontSize="26" FontWeight="Bold" Margin="0,0,0,4"
+                 Foreground="{DynamicResource TextPrimary}" />
+
+      <!-- ============ 外观 ============ -->
+      <TextBlock Classes="section-header" Text="外观" />
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconPalette}" />
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="主题" />
+          <ComboBox Grid.Column="2" MinWidth="190" Height="32" VerticalAlignment="Center"
+                    ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" />
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconLanguage}" />
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="语言" />
+          <ComboBox Grid.Column="2" MinWidth="190" Height="32" VerticalAlignment="Center"
+                    ItemsSource="{Binding LanguageOptions}" SelectedIndex="{Binding LanguageIndex}" />
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconPerformance}" />
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="性能与体验" />
+          <ComboBox Grid.Column="2" MinWidth="190" Height="32" VerticalAlignment="Center"
+                    ItemsSource="{Binding PerformanceOptions}" SelectedIndex="{Binding PerformanceIndex}" />
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <CheckBox Content="启用播放详情界面的动态背景效果" IsChecked="{Binding DynamicBackground}"
+                  VerticalAlignment="Center" Margin="8,0,0,0" />
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconDesktop}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock Classes="setting-title" Text="兼容的视觉效果" />
+            <TextBlock Classes="about-link" Text="关于该选项" ToolTip.Tip="在部分低端设备或驱动上,复杂动效可能导致卡顿;关闭后改用更保守的绘制方式。" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <TextBlock Text="{Binding CompatibilityVisualText}" FontSize="13"
+                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+            <ToggleSwitch IsChecked="{Binding CompatibilityVisual}" OnContent="" OffContent="" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- ============ 交互 ============ -->
+      <TextBlock Classes="section-header" Text="交互" />
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconKeyboard}" />
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="键盘快捷键" />
+          <Button Grid.Column="2" Classes="setting-action" Content="编辑设置"
+                  Command="{Binding EditHotkeysCommand}" />
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconTv}" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock Classes="setting-title" Text="桌面歌词" />
+            <TextBlock Text="桌面歌词功能开发中,将在后续版本提供。" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}" Margin="0,2,12,0" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- ============ 播放 ============ -->
+      <TextBlock Classes="section-header" Text="播放" />
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconVolume}" />
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="音频输出设备" />
+          <Button Grid.Column="2" Classes="setting-action" Content="选择设备"
+                  Command="{Binding SelectAudioDeviceCommand}" />
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="音频质量" />
+          <ComboBox Grid.Column="2" MinWidth="190" Height="32" VerticalAlignment="Center"
+                    ItemsSource="{Binding AudioQualityOptions}" SelectedIndex="{Binding AudioQualityIndex}" />
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconArrowSwap}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock Classes="setting-title" Text="传统播放控制" />
+            <TextBlock Classes="about-link" Text="关于该选项"
+                       ToolTip.Tip="启用后单击列表行立即播放并清空队列,双击追加到队列(旧版播放器行为);关闭时保持当前行为。" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <TextBlock Text="{Binding LegacyPlaybackControlText}" FontSize="13"
+                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+            <ToggleSwitch IsChecked="{Binding LegacyPlaybackControl}" OnContent="" OffContent="" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <StackPanel>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Classes="setting-icon" Text="{DynamicResource IconDeviceEq}" />
+            <TextBlock Grid.Column="1" Classes="setting-title" Text="音频交叉淡化" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <TextBlock Text="{Binding CrossfadeText}" FontSize="13"
+                         Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+              <ToggleSwitch IsChecked="{Binding Crossfade}" OnContent="" OffContent="" />
+            </StackPanel>
+          </Grid>
+          <!-- 开启后展开时长滑杆(0-12 秒) -->
+          <StackPanel IsVisible="{Binding Crossfade}" Margin="36,10,4,2">
+            <Grid ColumnDefinitions="*,Auto">
+              <Slider Minimum="0" Maximum="12" TickFrequency="0.5" Value="{Binding CrossfadeSeconds}"
+                      VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding CrossfadeSecondsText}" FontSize="12"
+                         Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
+                         Margin="12,0,0,0" MinWidth="44" TextAlignment="Right" />
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- ============ 网络 ============ -->
+      <TextBlock Classes="section-header" Text="网络" />
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconGlobe}" />
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="应用网络代理" />
+          <Button Grid.Column="2" Classes="setting-action" Content="代理设置"
+                  Command="{Binding OpenProxySettingsCommand}" />
+        </Grid>
+      </Border>
+
+      <!-- ============ 存储 ============ -->
+      <TextBlock Classes="section-header" Text="存储" />
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconDatabase}" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock Classes="setting-title" Text="管理您的数据" />
+            <TextBlock Classes="about-link" Text="关于该选项"
+                       ToolTip.Tip="清除封面图、歌词等临时缓存文件,不会删除您的歌单与登录信息。" />
+          </StackPanel>
+          <Button Grid.Column="2" Classes="setting-action" Command="{Binding ClearCacheCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{DynamicResource IconBroom}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
+              <TextBlock Text="清除数据缓存" />
+            </StackPanel>
+          </Button>
+        </Grid>
+      </Border>
+
+      <!-- APPEND -->
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

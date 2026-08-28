@@ -3,13 +3,14 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 using Visual = Avalonia.Visual;
 
 namespace ALyricEase.Views;
 
 /// <summary>可复用歌曲行:一个控件 + 多套 ControlTheme(仿原版 UWP TrackListItem)。
-/// 控件只负责行为(双击播放);每日行歌手/专辑菜单用 MenuFlyout,原生处理子菜单(hover 延迟/定位)。
+/// 控件只负责行为(桌面双击播放;触控单击播放,由 InteractionDefaults 按 Head 声明区分);每日行歌手/专辑菜单用 MenuFlyout,原生处理子菜单(hover 延迟/定位)。
 /// 列布局/播放按钮位置由各 Theme 的模板决定——每日行套 Search 主题(播放按钮靠右),歌单行套 PlaylistWide 主题。
 /// 悬停浮现操作按钮、时长隐藏由共享样式按类名驱动,与模板摆放无关。</summary>
 public class TrackRow : TemplatedControl
@@ -19,8 +20,19 @@ public class TrackRow : TemplatedControl
 
     public TrackRow()
     {
-        // 双击整行播放;排除内部按钮(播放/更多)的来源
-        AddHandler(InputElement.DoubleTappedEvent, OnRowDoubleTapped, RoutingStrategies.Bubble, handledEventsToo: true);
+        // 桌面:双击整行播放;触控(InteractionDefaults 由各 Head 启动时声明):单击整行播放。
+        // 触控模式只订阅 Tapped——快速双击会连发两次 Tapped,DoubleTapped 再订阅会放大重复触发,
+        // 且触控本就无"双击播放"语义。两种事件共用同一处理,排除内部按钮(播放/更多/红心/歌手)的来源。
+        if (InteractionDefaults.IsTouchPrimary)
+        {
+            // 挂 touch 类:让 TrackRow.axaml 末尾的 touch 覆盖样式驱动"无 hover"差异(按钮常显/时长隐藏)
+            Classes.Add(InteractionDefaults.TouchClass);
+            AddHandler(InputElement.TappedEvent, OnRowActivated, RoutingStrategies.Bubble, handledEventsToo: true);
+        }
+        else
+        {
+            AddHandler(InputElement.DoubleTappedEvent, OnRowActivated, RoutingStrategies.Bubble, handledEventsToo: true);
+        }
     }
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -77,7 +89,9 @@ public class TrackRow : TemplatedControl
         e.Handled = true;
     }
 
-    private static void OnRowDoubleTapped(object? sender, TappedEventArgs e)
+    /// <summary>行激活播放:指针模式由双击触发,触控模式由单击触发(见构造函数订阅)。
+    /// 排除来自内部按钮的命中,避免整行行为劫持按钮点击。</summary>
+    private static void OnRowActivated(object? sender, TappedEventArgs e)
     {
         if (e.Source is Visual source && source.FindAncestorOfType<Button>() is not null) return;
         if (sender is Control { DataContext: SongItemViewModel song })

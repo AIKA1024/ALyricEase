@@ -64,6 +64,9 @@ public partial class AppShell : UserControl
         UpdateNavigationVisibility();
     }
 
+    /// <summary>当前是否移动端(Android)。移动端 banner 汉堡按钮始终可见,以避免与侧栏汉堡同时出现。</summary>
+    private static bool IsMobile => OperatingSystem.IsAndroid();
+
     /// <summary>侧边栏形态按宽度 + VM 状态切换。</summary>
     private void UpdateNavigationVisibility()
     {
@@ -78,6 +81,11 @@ public partial class AppShell : UserControl
         WideSidebar.IsVisible = wide && expanded;
         CompactSidebar.IsVisible = (wide && !expanded) || compact;
         DrawerRoot.IsVisible = compact || narrow;
+        // 移动端 banner 汉堡按钮(仿 Android Toolbar 顶部汉堡)始终可见；
+        // 仅 compact(手机横屏)时与 banner 汉堡同为"展开抽屉"职责,冗余 → 隐藏侧栏汉堡。
+        // 宽屏折叠态(expanded=false)的汉堡职责是"重新展开内联栏",与 banner 不同,保留。
+        // 桌面端 title-bar 汉堡仅 narrow 时可见,compact 时无汉堡,因此必须保留侧栏汉堡。
+        CompactHamburger.IsVisible = !(IsMobile && compact);
         DrawerRoot.IsHitTestVisible = drawerOpen;
         DrawerScrim.Opacity = drawerOpen ? 1 : 0;
         NavigationDrawer.RenderTransform = drawerOpen ? TranslateX(0) : TranslateX(-320);

@@ -24,6 +24,13 @@
             <SolidColorBrush x:Key="TextDisabled" Color="#707070" />
             <SolidColorBrush x:Key="AppBorder" Color="#12000000" />
             <SolidColorBrush x:Key="AppBorderStrong" Color="#24000000" />
+            <!-- 控件填充/描边:对齐 WinUI Fluent2 Button 默认(ControlFillColorDefault/Secondary/Tertiary,
+                 描边取 ControlElevationBorderBrush 1px 可见段=ControlStrokeColorSecondary) -->
+            <SolidColorBrush x:Key="AppControlFill" Color="#B3FFFFFF" />
+            <SolidColorBrush x:Key="AppControlFillHover" Color="#80F9F9F9" />
+            <SolidColorBrush x:Key="AppControlFillPressed" Color="#4DF9F9F9" />
+            <SolidColorBrush x:Key="AppControlStroke" Color="#29000000" />
+            <SolidColorBrush x:Key="AppControlStrokePressed" Color="#0F000000" />
             <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
             <SolidColorBrush x:Key="ListCardBorder" Color="#0F000000" />
             <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
@@ -67,6 +74,11 @@
             <SolidColorBrush x:Key="TextDisabled" Color="#777777" />
             <SolidColorBrush x:Key="AppBorder" Color="#14FFFFFF" />
             <SolidColorBrush x:Key="AppBorderStrong" Color="#28FFFFFF" />
+            <SolidColorBrush x:Key="AppControlFill" Color="#0FFFFFFF" />
+            <SolidColorBrush x:Key="AppControlFillHover" Color="#15FFFFFF" />
+            <SolidColorBrush x:Key="AppControlFillPressed" Color="#08FFFFFF" />
+            <SolidColorBrush x:Key="AppControlStroke" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="AppControlStrokePressed" Color="#12FFFFFF" />
             <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
             <SolidColorBrush x:Key="ListCardBorder" Color="#1AFFFFFF" />
             <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />

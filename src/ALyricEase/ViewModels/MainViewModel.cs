@@ -94,9 +94,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>网易云/QQ 歌单分组标题:均登录后才显示,故不进静态 NavItems,由 RebuildShellNavigation 按登录态插入。
     /// 头部是静态共享实例,展开/收起状态随实例保留,跨导航重建与登录变化不丢。
     /// 聚合歌单在两者之上:任一音源登录即出现(占位,展开空;"+"后续接入选择两源歌单加入聚合)。</summary>
-    private static readonly NavItemViewModel NetEasePlaylistsHeader = new("PlaylistsHeader", "网易云音乐", isHeader: true, isToggleGroup: true);
-    private static readonly NavItemViewModel QqPlaylistsHeader = new("QqPlaylistsHeader", "QQ音乐", isHeader: true, isToggleGroup: true);
-    private static readonly NavItemViewModel AggregatePlaylistsHeader = new("AggregatePlaylistsHeader", "聚合歌单", isHeader: true, isToggleGroup: true, hasAddButton: true);
+    private static readonly NavItemViewModel NetEasePlaylistsHeader = new("PlaylistsHeader", "网易云音乐", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "创建新歌单");
+    private static readonly NavItemViewModel QqPlaylistsHeader = new("QqPlaylistsHeader", "QQ音乐", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "创建新歌单");
+    private static readonly NavItemViewModel AggregatePlaylistsHeader = new("AggregatePlaylistsHeader", "聚合歌单", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "添加歌单到聚合");
 
     public ObservableCollection<NavItemViewModel> ShellNavItems { get; } = new();
 
@@ -328,8 +328,9 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private NavItemViewModel? _selectedNav;
 
     /// <summary>选中导航项即导航。原版 UWP NavigationView 在点击(抬起)时选中;Avalonia ListBox 默认
-    /// 按下选中,已给导航列表项设 InputElement.IsHoldWithMouseEnabled 延迟到抬起选中,故这里触发时机
-    /// 对齐原版:按下不导航、拖走松开不选中、抬起在项上才导航。</summary>
+    /// 按下选中,侧栏由 NavListTapBehavior 延迟到点击(Tapped)再驱动选中(此前试过
+    /// InputElement.IsHoldWithMouseEnabled,因"特定导航顺序下歌单子项选中样式不刷新"被关闭),
+    /// 触发时机对齐原版:按下不导航、拖走松开不选中、点击在项上才导航。</summary>
     partial void OnSelectedNavChanged(NavItemViewModel? value)
     {
         if (value is null || value.IsHeader) return;
@@ -485,6 +486,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>添加聚合歌单对话框(WinUI3 ContentDialog 式窗口内弹层):true=显示。</summary>
     [ObservableProperty] private bool _isAggregateDialogOpen;
+
+    /// <summary>分组头"+"统一入口:聚合歌单=添加成员歌单;网易云/QQ 音乐=创建该源歌单(占位,API 待接入)。</summary>
+    [RelayCommand]
+    private void NavHeaderAdd(string? key)
+    {
+        if (key == AggregatePlaylistsHeader.Key)
+            OpenAggregateDialog();
+        // TODO: PlaylistsHeader/QqPlaylistsHeader 接入两源"创建歌单"API 后在此打开对应对话框
+    }
 
     /// <summary>打开聚合歌单对话框:先按两源已加载的歌单重建候选,再显示。</summary>
     [RelayCommand]

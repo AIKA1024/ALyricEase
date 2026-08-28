@@ -21,9 +21,9 @@ namespace ALyricEase.Views;
 /// 布局规则(截图+用户确认):大/小屏无面板信息在封面下方;中屏信息在窗口顶部;开面板时封面缩为 60px 迷你头。</summary>
 public partial class NowPlayingView : UserControl
 {
-  // 全屏按钮图标:进入全屏(E924)/退出全屏(E923),与原版 Fluent 字体一致
-  private const string EnterFullScreenGlyph = "\uE924";
-  private const string ExitFullScreenGlyph = "\uE923";
+  // 全屏按钮图标:进入全屏(E690)/退出全屏(E693),码位见 Icons.axaml
+  private const string EnterFullScreenGlyph = "\uE690";
+  private const string ExitFullScreenGlyph = "\uE693";
 
   // 大屏封面下方的控件栈高度:信息54+进度52+控制60+次级50+切换32 + 间距 22+18+14+16+24 = 342
   private const double BelowCoverStack = 342;
@@ -41,6 +41,8 @@ public partial class NowPlayingView : UserControl
   public NowPlayingView()
   {
     InitializeComponent();
+    // 移动端(触屏 Head)隐藏全屏切换:窗口全屏是桌面概念,移动端整页本来就近乎全屏
+    if (InteractionDefaults.IsTouchPrimary) FullScreenToggle.IsVisible = false;
     SizeChanged += OnSizeChanged;
     AttachedToVisualTree += OnAttachedToVisualTree;
     DetachedFromVisualTree += OnDetachedFromVisualTree;

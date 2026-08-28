@@ -69,9 +69,6 @@
                     <TextBlock Text="{Binding ArtistsAndAlbumText}" FontSize="12"
                                Foreground="{DynamicResource TextSecondary}"
                                TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}"
-                               FontSize="9"
-                               Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center" />
                   </StackPanel>
                   <Button.Resources>
                     <!-- MenuFlyout:原生 hover 子菜单/延迟/定位(多歌手"表演者"子项),不再手写计时器 -->
@@ -83,7 +80,7 @@
                                 IsVisible="{Binding HasMultipleArtists, Converter={x:Static BoolConverters.Not}}">
                         <MenuItem.Icon>
                           <TextBlock Text="{DynamicResource IconSingleArtist}"
-                                     FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
+                                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
                         </MenuItem.Icon>
                       </MenuItem>
                       <!-- 多歌手:子菜单逐项跳对应歌手页(ItemContainerTheme 直接绑生成的 MenuItem 容器,不用 DataTemplate 嵌套) -->
@@ -91,7 +88,7 @@
                                 ItemsSource="{Binding Artists}">
                         <MenuItem.Icon>
                           <TextBlock Text="{DynamicResource IconMultiArtists}"
-                                     FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
+                                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
                         </MenuItem.Icon>
                         <MenuItem.ItemContainerTheme>
                           <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
@@ -107,7 +104,7 @@
                                 Command="{Binding OpenAlbumCommand}"
                                 IsEnabled="{Binding HasAlbum}">
                         <MenuItem.Icon>
-                          <TextBlock Text="{DynamicResource IconAlbum}" FontFamily="{DynamicResource LyricEaseIcons}"
+                          <TextBlock Text="{DynamicResource IconAlbum}" FontFamily="{DynamicResource LyricEaseIconsOriginal}"
                                      FontSize="14" />
                         </MenuItem.Icon>
                       </MenuItem>
@@ -119,7 +116,7 @@
               <Button Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
                       Command="{Binding PlayCommand}"
                       HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="播放">
-                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                            FontSize="15" />
               </Button>
               <Grid Grid.Column="3" VerticalAlignment="Center">
@@ -187,7 +184,7 @@
               <Button Grid.Column="3" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
                       Command="{Binding PlayCommand}"
                       HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="播放">
-                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                            FontSize="15" />
               </Button>
               <!-- 歌手:可点击 → 歌手页(仿原版 ArtistsButton);多歌手时按下弹菜单选歌手。
@@ -198,11 +195,6 @@
                 <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                              TextTrimming="CharacterEllipsis" />
-                  <!-- 多歌手时显示下箭头提示可展开菜单(单歌手无) -->
-                  <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}"
-                             FontSize="9"
-                             Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center"
-                             IsVisible="{Binding HasMultipleArtists}" />
                 </StackPanel>
                 <Button.Resources>
                   <!-- 多歌手菜单:点击歌手按钮直接平铺歌手名(仅表演者,不设"表演者>"分级),逐项跳对应歌手页 -->
@@ -288,7 +280,7 @@
               <Button Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-ops row-action"
                       Command="{Binding PlayCommand}"
                       HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="播放">
-                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                            FontSize="15" />
               </Button>
               <!-- 歌手:有名即显示,无 id 时禁用点击 -->
@@ -298,10 +290,6 @@
                 <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                              TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{DynamicResource IconChevronDown}" FontFamily="{DynamicResource LyricEaseIcons}"
-                             FontSize="9"
-                             Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center"
-                             IsVisible="{Binding HasMultipleArtists}" />
                 </StackPanel>
                 <Button.Resources>
                   <MenuFlyout x:Key="ArtistMenuFlyout" FlyoutPresenterClasses="track-menu-presenter"
@@ -470,5 +458,22 @@
   </Style>
   <Style Selector="views|TrackRow Grid.track-root:disabled">
     <Setter Property="Opacity" Value="0.45" />
+  </Style>
+
+  <!-- 触控模式覆盖(TrackRow 构造时按 InteractionDefaults.IsTouchPrimary 挂 touch 类;
+       放在文件末尾保证压过上面的 :pointerover 样式):触屏整行单击即播放(控件内处理),
+       hover 才浮现的控件(播放/更多/红心/时长切换/标题列宽变化)一律保持桌面默认的隐藏状态,
+       包括触屏按下瞬间 :pointerover 短暂触发造成的闪现,也一并压制 -->
+  <Style Selector="views|TrackRow.touch Button.row-ops">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="views|TrackRow.touch TextBlock.row-duration">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+  <Style Selector="views|TrackRow.touch Button.row-heart">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="views|TrackRow.touch .row-title" x:SetterTargetType="Control">
+    <Setter Property="Grid.ColumnSpan" Value="2" />
   </Style>
 </Styles>

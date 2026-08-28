@@ -38,6 +38,35 @@ public sealed class AppStateStore
     /// <summary>上次关闭时是否处于最大化(恢复时套用,尺寸/位置字段保存的是常规态值)。</summary>
     public bool WindowMaximized { get; set; }
 
+    // ---- 设置页偏好(SettingsViewModel 绑定;改任意项即 Save) ----
+
+    /// <summary>主题:System/Light/Dark。</summary>
+    public string Theme { get; set; } = "System";
+
+    /// <summary>界面语言:System/zh-CN(当前仅存储偏好)。</summary>
+    public string Language { get; set; } = "System";
+
+    /// <summary>性能与体验:Balanced/Quality(当前仅存储偏好)。</summary>
+    public string PerformanceMode { get; set; } = "Balanced";
+
+    /// <summary>播放详情页动态背景效果。</summary>
+    public bool DynamicBackground { get; set; } = true;
+
+    /// <summary>兼容的视觉效果。</summary>
+    public bool CompatibilityVisual { get; set; } = true;
+
+    /// <summary>音频质量档位(0=标准 1=较高 2=极高 3=无损)。</summary>
+    public int AudioQuality { get; set; }
+
+    /// <summary>传统播放控制。</summary>
+    public bool LegacyPlaybackControl { get; set; }
+
+    /// <summary>音频交叉淡化开关。</summary>
+    public bool Crossfade { get; set; }
+
+    /// <summary>交叉淡化时长(秒)。</summary>
+    public double CrossfadeSeconds { get; set; } = 4;
+
     public AppStateStore()
     {
 #if ANDROID
@@ -67,6 +96,15 @@ public sealed class AppStateStore
             WindowX = dto.WindowX;
             WindowY = dto.WindowY;
             WindowMaximized = dto.WindowMaximized ?? false;
+            Theme = string.IsNullOrEmpty(dto.Theme) ? "System" : dto.Theme;
+            Language = string.IsNullOrEmpty(dto.Language) ? "System" : dto.Language;
+            PerformanceMode = string.IsNullOrEmpty(dto.PerformanceMode) ? "Balanced" : dto.PerformanceMode;
+            DynamicBackground = dto.DynamicBackground ?? true;
+            CompatibilityVisual = dto.CompatibilityVisual ?? true;
+            AudioQuality = dto.AudioQuality ?? 0;
+            LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
+            Crossfade = dto.Crossfade ?? false;
+            CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;
 
             AggregatePlaylists.Clear();
             foreach (var f in dto.AggregatePlaylists ?? new List<AggregatePlaylistFile>())
@@ -125,6 +163,15 @@ public sealed class AppStateStore
                 WindowX = WindowX,
                 WindowY = WindowY,
                 WindowMaximized = WindowMaximized,
+                Theme = Theme,
+                Language = Language,
+                PerformanceMode = PerformanceMode,
+                DynamicBackground = DynamicBackground,
+                CompatibilityVisual = CompatibilityVisual,
+                AudioQuality = AudioQuality,
+                LegacyPlaybackControl = LegacyPlaybackControl,
+                Crossfade = Crossfade,
+                CrossfadeSeconds = CrossfadeSeconds,
             };
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, AppStateJsonContext.Default.AppStateFile));

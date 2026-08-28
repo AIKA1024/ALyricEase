@@ -1,45 +1,82 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <FontFamily x:Key="LyricEaseIcons">avares://ALyricEase/Assets/Fonts/FluentUISystemIcons.ttf#FluentUISystemIcons</FontFamily>
+    <!-- 主图标字体:Fluent System Icons **Filled**(MIT,microsoft/fluentui-system-icons)。
+         应用图标沿用旧版 Segoe MDL2 实心观感,故主字体选 Filled 版;
+         少数细线字形(歌词/播放列表/图钉/空心红心)用 LyricEaseIconsOutline(Regular 版);
+         侧边栏/歌曲行菜单/标题栏用 LyricEaseIconsOriginal(原版应用字体)。
+         码位按 glyph 名从字体 cmap/post 表解析,并与旧版字形做过逐个 IoU 形状比对;
+         注意 Regular 与 Filled 同名图标码位可能不同,改码位务必查对应字体的字体表,
+         并同步各 ViewModel 内的字面量与视图 FontFamily。 -->
+    <FontFamily x:Key="LyricEaseIcons">avares://ALyricEase/Assets/Fonts/FluentSystemIcons-Filled.ttf#FluentSystemIcons-Filled</FontFamily>
+    <FontFamily x:Key="LyricEaseIconsFilled">avares://ALyricEase/Assets/Fonts/FluentSystemIcons-Filled.ttf#FluentSystemIcons-Filled</FontFamily>
+    <FontFamily x:Key="LyricEaseIconsOutline">avares://ALyricEase/Assets/Fonts/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular</FontFamily>
+    <!-- 原版 LyricEase(UWP)内嵌字体(dump: LyricEase.Shell/UIAssets/FontIcons),侧边栏用
+         其原始码位以像素级对齐原版;映射见原版 shell_xaml/FontIcons.xaml。 -->
+    <FontFamily x:Key="LyricEaseIconsOriginal">avares://ALyricEase/Assets/Fonts/FluentUISystemIcons.ttf#FluentUISystemIcons</FontFamily>
 
-    <x:String x:Key="IconSearch">&#xE915;</x:String>
-    <x:String x:Key="IconRecommend">&#xE935;</x:String>
-    <x:String x:Key="IconBrowse">&#xE936;</x:String>
-    <x:String x:Key="IconRadio">&#xE945;</x:String>
-    <x:String x:Key="IconLibrary">&#xE92A;</x:String>
-    <x:String x:Key="IconCloud">&#xE934;</x:String>
-    <x:String x:Key="IconRecents">&#xE937;</x:String>
-    <x:String x:Key="IconHeart">&#xE931;</x:String>
-    <x:String x:Key="IconHeartPulse">&#xE944;</x:String>
-    <x:String x:Key="IconPerson">&#xE910;</x:String>
-    <x:String x:Key="IconSettings">&#xE917;</x:String>
-    <x:String x:Key="IconSingleArtist">&#xE921;</x:String>
-    <x:String x:Key="IconMultiArtists">&#xE920;</x:String>
-    <x:String x:Key="IconAlbum">&#xE922;</x:String>
-    <x:String x:Key="IconAdd">&#xE92B;</x:String>
-    <x:String x:Key="IconPrevious">&#xE914;</x:String>
-    <x:String x:Key="IconPlayFilled">&#xE912;</x:String>
-    <x:String x:Key="IconPause">&#xE90F;</x:String>
-    <x:String x:Key="IconNext">&#xE90E;</x:String>
-    <x:String x:Key="IconVolume">&#xE91B;</x:String>
-    <x:String x:Key="IconMore">&#xE909;</x:String>
-    <x:String x:Key="IconChevronDown">&#xE901;</x:String>
-    <x:String x:Key="IconLyrics">&#xE907;</x:String>
-    <x:String x:Key="IconPlaylist">&#xE905;</x:String>
-    <x:String x:Key="IconTranslation">&#xE91D;</x:String>
-    <x:String x:Key="IconFontSize">&#xE91C;</x:String>
-    <x:String x:Key="IconEnterFullScreen">&#xE924;</x:String>
-    <x:String x:Key="IconExitFullScreen">&#xE923;</x:String>
-    <!-- 窗口标题栏/播放模式等原用系统字体的字形,已并入内嵌字体(U+E950+,轮廓取自 Segoe MDL2 以对齐原版观感) -->
-    <x:String x:Key="IconBack">&#xE950;</x:String>
-    <x:String x:Key="IconWindowMinimize">&#xE951;</x:String>
-    <x:String x:Key="IconWindowMaximize">&#xE952;</x:String>
-    <x:String x:Key="IconWindowRestore">&#xE953;</x:String>
-    <x:String x:Key="IconClose">&#xE954;</x:String>
-    <x:String x:Key="IconRepeatList">&#xE956;</x:String>
-    <x:String x:Key="IconRepeatOne">&#xE957;</x:String>
-    <x:String x:Key="IconShuffle">&#xE958;</x:String>
-    <x:String x:Key="IconPin">&#xE959;</x:String>
-    <!-- Debug 入口(字体原生 E940=Code,见原版 FontIcons 映射) -->
-    <x:String x:Key="IconCode">&#xE940;</x:String>
+    <!-- 导航/通用(实心) -->
+    <x:String x:Key="IconSearch">&#xF69A;</x:String>
+    <x:String x:Key="IconRecommend">&#xF1F6;</x:String>
+    <x:String x:Key="IconBrowse">&#xF45F;</x:String>
+    <x:String x:Key="IconRadio">&#xF4FB;</x:String>
+    <x:String x:Key="IconLibrary">&#xF4DD;</x:String>
+    <x:String x:Key="IconCloud">&#xF2E5;</x:String>
+    <x:String x:Key="IconRecents">&#xF2DE;</x:String>
+    <x:String x:Key="IconPerson">&#xE910;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconSettings">&#xE917;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconAdd">&#xE92B;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconCode">&#xE940;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconPin">&#xF36B;</x:String> <!-- 实为细线字形,须配 LyricEaseIconsOutline -->
+    <x:String x:Key="IconChevronDown">&#xE901;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconChevronUp">&#xF2B7;</x:String>
+
+    <!-- 播放控制(实心) -->
+    <x:String x:Key="IconPrevious">&#xF633;</x:String>
+    <x:String x:Key="IconPlayFilled">&#xF610;</x:String>
+    <x:String x:Key="IconPause">&#xF5AC;</x:String>
+    <x:String x:Key="IconNext">&#xF574;</x:String>
+    <x:String x:Key="IconVolume">&#xEB4C;</x:String>
+    <x:String x:Key="IconMore">&#xE833;</x:String>
+    <x:String x:Key="IconRepeatList">&#xF172;</x:String>
+    <x:String x:Key="IconRepeatOne">&#xEF34;</x:String>
+    <x:String x:Key="IconShuffle">&#xEF37;</x:String>
+    <x:String x:Key="IconHeart">&#xF47E;</x:String>
+    <x:String x:Key="IconHeartFilled">&#xF47E;</x:String>
+    <x:String x:Key="IconHeartOutline">&#xF47A;</x:String> <!-- 实为细线字形,须配 LyricEaseIconsOutline -->
+    <x:String x:Key="IconHeartPulse">&#xE70F;</x:String>
+
+    <!-- 歌词页/全屏(实心除注明) -->
+    <x:String x:Key="IconLyrics">&#xF6EC;</x:String> <!-- 实为细线字形,须配 LyricEaseIconsOutline -->
+    <x:String x:Key="IconPlaylist">&#xF7A9;</x:String> <!-- 实为细线字形,须配 LyricEaseIconsOutline -->
+    <x:String x:Key="IconTranslation">&#xF4FE;</x:String>
+    <x:String x:Key="IconFontSize">&#xF7FF;</x:String>
+    <x:String x:Key="IconEnterFullScreen">&#xE690;</x:String>
+    <x:String x:Key="IconExitFullScreen">&#xE693;</x:String>
+    <x:String x:Key="IconBack">&#xE950;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+
+    <!-- 标题栏(原版字形,须配 LyricEaseIconsOriginal) -->
+    <x:String x:Key="IconWindowMinimize">&#xE951;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconWindowMaximize">&#xE952;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconWindowRestore">&#xE953;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconClose">&#xE954;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+
+    <!-- 歌曲行/设置页(实心) -->
+    <x:String x:Key="IconSingleArtist">&#xE921;</x:String> <!-- 原版字形(人+麦),须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconMultiArtists">&#xE920;</x:String> <!-- 原版字形(多人+麦),须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconAlbum">&#xE922;</x:String> <!-- 原版字形(方+音符),须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconPalette">&#xF2F6;</x:String>
+    <x:String x:Key="IconLanguage">&#xF4FE;</x:String>
+    <x:String x:Key="IconPerformance">&#xF84A;</x:String>
+    <x:String x:Key="IconDesktop">&#xF35A;</x:String>
+    <x:String x:Key="IconKeyboard">&#xF4C3;</x:String>
+    <x:String x:Key="IconTv">&#xEDC3;</x:String>
+    <x:String x:Key="IconMusicNote">&#xE863;</x:String>
+    <x:String x:Key="IconArrowSwap">&#xF18E;</x:String>
+    <x:String x:Key="IconDeviceEq">&#xF35D;</x:String>
+    <x:String x:Key="IconGlobe">&#xF45F;</x:String>
+    <x:String x:Key="IconDatabase">&#xE473;</x:String>
+    <x:String x:Key="IconBroom">&#xF202;</x:String>
+    <x:String x:Key="IconOpen">&#xF58D;</x:String>
+    <x:String x:Key="IconDelete">&#xF34D;</x:String>
+
 </ResourceDictionary>

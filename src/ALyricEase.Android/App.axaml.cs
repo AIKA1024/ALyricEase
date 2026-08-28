@@ -23,6 +23,9 @@ public partial class App : Avalonia.Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // 触控为主的输入模式:必须在任何视图创建前声明(TrackRow 构造按此订阅单击播放/挂 touch 类)
+        InteractionDefaults.Init(touchPrimary: true);
+
         ConfigureServices();
 
         if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)

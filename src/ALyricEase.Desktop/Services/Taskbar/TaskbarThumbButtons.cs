@@ -8,7 +8,7 @@ namespace ALyricEase.Services.Taskbar;
 /// <summary>任务栏缩略图工具栏(ITaskbarList3::ThumbBarAddButtons):鼠标 hover 任务栏窗口图标时,
 /// 在缩略图下方显示上一曲/播放暂停/下一曲按钮。按钮点击经 WM_COMMAND(THBN_CLICKED)接收,
 /// 通过 SetWindowSubclass 子类化窗口挂 WndProc(不破坏 Avalonia 自身 WndProc)。与 SMTC 独立。
-/// 图标用内嵌 FluentUISystemIcons 字体渲染(与 UI 内 Icons.axaml 同一套字形),颜色随系统深浅色。</summary>
+/// 图标用内嵌 FluentSystemIcons Regular/Filled 字体渲染(与 UI 内 Icons.axaml 同一套字形),颜色随系统深浅色。</summary>
 public sealed class TaskbarThumbButtons : IDisposable
 {
     // THUMBBUTTONMASK(shobjidl_core.h):THB_BITMAP=0x1 THB_ICON=0x2 THB_TOOLTIP=0x4 THB_FLAGS=0x8
@@ -73,7 +73,7 @@ public sealed class TaskbarThumbButtons : IDisposable
             Log($"HrInit hr=0x{hrInit:x}");
             if (hrInit != 0) return false;
 
-            // 图标:内嵌 FluentUISystemIcons 字体渲染字形 → HICON(经 hIcon 直连,绕开 ImageList)
+            // 图标:内嵌 FluentSystemIcons 字体渲染字形 → HICON(经 hIcon 直连,绕开 ImageList)
             _iconPrev = RenderGlyphIcon(MediaShape.Previous);
             _iconPlay = RenderGlyphIcon(MediaShape.Play);
             _iconPause = RenderGlyphIcon(MediaShape.Pause);
@@ -155,14 +155,14 @@ public sealed class TaskbarThumbButtons : IDisposable
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    /// <summary>Fluent UI System Icons 字形码位(ic_fluent_previous/play_filled/pause/next),
-    /// 与应用内 Styles/Foundation/Icons.axaml 的 IconPrevious/IconPlayFilled/IconPause/IconNext 一致。</summary>
+    /// <summary>Fluent UI System Icons 字形码位,与应用内 Styles/Foundation/Icons.axaml 同源;
+    /// 任务栏按钮统一用 Filled 字重(与应用主字体一致),码位为 Filled 字体的值。</summary>
     private enum MediaShape
     {
-        Previous = 0xE914,
-        Play = 0xE912,
-        Pause = 0xE90F,
-        Next = 0xE90E,
+        Previous = 0xF633, // ic_fluent_previous_24_filled
+        Play = 0xF610,     // ic_fluent_play_24_filled
+        Pause = 0xF5AC,    // ic_fluent_pause_24_filled
+        Next = 0xF574,     // ic_fluent_next_24_filled
     }
 
     private const int IconSize = 48; // 高分辨率渲染,系统缩到按钮尺寸更清晰
@@ -171,11 +171,11 @@ public sealed class TaskbarThumbButtons : IDisposable
     private static FontFamily? _iconFontFamily;
     private static IntPtr _fontMemory; // AddMemoryFont 要求内存在字体生命周期内存活
 
-    /// <summary>从 Avalonia 资源加载内嵌 FluentUISystemIcons.ttf → GDI+ FontFamily(仅一次)。</summary>
+    /// <summary>从 Avalonia 资源加载内嵌 FluentSystemIcons-Filled 字体 → GDI+ FontFamily(仅一次)。</summary>
     private static FontFamily GetIconFontFamily()
     {
         if (_iconFontFamily is { } family) return family;
-        using var stream = AssetLoader.Open(new Uri("avares://ALyricEase/Assets/Fonts/FluentUISystemIcons.ttf"));
+        using var stream = AssetLoader.Open(new Uri("avares://ALyricEase/Assets/Fonts/FluentSystemIcons-Filled.ttf"));
         using var ms = new System.IO.MemoryStream();
         stream.CopyTo(ms);
         var bytes = ms.ToArray();
@@ -200,17 +200,18 @@ public sealed class TaskbarThumbButtons : IDisposable
         return Color.White;
     }
 
-    /// <summary>用 FluentUISystemIcons 字体绘制媒体字形到透明位图 → HICON(经 hIcon 直连,绕开 ImageList)。</summary>
+    /// <summary>用 Fluent System Icons 字体绘制媒体字形到透明位图 → HICON(经 hIcon 直连,绕开 ImageList)。</summary>
     private static IntPtr RenderGlyphIcon(MediaShape shape)
     {
         try
         {
+            var family = GetIconFontFamily();
             using var bmp = new Bitmap(IconSize, IconSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.Transparent);
                 g.TextRenderingHint = TextRenderingHint.AntiAlias;
-                using var font = new Font(GetIconFontFamily(), IconSize * 5f / 6, FontStyle.Regular, GraphicsUnit.Pixel);
+                using var font = new Font(family, IconSize * 5f / 6, FontStyle.Regular, GraphicsUnit.Pixel);
                 using var brush = new SolidBrush(GetIconColor());
                 using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
                 g.DrawString(((char)shape).ToString(), font, brush, new RectangleF(0, 0, IconSize, IconSize), fmt);

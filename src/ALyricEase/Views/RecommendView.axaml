@@ -27,7 +27,7 @@
               <Border Classes="play-count-badge" IsVisible="{Binding HasPlayCount}"
                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Padding="5,1" CornerRadius="4">
                 <StackPanel Orientation="Horizontal" Spacing="3">
-                  <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                  <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                              FontSize="12" Foreground="White" />
                   <TextBlock Text="{Binding PlayCountText}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
                 </StackPanel>
@@ -83,6 +83,10 @@
     <Style Selector="views|TrackRow:pointerover Panel.source-badge">
       <Setter Property="Opacity" Value="1" />
     </Style>
+    <!-- 触控模式(TrackRow.touch 类)压制 hover 显现:音源角标恒隐 -->
+    <Style Selector="views|TrackRow.touch Panel.source-badge">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
     <!-- 每日歌曲行的悬停高亮/操作浮现/圆形按钮等样式已统一到共享 TrackRow 控件(Views/TrackRow.axaml) -->
     <Style Selector=".compact StackPanel#PageContent">
       <Setter Property="Margin" Value="28,0,24,80" />
@@ -136,7 +140,7 @@
                   <Button Grid.Column="1" Classes="play-all" Command="{Binding PlayAllCommand}"
                           IsVisible="{Binding HasPlayAll}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                      <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIcons}"
+                      <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                                  FontSize="14" />
                       <TextBlock Text="播放全部" FontSize="14" />
                     </StackPanel>

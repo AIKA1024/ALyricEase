@@ -166,7 +166,7 @@
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
             <TextBlock x:Name="BackGlyph" Text="{DynamicResource IconBack}"
-                       FontFamily="{DynamicResource LyricEaseIcons}" FontSize="12" />
+                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="12" />
           </Button>
           <!-- 小屏汉堡按钮(仿原版 NavigationView Minimal):窄窗无侧栏,汉堡移入标题栏、在返回键右侧,点开抽屉。
                IsVisible 由代码后置按宽度控制(ResponsiveClasses 的 narrow)。 -->
@@ -181,15 +181,15 @@
         <StackPanel Grid.Column="2" x:Name="WindowControls" Orientation="Horizontal">
           <Button Classes="window-control" Click="OnMinimizeClick" ToolTip.Tip="最小化">
             <TextBlock x:Name="MinGlyph" Text="{DynamicResource IconWindowMinimize}"
-                       FontFamily="{DynamicResource LyricEaseIcons}" FontSize="10" />
+                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
           </Button>
           <Button Classes="window-control" Click="OnMaximizeClick" ToolTip.Tip="最大化">
             <TextBlock x:Name="MaxGlyph" Text="{DynamicResource IconWindowMaximize}"
-                       FontFamily="{DynamicResource LyricEaseIcons}" FontSize="10" />
+                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
           </Button>
           <Button Classes="window-control close-control" Click="OnCloseClick" ToolTip.Tip="关闭">
             <TextBlock x:Name="CloseGlyph" Text="{DynamicResource IconClose}"
-                       FontFamily="{DynamicResource LyricEaseIcons}" FontSize="10" />
+                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
           </Button>
         </StackPanel>
       </Grid>

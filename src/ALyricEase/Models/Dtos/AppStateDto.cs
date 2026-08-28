@@ -29,6 +29,35 @@ public sealed class AppStateFile
     public int? WindowY { get; set; }
 
     public bool? WindowMaximized { get; set; }
+
+    // ---- 设置页偏好(SettingsViewModel 读写;null = 用户未改过,加载端回退默认) ----
+
+    /// <summary>主题:System/Light/Dark。</summary>
+    public string? Theme { get; set; }
+
+    /// <summary>界面语言:System/zh-CN(当前仅存储偏好,本地化尚未接入)。</summary>
+    public string? Language { get; set; }
+
+    /// <summary>性能与体验:Balanced/Quality(当前仅存储偏好)。</summary>
+    public string? PerformanceMode { get; set; }
+
+    /// <summary>播放详情页动态背景效果。</summary>
+    public bool? DynamicBackground { get; set; }
+
+    /// <summary>兼容的视觉效果(低端设备关掉重动效)。</summary>
+    public bool? CompatibilityVisual { get; set; }
+
+    /// <summary>音频质量档位(0=标准 1=较高 2=极高 3=无损;当前仅存储偏好)。</summary>
+    public int? AudioQuality { get; set; }
+
+    /// <summary>传统播放控制(点击行直接播放/双击入队等老式行为,当前仅存储偏好)。</summary>
+    public bool? LegacyPlaybackControl { get; set; }
+
+    /// <summary>音频交叉淡化开关。</summary>
+    public bool? Crossfade { get; set; }
+
+    /// <summary>交叉淡化时长(秒)。</summary>
+    public double? CrossfadeSeconds { get; set; }
 }
 
 /// <summary>聚合歌单落盘形态。</summary>

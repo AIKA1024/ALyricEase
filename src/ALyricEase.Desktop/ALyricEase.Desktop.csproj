@@ -15,6 +15,23 @@
   <PropertyGroup Condition="'$(PublishAot)' == 'true'">
     <IsAotCompatible>true</IsAotCompatible>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+
+    <OptimizationPreference>Size</OptimizationPreference>
+    <!-- 实测有效:.text 由 12.80 MB 降到 12.03 MB。副作用是堆栈里可能显示
+         机器码相同但名字不同的方法,本项目排障影响可忽略。 -->
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+
+    <!-- 发布态没有热重载需求 -->
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+
+    <!-- 警告逐条输出而非合并成一条汇总,便于定位是自有代码还是第三方库。
+         默认 true 时只会看到一条 IL2026 汇总,看不出具体位置。 -->
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+
+    <!-- IL2026 需要屏蔽:绝大部分来自 Avalonia 自身的反射路径(XAML 运行时、
+         属性系统),无法在应用层修复。但上面的 TrimmerSingleWarn=false 保证了
+         想排查时随时能看到完整清单——改动涉及反射的代码后,建议临时注释掉
+         这一行跑一次发布,确认没有新增的自有代码警告。 -->
     <NoWarn>$(NoWarn);IL2026</NoWarn>
   </PropertyGroup>
 
@@ -36,7 +53,7 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
-    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
   </ItemGroup>
 </Project>

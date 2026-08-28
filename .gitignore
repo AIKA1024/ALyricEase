@@ -13,4 +13,7 @@ tmpapi2/
 .vs/
 .zcode/
 tmpandroid/
+.workbuddy/
+bin_vcheck/
+tmp_app_out.txt
 

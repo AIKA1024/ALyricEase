@@ -87,7 +87,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public bool CompatibilityVisual
     {
         get => _state.CompatibilityVisual;
-        set { _state.CompatibilityVisual = value; _state.Save(); OnPropertyChanged(nameof(CompatibilityVisual)); }
+        set
+        {
+            _state.CompatibilityVisual = value;
+            _state.Save();
+            OnPropertyChanged(nameof(CompatibilityVisual));
+            OnPropertyChanged(nameof(CompatibilityVisualText));
+        }
     }
 
     public string CompatibilityVisualText => CompatibilityVisual ? "已启用" : "未启用";
@@ -213,6 +219,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     // ---- 关于:开源项目引用 ----
+
+    /// <summary>开源项目引用列表展开/收起(默认展开,与原版一致)。</summary>
+    [ObservableProperty] private bool _openSourceExpanded = true;
+
+    /// <summary>开合开源项目引用列表。</summary>
+    [RelayCommand]
+    private void ToggleOpenSource() => OpenSourceExpanded = !OpenSourceExpanded;
 
     /// <summary>开源项目引用(名称 + 仓库地址)。</summary>
     public IReadOnlyList<OpenSourceProject> OpenSourceProjects { get; } =

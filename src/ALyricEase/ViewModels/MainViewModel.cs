@@ -23,7 +23,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, SettingsViewModel settings, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -32,10 +32,12 @@ public sealed partial class MainViewModel : ViewModelBase
         Recommend = recommend;
         Artist = artist;
         Album = album;
+        Settings = settings;
         _playlist = playlist;
         AppState = appState;
         AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed);
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
+        CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
         // 折叠状态必须先于首次 RebuildShellNavigation 恢复(静态分组头实例随即被导航渲染消费)
         NetEasePlaylistsHeader.IsExpanded = appState.IsNetEaseGroupExpanded;
         QqPlaylistsHeader.IsExpanded = appState.IsQqGroupExpanded;
@@ -55,6 +57,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public RecommendViewModel Recommend { get; }
     public ArtistViewModel Artist { get; }
     public AlbumViewModel Album { get; }
+    public SettingsViewModel Settings { get; }
 
     /// <summary>界面状态存储(折叠状态;主窗口大小/位置由 MainWindow 读写同一实例)。</summary>
     public Services.AppStateStore AppState { get; }
@@ -64,6 +67,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>聚合歌单设置对话框 VM(宿主绑定 AggregateSettingsDialogView;打开前 Refresh)。</summary>
     public AggregateSettingsDialogViewModel AggregateSettingsDialog { get; }
+
+    /// <summary>创建歌单对话框 VM(宿主绑定 CreatePlaylistDialogView;打开前按音源 Refresh)。</summary>
+    public CreatePlaylistDialogViewModel CreatePlaylistDialog { get; }
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
@@ -196,6 +202,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "PersonalStation" => Player,
         "Artist" => Artist,
         "Album" => Album,
+        "Settings" => Settings,
         "Debug" => Debug,
         _ => Placeholder,
     };
@@ -211,7 +218,7 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentContent));
 
         // 未完成页面使用明确占位，不伪装为可用功能。
-        if (value is "Browse" or "Recents" or "Account" or "Settings")
+        if (value is "Browse" or "Recents" or "Account")
         {
             Placeholder.ShowLogout = value == "Account";
             (Placeholder.Title, Placeholder.Description) = value switch
@@ -219,8 +226,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 "Browse" => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
                 "Recents" => ("最近播放", "本地播放历史将在下一阶段接入"),
                 "Favorites" => ("我喜欢的音乐", "喜欢列表与收藏操作将在队列阶段接入"),
-                "Account" => ("账号", "登录与账户信息"),
-                _ => ("设置", "应用设置将在下一阶段接入"),
+                _ => ("账号", "登录与账户信息"),
             };
         }
 
@@ -380,6 +386,65 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>系统返回的统一入口(Android 返回手势/三大金刚键返回键;桌面端 Esc、鼠标返回键也可复用)。
+    /// 一次调用只消费层级最上的一项,顺序与宿主 XAML 的声明顺序相反(声明靠后者盖在上层):
+    /// 对话框 → 正在播放页右侧子面板 → 正在播放覆盖层 → 导航抽屉 → 页面栈。
+    /// </summary>
+    /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
+    public bool TryHandleBack()
+    {
+        if (IsAggregateSettingsDialogOpen)
+        {
+            CloseAggregateSettingsDialogCommand.Execute(null);
+            return true;
+        }
+
+        if (IsAggregateDialogOpen)
+        {
+            CloseAggregateDialogCommand.Execute(null);
+            return true;
+        }
+
+        if (IsLoginDialogOpen)
+        {
+            CloseLoginDialogCommand.Execute(null);
+            return true;
+        }
+
+        if (IsCreatePlaylistDialogOpen)
+        {
+            CloseCreatePlaylistDialogCommand.Execute(null);
+            return true;
+        }
+
+        // 正在播放页的歌词/播放列表面板先于覆盖层本身收起,与桌面端 Esc 的语义一致
+        if (NowPlayingPanel != NowPlayingPanel.None)
+        {
+            NowPlayingPanel = NowPlayingPanel.None;
+            return true;
+        }
+
+        if (ShowNowPlaying)
+        {
+            CloseNowPlayingCommand.Execute(null);
+            return true;
+        }
+
+        if (IsNavigationDrawerOpen)
+        {
+            CloseNavigationDrawerCommand.Execute(null);
+            return true;
+        }
+
+        if (CanGoBack)
+        {
+            GoBackCommand.Execute(null);
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>内容区右上搜索图标。</summary>
     [RelayCommand] private void GoSearch() => ActivePage = "Search";
 
@@ -464,8 +529,6 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         IsNavigationDrawerOpen = false;
         ActivePage = "Settings";
-        Placeholder.Title = "设置";
-        Placeholder.Description = "应用设置";
     }
 
     /// <summary>登录对话框(WinUI3 ContentDialog 式窗口内弹层):true=显示。代替原独立 LoginWindow。</summary>
@@ -493,7 +556,59 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (key == AggregatePlaylistsHeader.Key)
             OpenAggregateDialog();
-        // TODO: PlaylistsHeader/QqPlaylistsHeader 接入两源"创建歌单"API 后在此打开对应对话框
+        else if (key == NetEasePlaylistsHeader.Key)
+            OpenCreatePlaylistDialog(MusicSource.NetEase);
+        else if (key == QqPlaylistsHeader.Key)
+            OpenCreatePlaylistDialog(MusicSource.QQ);
+    }
+
+    /// <summary>创建歌单弹窗状态(WinUI3 ContentDialog 式窗口内弹层,宿主 MainWindow 绑定)。</summary>
+    [ObservableProperty] private bool _isCreatePlaylistDialogOpen;
+
+    /// <summary>打开创建歌单对话框:按音源重置输入;未登录该音源时改弹登录弹窗引导。</summary>
+    [RelayCommand]
+    private void OpenCreatePlaylistDialog(MusicSource source)
+    {
+        var loggedIn = source == MusicSource.QQ ? Playlist.IsQqLoggedIn : Playlist.IsLoggedIn;
+        if (!loggedIn)
+        {
+            OpenLoginDialogCommand.Execute(null);
+            return;
+        }
+        CreatePlaylistDialog.Refresh(source);
+        IsCreatePlaylistDialogOpen = true;
+    }
+
+    [RelayCommand] private void CloseCreatePlaylistDialog() => IsCreatePlaylistDialogOpen = false;
+
+    /// <summary>创建成功回调:关弹窗,后台刷新侧栏歌单分组并打开新歌单(复用歌单详情页)。</summary>
+    private void OnCreatePlaylistConfirmed(Models.Playlist created)
+    {
+        IsCreatePlaylistDialogOpen = false;
+        _ = OpenCreatedPlaylistAsync(created);
+    }
+
+    private async Task OpenCreatedPlaylistAsync(Models.Playlist created)
+    {
+        try
+        {
+            if (created.Source == MusicSource.QQ)
+            {
+                await Playlist.ReloadQqPlaylistsAsync();
+                var item = Playlist.QqPlaylists.FirstOrDefault(p => p.Playlist.Id == created.Id);
+                if (item is not null) OpenShellQqPlaylistCommand.Execute(item);
+            }
+            else
+            {
+                await Playlist.ReloadNetEasePlaylistsAsync();
+                var item = Playlist.Playlists.FirstOrDefault(p => p.Playlist.Id == created.Id);
+                if (item is not null) OpenShellPlaylistCommand.Execute(item);
+            }
+        }
+        catch
+        {
+            // 刷新/打开失败不打断(新歌单下次进侧栏仍可见)
+        }
     }
 
     /// <summary>打开聚合歌单对话框:先按两源已加载的歌单重建候选,再显示。</summary>

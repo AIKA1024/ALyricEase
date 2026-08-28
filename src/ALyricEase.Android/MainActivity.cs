@@ -4,6 +4,8 @@ using Android.Content.PM;
 using Android.OS;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
+using ALyricEase.Infrastructure;
+using ALyricEase.ViewModels;
 using Avalonia.Android;
 
 namespace ALyricEase;
@@ -23,7 +25,27 @@ public class MainActivity : AvaloniaMainActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        // 系统返回的唯一入口,手势返回与三大金刚键返回键都汇聚到这里:
+        // API 33+ 由 Avalonia 注册的 OnBackPressedCallback 转发、以下由 OnBackPressed 覆写转发,
+        // 两条路都最终触发 AvaloniaActivity.BackRequested(基类的 OnBackInvoked)。
+        BackRequested += OnBackRequested;
         RequestNotificationPermission();
+    }
+
+    /// <summary>系统返回:先让共享 VM 逐级消费一层,消费不掉再退到后台。</summary>
+    private void OnBackRequested(object? sender, AndroidBackRequestedEventArgs e)
+    {
+        if (ServiceLocator.Get<MainViewModel>().TryHandleBack())
+        {
+            // 已消费(关弹窗 / 收覆盖层 / 关抽屉 / 页面返回):阻止系统默认返回
+            e.Handled = true;
+            return;
+        }
+
+        // 已在根页面:不结束 Activity —— 音频由本进程内的 AndroidMediaPlayer 播放,
+        // finish 会直接中断播放。退到后台(等价按 Home),前台媒体通知与播放继续。
+        MoveTaskToBack(true);
+        e.Handled = true;
     }
 
     private void RequestNotificationPermission()

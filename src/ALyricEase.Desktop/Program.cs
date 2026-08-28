@@ -85,6 +85,7 @@ class Program
     services.AddSingleton<RecommendViewModel>();
     services.AddSingleton<ArtistViewModel>();
     services.AddSingleton<AlbumViewModel>();
+    services.AddSingleton<SettingsViewModel>();
     services.AddSingleton<MainViewModel>();
     ServiceLocator.Provider = services.BuildServiceProvider();
 

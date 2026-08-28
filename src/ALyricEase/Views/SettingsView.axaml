@@ -64,6 +64,51 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
     </Style>
+    <!-- 可展开行头按钮:透明铺满卡片,仅承载整行点击开合 -->
+    <Style Selector="Button.row-toggle">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.row-toggle /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.row-toggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 展开指示 chevron:展开时旋转 180° 朝上(与侧栏分组箭头同款过渡) -->
+    <Style Selector="TextBlock.setting-chevron">
+      <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+      <Setter Property="RenderTransform" Value="rotate(0deg)" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="TextBlock.setting-chevron.expanded">
+      <Setter Property="RenderTransform" Value="rotate(-180deg)" />
+    </Style>
+    <!-- 展开内容:MaxHeight+Opacity 过渡收展(同侧栏分组折叠) -->
+    <Style Selector="StackPanel.expand-content">
+      <Setter Property="MaxHeight" Value="0" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="MaxHeight" Duration="0:0:0.2" Easing="CubicEaseOut" />
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="StackPanel.expand-content.expanded">
+      <Setter Property="MaxHeight" Value="200" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
   </UserControl.Styles>
 
   <ScrollViewer>
@@ -191,6 +236,10 @@
               <TextBlock Text="{Binding CrossfadeText}" FontSize="13"
                          Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
               <ToggleSwitch IsChecked="{Binding Crossfade}" OnContent="" OffContent="" />
+              <!-- 展开指示箭头:开启后展开时长滑杆,箭头随开合旋转 -->
+              <TextBlock Classes="setting-chevron" Text="{DynamicResource IconChevronDown}"
+                         FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10"
+                         Margin="2,0,0,0" Classes.expanded="{Binding Crossfade}" />
             </StackPanel>
           </Grid>
           <!-- 开启后展开时长滑杆(0-12 秒) -->
@@ -236,6 +285,45 @@
             </StackPanel>
           </Button>
         </Grid>
+      </Border>
+
+      <!-- ============ 关于 ============ -->
+      <TextBlock Classes="section-header" Text="关于" />
+
+      <Border Classes="setting-card" Margin="0,0,0,8" Padding="0">
+        <StackPanel>
+          <!-- 行头整行可点;chevron 用兄弟元素右对齐(不依赖按钮内容拉伸) -->
+          <Panel>
+            <Button Classes="row-toggle" Command="{Binding ToggleOpenSourceCommand}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Classes="setting-icon" FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                           Text="{DynamicResource IconCode}" />
+                <TextBlock Grid.Column="1" Classes="setting-title" Text="开源项目引用" />
+                <!-- 占位:标题过长时不顶到 chevron 下方 -->
+                <TextBlock Grid.Column="2" MinWidth="24" />
+              </Grid>
+            </Button>
+            <TextBlock Classes="setting-chevron" HorizontalAlignment="Right" Margin="0,0,18,0"
+                       IsHitTestVisible="False" Text="{DynamicResource IconChevronDown}"
+                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10"
+                       Classes.expanded="{Binding OpenSourceExpanded}" />
+          </Panel>
+          <!-- 展开内容:开源仓库链接,点击在系统浏览器打开 -->
+          <StackPanel Classes="expand-content" Classes.expanded="{Binding OpenSourceExpanded}"
+                      Margin="36,0,16,10">
+            <ItemsControl ItemsSource="{Binding OpenSourceProjects}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:OpenSourceProject">
+                  <Button Classes="link-button" Margin="0,6,0,0"
+                          Command="{Binding $parent[views:SettingsView].((vm:SettingsViewModel)DataContext).OpenProjectCommand}"
+                          CommandParameter="{Binding}">
+                    <TextBlock Text="{Binding Name}" FontSize="13" TextDecorations="Underline" />
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
       </Border>
 
       <!-- APPEND -->

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using ALyricEase.Models;
@@ -28,6 +29,11 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     /// <summary>已确认 weapi/eapi 被风控拦截后置 true,后续请求直接走明文接口,省掉重复空请求。</summary>
     private bool _wafBlocked;
+
+    /// <summary>CSRF 令牌(__csrf cookie)。写接口(创建/删除歌单)的服务端强校验项:
+    /// 缺它时明文写恒返回 403 illegal request(实测与 UA/Referer/Origin/csrf_token 参数都无关),
+    /// 补上后同一请求直接 200。由带 MUSIC_U 的站内请求通过 Set-Cookie 下发,与登录态绑定。</summary>
+    private string? _csrf;
 
     // 红心/喜欢状态:"我喜欢的音乐"歌单 id + 已喜欢曲目集合(懒加载缓存)。
     private long _likedPlaylistId;
@@ -109,10 +115,46 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         }
 
         _cookie.MusicU = musicU;
+        _cookie.Csrf = null; // 换号后旧令牌作废,下次写操作重新暖场获取
+        _csrf = null;
         _cookie.Save();
         AddCookie("MUSIC_U", musicU);
         _vipLoaded = false;
         IsVip = false; // 换号后会员状态作废,待资料接口重载
+    }
+
+    /// <summary>确保拿到 __csrf(写操作前置条件):内存缓存 → 持久化 → 带登录态暖场获取。
+    /// ⚠️ 只有页面类 URL 会下发 __csrf —— 实测 /api/... 接口(含账号接口)只回 NMTID,不发 __csrf,
+    /// 这是早期实现拿不到令牌的原因。用 HEAD /my/ 最省:零响应体即可拿到 Set-Cookie
+    /// (同 URL 的 GET 会拉回 ~170KB 首页 HTML)。取到后写入 CookieContainer,后续请求自动携带。</summary>
+    private async Task<string> EnsureCsrfAsync(CancellationToken ct)
+    {
+        if (_csrf is { Length: > 0 }) return _csrf;
+        if (_cookie.Csrf is { Length: > 0 }) return _csrf = AddCsrfCookie(_cookie.Csrf);
+
+        using var req = new HttpRequestMessage(HttpMethod.Head, $"{BaseUrl}/my/");
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        CaptureCsrf();
+        if (_csrf is { Length: > 0 }) return _csrf;
+        throw new ApiException("未能获取 CSRF 令牌(登录态可能已失效,请重新填写 MUSIC_U)", -1);
+    }
+
+    /// <summary>把 __csrf 写进 CookieContainer 并持久化(同一登录态取值稳定,无需每次重新获取)。</summary>
+    private string AddCsrfCookie(string csrf)
+    {
+        AddCookie("__csrf", csrf);
+        _cookie.Csrf = csrf;
+        _cookie.Save();
+        return csrf;
+    }
+
+    /// <summary>若响应里已下发 __csrf 则顺手缓存(账号接口/首页等站内请求都会带)。无则忽略。</summary>
+    private void CaptureCsrf()
+    {
+        if (_csrf is { Length: > 0 }) return;
+        var csrf = _cookieContainer.GetCookies(new Uri(BaseUrl))["__csrf"]?.Value;
+        if (!string.IsNullOrEmpty(csrf)) _csrf = AddCsrfCookie(csrf);
     }
 
     /// <summary>确保有未过期的匿名 cookie;无则调 /weapi/register/anonimous 注册。</summary>
@@ -349,6 +391,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        CaptureCsrf(); // 顺手:若该接口哪天也开始下发 __csrf,可省掉一次暖场请求
         var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyAccountResponse);
         if (resp is null || resp.Code != 200 || resp.Profile is null)
             throw new ApiException("获取用户信息失败(未登录或 cookie 失效)", resp?.Code ?? -1);
@@ -542,6 +585,155 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (code != 200) throw new ApiException($"红心操作失败(code={code})", code);
     }
 
+    // ---------- 创建/删除歌单(登录写操作) ----------
+
+    // 注:曾有一条 eapi 回落路径(PC 客户端形态,带 x-anticheattoken + deviceId),
+    // 实测 2026-08 对本机同样返回 HTTP 200 空 body(主域名与 interface/interface3 三个入口皆然),
+    // 故移除;明文 form POST 才是本机唯一可用的写通道。
+
+    /// <summary>明文 form POST 写接口(带 __csrf):本机加密通道被 WAF 静默丢弃时的可用路径。
+    /// 网易写接口按 cookie 里的 __csrf 做校验,表单与 URL 都要带 csrf_token(实测缺任一即 403/405)。
+    /// apiPath 传 /api/... 全路径;表单值由调用方给出,csrf_token 在这里统一补。</summary>
+    private async Task<JsonDocument> PostPlainWriteAsync(string apiPath,
+        Dictionary<string, string> form, CancellationToken ct)
+    {
+        var csrf = await EnsureCsrfAsync(ct).ConfigureAwait(false);
+        form["csrf_token"] = csrf;
+        using var req = new HttpRequestMessage(HttpMethod.Post,
+            $"{BaseUrl}{apiPath}?csrf_token={Uri.EscapeDataString(csrf)}");
+        ApplyCommonHeaders(req, includeRealIp: false);
+        req.Headers.TryAddWithoutValidation("Origin", BaseUrl);
+        req.Content = new FormUrlEncodedContent(form);
+        return await PostJsonAsync(req, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>创建歌单(需登录):先走 weapi 加密通道(境内网络通常可用),
+    /// 被风控拦截(HTTP 200 空 body)则回落明文 form POST(本机实测唯一可用通道)。
+    /// 两条路都要求 cookie 带 __csrf —— 缺失时明文恒返回 403 illegal request,
+    /// 这也是此前"无法创建歌单"的根因(2026-08 实测定位)。
+    /// 成功返回新歌单(Id 为服务端分配的歌单 id);业务码非 200 抛 ApiException。</summary>
+    public async Task<Playlist> CreatePlaylistAsync(string name, bool isPrivate = false, CancellationToken ct = default)
+    {
+        name = name.Trim();
+        if (!IsLoggedIn)
+            throw new ApiException("未登录,无法创建歌单", -1);
+        if (name.Length == 0)
+            throw new ApiException("歌单名不能为空", -1);
+
+        // 明文表单:privacy 0 普通 / 10 隐私;type NORMAL/VIDEO/SHARED,UI 仅提供普通歌单
+        var form = new Dictionary<string, string>
+        {
+            ["name"] = name,
+            ["privacy"] = isPrivate ? "10" : "0",
+            ["type"] = "NORMAL",
+        };
+
+        JsonDocument doc;
+        if (_wafBlocked)
+        {
+            doc = await PostPlainWriteAsync("/api/playlist/create", form, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            try
+            {
+                // 加密通道同样要带 __csrf:payload 里填真实令牌而非空串,避免服务端 CSRF 校验失败
+                var csrf = await EnsureCsrfAsync(ct).ConfigureAwait(false);
+                var weapiPayload = new Dictionary<string, object?>
+                {
+                    ["name"] = name,
+                    ["privacy"] = isPrivate ? "10" : "0",
+                    ["type"] = "NORMAL",
+                    ["description"] = "",
+                    ["work"] = "",
+                    ["csrf_token"] = csrf,
+                };
+                using var req = CreateWeapiRequest("weapi/playlist/create", weapiPayload, includeRealIp: true);
+                doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+            }
+            catch (ApiException ex) when (ex.Code == BlockedCode)
+            {
+                _wafBlocked = true; // 本机加密写被静默丢弃,后续直接走明文
+                doc = await PostPlainWriteAsync("/api/playlist/create", form, ct).ConfigureAwait(false);
+            }
+        }
+
+        using (doc)
+        {
+            var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+            if (code == 405)
+                throw new ApiException("创建歌单失败:操作过于频繁,请稍后再试", code);
+            if (code != 200)
+                throw new ApiException(
+                    TryMessage(doc.RootElement) is { } msg ? $"创建歌单失败:{msg}" : $"创建歌单失败(code={code})", code);
+            // 明文响应 id 在顶层,加密响应里也可能嵌在 playlist 对象内
+            var id = 0L;
+            if (doc.RootElement.TryGetProperty("id", out var idEl) && idEl.TryGetInt64(out var v))
+                id = v;
+            else if (doc.RootElement.TryGetProperty("playlist", out var pl) &&
+                     pl.TryGetProperty("id", out var plId) && plId.TryGetInt64(out var pv))
+                id = pv;
+            if (id == 0)
+                throw new ApiException("创建歌单失败(响应缺少歌单 id)", -2);
+            return new Playlist { Id = id, Name = name, Source = MusicSource.NetEase };
+        }
+    }
+
+    /// <summary>删除自己创建的歌单(需登录):通道策略同创建(weapi 优先,被拦回落明文)。
+    /// ⚠️ 参数名两边不同,是历史上删除一直失败的原因之一:
+    /// 明文 /api/playlist/delete 只认 <c>pid</c>,传 <c>id</c> 恒返回 400「请求参数错误」(2026-08 实测);
+    /// 加密 weapi 通道沿用社区通用的 <c>id</c>。两条路都要带 __csrf。</summary>
+    public async Task DeletePlaylistAsync(long playlistId, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("未登录,无法删除歌单", -1);
+
+        JsonDocument doc;
+        if (_wafBlocked)
+        {
+            doc = await PostPlainWriteAsync("/api/playlist/delete",
+                new Dictionary<string, string> { ["pid"] = playlistId.ToString() }, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            try
+            {
+                var csrf = await EnsureCsrfAsync(ct).ConfigureAwait(false);
+                var payload = new Dictionary<string, object?>
+                {
+                    ["id"] = playlistId,
+                    ["csrf_token"] = csrf,
+                };
+                using var req = CreateWeapiRequest("weapi/playlist/delete", payload, includeRealIp: true);
+                doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+            }
+            catch (ApiException ex) when (ex.Code == BlockedCode)
+            {
+                _wafBlocked = true;
+                doc = await PostPlainWriteAsync("/api/playlist/delete",
+                    new Dictionary<string, string> { ["pid"] = playlistId.ToString() }, ct).ConfigureAwait(false);
+            }
+        }
+
+        using (doc)
+        {
+            var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+            if (code != 200)
+                throw new ApiException(
+                    TryMessage(doc.RootElement) is { } msg ? $"删除歌单失败:{msg}" : $"删除歌单失败(code={code})", code);
+        }
+    }
+
+    /// <summary>从错误响应里捞人读文案(message/msg),缺省 null。</summary>
+    private static string? TryMessage(JsonElement root)
+    {
+        foreach (var name in new[] { "message", "msg" })
+            if (root.TryGetProperty(name, out var m) && m.ValueKind == JsonValueKind.String &&
+                m.GetString() is { Length: > 0 } s)
+                return s;
+        return null;
+    }
+
     // ---------- 歌手 / 专辑详情(明文 GET) ----------
 
     /// <summary>歌手详情(姓名/头像)。明文 GET /api/artist/head/info/get。</summary>
@@ -732,9 +924,10 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return req;
     }
 
-    private HttpRequestMessage CreateEapiRequest(string apiUrlPath, IReadOnlyDictionary<string, object?> payload, bool includeRealIp)
+    private HttpRequestMessage CreateEapiRequest(string apiUrlPath, IReadOnlyDictionary<string, object?> payload, bool includeRealIp,
+        IReadOnlyDictionary<string, object?>? eapiHeader = null)
     {
-        var params_ = _crypto.EncryptEapi(apiUrlPath, payload);
+        var params_ = _crypto.EncryptEapi(apiUrlPath, payload, eapiHeader);
         // 明文里的 url 保留 /api/...;实际 HTTP 请求打到 /eapi/...
         var httpPath = apiUrlPath.StartsWith("/api/", StringComparison.Ordinal)
             ? "/eapi/" + apiUrlPath["/api/".Length..]
@@ -786,6 +979,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
             AddCookie("MUSIC_U", u);
         if (_cookie.AnonymousMusicA is { Length: > 0 } a && _cookie.AnonymousExpiresUtc > DateTime.UtcNow)
             AddCookie("MUSIC_A", a);
+        if (_cookie.Csrf is { Length: > 0 } c)
+            AddCookie("__csrf", c);
     }
 
     private void AddCookie(string name, string value)

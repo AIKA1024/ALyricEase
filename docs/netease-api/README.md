@@ -24,6 +24,10 @@
 
 **双通道架构**（本项目核心设计）：每个功能先走加密 POST，收到空 body（风控特征码 `-3`）即置 `_wafBlocked` 位，后续请求全部改走明文 GET。同一功能的加密/明文两种路径字段名不同（详见端点文档），需要两套 DTO。
 
+**写操作（创建/删除歌单）额外要求 `__csrf`**，且与通道无关：加密与明文两条路都要带它，
+缺失时明文恒返回 `403 illegal request`。因此写操作的回落链是
+`weapi → 明文 POST`，两路都先 `EnsureCsrfAsync()` 取令牌。
+
 ---
 
 ## 1. 为什么会有双通道（风控背景）
@@ -47,11 +51,32 @@
 |---|---|---|---|
 | `MUSIC_A` | 匿名用户会话 | 约 14 天（本项目按 14 天缓存） | `POST /weapi/register/anonimous`（加密） |
 | `MUSIC_U` | 登录用户会话 | 长期（重新登录前一直有效） | 从浏览器 `music.163.com` 登录态拷贝 |
-| `__csrf` | CSRF 令牌 | 随会话 | 登录页加载时下发，多数 GET 不需要 |
+| `__csrf` | CSRF 令牌 | 与 `MUSIC_U` 绑定（Expires 约 15 天） | 带 `MUSIC_U` 请求**页面类** URL 时下发 |
 
 - 匿名 cookie `MUSIC_A` 用于：搜索、歌词、匿名播放地址、公开歌单、首页推荐。
 - 登录 cookie `MUSIC_U` 额外解锁：用户资料、我的歌单、每日推荐、红心喜欢、VIP 音质。
 - **明文 GET 接口大多不校验登录**（返回匿名可用的数据或 `code 301`/空），登录态只影响权限类数据。
+- **`__csrf` 是所有写操作（创建/删除歌单）的硬门槛**，且它的缺失症状极具误导性，详见下方专节。
+
+### 获取 `__csrf`（写操作必需）
+
+带 `MUSIC_U` 请求**页面类** URL，服务端就会通过 `Set-Cookie` 下发 `__csrf`（32 位 hex）：
+
+```
+HEAD https://music.163.com/my/     →  Set-Cookie: __csrf=a2cd...6b70; Path=/; Domain=.music.163.com
+```
+
+| 请求 | 下发 `__csrf`？ | 备注 |
+|---|---|---|
+| `HEAD /my/` | ✅ | **推荐**：零响应体，最省（GET 会拉回 ~170KB 首页 HTML） |
+| `GET /my/`、`/discover`、`/` | ✅ | 可用，但响应体大 |
+| `/api/nuser/account/get`、`/api/user/playlist` 等 `/api/...` | ❌ | **只回 `NMTID`，不发 `__csrf`** |
+
+> ⚠️ 这条"页面类才发、API 不发"的分界是踩过的坑：早期实现想当然地复用账号接口暖场，
+> 结果永远拿不到令牌。客户端 `EnsureCsrfAsync` 因此固定用 `HEAD /my/`。
+
+取值与 `MUSIC_U` 绑定（同一账号反复取都是同一个值），故按登录态持久化；
+换号时（`SetMusicUCookie`）清空重取。
 
 ### 获取 MUSIC_U（浏览器）
 

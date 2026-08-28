@@ -19,6 +19,12 @@ public sealed class CookieStore
 
     public DateTime AnonymousExpiresUtc { get; set; } = DateTime.MinValue;
 
+    /// <summary>CSRF 令牌(__csrf cookie 的值,32 位 hex)。写接口(创建/删除歌单)服务端强校验:
+    /// 缺失时返回 code 403 "illegal request!",与 UA/Referer/csrf_token 参数无关。
+    /// 由带 MUSIC_U 访问站内页面时通过 Set-Cookie 下发,与登录态绑定(同一 MUSIC_U 取值稳定),
+    /// 故按登录态持久化;换号时由 SetMusicUCookie 清空。写入 JSON 与其它 cookie 同文件。</summary>
+    public string? Csrf { get; set; }
+
     /// <summary>QQ 音乐登录 cookie 原文(需含 uin 与 qqmusic_key,由 QQMusicApiClient 解析)。</summary>
     public string? QQCookieRaw { get; set; }
 
@@ -58,6 +64,7 @@ public sealed class CookieStore
             AnonymousMusicA = dto.AnonymousMusicA;
             AnonymousExpiresUtc = dto.AnonymousExpiresUtc;
             QQCookieRaw = dto.QQCookieRaw;
+            Csrf = dto.Csrf;
         }
         catch
         {
@@ -75,6 +82,7 @@ public sealed class CookieStore
                 AnonymousMusicA = AnonymousMusicA,
                 AnonymousExpiresUtc = AnonymousExpiresUtc,
                 QQCookieRaw = QQCookieRaw,
+                Csrf = Csrf,
             };
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, NetEaseJsonContext.Default.CookieFile));
@@ -95,5 +103,7 @@ public sealed class CookieStore
         public DateTime AnonymousExpiresUtc { get; set; }
 
         public string? QQCookieRaw { get; set; }
+
+        public string? Csrf { get; set; }
     }
 }

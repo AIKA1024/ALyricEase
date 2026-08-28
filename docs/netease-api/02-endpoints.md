@@ -350,6 +350,54 @@ Form (application/x-www-form-urlencoded):
 - 本项目「红心切换」用的是更简单的 `/api/song/like`（见 E4），不需要这个接口；
   此接口用于**对任意歌单**增删曲目（如移除某首歌）。
 
+### F5. 创建歌单（明文 POST，需登录 + `__csrf`）
+
+```
+POST /api/playlist/create?csrf_token=<__csrf>
+Form (application/x-www-form-urlencoded):
+  name=<歌单名>&privacy=10&type=NORMAL&csrf_token=<__csrf>
+```
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| `privacy` | `0` / `10` | 0 普通歌单，10 隐私歌单 |
+| `type` | `NORMAL` | NORMAL/VIDEO/SHARED，UI 仅提供普通歌单 |
+| `csrf_token` | `__csrf` 值 | **URL 与表单都要带**，值必须与 cookie 里的 `__csrf` 一致 |
+
+响应（成功）：
+
+```json
+{ "code": 200, "id": 18329264369, "playlist": { "id": 18329264369, "name": "...", ... } }
+```
+
+- `id` 在**顶层**；部分通道也嵌在 `playlist.id`，客户端两处都兜底读。
+
+**⚠️ 缺 `__csrf` 是本功能历史上一直失败的根因**：没有它时接口恒返回
+
+```json
+{ "code": 403, "message": "illegal request!", "msg": "illegal request!" }
+```
+
+实测该 403 **与 UA / Referer / Origin / csrf_token 参数完全无关**（六种组合全 403）——
+服务端只认 cookie 里的 `__csrf`。补上后同一请求直接 200（2026-08 实测）。
+
+### F6. 删除歌单（明文 POST，需登录 + `__csrf`）
+
+```
+POST /api/playlist/delete?csrf_token=<__csrf>
+Form: pid=<歌单id>&csrf_token=<__csrf>
+```
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| **`pid`** | 歌单 id | **参数名是 `pid`，不是 `id`** —— 传 `id` 恒返回 `code:400 请求参数错误` |
+| `csrf_token` | `__csrf` 值 | 同 F5 |
+
+响应（成功）：`{ "code": 200, "id": 18329264369 }`
+
+> 加密 weapi 通道的删除参数名沿用社区通用的 `id`（`/weapi/playlist/delete`），
+> 与明文通道的 `pid` **不同** —— 这是两套通道少见的字段名分歧，改动时勿混用。
+
 ---
 
 ## G. 歌曲详情（批量）
@@ -528,6 +576,8 @@ GET /api/v3/discovery/recommend/songs?csrf_token=
 | 我的歌单 | — | `GET /api/user/playlist?uid=` | ✅ | `specialType=5` 红心 |
 | 红心切换 | — | `POST /api/song/like` | ✅ | 参数 trackId/userid/like(id 会 400) |
 | 歌单增删曲目 | — | `POST /api/playlist/manipulate/tracks` | ✅ | op=del/add, trackIds 必须 JSON 数组字符串 |
+| 创建歌单 | — | `POST /api/playlist/create` | ✅ | **必须带 `__csrf`**,否则恒 403 illegal request |
+| 删除歌单 | — | `POST /api/playlist/delete` | ✅ | 参数名 **`pid`**(非 `id`),也要 `__csrf` |
 | 歌单概览 | — | `GET /api/v6/playlist/detail?id=` | 登录态更全 | trackIds 权威顺序 |
 | 歌曲批量 | `weapi/v3/song/detail` POST | `GET /api/song/detail?ids=` | 否 | ≤100/批 |
 | 歌手资料 | — | `GET /api/artist/head/info/get?id=` | 否 | |

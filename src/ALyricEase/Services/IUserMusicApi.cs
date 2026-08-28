@@ -19,6 +19,10 @@ public interface IUserMusicApi : IMusicApi
     /// <summary>每日推荐歌曲(个性化,需登录;无内容返回空列表)。</summary>
     Task<List<Song>> GetDailyRecommendSongsAsync(CancellationToken ct = default);
 
+    /// <summary>在当前账号下创建歌单(侧栏分组头"+"按钮)。成功返回新歌单
+    /// (网易云 Id=服务端歌单 id;QQ 含 tid/DirId);失败抛 ApiException。</summary>
+    Task<Playlist> CreatePlaylistAsync(string name, bool isPrivate = false, CancellationToken ct = default);
+
     /// <summary>当前登录态能否执行红心操作(未登录/无法定位喜欢集合时为 false,UI 应引导登录)。</summary>
     bool CanToggleLike { get; }
 

@@ -542,6 +542,39 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         await Tracks[0].PlayCommand.ExecuteAsync(null);
     }
 
+    /// <summary>创建歌单(侧栏分组头"+"按钮):按音源路由到对应客户端。
+    /// 成功返回新歌单;失败抛 ApiException(对话框内呈现)。</summary>
+    public Task<Playlist> CreatePlaylistAsync(MusicSource source, string name, bool isPrivate)
+        => source == MusicSource.QQ
+            ? _qqApi.CreatePlaylistAsync(name, isPrivate)
+            : _api.CreatePlaylistAsync(name, isPrivate);
+
+    /// <summary>重新拉取网易云用户歌单(创建/删除歌单后刷新侧栏;静默失败,保底不清空现列表)。</summary>
+    public async Task ReloadNetEasePlaylistsAsync()
+    {
+        if (!IsLoggedIn) return;
+        try
+        {
+            var profile = await _api.GetUserProfileAsync();
+            UserName = profile.Nickname;
+            var playlists = await _api.GetUserPlaylistsAsync(profile.UserId);
+            Playlists.Clear();
+            foreach (var p in playlists)
+                Playlists.Add(new PlaylistItemViewModel(p));
+        }
+        catch (ApiException)
+        {
+            // 刷新失败保持现列表(侧栏旧数据仍可用)
+        }
+    }
+
+    /// <summary>重新拉取 QQ 用户歌单(创建/删除歌单后刷新侧栏;失败静默保持现列表)。</summary>
+    public async Task ReloadQqPlaylistsAsync()
+    {
+        if (!IsQqLoggedIn) return;
+        await LoadQqPlaylistsAsync();
+    }
+
     private async Task LoadProfileAndPlaylistsAsync()
     {
         IsBusy = true;

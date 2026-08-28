@@ -1,4 +1,8 @@
 #if ANDROID
+// 同上:PlaybackStateCompat.State* 常量在 AndroidX Media 1.7+ 被上游标为 @Deprecated,
+// 这里只用到它的状态常量做映射,关闭 CS0618。迁移到 Media3 时一并处理。
+#pragma warning disable CS0618 // 类型或成员已过时
+
 using System;
 using System.Threading.Tasks;
 using Android.Content;

@@ -31,12 +31,37 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Android" Version="12.1.1" />
-    <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.0.1.15" />
-    <PackageReference Include="Xamarin.AndroidX.Media" Version="1.7.0.3" />
-    <PackageReference Include="Xamarin.AndroidX.Core" Version="1.17.0.2" />
+    <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0.3" />
+    <PackageReference Include="Xamarin.AndroidX.Media" Version="1.8.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Core" Version="1.19.0.1" />
+    <!-- 必须与上面的 Core 版本严格对齐,不能删。core-ktx 只是传递依赖,NuGet 会解析到
+         旧版(1.17.0.2);而 core 1.19 把 AnimatorKt 等 Kotlin 扩展并入了自身,于是
+         core.aar 与 core-ktx.aar 各带一份 androidx/core/animation/AnimatorKt,
+         D8 报 "Type ... is defined multiple times" 而构建失败(与 AOT 无关,Debug 同样挂)。
+         升级 Core 时记得同步改这里的版本号。 -->
+    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.0.1" />
+
+    <!-- Lifecycle 家族必须与 Core 1.19.0.1 对齐在 2.11.0.1。
+         缘由:Core 1.19.0.1 把 Lifecycle.Common/Runtime 拉到 2.11.0.1,但 AppCompat 1.7.1.3
+         这条链上的 Activity/Fragment/Emoji2/Loader/SavedState 仍把 ViewModel / LiveData.Core /
+         Process / ViewModelSavedState 钉在 2.10.0.2,而这些包对 Common 的依赖是闭区间
+         [2.10.0.2, 2.10.1),于是每次还原都刷 4 条 NU1608。
+         把落后者显式提到 2.11.0.1(上游已发布),区间变成 [2.11.0.1, 2.11.1),全图对齐。
+         注意 binding 包与 .Jvm/.Android 承载包必须成对同版本,否则 D8 会报类重复。
+         升级 Core 时记得同步改这里的版本号。 -->
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModel" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModel.Android" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Process" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Common" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Common.Jvm" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Runtime" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Runtime.Android" Version="2.11.0.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
   </ItemGroup>
 </Project>

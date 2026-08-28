@@ -1,4 +1,14 @@
 #if ANDROID
+// AndroidX Media 1.7+ 把 MediaSessionCompat / PlaybackStateCompat / MediaMetadataCompat /
+// MediaButtonReceiver / NotificationCompat.MediaStyle 全部标了 @Deprecated(上游指向
+// androidx.media3),绑定生成器据此打上 [Obsolete],于是本文件满屏 CS0618。
+//
+// 这些 API 在 Android 上依旧完整可用,且是不引入 Media3 + ExoPlayer 的前提下唯一能拿到
+// 系统媒体横幅 / 锁屏控制 / 蓝牙媒体键的路径。迁到 Media3 需要为这里的自定义播放器
+// (实际由 AndroidMediaPlayer 出声)实现 SimpleBasePlayer,是一次独立改造,不混在本次做。
+// 因此整文件关闭 CS0618 —— 若哪天真的迁到 Media3,请连同本 pragma 一起删掉。
+#pragma warning disable CS0618 // 类型或成员已过时
+
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;

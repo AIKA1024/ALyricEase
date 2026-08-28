@@ -37,6 +37,20 @@ public static class Program
             return;
         }
 
+        // 虚拟化换行网格探针:外部 ScrollViewer + 横向 VirtualizingStackPanel 是否真虚拟化
+        if (args.Length > 0 && args[0] == "--vgrid")
+        {
+            VGridProbe.Run();
+            return;
+        }
+
+        // SongGridView 实机探针:6 行自然高度 + 横向虚拟化
+        if (args.Length > 0 && args[0] == "--sg")
+        {
+            SongGridProbe.Run();
+            return;
+        }
+
         // QQ 音乐 API 冒烟:匿名打真实接口验证歌单修复(不依赖登录 Cookie)
         if (args.Length > 0 && args[0] == "--qqapi")
         {

@@ -55,7 +55,7 @@
         </StackPanel>
       </Grid>
 
-      <!-- 热门歌曲:横向滚动换行网格(5 行),仿原版 HotSongsGridView;
+      <!-- 热门歌曲:横向滚动换行网格(6 行),仿原版 HotSongsGridView;
            容器与个性推荐"每日歌曲推荐"共用 Controls/SongGridView -->
       <StackPanel Spacing="12">
         <TextBlock Text="热门歌曲" FontSize="28" FontWeight="Bold" Margin="10" />

@@ -103,7 +103,7 @@ public sealed class NavListTapBehavior : Behavior<ListBox>
         if (FindRow(source, out var addButton)?.DataContext is not NavItemViewModel item) return false;
         if (addButton is not null || !item.IsToggleGroup) return false;
         if (list.DataContext is not MainViewModel vm) return false;
-        vm.ToggleNavGroupCommand.Execute(item.Key);
+        NavGroupExpandAnimator.Run(list, item, () => vm.ToggleNavGroupCommand.Execute(item.Key));
         return true;
     }
 

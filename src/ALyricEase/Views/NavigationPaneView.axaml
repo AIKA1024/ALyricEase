@@ -10,19 +10,37 @@
              mc:Ignorable="d" d:DesignWidth="320" d:DesignHeight="600"
              x:Class="ALyricEase.Views.NavigationPaneView">
     <UserControl.Styles>
-        <!-- 分组头折叠箭头:默认收起朝右(-90°),展开时回到朝下 -->
+        <!-- 分组头折叠箭头:对齐 WinUI NavigationView——收起朝下(0°),展开旋转 180° 朝上,
+             带旋转过渡(约 200ms ease-out) -->
         <Style Selector="TextBlock.nav-chevron">
-            <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+            <!-- 前景色跟同行的"+"按钮(nav-add-button)一致 -->
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="RenderTransformOrigin" Value="50%,50%" />
-            <Setter Property="RenderTransform">
-                <RotateTransform Angle="-90" />
+            <Setter Property="RenderTransform" Value="rotate(0deg)" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseOut" />
+                </Transitions>
             </Setter>
         </Style>
-        <!-- 展开态:箭头回到朝下(带 .expanded 类,选择器更具体,覆盖默认 -90°) -->
+        <!-- 展开态:旋转 180° 朝上(带 .expanded 类,选择器更具体) -->
         <Style Selector="TextBlock.nav-chevron.expanded">
-            <Setter Property="RenderTransform">
-                <RotateTransform Angle="0" />
-            </Setter>
+            <Setter Property="RenderTransform" Value="rotate(-180deg)" />
+        </Style>
+        <!-- 歌单子项行(.plchild,仅挂 OwnerKey 的行):展开/收起时布局经 .collapsed 瞬时切换
+             Min/MaxHeight 40<->0(无过渡——子项瞬间显隐,对齐 WinUI Gallery 实际行为);
+             平滑感由 NavGroupExpandAnimator 用 RenderTransform 平移下方行提供 -->
+        <Style Selector="ListBoxItem.plchild">
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="MaxHeight" Value="40" />
+        </Style>
+        <Style Selector="ListBoxItem.plchild.collapsed">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="MaxHeight" Value="0" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Margin" Value="4,0,4,0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Focusable" Value="False" />
         </Style>
         <!-- 分组头"+"按钮(聚合歌单/网易云音乐/QQ 音乐):对齐原版我的歌单新增按钮
              (FluentButton 30x30、Padding=0、图标 E92B 字号 20、透明底圆角 4、悬停浅底) -->
@@ -89,6 +107,8 @@
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto">
             <i:Interaction.Behaviors>
+                <!-- 先过按键过滤(右键/中键不动作),再走"抬起才动作"的点击行为 -->
+                <behaviors:NavListPrimaryButtonBehavior />
                 <behaviors:NavListTapBehavior />
             </i:Interaction.Behaviors>
             <ListBox.Styles>
@@ -108,22 +128,25 @@
             </ListBox.Styles>
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <StackPanel Spacing="4" />
+                    <!-- 行间距由 ListBoxItem 自身 Margin 承担(子项收起动画会连 Margin 一起过渡到 0) -->
+                    <StackPanel />
                 </ItemsPanelTemplate>
             </ListBox.ItemsPanel>
             <ListBox.ItemContainerTheme>
                 <ControlTheme TargetType="ListBoxItem" x:DataType="vm:NavItemViewModel">
                     <!-- 纯标题行(发现/我的音乐)保持禁用(无 hover/选中/焦点,旧行为);
-                         折叠分组头(网易云/QQ 音乐)启用以获得 hover 反馈。子项按 ShowAsChild 隐藏 -->
+                         折叠分组头(网易云/QQ 音乐)启用以获得 hover 反馈。子项按 ShowAsChild 收起:
+                         不再用 IsVisible(无法参与动画),由 .child/.collapsed 类驱动 MaxHeight/Opacity 过渡 -->
                     <Setter Property="IsEnabled" Value="{Binding IsInteractive}" />
                     <Setter Property="Focusable" Value="{Binding IsItem}" />
                     <Setter Property="MinHeight" Value="40" />
-                    <Setter Property="Margin" Value="4,0" />
+                    <Setter Property="Margin" Value="4,0,4,4" />
                     <Setter Property="Padding" Value="12,0" />
                     <Setter Property="CornerRadius" Value="4" />
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="VerticalContentAlignment" Value="Center" />
-                    <Setter Property="IsVisible" Value="{Binding ShowAsChild, Mode=OneWay}" />
+                    <Setter Property="Classes.plchild" Value="{Binding IsPlaylistChild}" />
+                    <Setter Property="Classes.collapsed" Value="{Binding !ShowAsChild, Mode=OneWay}" />
                 </ControlTheme>
             </ListBox.ItemContainerTheme>
             <ListBox.ItemTemplate>

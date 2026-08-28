@@ -49,6 +49,10 @@ public sealed class NavItemViewModel : INotifyPropertyChanged
     /// <summary>所属分组头的 Key(仅歌单子项设置,如 "QqPlaylistsHeader")。</summary>
     public string? OwnerKey { get; init; }
 
+    /// <summary>是否歌单子项(挂 OwnerKey 的行):参与分组开合的 Min/MaxHeight 收缩动画;
+    /// 普通导航行不参与,保持基主题的 40px 行高。</summary>
+    public bool IsPlaylistChild => OwnerKey is not null;
+
     private bool _isExpanded = true;
 
     /// <summary>分组头专用:分组是否展开(驱动箭头朝向)。头部为静态共享实例,状态跨导航重建保留。</summary>

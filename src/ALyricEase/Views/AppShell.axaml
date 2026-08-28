@@ -4,6 +4,8 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:behaviors="clr-namespace:ALyricEase.Infrastructure.Behaviors"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
              x:DataType="vm:MainViewModel"
              mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
              x:Class="ALyricEase.Views.AppShell">
@@ -169,6 +171,11 @@
                      SelectedItem="{Binding SelectedNav, Mode=OneWay}"
                      SelectionChanged="OnCompactNavSelectionChanged"
                      Width="48" Background="Transparent" BorderThickness="0" Margin="0,4,0,4">
+              <!-- 图标栏没有 NavListTapBehavior(按下即选中),但同样只认鼠标左键:
+                   右键按下会被 SelectingItemsControl 拿去"预选"并触发导航 -->
+              <i:Interaction.Behaviors>
+                <behaviors:NavListPrimaryButtonBehavior />
+              </i:Interaction.Behaviors>
               <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
                   <StackPanel Spacing="4" />

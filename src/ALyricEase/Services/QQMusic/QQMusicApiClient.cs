@@ -365,29 +365,89 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         var target = !IsLiked(id);
         var mid = _midById.TryGetValue(id, out var m) ? m : "";
 
-        await SecureLikeRequestAsync(target, id, mid, LikedDirId, ct).ConfigureAwait(false);
+        await SecureAssetWriteAsync("music.musicasset.PlaylistDetailWrite",
+            target ? "AddSonglist" : "DelSonglist", p =>
+        {
+            p.WriteNumber("dirId", LikedDirId);
+            p.WriteNumber("tid", 0);
+            p.WriteBoolean("bFmtUtf8", true);
+            p.WriteStartArray("v_songInfo");
+            p.WriteStartObject();
+            p.WriteNumber("songType", 0);
+            p.WriteNumber("songId", id);
+            if (mid.Length > 0) p.WriteString("songMid", mid);
+            p.WriteEndObject();
+            p.WriteEndArray();
+        }, target ? "红心收藏" : "红心取消", ct).ConfigureAwait(false);
 
         _likedIds ??= new HashSet<long>();
         if (target) _likedIds.Add(id); else _likedIds.Remove(id);
         return target;
     }
 
-    // ---------- 红心写操作的加密签名通道(musics.fcg / ag-1) ----------
-    // 网页版对写类 asset 接口走加密通道:明文 musicu.fcg 网关对 PlaylistDetailWrite/AddSonglist 返回
-    // 80105(明文写被拒)。此处端口移植开源 multiPlatformMusicApi 的 qqmusic 请求封装:
-    //   comm + req_0(module=music.musicasset.PlaylistDetailWrite, method=AddSonglist/DelSonglist,
-    //   param={ dirId:201, v_songInfo:[{songType:0, songId}] }) 整体 AES-128-GCM 加密 →
+    // ---------- 创建/删除歌单(musicasset 写类,同样走 ag-1 加密通道) ----------
+
+    /// <summary>创建歌单(需登录):music.musicasset.PlaylistBaseWrite/AddPlaylist(param {dirName})。
+    /// 该模块无隐私参数(参考实现同),isPrivate 仅网易云生效。成功返回新歌单
+    /// (Id=tid,DirId=资产目录 id —— 删除歌单/写曲目接口用它);失败抛 ApiException。</summary>
+    public async Task<Playlist> CreatePlaylistAsync(string name, bool isPrivate = false, CancellationToken ct = default)
+    {
+        name = name.Trim();
+        if (!IsLoggedIn)
+            throw new ApiException("QQ音乐未登录,无法创建歌单", -1);
+        if (name.Length == 0)
+            throw new ApiException("歌单名不能为空", -1);
+
+        using var doc = await SecureAssetWriteAsync("music.musicasset.PlaylistBaseWrite", "AddPlaylist",
+            p => p.WriteString("dirName", name), "创建歌单", ct).ConfigureAwait(false);
+
+        // 创建结果在 req_0.data.result(id/dirId);层级漂移时回退 req_0.data
+        var result = TryGetPath(doc.RootElement, "req_0", "data", "result")
+                     ?? TryGetPath(doc.RootElement, "req_0", "data");
+        var id = PickLong(result, "id", "tid");
+        if (id == 0)
+            throw new ApiException("创建歌单失败(响应缺少歌单 id)", -2);
+        return new Playlist
+        {
+            Id = id,
+            DirId = PickLong(result, "dirId"),
+            Source = MusicSource.QQ,
+            Name = name,
+        };
+    }
+
+    /// <summary>删除自己创建的歌单:PlaylistBaseWrite/DelPlaylist(param {dirId})。
+    /// 参数必须是资产目录 dirId(创建响应/用户歌单列表返回的那个,普通歌单恰好与 tid 一致);
+    /// 传 tid 不保证命中。UI 暂未接入,探针清理用。失败抛 ApiException。</summary>
+    public Task DeletePlaylistAsync(long dirId, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("QQ音乐未登录,无法删除歌单", -1);
+        return SecureAssetWriteAsync("music.musicasset.PlaylistBaseWrite", "DelPlaylist",
+            p => p.WriteNumber("dirId", dirId), "删除歌单", ct);
+    }
+
+    // ---------- asset 写操作的加密签名通道(musics.fcg / ag-1) ----------
+    // 网页版对写类 asset 接口走加密通道:明文 musicu.fcg 网关对 PlaylistDetailWrite/AddSonglist 等
+    // asset 写模块返回 80105(明文写被拒)。此处端口移植开源 multiPlatformMusicApi 的 qqmusic 请求封装:
+    //   comm + req_0(module/method/param) 整体 AES-128-GCM 加密 →
     //   zzcSign 派生签名 → POST u6.y.qq.com/cgi-bin/musics.fcg?encoding=ag-1&sign=...;
-    //   响应体按固定 21B 密钥循环 XOR 解出明文 JSON。
+    //   响应体按固定 21B 密钥循环 XOR 解出明文 JSON。红心(PlaylistDetailWrite)与
+    //   创建/删除歌单(PlaylistBaseWrite)共用此通道(见 SecureAssetWriteAsync)。
     private const string MusicsUrl = "https://u6.y.qq.com/cgi-bin/musics.fcg";
     private const string GAlertRequestKeyHex = "bd305f10d0ff74b6ef54dab835b5e1cf"; // 16B AES-128-GCM 密钥
     private const string Ag1ResponseKeyHex = "7a3f8c1d5e9b2f0a6c4d7e8b1f3a5c9d0e2b6f4a81"; // 21B XOR 响应密钥
 
-    /// <summary>向"我喜欢"目录写红心。失败(code!=0 / 网络 / 解密失败)抛 ApiException。</summary>
-    private async Task SecureLikeRequestAsync(bool add, long songId, string songMid, long dirId, CancellationToken ct)
+    /// <summary>ag-1 加密写通道(红心/创建歌单/删除歌单共用)。明文 musicu.fcg 网关对 asset 写类
+    /// 模块回 80105(明文写被拒),必须走此通道:comm + req_0(module/method/param)整体
+    /// AES-128-GCM 加密 → zzcSign 派生签名 → POST u6.y.qq.com/cgi-bin/musics.fcg?encoding=ag-1&sign=...;
+    /// 响应体按固定 21B 密钥循环 XOR 解出明文 JSON。业务码非 0 抛 ApiException(带 actionText 与
+    /// 服务端文案);成功返回解密后的响应文档(调用方负责释放)。</summary>
+    private async Task<JsonDocument> SecureAssetWriteAsync(string module, string method,
+        Action<Utf8JsonWriter> writeParam, string actionText, CancellationToken ct)
     {
         // 1) 明文 JSON:comm 全量字段(参考实现) + req_0(module/method/param)
-        var dataStr = BuildAg1Json(add, songId, songMid, dirId).Replace("\r", "").Replace("\n", "");
+        var dataStr = BuildAg1Json(module, method, writeParam).Replace("\r", "").Replace("\n", "");
         var sign = BuildZzcSign(dataStr);
 
         // 2) AES-128-GCM 加密 → base64(IV||CT||TAG)
@@ -402,33 +462,34 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
-            throw new ApiException($"红心{(add ? "收藏" : "取消")}失败:HTTP {(int)resp.StatusCode}", (int)resp.StatusCode);
+            throw new ApiException($"{actionText}失败:HTTP {(int)resp.StatusCode}", (int)resp.StatusCode);
         var raw = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
         var json = Ag1XorDecrypt(raw);
 
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
-        catch (JsonException) { throw new ApiException("红心响应无法解析", -1); }
-        using (doc)
+        catch (JsonException) { throw new ApiException($"{actionText}响应无法解析", -1); }
+
+        var code = PickReqCode(doc.RootElement);
+        if (code != 0)
         {
-            var code = PickReqCode(doc.RootElement);
-            if (code != 0)
-            {
-                var detail = DescribeFailure(doc.RootElement);
-                throw new ApiException(
-                    TryPickMessage(doc.RootElement) is { } msg
-                        ? $"红心{(add ? "收藏" : "取消")}失败:{msg}"
-                        : $"红心{(add ? "收藏" : "取消")}失败(code={code}){detail}",
-                    code);
-            }
+            var detail = DescribeFailure(doc.RootElement);
+            throw new ApiException(
+                TryPickMessage(doc.RootElement) is { } msg
+                    ? $"{actionText}失败:{msg}"
+                    : $"{actionText}失败(code={code}){detail}",
+                code);
         }
+        return doc;
     }
 
     /// <summary>构造 ag-1 请求 JSON(comm 全量 + 单个 req_0),与参考实现逐字段对齐。
-    /// param 对齐现网(L-1124/QQMusicApi 实测形态):dirId + tid(红心恒 0)+ bFmtUtf8:true
-    /// (必须保留布尔原形,服务端按真布尔校验,缺失/整型会回 80105/500026)+ v_songInfo。
-    /// songMid 尽量带上:服务端对部分资产目录要求 mid,否则回 500026。</summary>
-    private string BuildAg1Json(bool add, long songId, string songMid, long dirId)
+    /// module/method/param 由调用方给定(红心=PlaylistDetailWrite AddSonglist/DelSonglist,
+    /// 歌单=PlaylistBaseWrite AddPlaylist/DelPlaylist)。param 的具体字段约定见各调用点:
+    /// 红心为 dirId + tid(恒 0)+ bFmtUtf8:true(必须保留布尔原形,服务端按真布尔校验,
+    /// 缺失/整型会回 80105/500026)+ v_songInfo;songMid 尽量带上:服务端对部分资产目录
+    /// 要求 mid,否则回 500026。</summary>
+    private string BuildAg1Json(string module, string method, Action<Utf8JsonWriter> writeParam)
     {
         using var ms = new MemoryStream();
         using (var w = new Utf8JsonWriter(ms))
@@ -448,19 +509,10 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             w.WriteNumber("g_tk", ComputeGtk());
             w.WriteEndObject();
             w.WriteStartObject("req_0");
-            w.WriteString("module", "music.musicasset.PlaylistDetailWrite");
-            w.WriteString("method", add ? "AddSonglist" : "DelSonglist");
+            w.WriteString("module", module);
+            w.WriteString("method", method);
             w.WriteStartObject("param");
-            w.WriteNumber("dirId", dirId);
-            w.WriteNumber("tid", 0);
-            w.WriteBoolean("bFmtUtf8", true);
-            w.WriteStartArray("v_songInfo");
-            w.WriteStartObject();
-            w.WriteNumber("songType", 0);
-            w.WriteNumber("songId", songId);
-            if (songMid.Length > 0) w.WriteString("songMid", songMid);
-            w.WriteEndObject();
-            w.WriteEndArray();
+            writeParam(w);
             w.WriteEndObject(); // param
             w.WriteEndObject(); // req_0
             w.WriteEndObject(); // root
@@ -561,6 +613,30 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
         catch { /* 忽略 */ }
         return "";
+    }
+
+    /// <summary>按层级取嵌套对象(任一层缺失/非对象返回 null)。</summary>
+    private static JsonElement? TryGetPath(JsonElement root, params string[] path)
+    {
+        var node = root;
+        foreach (var key in path)
+        {
+            if (node.ValueKind != JsonValueKind.Object ||
+                !node.TryGetProperty(key, out var next) || next.ValueKind == JsonValueKind.Null)
+                return null;
+            node = next;
+        }
+        return node;
+    }
+
+    /// <summary>从对象里按候选名取第一个可解析的 long(全缺省 0)。</summary>
+    private static long PickLong(JsonElement? node, params string[] names)
+    {
+        if (node is not { } n || n.ValueKind != JsonValueKind.Object) return 0;
+        foreach (var name in names)
+            if (n.TryGetProperty(name, out var v) && v.TryGetInt64(out var value))
+                return value;
+        return 0;
     }
 
     // ---------- IUserMusicApi 账号能力(需有效登录 Cookie) ----------

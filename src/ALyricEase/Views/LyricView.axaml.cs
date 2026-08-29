@@ -1,14 +1,18 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace ALyricEase.Views;
 
 /// <summary>歌词视图:当前句变化时把选中项居中滚动(SelectionChanged 驱动)。
-/// Avalonia 11 无 ScrollIntoView 扩展,手动算 ScrollViewer.Offset 实现居中。
-/// detail 模式(播放详情页歌词面板)额外按与当前句的距离给行容器打 d1/d2 类(距离渐变)。</summary>
+/// 先用 ScrollIntoView 物化容器，再按 ScrollViewer.Offset 做逐帧平滑居中。
+/// detail 模式(播放详情页歌词面板)映射原版 AbovePresent/BelowPresent 状态，
+/// 以方向性透明度、模糊和缩放区分已唱/当前/待唱歌词。</summary>
 public partial class LyricView : UserControl
 {
+    private int _scrollAnimationVersion;
+
     /// <summary>歌词字号缩放系数(详情页字号档位 60%~150%,1 = 100%)。</summary>
     public static readonly StyledProperty<double> FontScaleProperty =
         AvaloniaProperty.Register<LyricView, double>(nameof(FontScale), 1.0);
@@ -28,13 +32,24 @@ public partial class LyricView : UserControl
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        UpdateDistanceClasses();
+        UpdateProgressClasses();
 
         var index = LyricList.SelectedIndex;
         if (index < 0) return;
 
+        // 先把虚拟化容器带入视口，再在下一次布局后做居中补间。
+        LyricList.ScrollIntoView(index);
+        var version = ++_scrollAnimationVersion;
+        Dispatcher.UIThread.Post(() => AnimateSelectedToCenter(index, version), DispatcherPriority.Loaded);
+    }
+
+    private void AnimateSelectedToCenter(int index, int version)
+    {
+        if (version != _scrollAnimationVersion || LyricList.SelectedIndex != index) return;
+
         if (LyricList.ContainerFromIndex(index) is not Control container) return;
         if (LyricList.FindDescendantOfType<ScrollViewer>() is not { } scroll) return;
+        if (TopLevel.GetTopLevel(this) is not { } topLevel) return;
 
         var itemHeight = container.Bounds.Height;
         var viewportHeight = scroll.Viewport.Height;
@@ -46,32 +61,45 @@ public partial class LyricView : UserControl
 
         var desired = pos.Value.Y + scroll.Offset.Y + itemHeight / 2 - viewportHeight / 2;
         var maxY = Math.Max(0.0, scroll.Extent.Height - viewportHeight);
-        var y = Math.Clamp(desired, 0, maxY);
+        var targetY = Math.Clamp(desired, 0, maxY);
+        var startY = scroll.Offset.Y;
+        if (Math.Abs(targetY - startY) <= 0.5) return;
 
-        if (Math.Abs(y - scroll.Offset.Y) > 0.5)
-            scroll.Offset = scroll.Offset.WithY(y);
+        TimeSpan? startedAt = null;
+        Action<TimeSpan>? tick = null;
+        tick = now =>
+        {
+            if (version != _scrollAnimationVersion || LyricList.SelectedIndex != index) return;
+            startedAt ??= now;
+            var progress = Math.Clamp((now - startedAt.Value).TotalMilliseconds / 420.0, 0, 1);
+            var eased = 1 - Math.Pow(1 - progress, 3); // 平滑缓出，避免逐句跳屏
+            scroll.Offset = scroll.Offset.WithY(startY + (targetY - startY) * eased);
+            if (progress < 1)
+                topLevel.RequestAnimationFrame(tick!);
+        };
+        topLevel.RequestAnimationFrame(tick);
     }
 
     private void OnContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
         if (e.Container is Control container)
-            ApplyDistanceClasses(container, e.Index, LyricList.SelectedIndex);
+            ApplyProgressClasses(container, e.Index, LyricList.SelectedIndex);
     }
 
-    /// <summary>当前句变化后刷新所有已物化容器的距离类。</summary>
-    private void UpdateDistanceClasses()
+    /// <summary>当前句变化后刷新所有已物化容器的方向性进度类。</summary>
+    private void UpdateProgressClasses()
     {
         var current = LyricList.SelectedIndex;
         for (var i = 0; i < LyricList.ItemCount; i++)
             if (LyricList.ContainerFromIndex(i) is Control container)
-                ApplyDistanceClasses(container, i, current);
+                ApplyProgressClasses(container, i, current);
     }
 
-    /// <summary>按与当前句的行距打类:±1 句 d1、±2 句 d2(仅 detail 模式的样式引用这两个类)。</summary>
-    private static void ApplyDistanceClasses(Control container, int index, int current)
+    /// <summary>映射原版 InteractiveLyricControl2 的 AbovePresent/BelowPresent1/BelowPresent2 状态。</summary>
+    private static void ApplyProgressClasses(Control container, int index, int current)
     {
-        var distance = Math.Abs(index - current);
-        container.Classes.Set("d1", distance == 1);
-        container.Classes.Set("d2", distance == 2);
+        container.Classes.Set("above", current >= 0 && index < current);
+        container.Classes.Set("below1", current >= 0 && index == current + 1);
+        container.Classes.Set("below2", current >= 0 && index == current + 2);
     }
 }

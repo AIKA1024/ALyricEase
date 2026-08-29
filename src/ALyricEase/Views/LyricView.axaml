@@ -59,6 +59,7 @@
                     <DoubleTransition Property="Opacity" Duration="0:0:0.3" />
                     <DoubleTransition Property="FontSize" Duration="0:0:0.5" />
                     <BrushTransition Property="Background" Duration="0:0:0.2" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.5" />
                 </Transitions>
             </Setter>
         </Style>
@@ -94,17 +95,46 @@
             <Setter Property="Padding" Value="10,12" />
             <Setter Property="Margin" Value="0,0" />
             <Setter Property="RenderTransformOrigin" Value="0%,50%" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.5" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.5" />
+                    <BrushTransition Property="Background" Duration="0:0:0.2" />
+                </Transitions>
+            </Setter>
+            <!-- InteractiveLyricControl2.Default:未来较远歌词 40% + 5px 模糊 -->
+            <Setter Property="Opacity" Value="0.4" />
+            <Setter Property="Effect">
+                <BlurEffect Radius="5" />
+            </Setter>
         </Style>
-        <!-- 距离渐变(仿原版 InteractiveLyricControl:±1 句 0.75、±2 句 0.6、其余 0.4;d1/d2 类由代码后置按与当前句距离设置) -->
-        <Style Selector="views|LyricView.detail ListBoxItem.d1">
-            <Setter Property="Opacity" Value="0.75" />
+        <!-- 原版状态是有方向的，不是当前句上下对称：
+             已唱歌词 AbovePresent=0.7/1.5px；下一句 BelowPresent1=0.8/1px；
+             下二句 BelowPresent2=0.6/2.5px；其余未来歌词沿用 Default。 -->
+        <Style Selector="views|LyricView.detail ListBoxItem.above">
+            <Setter Property="Opacity" Value="0.7" />
+            <Setter Property="Effect">
+                <BlurEffect Radius="1.5" />
+            </Setter>
         </Style>
-        <Style Selector="views|LyricView.detail ListBoxItem.d2">
+        <Style Selector="views|LyricView.detail ListBoxItem.below1">
+            <Setter Property="Opacity" Value="0.8" />
+            <Setter Property="Effect">
+                <BlurEffect Radius="1" />
+            </Setter>
+        </Style>
+        <Style Selector="views|LyricView.detail ListBoxItem.below2">
             <Setter Property="Opacity" Value="0.6" />
+            <Setter Property="Effect">
+                <BlurEffect Radius="2.5" />
+            </Setter>
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem:selected">
             <Setter Property="Opacity" Value="1" />
             <Setter Property="RenderTransform" Value="scale(1.05,1.05)" />
+            <Setter Property="Effect">
+                <BlurEffect Radius="0" />
+            </Setter>
         </Style>
     </UserControl.Styles>
     <Grid>

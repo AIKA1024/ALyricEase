@@ -2,6 +2,7 @@ using System;
 using Android.App;
 using Android.Content.PM;
 using Android.OS;
+using Android.Window;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using ALyricEase.Infrastructure;
@@ -22,30 +23,75 @@ public class MainActivity : AvaloniaMainActivity
 {
     private const int NotificationPermissionRequestCode = 2001;
 
+    /// <summary>返回相关日志标签(adb logcat -s ALyricEaseBack,D 可看返回有没有到应用层)。</summary>
+    private const string BackLogTag = "ALyricEaseBack";
+
+    // Android 13+ 不再保证把返回事件转换成 Activity.OnBackPressed。直接持有平台回调，
+    // 同时也避免依赖 Avalonia/AndroidX 在不同厂商 ROM 上的桥接实现。
+    private IOnBackInvokedCallback? _platformBackCallback;
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
-        // 系统返回的唯一入口,手势返回与三大金刚键返回键都汇聚到这里:
-        // API 33+ 由 Avalonia 注册的 OnBackPressedCallback 转发、以下由 OnBackPressed 覆写转发,
-        // 两条路都最终触发 AvaloniaActivity.BackRequested(基类的 OnBackInvoked)。
-        BackRequested += OnBackRequested;
         RequestNotificationPermission();
     }
 
+    protected override void OnStart()
+    {
+        base.OnStart();
+
+        if (OperatingSystem.IsAndroidVersionAtLeast(33) && _platformBackCallback is null)
+        {
+            // Avalonia 会在 base.OnStart 中注册 AndroidX 返回回调，所以平台回调必须随后注册。
+            // 同优先级按注册逆序调用，这样系统稳定地先进入本应用的导航处理。
+            _platformBackCallback = new PlatformBackCallback(this);
+            OnBackInvokedDispatcher.RegisterOnBackInvokedCallback(
+                IOnBackInvokedDispatcher.PriorityDefault,
+                _platformBackCallback);
+        }
+    }
+
+    /// <summary>Android 12 及以下的返回入口。Android 13+ 使用 OnBackInvokedDispatcher。</summary>
+#pragma warning disable CS0618 // API 32 及以下仍需覆写 Activity.OnBackPressed
+    public override void OnBackPressed()
+    {
+        global::Android.Util.Log.Debug(BackLogTag, "back via OnBackPressed");
+        HandleSystemBack();
+    }
+#pragma warning restore CS0618
+
+    protected override void OnStop()
+    {
+        if (OperatingSystem.IsAndroidVersionAtLeast(33) && _platformBackCallback is not null)
+        {
+            OnBackInvokedDispatcher.UnregisterOnBackInvokedCallback(_platformBackCallback);
+            _platformBackCallback.Dispose();
+            _platformBackCallback = null;
+        }
+
+        base.OnStop();
+    }
+
     /// <summary>系统返回:先让共享 VM 逐级消费一层,消费不掉再退到后台。</summary>
-    private void OnBackRequested(object? sender, AndroidBackRequestedEventArgs e)
+    private void HandleSystemBack()
     {
         if (ServiceLocator.Get<MainViewModel>().TryHandleBack())
-        {
-            // 已消费(关弹窗 / 收覆盖层 / 关抽屉 / 页面返回):阻止系统默认返回
-            e.Handled = true;
-            return;
-        }
+            return; // 已消费(关弹窗 / 收覆盖层 / 关抽屉 / 页面返回)
 
         // 已在根页面:不结束 Activity —— 音频由本进程内的 AndroidMediaPlayer 播放,
         // finish 会直接中断播放。退到后台(等价按 Home),前台媒体通知与播放继续。
         MoveTaskToBack(true);
-        e.Handled = true;
+    }
+
+    /// <summary>Android 13+ 原生返回回调，覆盖返回手势与三键导航的返回键。</summary>
+    private sealed class PlatformBackCallback(MainActivity activity) :
+        Java.Lang.Object, IOnBackInvokedCallback
+    {
+        public void OnBackInvoked()
+        {
+            global::Android.Util.Log.Debug(BackLogTag, "back via OnBackInvokedDispatcher");
+            activity.HandleSystemBack();
+        }
     }
 
     private void RequestNotificationPermission()

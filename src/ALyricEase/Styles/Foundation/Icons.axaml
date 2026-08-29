@@ -54,6 +54,12 @@
     <x:String x:Key="IconExitFullScreen">&#xE693;</x:String>
     <x:String x:Key="IconBack">&#xE950;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
 
+    <!-- 搜索结果页类型 Tab(原版 SearchResultView SearchTypeNavigationView 字形,须配 LyricEaseIconsOriginal) -->
+    <x:String x:Key="IconTabAll">&#xE933;</x:String>          <!-- ContentGallery -->
+    <x:String x:Key="IconTabTrack">&#xE90B;</x:String>        <!-- MusicNote(细线,区别于实心 E863) -->
+    <x:String x:Key="IconTabPlaylist">&#xE905;</x:String>     <!-- ListRegular -->
+    <x:String x:Key="IconTabMore">&#xE909;</x:String>         <!-- 溢出 ··· -->
+
     <!-- 标题栏(原版字形,须配 LyricEaseIconsOriginal) -->
     <x:String x:Key="IconWindowMinimize">&#xE951;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconWindowMaximize">&#xE952;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->

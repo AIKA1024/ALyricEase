@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:models="using:ALyricEase.Models"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:SearchViewModel"
@@ -12,167 +14,673 @@
         <KeyBinding Gesture="Escape" Command="{Binding BackToLandingCommand}" />
     </UserControl.KeyBindings>
     <UserControl.Styles>
-        <!-- 搜索框:外层居中 Grid 由响应式类限 MaxWidth(宽500/中420/窄320),宽度 = min(可用, MaxWidth),
-             搜索框 Stretch 填满 Grid——小屏随窗口收缩不溢出,大屏保持响应宽度居中 -->
-        <Style Selector="Grid.search-box"><Setter Property="MaxWidth" Value="500" /></Style>
-        <Style Selector=".compact Grid.search-box"><Setter Property="MaxWidth" Value="420" /></Style>
-        <Style Selector=".narrow Grid.search-box"><Setter Property="MaxWidth" Value="320" /></Style>
-        <Style Selector=".narrow TextBlock.album-column"><Setter Property="IsVisible" Value="False" /></Style>
-        <!-- 热门关键词 chip -->
-        <Style Selector="Button.chip">
+        <!-- 搜索框(对齐原版 AutoSuggestBox):细边框浅底、聚焦时整体边框保持细线,
+             由外层 Grid:focus-within 点亮底部 2px 强调线(Fluent 默认聚焦是 2px 全描边,压回 1px) -->
+        <Style Selector="TextBox.search-box">
+            <Setter Property="Height" Value="40" />
+            <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Watermark" Value="搜索歌曲 / 歌手" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBox.search-box:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+        </Style>
+        <!-- 聚焦:背景/边框维持常态(Fluent 默认聚焦换成 TextControlBackgroundFocused 近黑底 +
+             2px 全描边,不符合原版"浅底细框 + 底部强调线"),只由 focus-line 点亮下划线 -->
+        <Style Selector="TextBox.search-box:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Grid.search-wrap:focus-within Border.focus-line">
+            <Setter Property="Background" Value="{DynamicResource LyricEaseTeal}" />
+        </Style>
+        <!-- 搜索提交按钮(AutoSuggestBox QueryIcon 形态):关键词为空时 SearchCommand 不可用,
+             Fluent 禁用态会画 ButtonBackgroundDisabled 灰底,这里统一压回透明(悬停给浅底) -->
+        <Style Selector="Button.query-icon">
+            <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="14" />
-            <Setter Property="Padding" Value="14,6" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+        <Style Selector="Button.query-icon /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.query-icon:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+        </Style>
+        <Style Selector="Button.query-icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <!-- 关键词按钮(对齐原版 DefaultLyricEaseButtonStyle):常态纯文字,悬停 SystemBaseLow 浅底 -->
+        <Style Selector="Button.kw">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="FontSize" Value="16" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         </Style>
-        <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Style Selector="Button.kw:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
-        <!-- 音源切换按钮选中态 -->
-        <Style Selector="Button.chip.active">
-            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-            <Setter Property="Foreground" Value="White" />
+        <Style Selector="Button.kw:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
         </Style>
-        <!-- 结果行 56px -->
-        <Style Selector="ListBox > ListBoxItem">
-            <Setter Property="Height" Value="56" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="CornerRadius" Value="8" />
+        <!-- 区块标题(原版 20px 加粗)与历史行"清除全部" -->
+        <Style Selector="TextBlock.section-title">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Margin" Value="12,0,12,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+        <Style Selector="Button.txt">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Padding" Value="8,4" />
-            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
         </Style>
-        <Style Selector="ListBox > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Style Selector="Button.txt:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
-        <Style Selector="ListBox > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+        <!-- 音源切换(本移植新增功能,原版无):底部弱化文字按钮,选中 teal 高亮 -->
+        <Style Selector="Button.src">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+        </Style>
+        <Style Selector="Button.src:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <Style Selector="Button.src.active">
+            <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- 宽屏:热门搜索左列 / 搜索历史右列(原版 Wide VisualState);默认堆叠各占整行 -->
+        <Style Selector=".wide Grid.suggest > StackPanel">
+            <Setter Property="Grid.ColumnSpan" Value="1" />
+        </Style>
+        <Style Selector=".wide StackPanel.history-section">
+            <Setter Property="Grid.Row" Value="0" />
+            <Setter Property="Grid.Column" Value="1" />
+        </Style>
+        <Style Selector=".narrow StackPanel.landing">
+            <Setter Property="Margin" Value="24,90" />
+        </Style>
+        <Style Selector=".narrow Grid.results-header">
+            <Setter Property="Margin" Value="16,0,12,0" />
+        </Style>
+        <Style Selector=".narrow StackPanel.results-body">
+            <Setter Property="Margin" Value="12,8,12,8" />
+        </Style>
+        <!-- 回顶按钮(原版 BackToTopButton:40x40 圆形)。常驻占位:显隐走透明度 + 命中穿透,
+             不用 IsVisible——出现/消失时会挤压标题行宽度造成布局跳动 -->
+        <Style Selector="Button.top-btn">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="CornerRadius" Value="20" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Transitions">
+                <Setter.Value>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                    </Transitions>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.top-btn.show">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="IsHitTestVisible" Value="True" />
+        </Style>
+        <Style Selector="Button.top-btn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+        </Style>
+        <!-- 类型 Tab(原版 NavigationView 顶栏):图标细线体 + 文字常态白(选中不变色),
+             选中仅底部居中短胶囊;悬停浅底 -->
+        <Style Selector="ListBox.search-tabs">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="ListBox.search-tabs > ListBoxItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinHeight" Value="48" />
+        </Style>
+        <Style Selector="ListBox.search-tabs > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="ListBox.search-tabs > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <Style Selector="TextBlock.tab-glyph">
+            <Setter Property="FontFamily" Value="{DynamicResource LyricEaseIconsOriginal}" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+        <Style Selector="ListBox.search-tabs > ListBoxItem Border.tab-pill">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="ListBox.search-tabs > ListBoxItem:selected Border.tab-pill">
+            <Setter Property="Background" Value="{DynamicResource LyricEaseTeal}" />
+        </Style>
+        <!-- 溢出 ··· 按钮(原版 NavigationView 顶栏溢出) -->
+        <Style Selector="Button.tab-more">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="MinHeight" Value="48" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.tab-more:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <Style Selector="Button.tab-more TextBlock">
+            <Setter Property="FontFamily" Value="{DynamicResource LyricEaseIconsOriginal}" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+        <!-- 歌曲行:套 TrackRowSearchTheme(仿原版 SearchResultTrackListItemStyle 堆叠布局),
+             但放开主题里的固定 Width=400,让行随卡片拉伸 -->
+        <Style Selector="Border.result-card views|TrackRow">
+            <Setter Property="Theme" Value="{StaticResource TrackRowSearchTheme}" />
+            <Setter Property="Width" Value="NaN" />
+        </Style>
+        <!-- 分区卡片(原版 DefaultListBackgroundBrush + 1px 描边圆角 8) -->
+        <Style Selector="Border.result-card">
+            <Setter Property="Background" Value="{DynamicResource AppListBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,6" />
+        </Style>
+        <Style Selector="TextBlock.result-section-title">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+        <!-- 查看更多(原版 HyperlinkButton:teal 加粗下划线) -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="8,2" />
+        </Style>
+        <Style Selector="Button.link TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <!-- 分区数据行(歌单/歌手/专辑/用户):整行可点,48 方图/圆头像 + 标题/副标题 -->
+        <Style Selector="Button.result-row">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.result-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        </Style>
+        <!-- 结果行 56px 列表(旧布局遗留,保留类名防其它引用) -->
+        <Style Selector="ListBox > ListBoxItem:result-item">
+            <Setter Property="Height" Value="56" />
         </Style>
     </UserControl.Styles>
 
     <Grid>
-        <!-- 登录页:大标题 + 搜索框(500x40 圆20) + 热门关键词 -->
-        <StackPanel HorizontalAlignment="Stretch" VerticalAlignment="Center" MaxWidth="640"
-                    IsVisible="{Binding ShowLanding}" Spacing="24" Margin="32">
-            <TextBlock Text="LyricEase" FontSize="40" FontWeight="Bold" LetterSpacing="-0.02"
-                       HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-            <!-- 搜索框:外层 Grid Stretch + 响应式 MaxWidth(500/420/320)。
-                 关键:Grid 必须 Stretch 而非 Center —— Center 会让它按内容 shrink(约170px),
-                 Stretch 让它拿满可用宽再被 MaxWidth 截断 = min(可用, MaxWidth),并在 StackPanel 内居中 -->
-            <Grid Classes="search-box" HorizontalAlignment="Stretch">
-                <Border CornerRadius="20" Background="{DynamicResource AppSurface}"
-                        BorderBrush="{DynamicResource AppBorder}" BorderThickness="1"
-                        Height="40" HorizontalAlignment="Stretch">
-                    <Grid ColumnDefinitions="Auto,*" Margin="14,0">
-                        <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
-                                   Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
-                        <TextBox Grid.Column="1" Text="{Binding Keyword}" PlaceholderText="搜索歌曲 / 歌手"
-                                 Background="Transparent" BorderThickness="0" FontSize="14"
-                                 VerticalContentAlignment="Center" Margin="10,0,0,0" />
+        <!-- 登录页:大标题 + 搜索框 + 热门搜索 + 搜索历史(对齐原版 SearchView:
+             垂直居中、MaxWidth 800、区块间距 20;外层 Grid 接住视口高度,
+             内容高于视口时正常滚动不裁顶,矮于视口时居中) -->
+        <ScrollViewer IsVisible="{Binding ShowLanding}" HorizontalScrollBarVisibility="Disabled">
+            <Grid>
+                <StackPanel Classes="landing" VerticalAlignment="Center" MaxWidth="800"
+                            Margin="50,90" Spacing="20">
+                    <TextBlock Text="LyricEase" FontSize="40" FontWeight="Bold" LetterSpacing="-0.02"
+                               HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                    <Grid Classes="search-wrap">
+                        <TextBox Classes="search-box" Text="{Binding Keyword}">
+                            <TextBox.InnerRightContent>
+                                <Button Classes="query-icon" Command="{Binding SearchCommand}"
+                                        ToolTip.Tip="搜索">
+                                    <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
+                                              Width="18" Height="18" Foreground="{DynamicResource TextSecondary}" />
+                                </Button>
+                            </TextBox.InnerRightContent>
+                        </TextBox>
+                        <!-- 聚焦下划线:默认透明,search-wrap:focus-within 时点亮 teal -->
+                        <Border Classes="focus-line" Height="2" VerticalAlignment="Bottom"
+                                Margin="2,0" CornerRadius="1" IsHitTestVisible="False" />
                     </Grid>
-                </Border>
+                    <!-- 关键词区:负边距抵消 chip 内边距,使 chip 文字与区块标题左对齐(原版 -8 + 8)。
+                         宽屏热门/历史各占一列,其余宽度堆叠 -->
+                    <Grid Classes="suggest" Margin="-12,0" ColumnDefinitions="*,*"
+                          RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="20">
+                        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Spacing="10">
+                            <TextBlock Classes="section-title" Text="热门搜索" />
+                            <ItemsControl ItemsSource="{Binding TrendingKeywords}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <Button Classes="kw" Margin="0,0,5,5" Content="{Binding}"
+                                                Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).SearchKeywordCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Classes="history-section"
+                                    Spacing="10" IsVisible="{Binding HasHistory}">
+                            <Grid ColumnDefinitions="*,Auto" Margin="12,0,4,0">
+                                <TextBlock Classes="section-title" Margin="0" Text="搜索历史" />
+                                <Button Grid.Column="1" Classes="txt" Content="清除全部"
+                                        Command="{Binding ClearHistoryCommand}"
+                                        ToolTip.Tip="清除全部搜索历史" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding SearchHistory}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <Button Classes="kw" Margin="0,0,5,5" Content="{Binding}"
+                                                Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).SearchKeywordCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Grid>
+                    <!-- 音源切换:原版无此功能(单源),移植版在此弱化呈现,选中项 teal 高亮 -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8"
+                                Margin="0,4,0,0">
+                        <Button Classes="src" Classes.active="{Binding IsNetEaseSource}" Content="网易云"
+                                Command="{Binding SelectNetEaseSourceCommand}" />
+                        <Button Classes="src" Classes.active="{Binding IsQQSource}" Content="QQ音乐"
+                                Command="{Binding SelectQQSourceCommand}" />
+                    </StackPanel>
+                </StackPanel>
             </Grid>
-            <!-- 音源切换:网易云 / QQ 音乐 -->
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
-                <Button Classes="chip" Classes.active="{Binding IsNetEaseSource}" Content="网易云"
-                        Command="{Binding SelectNetEaseSourceCommand}" MinWidth="88" />
-                <Button Classes="chip" Classes.active="{Binding IsQQSource}" Content="QQ音乐"
-                        Command="{Binding SelectQQSourceCommand}" MinWidth="88" />
-            </StackPanel>
-            <StackPanel Spacing="10">
-                <TextBlock Text="热门搜索" FontSize="20" FontWeight="Bold" LetterSpacing="-0.02"
-                           HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                <ItemsControl ItemsSource="{Binding TrendingKeywords}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel HorizontalAlignment="Center" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="x:String">
-                            <Button Classes="chip" Margin="0,0,8,8"
-                                    Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).SearchKeywordCommand}"
-                                    CommandParameter="{Binding}" Content="{Binding}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </StackPanel>
+        </ScrollViewer>
 
-        <!-- 结果页:搜索框(500x40 圆20) + 列表 + 空态 -->
-        <Grid IsVisible="{Binding ShowResults}" Margin="28,16,24,12" RowDefinitions="Auto,Auto,*">
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
-                <Button Classes="chip" Command="{Binding BackToLandingCommand}" Padding="8,4"
-                        ToolTip.Tip="返回">
-                    <PathIcon Data="M 11,3 L 4,10 L 11,17 L 12.4,15.6 L 7,10 L 12.4,4.4 Z"
-                              Width="16" Height="16" Foreground="{DynamicResource TextPrimary}" />
+        <!-- 结果页:吸顶头部(标题 + 回顶)→ 类型 Tab → 分区卡片(对齐原版 SearchResultView;
+             无页内搜索框/返回钮——再搜索走标题栏 ← 或 Esc 回登录页,与原版一致) -->
+        <Grid IsVisible="{Binding ShowResults}" RowDefinitions="Auto,Auto,Auto,*">
+            <!-- 吸顶头部:标题行 96px(标题/回顶钮垂直居中)+ Tab 行 48px = 144,与原版
+                 StickyHeaderGrid(Hight 144 = 96 + 48)一致;回顶钮常驻占位,显隐不挤动布局 -->
+            <Grid Grid.Row="0" Classes="results-header" Margin="28,0,24,0"
+                  Height="96" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBlock Text="{Binding ResultsTitle}" FontSize="24" FontWeight="Bold" LetterSpacing="-0.02"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource TextPrimary}" />
+                <Button Grid.Column="1" Classes="top-btn" Classes.show="{Binding ShowBackToTop}"
+                        Command="{Binding BackToTopCommand}" ToolTip.Tip="回到顶部">
+                    <PathIcon Width="16" Height="16" Foreground="{DynamicResource TextPrimary}"
+                              Data="M 8,2.6 L 13.4,8 L 12,9.4 L 9,6.4 L 9,13.4 L 7,13.4 L 7,6.4 L 4,9.4 L 2.6,8 Z" />
                 </Button>
-                <!-- 搜索框:外层 Grid Stretch + 响应式 MaxWidth。Grid 必须 Stretch 而非 Center,
-                     才能拿满 `*` 列宽度再被 MaxWidth 截断 = min(列宽, MaxWidth),小屏随列收缩不溢出 -->
-                <Grid Grid.Column="1" Classes="search-box" HorizontalAlignment="Stretch">
-                    <Border CornerRadius="20" Background="{DynamicResource AppSurface}"
-                            BorderBrush="{DynamicResource AppBorder}" BorderThickness="1"
-                            Height="40" HorizontalAlignment="Stretch">
-                        <Grid ColumnDefinitions="Auto,*" Margin="14,0">
-                            <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
-                                       Width="16" Height="16" Foreground="{DynamicResource TextSecondary}" />
-                            <TextBox Grid.Column="1" Text="{Binding Keyword}" PlaceholderText="搜索歌曲 / 歌手"
-                                     Background="Transparent" BorderThickness="0" FontSize="14"
-                                     VerticalContentAlignment="Center" Margin="10,0,0,0" />
-                        </Grid>
-                    </Border>
-                </Grid>
-                <Button Grid.Column="2" Content="搜索" Command="{Binding SearchCommand}"
-                        MinWidth="64" Margin="10,0,0,0" Height="40" CornerRadius="20"
-                        Background="{DynamicResource SystemAccentColor}" Foreground="White" BorderThickness="0" />
             </Grid>
+            <!-- 类型 Tab:居中横排(原版 NavigationView 顶栏);宽度不足时溢出项收进右侧
+                 "···" 按钮(宿主代码按容器实测宽度计算),Flyout 列出被收起的项 -->
+            <Grid Grid.Row="1" x:Name="TabBarHost" IsVisible="{Binding ShowTabBar}" MinHeight="48"
+                  SizeChanged="OnTabBarHostSizeChanged">
+                <ListBox x:Name="TabItems" Classes="search-tabs" ItemsSource="{Binding Tabs}"
+                         SelectedIndex="{Binding SelectedTabIndex}" HorizontalAlignment="Center"
+                         ContainerPrepared="OnTabContainerPrepared" LayoutUpdated="OnTabItemsLayoutUpdated">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SearchTabItem">
+                            <Panel Margin="17,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <TextBlock Classes="tab-glyph" Margin="0,2,0,0"
+                                               Text="{Binding Kind, Converter={x:Static infra:SearchTabIconConverter.Instance}}" />
+                                    <TextBlock Text="{Binding Label}" FontSize="14" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextPrimary}" />
+                                </StackPanel>
+                                <!-- 选中胶囊:居中 22x3(原版 SelectionIndicator 形态),文字不变色 -->
+                                <Border Classes="tab-pill" Width="22" Height="3" CornerRadius="1.5"
+                                        HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                            </Panel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <Button x:Name="TabOverflowButton" Classes="tab-more" HorizontalAlignment="Right"
+                        VerticalAlignment="Center" IsVisible="False" ToolTip.Tip="更多">
+                    <TextBlock Classes="tab-glyph" Text="{DynamicResource IconTabMore}" Margin="0,2,0,0" />
+                </Button>
+            </Grid>
+            <ProgressBar Grid.Row="2" Height="3" IsIndeterminate="True" Margin="24,8,24,0"
+                         IsVisible="{Binding IsSearching}" Foreground="{DynamicResource SystemAccentColor}" />
 
-            <ProgressBar Grid.Row="1" Height="3" IsIndeterminate="True"
-                         IsVisible="{Binding IsSearching}" Margin="0,10,0,0"
-                         Foreground="{DynamicResource SystemAccentColor}" />
+            <ScrollViewer Grid.Row="3" x:Name="ResultsScroll" HorizontalScrollBarVisibility="Disabled"
+                          ScrollChanged="OnResultsScrollChanged" Padding="0,0,0,90">
+                <StackPanel Classes="results-body" Margin="24,12,24,8" Spacing="18">
+                    <TextBlock Text="{Binding Message}" FontSize="20" HorizontalAlignment="Center" Margin="0,40"
+                               IsVisible="{Binding ShowEmpty}" Foreground="{DynamicResource TextTertiary}" />
 
-            <!-- 结果列表:行 56px,封面 40x40 圆6 + 歌名/歌手 + 专辑 + 时长 -->
-            <ListBox Grid.Row="2" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedItem}"
-                     Background="Transparent" DoubleTapped="OnListDoubleTapped" Margin="0,8,0,0"
-                     Padding="0,0,0,100"
-                     ContainerPrepared="OnResultContainerPrepared">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:SongItemViewModel">
-                        <Grid Classes="result-row" ColumnDefinitions="48,*,180,100">
-                            <Border Grid.Column="0" Width="40" Height="40" CornerRadius="6"
-                                    Background="{DynamicResource ArtFallback}" ClipToBounds="True"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                    <!-- 全部:分区(歌曲/歌单/表演者/专辑/用户),各区只显示非空;查看更多切类型 Tab -->
+                    <StackPanel IsVisible="{Binding IsAllTab}" Spacing="18">
+                        <!-- 歌曲 -->
+                        <StackPanel IsVisible="{Binding HasSongs}" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,0">
+                                <TextBlock Classes="result-section-title" Text="歌曲" />
+                                <Button Grid.Column="1" Classes="link" VerticalAlignment="Center"
+                                        Command="{Binding ShowTabCommand}"
+                                        CommandParameter="{x:Static models:SearchKind.Track}">
+                                    <TextBlock Text="查看更多" TextDecorations="Underline" />
+                                </Button>
+                            </Grid>
+                            <Border Classes="result-card">
+                                <ItemsControl ItemsSource="{Binding Songs}" ContainerPrepared="OnResultContainerPrepared">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SongItemViewModel">
+                                            <views:TrackRow />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Border>
-                            <StackPanel Grid.Column="1" Margin="4,0" VerticalAlignment="Center" Spacing="1">
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="14"
-                                           TextTrimming="CharacterEllipsis"
-                                           Foreground="{DynamicResource TextPrimary}" />
-                                <TextBlock Text="{Binding Artist}" FontSize="12"
-                                           Foreground="{DynamicResource TextSecondary}"
-                                           TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                            <TextBlock Classes="album-column" Grid.Column="2" Text="{Binding Album}" FontSize="13"
-                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource TextSecondary}" />
-                            <StackPanel Grid.Column="3" VerticalAlignment="Center" Spacing="1" Margin="0,0,8,0">
-                                <TextBlock Text="{Binding DurationText}" FontSize="12"
-                                           Foreground="{DynamicResource TextSecondary}"
-                                           HorizontalAlignment="Right" />
-                                <TextBlock Text="VIP" FontSize="10" Foreground="{DynamicResource SystemAccentColor}"
-                                           HorizontalAlignment="Right" IsVisible="{Binding IsVip}" />
-                            </StackPanel>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+                        </StackPanel>
+                        <!-- 歌单 -->
+                        <StackPanel IsVisible="{Binding HasPlaylists}" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,0">
+                                <TextBlock Classes="result-section-title" Text="歌单" />
+                                <Button Grid.Column="1" Classes="link" VerticalAlignment="Center"
+                                        Command="{Binding ShowTabCommand}"
+                                        CommandParameter="{x:Static models:SearchKind.Playlist}">
+                                    <TextBlock Text="查看更多" TextDecorations="Underline" />
+                                </Button>
+                            </Grid>
+                            <Border Classes="result-card">
+                                <ItemsControl ItemsSource="{Binding Playlists}" ContainerPrepared="OnResultContainerPrepared">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SearchPlaylistItemViewModel">
+                                            <Button Classes="result-row"
+                                                    Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchPlaylistCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid ColumnDefinitions="52,*">
+                                                    <Border Width="48" Height="48" CornerRadius="4"
+                                                            Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                            VerticalAlignment="Center">
+                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
+                                                        <TextBlock Text="{Binding Name}" FontSize="16"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextPrimary}" />
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="12"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextSecondary}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                        <!-- 表演者 -->
+                        <StackPanel IsVisible="{Binding HasArtists}" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,0">
+                                <TextBlock Classes="result-section-title" Text="表演者" />
+                                <Button Grid.Column="1" Classes="link" VerticalAlignment="Center"
+                                        Command="{Binding ShowTabCommand}"
+                                        CommandParameter="{x:Static models:SearchKind.Artist}">
+                                    <TextBlock Text="查看更多" TextDecorations="Underline" />
+                                </Button>
+                            </Grid>
+                            <Border Classes="result-card">
+                                <ItemsControl ItemsSource="{Binding Artists}" ContainerPrepared="OnResultContainerPrepared">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SearchArtistItemViewModel">
+                                            <Button Classes="result-row"
+                                                    Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchArtistCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid ColumnDefinitions="52,*">
+                                                    <Border Width="48" Height="48" CornerRadius="24"
+                                                            Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                            VerticalAlignment="Center">
+                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" FontSize="16"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextPrimary}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                        <!-- 专辑 -->
+                        <StackPanel IsVisible="{Binding HasAlbums}" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,0">
+                                <TextBlock Classes="result-section-title" Text="专辑" />
+                                <Button Grid.Column="1" Classes="link" VerticalAlignment="Center"
+                                        Command="{Binding ShowTabCommand}"
+                                        CommandParameter="{x:Static models:SearchKind.Album}">
+                                    <TextBlock Text="查看更多" TextDecorations="Underline" />
+                                </Button>
+                            </Grid>
+                            <Border Classes="result-card">
+                                <ItemsControl ItemsSource="{Binding Albums}" ContainerPrepared="OnResultContainerPrepared">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SearchAlbumItemViewModel">
+                                            <Button Classes="result-row"
+                                                    Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchAlbumCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid ColumnDefinitions="52,*">
+                                                    <Border Width="48" Height="48" CornerRadius="4"
+                                                            Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                            VerticalAlignment="Center">
+                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
+                                                        <TextBlock Text="{Binding Name}" FontSize="16"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextPrimary}" />
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="12"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextSecondary}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                        <!-- 用户(本移植无用户主页,仅展示) -->
+                        <StackPanel IsVisible="{Binding HasUsers}" Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,0">
+                                <TextBlock Classes="result-section-title" Text="用户" />
+                                <Button Grid.Column="1" Classes="link" VerticalAlignment="Center"
+                                        Command="{Binding ShowTabCommand}"
+                                        CommandParameter="{x:Static models:SearchKind.User}">
+                                    <TextBlock Text="查看更多" TextDecorations="Underline" />
+                                </Button>
+                            </Grid>
+                            <Border Classes="result-card">
+                                <ItemsControl ItemsSource="{Binding Users}" ContainerPrepared="OnResultContainerPrepared">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SearchUserItemViewModel">
+                                            <Border Classes="result-row" Background="Transparent">
+                                                <Grid ColumnDefinitions="52,*">
+                                                    <Border Width="48" Height="48" CornerRadius="24"
+                                                            Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                            VerticalAlignment="Center">
+                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
+                                                        <TextBlock Text="{Binding Name}" FontSize="16"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextPrimary}" />
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="12"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextSecondary}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
 
-            <!-- 空态:没有搜索结果,20px 居中 -->
-            <TextBlock Grid.Row="2" Text="{Binding Message}" FontSize="20"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       IsVisible="{Binding ShowEmpty}"
-                       Foreground="{DynamicResource TextTertiary}" />
+                    <!-- 单类型 Tab:同类卡片,无分区头(歌曲 Tab 30 条) -->
+                    <Border Classes="result-card" IsVisible="{Binding IsTrackTab}">
+                        <ItemsControl ItemsSource="{Binding Songs}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SongItemViewModel">
+                                    <views:TrackRow />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <Border Classes="result-card" IsVisible="{Binding IsPlaylistTab}">
+                        <ItemsControl ItemsSource="{Binding Playlists}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SearchPlaylistItemViewModel">
+                                    <Button Classes="result-row"
+                                            Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchPlaylistCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Grid ColumnDefinitions="52,*">
+                                            <Border Width="48" Height="48" CornerRadius="4"
+                                                    Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
+                                                <TextBlock Text="{Binding Name}" FontSize="16"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextPrimary}" />
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextSecondary}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <Border Classes="result-card" IsVisible="{Binding IsAlbumTab}">
+                        <ItemsControl ItemsSource="{Binding Albums}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SearchAlbumItemViewModel">
+                                    <Button Classes="result-row"
+                                            Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchAlbumCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Grid ColumnDefinitions="52,*">
+                                            <Border Width="48" Height="48" CornerRadius="4"
+                                                    Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
+                                                <TextBlock Text="{Binding Name}" FontSize="16"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextPrimary}" />
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextSecondary}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <Border Classes="result-card" IsVisible="{Binding IsArtistTab}">
+                        <ItemsControl ItemsSource="{Binding Artists}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SearchArtistItemViewModel">
+                                    <Button Classes="result-row"
+                                            Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchArtistCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Grid ColumnDefinitions="52,*">
+                                            <Border Width="48" Height="48" CornerRadius="24"
+                                                    Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" FontSize="16"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextPrimary}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <Border Classes="result-card" IsVisible="{Binding IsUserTab}">
+                        <ItemsControl ItemsSource="{Binding Users}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SearchUserItemViewModel">
+                                    <Border Classes="result-row" Background="Transparent">
+                                        <Grid ColumnDefinitions="52,*">
+                                            <Border Width="48" Height="48" CornerRadius="24"
+                                                    Background="{DynamicResource ArtFallback}" ClipToBounds="True"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
+                                                <TextBlock Text="{Binding Name}" FontSize="16"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextPrimary}" />
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource TextSecondary}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+
+                    <!-- 页脚:没有更多结果(原版 ListView Footer) -->
+                    <TextBlock Text="没有更多结果" FontSize="13" HorizontalAlignment="Center" Margin="0,2,0,0"
+                               IsVisible="{Binding ShowNoMore}" Foreground="{DynamicResource TextTertiary}" />
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </UserControl>

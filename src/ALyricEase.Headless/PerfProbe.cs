@@ -194,11 +194,11 @@ public static class PerfProbe
         typeof(RecommendViewModel).GetField("_loaded", BindingFlags.NonPublic | BindingFlags.Instance)
             ?.SetValue(vm.Recommend, true);
 
-        // 搜索:30 条结果(虚拟 ListBox)
+        // 搜索:30 条结果(结果页歌曲分区)
         vm.Search.HasSearched = true;
-        vm.Search.Results.Clear();
+        vm.Search.Songs.Clear();
         for (var i = 0; i < 30; i++)
-            vm.Search.Results.Add(new SongItemViewModel(
+            vm.Search.Songs.Add(new SongItemViewModel(
                 new Song { Id = 100 + i, Name = $"搜索结果 {i}", Artist = "歌手", Album = "专辑", DurationMs = 180_000 },
                 (_, _, _) => Task.FromResult(true)));
 

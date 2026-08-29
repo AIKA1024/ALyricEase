@@ -71,10 +71,11 @@
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                   <Button.Resources>
-                    <!-- MenuFlyout:原生 hover 子菜单/延迟/定位(多歌手"表演者"子项),不再手写计时器 -->
-                    <MenuFlyout x:Key="TrackMenuFlyout" FlyoutPresenterClasses="track-menu-presenter">
+                    <!-- MenuFlyout:原生 hover 子菜单/延迟/定位(多歌手"表演者"子项),不再手写计时器;
+                         菜单项/弹层观感走全局 MenuItem/MenuFlyoutPresenter 默认样式(同侧栏右键菜单) -->
+                    <MenuFlyout x:Key="TrackMenuFlyout">
                       <!-- 单歌手:直接跳歌手页 -->
-                      <MenuItem Classes="track-menu-item" Header="{Binding Artist, StringFormat='表演者: {0}'}"
+                      <MenuItem Header="{Binding Artist, StringFormat='表演者: {0}'}"
                                 Command="{Binding OpenArtistCommand}"
                                 IsEnabled="{Binding HasArtist}"
                                 IsVisible="{Binding HasMultipleArtists, Converter={x:Static BoolConverters.Not}}">
@@ -84,7 +85,7 @@
                         </MenuItem.Icon>
                       </MenuItem>
                       <!-- 多歌手:子菜单逐项跳对应歌手页(ItemContainerTheme 直接绑生成的 MenuItem 容器,不用 DataTemplate 嵌套) -->
-                      <MenuItem Classes="track-menu-item" Header="表演者" IsVisible="{Binding HasMultipleArtists}"
+                      <MenuItem Header="表演者" IsVisible="{Binding HasMultipleArtists}"
                                 ItemsSource="{Binding Artists}">
                         <MenuItem.Icon>
                           <TextBlock Text="{DynamicResource IconMultiArtists}"
@@ -100,7 +101,7 @@
                         </MenuItem.ItemContainerTheme>
                       </MenuItem>
                       <!-- 专辑 -->
-                      <MenuItem Classes="track-menu-item" Header="{Binding Album, StringFormat='专辑: {0}'}"
+                      <MenuItem Header="{Binding Album, StringFormat='专辑: {0}'}"
                                 Command="{Binding OpenAlbumCommand}"
                                 IsEnabled="{Binding HasAlbum}">
                         <MenuItem.Icon>
@@ -201,22 +202,12 @@
                   <MenuFlyout x:Key="ArtistMenuFlyout" FlyoutPresenterClasses="track-menu-presenter"
                               ItemsSource="{Binding Artists}">
                     <MenuFlyout.ItemContainerTheme>
+                      <!-- 仅绑定每项的路由数据;观感走全局 MenuItem 默认样式(同 track-menu 项) -->
                       <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
                                     BasedOn="{StaticResource {x:Type MenuItem}}">
                         <Setter Property="Header" Value="{Binding Name}" />
                         <Setter Property="Command" Value="{Binding OpenCommand}" />
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
-                        <!-- 统一菜单项样式(同 track-menu-item):高 32、圆角 8、悬停 SystemBaseLow -->
-                        <Setter Property="Height" Value="32" />
-                        <Setter Property="Padding" Value="12,0" />
-                        <Setter Property="Margin" Value="0,2" />
-                        <Setter Property="CornerRadius" Value="8" />
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="BorderThickness" Value="0" />
-                        <Setter Property="FontSize" Value="13" />
-                        <Style Selector="^:pointerover /template/ Border#PART_LayoutRoot">
-                          <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
-                        </Style>
                       </ControlTheme>
                     </MenuFlyout.ItemContainerTheme>
                   </MenuFlyout>
@@ -292,24 +283,13 @@
                              TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <Button.Resources>
-                  <MenuFlyout x:Key="ArtistMenuFlyout" FlyoutPresenterClasses="track-menu-presenter"
-                              ItemsSource="{Binding Artists}">
+                  <MenuFlyout x:Key="ArtistMenuFlyout" ItemsSource="{Binding Artists}">
                     <MenuFlyout.ItemContainerTheme>
                       <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
                                     BasedOn="{StaticResource {x:Type MenuItem}}">
                         <Setter Property="Header" Value="{Binding Name}" />
                         <Setter Property="Command" Value="{Binding OpenCommand}" />
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
-                        <Setter Property="Height" Value="32" />
-                        <Setter Property="Padding" Value="12,0" />
-                        <Setter Property="Margin" Value="0,2" />
-                        <Setter Property="CornerRadius" Value="8" />
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="BorderThickness" Value="0" />
-                        <Setter Property="FontSize" Value="13" />
-                        <Style Selector="^:pointerover /template/ Border#PART_LayoutRoot">
-                          <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
-                        </Style>
                       </ControlTheme>
                     </MenuFlyout.ItemContainerTheme>
                   </MenuFlyout>

@@ -71,8 +71,8 @@
         <Setter Property="Padding" Value="4" />
     </Style>
 
-    <!-- 普通 Flyout 投影:排除带 track-menu-presenter 类的 MenuFlyoutPresenter(菜单走下面全局 MenuFlyoutPresenter 样式) -->
-    <Style Selector="FlyoutPresenter:not(.track-menu-presenter) /template/ Border">
+    <!-- 普通 Flyout 投影(菜单表面走下面全局 MenuFlyoutPresenter 样式) -->
+    <Style Selector="FlyoutPresenter /template/ Border">
         <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
         <Setter Property="Margin" Value="4 0 4 4" />
     </Style>

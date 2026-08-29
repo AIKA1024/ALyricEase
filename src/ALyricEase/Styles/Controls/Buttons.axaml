@@ -119,9 +119,11 @@
         <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
     </Style>
 
-    <!-- 每日行歌手/专辑菜单项(MenuFlyout 版):高 32、圆角 8、左内边距 12、图标16,悬停高亮;
-         纵向 margin 2 让相邻项之间有间距 -->
-    <Style Selector="MenuItem.track-menu-item">
+    <!-- MenuFlyout 菜单项默认观感(全项目统一;原以 track-menu-item 类挂在曲目行歌手/专辑菜单上,
+         现升为类型默认:侧栏右键/播放模式菜单等所有 MenuItem 自动同款)。
+         高 32、圆角 8、左内边距 12、字号 13,悬停 SystemBaseLow 整项高亮;
+         纵向 margin 2 让相邻项之间有间距。ItemsSource 生成的子菜单项同样命中(选择器不带类) -->
+    <Style Selector="MenuItem">
         <Setter Property="Height" Value="32" />
         <Setter Property="Padding" Value="12,0" />
         <Setter Property="Margin" Value="0,2" />
@@ -130,20 +132,7 @@
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="FontSize" Value="13" />
     </Style>
-    <Style Selector="MenuItem.track-menu-item:pointerover /template/ Border#PART_LayoutRoot">
-        <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
-    </Style>
-    <!-- 子菜单项:ItemsSource 生成的 MenuItem 未必带 track-menu-item 类,用后代选择器统一继承主菜单项样式 -->
-    <Style Selector="MenuItem.track-menu-item MenuItem">
-        <Setter Property="Height" Value="32" />
-        <Setter Property="Padding" Value="12,0" />
-        <Setter Property="Margin" Value="0,2" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="FontSize" Value="13" />
-    </Style>
-    <Style Selector="MenuItem.track-menu-item MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot">
         <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
     </Style>
 </Styles>

@@ -26,7 +26,8 @@ public static class Program
     {
         AppBuilder.Configure<HeadlessApp>()
             .UseSkia()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions())
+            // 关闭 headless 假绘制:走 Skia 真渲染,RenderTargetBitmap 截图才有像素(默认 true 时 Save 出 0 字节 PNG)
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .SetupWithoutStarting();
 
         HeadlessApp.ConfigureServices();
@@ -96,6 +97,13 @@ public static class Program
         if (args.Length > 0 && args[0] == "--renamedlg")
         {
             RenameDialogProbe.Run();
+            return;
+        }
+
+        // 菜单默认观感渲染自查(不触网):裸 MenuItem 填 MenuFlyoutPresenter,输出 PNG
+        if (args.Length > 0 && args[0] == "--menustyle")
+        {
+            MenuStyleProbe.Run();
             return;
         }
 

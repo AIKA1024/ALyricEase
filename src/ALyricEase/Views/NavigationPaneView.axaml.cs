@@ -52,7 +52,10 @@ public partial class NavigationPaneView : UserControl
         {
             var playlist = item.Playlist;
 
-            if (!ServiceLocator.Get<PlaylistViewModel>().IsLikedPlaylist(playlist))
+            // 红心集合("我喜欢")不可重命名/删除:只留复制链接
+            var isLiked = ServiceLocator.Get<PlaylistViewModel>().IsLikedPlaylist(playlist);
+
+            if (!isLiked)
             {
                 var rename = new MenuItem { Header = "重命名歌单" };
                 rename.Click += (_, _) => vm.OpenRenamePlaylistDialogCommand.Execute(item);
@@ -63,11 +66,14 @@ public partial class NavigationPaneView : UserControl
             copy.Click += (_, _) => _ = ClipboardService.TryCopyTextAsync(PlaylistShareLinks.For(playlist));
             menu.Items.Add(copy);
 
-            // 删除为破坏性操作:红色 + 分隔线隔开,且必须经确认弹窗
-            menu.Items.Add(new Separator());
-            var delete = new MenuItem { Header = "删除歌单", Foreground = new SolidColorBrush(Color.Parse("#E74C3C")) };
-            delete.Click += (_, _) => vm.OpenDeletePlaylistDialogCommand.Execute(item);
-            menu.Items.Add(delete);
+            // 删除为破坏性操作:红色 + 分隔线隔开,且必须经确认弹窗;红心集合不出现
+            if (!isLiked)
+            {
+                menu.Items.Add(new Separator());
+                var delete = new MenuItem { Header = "删除歌单", Foreground = new SolidColorBrush(Color.Parse("#E74C3C")) };
+                delete.Click += (_, _) => vm.OpenDeletePlaylistDialogCommand.Execute(item);
+                menu.Items.Add(delete);
+            }
         }
         else if (nav.Aggregate is { } aggregate)
         {

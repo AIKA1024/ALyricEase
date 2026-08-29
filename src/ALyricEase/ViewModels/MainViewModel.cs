@@ -38,6 +38,7 @@ public sealed partial class MainViewModel : ViewModelBase
         AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed);
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
         CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
+        RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed);
         // 折叠状态必须先于首次 RebuildShellNavigation 恢复(静态分组头实例随即被导航渲染消费)
         NetEasePlaylistsHeader.IsExpanded = appState.IsNetEaseGroupExpanded;
         QqPlaylistsHeader.IsExpanded = appState.IsQqGroupExpanded;
@@ -70,6 +71,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>创建歌单对话框 VM(宿主绑定 CreatePlaylistDialogView;打开前按音源 Refresh)。</summary>
     public CreatePlaylistDialogViewModel CreatePlaylistDialog { get; }
+
+    /// <summary>重命名歌单对话框 VM(宿主绑定 RenamePlaylistDialogView;打开前按目标歌单 Refresh)。</summary>
+    public RenamePlaylistDialogViewModel RenamePlaylistDialog { get; }
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
@@ -417,6 +421,12 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
+        if (IsRenamePlaylistDialogOpen)
+        {
+            CloseRenamePlaylistDialogCommand.Execute(null);
+            return true;
+        }
+
         // 正在播放页的歌词/播放列表面板先于覆盖层本身收起,与桌面端 Esc 的语义一致
         if (NowPlayingPanel != NowPlayingPanel.None)
         {
@@ -580,6 +590,30 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand] private void CloseCreatePlaylistDialog() => IsCreatePlaylistDialogOpen = false;
+
+    // ---- 重命名歌单对话框 ----
+
+    /// <summary>重命名歌单弹窗状态(WinUI3 ContentDialog 式窗口内弹层,宿主 MainWindow 绑定)。</summary>
+    [ObservableProperty] private bool _isRenamePlaylistDialogOpen;
+
+    /// <summary>打开重命名歌单对话框(侧栏歌单子项右键):预填当前名;
+    /// 红心集合不可改名(菜单已隐藏,此处双保险),非本人歌单由服务端拒绝。</summary>
+    [RelayCommand]
+    private void OpenRenamePlaylistDialog(PlaylistItemViewModel? item)
+    {
+        if (item is null || _playlist.IsLikedPlaylist(item.Playlist)) return;
+        RenamePlaylistDialog.Refresh(item);
+        IsRenamePlaylistDialogOpen = true;
+    }
+
+    [RelayCommand] private void CloseRenamePlaylistDialog() => IsRenamePlaylistDialogOpen = false;
+
+    /// <summary>重命名成功回调:关弹窗,后台刷新对应侧栏分组;打开中的详情页随刷新换新实例。</summary>
+    private void OnRenamePlaylistConfirmed(PlaylistItemViewModel item)
+    {
+        IsRenamePlaylistDialogOpen = false;
+        _ = _playlist.RefreshAfterRenameAsync(item);
+    }
 
     /// <summary>创建成功回调:关弹窗,后台刷新侧栏歌单分组并打开新歌单(复用歌单详情页)。</summary>
     private void OnCreatePlaylistConfirmed(Models.Playlist created)

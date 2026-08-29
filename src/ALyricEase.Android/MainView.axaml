@@ -46,5 +46,9 @@
         <!-- 聚合歌单设置对话框(齿轮;同层最末 → 同时可见时盖在最上) -->
         <views:AggregateSettingsDialogView IsVisible="{Binding IsAggregateSettingsDialogOpen}"
                                            Grid.Row="1" ZIndex="200" />
+
+        <!-- 重命名歌单对话框(侧栏歌单子项右键/长按;同层,声明在聚合设置弹层之后) -->
+        <views:RenamePlaylistDialogView IsVisible="{Binding IsRenamePlaylistDialogOpen}"
+                                        Grid.Row="1" ZIndex="200" />
     </Grid>
 </UserControl>

@@ -417,14 +417,35 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>删除自己创建的歌单:PlaylistBaseWrite/DelPlaylist(param {dirId})。
-    /// 参数必须是资产目录 dirId(创建响应/用户歌单列表返回的那个,普通歌单恰好与 tid 一致);
-    /// 传 tid 不保证命中。UI 暂未接入,探针清理用。失败抛 ApiException。</summary>
+    /// 参数必须是资产目录 dirId(创建响应/用户歌单列表返回的那个;新建歌单是小序号,未必与
+    /// tid 一致)。传 tid 不保证命中。UI 暂未接入,探针清理用。失败抛 ApiException。</summary>
     public Task DeletePlaylistAsync(long dirId, CancellationToken ct = default)
     {
         if (!IsLoggedIn)
             throw new ApiException("QQ音乐未登录,无法删除歌单", -1);
         return SecureAssetWriteAsync("music.musicasset.PlaylistBaseWrite", "DelPlaylist",
             p => p.WriteNumber("dirId", dirId), "删除歌单", ct);
+    }
+
+    /// <summary>重命名自己创建的歌单:PlaylistBaseWrite/EditPlaylist(mask=1 仅改名字),ag-1 加密通道。
+    /// 2026-08 实测配方:param {dirId=资产目录id, mask:1, dirNewName} —— 字段名是 dirNewName,
+    /// 盲试 dirName/tid 恒 1101;mask 位语义 1=名字、15=全量(简介字段服务端不落库,参考实现作者同注),
+    /// mask=1 不携带简介/封面/标签字段,零清空风险(配方由 Headless/QqRenameProbe.cs 锁定)。
+    /// dirId 取用户歌单列表返回的资产目录 id(新建歌单为小序号,未必与 tid 一致);失败抛 ApiException。</summary>
+    public Task RenamePlaylistAsync(Playlist playlist, string newName, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("QQ音乐未登录,无法重命名歌单", -1);
+        newName = newName.Trim();
+        if (newName.Length == 0)
+            throw new ApiException("歌单名不能为空", -1);
+        var dirId = playlist.DirId != 0 ? playlist.DirId : playlist.Id;
+        return SecureAssetWriteAsync("music.musicasset.PlaylistBaseWrite", "EditPlaylist", p =>
+        {
+            p.WriteNumber("dirId", dirId);
+            p.WriteNumber("mask", 1);
+            p.WriteString("dirNewName", newName);
+        }, "重命名歌单", ct);
     }
 
     // ---------- asset 写操作的加密签名通道(musics.fcg / ag-1) ----------
@@ -442,8 +463,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// 模块回 80105(明文写被拒),必须走此通道:comm + req_0(module/method/param)整体
     /// AES-128-GCM 加密 → zzcSign 派生签名 → POST u6.y.qq.com/cgi-bin/musics.fcg?encoding=ag-1&sign=...;
     /// 响应体按固定 21B 密钥循环 XOR 解出明文 JSON。业务码非 0 抛 ApiException(带 actionText 与
-    /// 服务端文案);成功返回解密后的响应文档(调用方负责释放)。</summary>
-    private async Task<JsonDocument> SecureAssetWriteAsync(string module, string method,
+    /// 服务端文案);成功返回解密后的响应文档(调用方负责释放)。
+    /// internal 而非 private:逆向探针(如 --qqrename)需要以任意 module/method 打这条通道。</summary>
+    internal async Task<JsonDocument> SecureAssetWriteAsync(string module, string method,
         Action<Utf8JsonWriter> writeParam, string actionText, CancellationToken ct)
     {
         // 1) 明文 JSON:comm 全量字段(参考实现) + req_0(module/method/param)
@@ -482,6 +504,26 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
         return doc;
     }
+
+    /// <summary>探针用重载:param 以键值对给出,按值的运行时类型写成对应 JSON 类型
+    /// (string/number/bool/null),便于逆向时快速试各种参数组合。仅供诊断探针调用。</summary>
+    internal Task<JsonDocument> ProbeAssetWriteAsync(string module, string method,
+        IReadOnlyDictionary<string, object?> param, string actionText, CancellationToken ct = default)
+        => SecureAssetWriteAsync(module, method, w =>
+        {
+            foreach (var (k, v) in param)
+            {
+                switch (v)
+                {
+                    case string s: w.WriteString(k, s); break;
+                    case long l: w.WriteNumber(k, l); break;
+                    case int i: w.WriteNumber(k, i); break;
+                    case bool b: w.WriteBoolean(k, b); break;
+                    case null: w.WriteNull(k); break;
+                    default: w.WriteString(k, v.ToString() ?? ""); break;
+                }
+            }
+        }, actionText, ct);
 
     /// <summary>构造 ag-1 请求 JSON(comm 全量 + 单个 req_0),与参考实现逐字段对齐。
     /// module/method/param 由调用方给定(红心=PlaylistDetailWrite AddSonglist/DelSonglist,

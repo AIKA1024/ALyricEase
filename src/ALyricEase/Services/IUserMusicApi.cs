@@ -23,6 +23,11 @@ public interface IUserMusicApi : IMusicApi
     /// (网易云 Id=服务端歌单 id;QQ 含 tid/DirId);失败抛 ApiException。</summary>
     Task<Playlist> CreatePlaylistAsync(string name, bool isPrivate = false, CancellationToken ct = default);
 
+    /// <summary>重命名自己创建的歌单(侧栏右键)。网易云走 /api/playlist/update/name(用 playlist.Id);
+    /// QQ 走 ag-1 加密通道 PlaylistBaseWrite/EditPlaylist(用 playlist.DirId 资产目录 id,mask=1 仅改名字)。
+    /// 红心集合不允许重命名(UI 层隐藏入口);非本人歌单由服务端拒绝。失败抛 ApiException。</summary>
+    Task RenamePlaylistAsync(Playlist playlist, string newName, CancellationToken ct = default);
+
     /// <summary>当前登录态能否执行红心操作(未登录/无法定位喜欢集合时为 false,UI 应引导登录)。</summary>
     bool CanToggleLike { get; }
 

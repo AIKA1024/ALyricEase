@@ -724,6 +724,59 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         }
     }
 
+    /// <summary>重命名自己创建的歌单(需登录):通道策略同创建/删除(weapi 优先,被拦回落明文)。
+    /// ⚠️ 参数名两边都是 <c>id</c>(明文 /api/playlist/update/name 认 id,与删除接口的 pid 不同,
+    /// 2026-08 实测,见 tmpandroid/ne_rename_probe.py);加密 weapi 通道同社区通用签名 {id, name}。
+    /// 两条路都要带 __csrf。code 405=操作频繁。失败抛 ApiException。</summary>
+    public async Task RenamePlaylistAsync(Playlist playlist, string newName, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("未登录,无法重命名歌单", -1);
+        newName = newName.Trim();
+        if (newName.Length == 0)
+            throw new ApiException("歌单名不能为空", -1);
+
+        JsonDocument doc;
+        if (_wafBlocked)
+        {
+            doc = await PostPlainWriteAsync("/api/playlist/update/name",
+                new Dictionary<string, string> { ["id"] = playlist.Id.ToString(), ["name"] = newName }, ct)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            try
+            {
+                var csrf = await EnsureCsrfAsync(ct).ConfigureAwait(false);
+                var payload = new Dictionary<string, object?>
+                {
+                    ["id"] = playlist.Id,
+                    ["name"] = newName,
+                    ["csrf_token"] = csrf,
+                };
+                using var req = CreateWeapiRequest("weapi/playlist/update/name", payload, includeRealIp: true);
+                doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+            }
+            catch (ApiException ex) when (ex.Code == BlockedCode)
+            {
+                _wafBlocked = true;
+                doc = await PostPlainWriteAsync("/api/playlist/update/name",
+                    new Dictionary<string, string> { ["id"] = playlist.Id.ToString(), ["name"] = newName }, ct)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        using (doc)
+        {
+            var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+            if (code == 405)
+                throw new ApiException("重命名歌单失败:操作过于频繁,请稍后再试", code);
+            if (code != 200)
+                throw new ApiException(
+                    TryMessage(doc.RootElement) is { } msg ? $"重命名歌单失败:{msg}" : $"重命名歌单失败(code={code})", code);
+        }
+    }
+
     /// <summary>从错误响应里捞人读文案(message/msg),缺省 null。</summary>
     private static string? TryMessage(JsonElement root)
     {

@@ -549,6 +549,41 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             ? _qqApi.CreatePlaylistAsync(name, isPrivate)
             : _api.CreatePlaylistAsync(name, isPrivate);
 
+    /// <summary>重命名歌单(侧栏右键):按歌单音源路由到对应客户端。
+    /// 成功后由宿主刷新侧栏分组(RefreshAfterRenameAsync);失败抛 ApiException(对话框内呈现)。</summary>
+    public Task RenamePlaylistAsync(PlaylistItemViewModel item, string newName)
+        => item.Playlist.Source == MusicSource.QQ
+            ? _qqApi.RenamePlaylistAsync(item.Playlist, newName)
+            : _api.RenamePlaylistAsync(item.Playlist, newName);
+
+    /// <summary>该歌单是否为红心集合("我喜欢"):红心集合不允许重命名,右键菜单据此隐藏。
+    /// QQ 按资产目录 id(201)识别,网易云按拉列表时定位到的喜欢集合歌单 id。</summary>
+    public bool IsLikedPlaylist(Playlist playlist)
+        => playlist.Source == MusicSource.QQ
+            ? playlist.DirId == QQMusicApiClient.LikedDirId || playlist.Name == "我喜欢"
+            : playlist.Id != 0 && playlist.Id == _api.LikedPlaylistId;
+
+    /// <summary>重命名成功后刷新对应侧栏分组(换新实例,侧栏名随列表更新);
+    /// 若该歌单正作为详情页打开,把详情页切到新实例并同步标题(曲目不动)。</summary>
+    public async Task RefreshAfterRenameAsync(PlaylistItemViewModel renamed)
+    {
+        var source = renamed.Playlist.Source;
+        if (source == MusicSource.QQ)
+            await ReloadQqPlaylistsAsync();
+        else
+            await ReloadNetEasePlaylistsAsync();
+
+        var fresh = source == MusicSource.QQ
+            ? QqPlaylists.FirstOrDefault(p => p.Id == renamed.Id)
+            : Playlists.FirstOrDefault(p => p.Id == renamed.Id);
+        if (fresh is null) return;
+        if (ReferenceEquals(SelectedPlaylist, renamed))
+        {
+            SelectedPlaylist = fresh;
+            PlaylistTitle = fresh.Name;
+        }
+    }
+
     /// <summary>重新拉取网易云用户歌单(创建/删除歌单后刷新侧栏;静默失败,保底不清空现列表)。</summary>
     public async Task ReloadNetEasePlaylistsAsync()
     {

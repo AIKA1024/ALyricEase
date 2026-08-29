@@ -76,6 +76,29 @@ public static class Program
             return;
         }
 
+        // QQ 音乐歌单重命名逆向:盲试 PlaylistBaseWrite 下的候选 method(建→改名→复检→删除还原)
+        if (args.Length > 0 && args[0] == "--qqrename")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqRenameProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 重命名歌单端到端实测(需本机有效 Cookie):两平台 Create→Rename→复检→Delete 还原(生产代码路径)
+        if (args.Length > 0 && args[0] == "--renamepl")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(RenamePlaylistProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 重命名弹窗渲染自查(不触网):预填 QQ 测试歌单打开弹窗,输出 PNG 供人工核对
+        if (args.Length > 0 && args[0] == "--renamedlg")
+        {
+            RenameDialogProbe.Run();
+            return;
+        }
+
         // 网易云加密通道诊断:定位 playlist/create 空响应成因(匿名注册晴雨表/明文写/weapi 原始响应)
         if (args.Length > 0 && args[0] == "--nediag")
         {

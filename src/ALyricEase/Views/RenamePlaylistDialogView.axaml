@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.RenamePlaylistDialogView">
+    <!-- 重命名歌单对话框(与 CreatePlaylistDialogView 同款骨架):烟雾层盖住整窗拦截输入 +
+         居中卡片。Esc=取消;Enter=确认。打开时淡入与聚焦输入框由 code-behind 触发。 -->
+    <Grid x:Name="Root">
+        <Grid.Styles>
+            <Style Selector="Grid#Root">
+                <Setter Property="Transitions">
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                    </Transitions>
+                </Setter>
+            </Style>
+            <Style Selector="Button.dialog-primary">
+                <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="4" />
+            </Style>
+            <Style Selector="Button.dialog-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+            </Style>
+            <Style Selector="Button.dialog-primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
+            </Style>
+        </Grid.Styles>
+        <Panel Background="#99000000" />
+        <Grid DataContext="{Binding RenamePlaylistDialog}" x:DataType="vm:RenamePlaylistDialogViewModel"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding ConfirmCommand}" />
+            </Grid.KeyBindings>
+            <Border MaxWidth="440" MinWidth="340" Margin="24" Padding="24" CornerRadius="8"
+                    Background="{DynamicResource AppSurface}"
+                    BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                    BoxShadow="0 32 64 #66000000">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding SourceLabel, StringFormat='重命名{0}歌单'}"
+                               FontSize="20" FontWeight="SemiBold" />
+                    <TextBox x:Name="NameBox" PlaceholderText="歌单名称"
+                             Text="{Binding Name}" MaxLength="40" />
+                    <!-- 失败文案:留在框内,红字显示服务端/网络错误 -->
+                    <TextBlock Text="{Binding Message}" FontSize="13" TextWrapping="Wrap"
+                               Foreground="#FFE74C3C"
+                               IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Grid.Column="0" FontSize="12" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextTertiary}"
+                                   Text="新名字将同步到侧栏与歌单详情页" />
+                        <Button Grid.Column="1" Content="取消"
+                                Command="{Binding $parent[views:RenamePlaylistDialogView].((vm:MainViewModel)DataContext).CloseRenamePlaylistDialogCommand}"
+                                HotKeyManager.HotKey="Escape"
+                                MinWidth="96" Height="32" />
+                        <Button Grid.Column="2" Classes="dialog-primary" Content="保存"
+                                Command="{Binding ConfirmCommand}"
+                                MinWidth="96" Height="32" IsEnabled="{Binding CanConfirm}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

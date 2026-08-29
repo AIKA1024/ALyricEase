@@ -472,7 +472,8 @@ public sealed record QQCreatedPlaylistDto
     /// <summary>歌单数字 id(即 disstid)。</summary>
     public long Tid { get; init; }
 
-    /// <summary>资产目录 id(资产写接口 AddSonglist 的 dirId 用;普通歌单与该 tid 一致)。</summary>
+    /// <summary>资产目录 id(资产写接口 AddSonglist/DelSonglist/EditPlaylist 的 dirId 用;
+    /// 新建歌单是小序号,未必与 tid 一致)。</summary>
     [JsonPropertyName("dirId")] public long DirId { get; init; }
 
     [JsonPropertyName("dirName")] public string? DirName { get; init; }

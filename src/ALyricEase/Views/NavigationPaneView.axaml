@@ -103,6 +103,7 @@
              歌单子项按所属分组开合显示/隐藏(ShowAsChild) -->
         <ListBox x:Name="NavList" Classes="shell-navigation" ItemsSource="{Binding ShellNavItems}"
                  SelectedItem="{Binding SelectedNav}"
+                 ContextRequested="OnNavListContextRequested"
                  Background="Transparent" BorderThickness="0" Margin="0,4,0,4"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto">

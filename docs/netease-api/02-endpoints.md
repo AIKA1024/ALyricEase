@@ -398,6 +398,26 @@ Form: pid=<歌单id>&csrf_token=<__csrf>
 > 加密 weapi 通道的删除参数名沿用社区通用的 `id`（`/weapi/playlist/delete`），
 > 与明文通道的 `pid` **不同** —— 这是两套通道少见的字段名分歧，改动时勿混用。
 
+### F7. 重命名歌单（明文 POST，需登录 + `__csrf`）
+
+```
+POST /api/playlist/update/name?csrf_token=<__csrf>
+Form: id=<歌单id>&name=<新名字>&csrf_token=<__csrf>
+```
+
+| 参数 | 值 | 说明 |
+|---|---|---|
+| **`id`** | 歌单 id | **参数名是 `id`**（与 F6 删除明文通道的 `pid` 不同,2026-08 实测） |
+| `name` | 新名字 | |
+| `csrf_token` | `__csrf` 值 | 同 F5 |
+
+响应（成功）：`{ "code": 200, "id": 18329264369, ... }`
+
+- `code:405` 操作频繁（频率限制）;`code:401` 未登录。
+- weapi 加密通道（`weapi/playlist/update/name`,参数 `{id, name}`）在本机被 WAF 静默丢弃,
+  与 F5/F6 同策略:客户端 weapi 优先,被拦后回落明文。
+- 实测记录于 `tmpandroid/ne_rename_probe.py`（建→改名→复检→删除还原,全绿）。
+
 ---
 
 ## G. 歌曲详情（批量）
@@ -578,6 +598,7 @@ GET /api/v3/discovery/recommend/songs?csrf_token=
 | 歌单增删曲目 | — | `POST /api/playlist/manipulate/tracks` | ✅ | op=del/add, trackIds 必须 JSON 数组字符串 |
 | 创建歌单 | — | `POST /api/playlist/create` | ✅ | **必须带 `__csrf`**,否则恒 403 illegal request |
 | 删除歌单 | — | `POST /api/playlist/delete` | ✅ | 参数名 **`pid`**(非 `id`),也要 `__csrf` |
+| 重命名歌单 | — | `POST /api/playlist/update/name` | ✅ | 参数名 **`id`**(非 `pid`),也要 `__csrf`;405 操作频繁 |
 | 歌单概览 | — | `GET /api/v6/playlist/detail?id=` | 登录态更全 | trackIds 权威顺序 |
 | 歌曲批量 | `weapi/v3/song/detail` POST | `GET /api/song/detail?ids=` | 否 | ≤100/批 |
 | 歌手资料 | — | `GET /api/artist/head/info/get?id=` | 否 | |

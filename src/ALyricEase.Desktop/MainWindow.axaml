@@ -228,6 +228,10 @@
       <views:CreatePlaylistDialogView IsVisible="{Binding IsCreatePlaylistDialogOpen}"
                                       Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
 
+      <!-- 重命名歌单对话框(侧栏歌单子项右键;同层,声明在创建弹层之后) -->
+      <views:RenamePlaylistDialogView IsVisible="{Binding IsRenamePlaylistDialogOpen}"
+                                      Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
       <!-- 聚合歌单设置对话框(齿轮;同层最末 → 同时可见时盖在最上) -->
       <views:AggregateSettingsDialogView IsVisible="{Binding IsAggregateSettingsDialogOpen}"
                                          Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />

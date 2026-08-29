@@ -23,6 +23,9 @@ public sealed class AppStateStore
     /// <summary>用户创建的聚合歌单(持久化;顺序即侧栏显示顺序)。</summary>
     public List<AggregatePlaylist> AggregatePlaylists { get; } = new();
 
+    /// <summary>搜索历史(最新在前,SearchViewModel 维护与落盘)。</summary>
+    public List<string> SearchHistory { get; } = new();
+
     /// <summary>主窗口常规态宽度(DIP);null = 从未记录过。</summary>
     public double? WindowWidth { get; set; }
 
@@ -127,6 +130,11 @@ public sealed class AppStateStore
                     Members = members,
                 });
             }
+
+            SearchHistory.Clear();
+            foreach (var w in dto.SearchHistory ?? new List<string>())
+                if (!string.IsNullOrWhiteSpace(w))
+                    SearchHistory.Add(w.Trim());
         }
         catch
         {
@@ -158,6 +166,7 @@ public sealed class AppStateStore
                             .ToList(),
                     })
                     .ToList(),
+                SearchHistory = SearchHistory.ToList(),
                 WindowWidth = WindowWidth,
                 WindowHeight = WindowHeight,
                 WindowX = WindowX,

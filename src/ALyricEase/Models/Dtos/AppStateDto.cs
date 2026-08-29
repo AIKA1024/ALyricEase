@@ -20,6 +20,9 @@ public sealed class AppStateFile
     /// <summary>聚合歌单列表(用户经侧栏"+"创建;null = 从未创建过)。</summary>
     public List<AggregatePlaylistFile>? AggregatePlaylists { get; set; }
 
+    /// <summary>搜索历史(最新在前;null = 从未搜过)。</summary>
+    public List<string>? SearchHistory { get; set; }
+
     public double? WindowWidth { get; set; }
 
     public double? WindowHeight { get; set; }

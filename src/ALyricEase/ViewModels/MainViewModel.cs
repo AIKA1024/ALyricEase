@@ -257,6 +257,12 @@ public sealed partial class MainViewModel : ViewModelBase
         if (value == "Recommend")
             _ = Recommend.EnsureLoadedAsync();
 
+        // 经导航菜单/搜索图标重新进入搜索页时回到登录页(单例 VM 的结果状态不跨导航保留,
+        // 对齐原版 Frame:菜单导航到 Search 落的是 SearchView 登录页);
+        // 页面栈返回(_isGoingBack,如 结果页下钻歌手后 ←)则保留结果上下文
+        if (value == "Search" && !_isGoingBack)
+            Search.ResetToLanding();
+
         if (value == "Favorites")
             _ = _playlist.EnsureLoadedAsync(); // 已存 MUSIC_U 则恢复并打开“我喜欢的音乐”
 
@@ -411,6 +417,12 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void GoBack()
     {
+        // 搜索页内层级返回:结果页 ← 先回登录页(标题栏 ←),登录页 ← 才弹页面栈
+        if (ActivePage == "Search" && Search.HasSearched)
+        {
+            Search.BackToLandingCommand.Execute(null);
+            return;
+        }
         if (_navigationHistory.Count == 0) return;
         IsNavigationDrawerOpen = false;
         _isGoingBack = true;
@@ -484,6 +496,13 @@ public sealed partial class MainViewModel : ViewModelBase
         if (IsNavigationDrawerOpen)
         {
             CloseNavigationDrawerCommand.Execute(null);
+            return true;
+        }
+
+        // 搜索页内层级返回:结果页先回登录页,登录页才真正弹页面栈(原版 Frame 中两页同属搜索)
+        if (ActivePage == "Search" && Search.HasSearched)
+        {
+            Search.BackToLandingCommand.Execute(null);
             return true;
         }
 

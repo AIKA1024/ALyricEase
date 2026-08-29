@@ -122,6 +122,20 @@ public static class Program
             return;
         }
 
+        // TEMP-DIAG:搜索页导航行为验证(返回/重进/下钻三场景)
+        if (args.Length > 0 && args[0] == "--searchnav")
+        {
+            SearchNavProbe.Run();
+            return;
+        }
+
+        // TEMP-DIAG:搜索页改版渲染探针(落地页两态 + 结果页,输出临时 PNG)
+        if (args.Length > 0 && args[0] == "--searchpage")
+        {
+            SearchPageProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:真实 MainWindow.axaml 解析验证
         if (args.Length > 0 && args[0] == "--realwin")
         {

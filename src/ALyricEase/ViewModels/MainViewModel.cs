@@ -39,6 +39,7 @@ public sealed partial class MainViewModel : ViewModelBase
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
         CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
         RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed);
+        DeletePlaylistDialog = new DeletePlaylistDialogViewModel(playlist, OnDeletePlaylistConfirmed);
         // 折叠状态必须先于首次 RebuildShellNavigation 恢复(静态分组头实例随即被导航渲染消费)
         NetEasePlaylistsHeader.IsExpanded = appState.IsNetEaseGroupExpanded;
         QqPlaylistsHeader.IsExpanded = appState.IsQqGroupExpanded;
@@ -74,6 +75,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>重命名歌单对话框 VM(宿主绑定 RenamePlaylistDialogView;打开前按目标歌单 Refresh)。</summary>
     public RenamePlaylistDialogViewModel RenamePlaylistDialog { get; }
+
+    /// <summary>删除歌单确认对话框 VM(宿主绑定 DeletePlaylistDialogView;打开前按目标歌单 Refresh)。</summary>
+    public DeletePlaylistDialogViewModel DeletePlaylistDialog { get; }
 
     public PlaceholderViewModel Placeholder { get; } = new();
 
@@ -185,9 +189,18 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>预留给后续 Android/触控抽屉的状态；当前小尺寸仍遵循原版图标栏。</summary>
     [ObservableProperty] private bool _isNavigationDrawerOpen;
 
-    private readonly Stack<string> _navigationHistory = new();
-    private string _lastPage = "Recommend";
+    /// <summary>导航历史不能只记 ActivePage：所有歌单详情都复用 Favorites，
+    /// 在歌单之间切换时页面键不会变化。这里同时保存具体歌单/聚合歌单与选中项。</summary>
+    private sealed record NavigationEntry(
+        string Page,
+        string? SelectedNavKey,
+        PlaylistItemViewModel? Playlist,
+        Models.AggregatePlaylist? Aggregate);
+
+    private readonly Stack<NavigationEntry> _navigationHistory = new();
     private bool _isGoingBack;
+    private bool _selectionNavigationInProgress;
+    private bool _suppressSelectedNavNavigation;
 
     /// <summary>页面切换动画方向:返回(true)时反向滑动(新页从左进),前进(false)从右进。
     /// 绑定 TransitioningContentControl.IsTransitionReversed。</summary>
@@ -211,13 +224,17 @@ public sealed partial class MainViewModel : ViewModelBase
         _ => Placeholder,
     };
 
+    partial void OnActivePageChanging(string? oldValue, string newValue)
+    {
+        if (!_isGoingBack && !_selectionNavigationInProgress
+            && !string.Equals(oldValue, newValue, StringComparison.Ordinal))
+            PushCurrentNavigation();
+    }
+
     partial void OnActivePageChanged(string value)
     {
         // 返回时反向滑动(GoBack 期间 _isGoingBack=true),前进正向
         IsTransitionReversed = _isGoingBack;
-        if (!_isGoingBack && !string.Equals(_lastPage, value, StringComparison.Ordinal))
-            _navigationHistory.Push(_lastPage);
-        _lastPage = value;
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(CurrentContent));
 
@@ -246,10 +263,11 @@ public sealed partial class MainViewModel : ViewModelBase
         // 从搜索/占位页切回导航项时同步选中;非导航页(搜索/账号/设置)清除选中。
         // 打开具体歌单时 ActivePage 也是 "Favorites",但 SelectedNav 当前是歌单子项,
         // 不能把它重置成“我的收藏”,否则歌单项选中样式会消失。
-        if (value == "Favorites" && SelectedNav is { Playlist: not null })
+        if (value == "Favorites" && SelectedNav is { Playlist: not null } or { Aggregate: not null })
             return;
 
-        SelectedNav = IsNavItem(value) ? ShellNavItems.FirstOrDefault(n => n.Key == value) : null;
+        SetSelectedNavWithoutNavigation(
+            IsNavItem(value) ? ShellNavItems.FirstOrDefault(n => n.Key == value) : null);
         OnPropertyChanged(nameof(CurrentPageTitle));
     }
 
@@ -341,34 +359,48 @@ public sealed partial class MainViewModel : ViewModelBase
     /// 按下选中,侧栏由 NavListTapBehavior 延迟到点击(Tapped)再驱动选中(此前试过
     /// InputElement.IsHoldWithMouseEnabled,因"特定导航顺序下歌单子项选中样式不刷新"被关闭),
     /// 触发时机对齐原版:按下不导航、拖走松开不选中、点击在项上才导航。</summary>
+    partial void OnSelectedNavChanging(NavItemViewModel? oldValue, NavItemViewModel? newValue)
+    {
+        if (_isGoingBack || _suppressSelectedNavNavigation
+            || newValue is null || newValue.IsHeader || ReferenceEquals(oldValue, newValue))
+            return;
+
+        // 必须在属性真正换成新项之前截图，才能保留旧歌单详情。
+        _selectionNavigationInProgress = true;
+        PushCurrentNavigation();
+    }
+
     partial void OnSelectedNavChanged(NavItemViewModel? value)
     {
-        if (value is null || value.IsHeader) return;
-        OnPropertyChanged(nameof(CurrentPageTitle));
-        // 中/小屏抽屉内点击导航项后自动收起(原版 NavigationView Compact/Minimal 语义:选中即收起抽屉)
-        IsNavigationDrawerOpen = false;
-        if (value.Aggregate is { } aggregate)
+        if (_suppressSelectedNavNavigation || value is null || value.IsHeader) return;
+        try
         {
-            // 聚合歌单:合并各成员歌单曲目展示(复用歌单详情页)
-            ActivePage = "Favorites";
-            Playlist.OpenAggregateCommand.Execute(aggregate);
-            SelectedNav = value;
-            return;
-        }
-        if (value.Playlist is { } playlist)
-        {
-            // 按 Playlist.Source 路由:QQ 歌单走一次拉全量,网易云维持 trackIds 增量加载
-            if (playlist.Playlist.Source == MusicSource.QQ)
-                OpenShellQqPlaylistCommand.Execute(playlist);
-            else
-                OpenShellPlaylistCommand.Execute(playlist);
-            // OpenShellPlaylist 会把 ActivePage 设为 “Favorites”,
-            // 这里再强制把选中项设回歌单子项,防止被”我的收藏”同步逻辑覆盖。
-            SelectedNav = value;
-            return;
-        }
+            OnPropertyChanged(nameof(CurrentPageTitle));
+            // 中/小屏抽屉内点击导航项后自动收起(原版 NavigationView Compact/Minimal 语义:选中即收起抽屉)
+            IsNavigationDrawerOpen = false;
+            if (value.Aggregate is { } aggregate)
+            {
+                // 聚合歌单:合并各成员歌单曲目展示(复用歌单详情页)
+                ActivePage = "Favorites";
+                Playlist.OpenAggregateCommand.Execute(aggregate);
+                return;
+            }
+            if (value.Playlist is { } playlist)
+            {
+                // 按 Playlist.Source 路由:QQ 歌单走一次拉全量,网易云维持 trackIds 增量加载
+                if (playlist.Playlist.Source == MusicSource.QQ)
+                    OpenShellQqPlaylistCommand.Execute(playlist);
+                else
+                    OpenShellPlaylistCommand.Execute(playlist);
+                return;
+            }
 
-        ActivePage = value.Key;
+            ActivePage = value.Key;
+        }
+        finally
+        {
+            _selectionNavigationInProgress = false;
+        }
     }
 
     public bool CanGoBack => _navigationHistory.Count > 0;
@@ -381,7 +413,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _isGoingBack = true;
         try
         {
-            ActivePage = _navigationHistory.Pop();
+            RestoreNavigation(_navigationHistory.Pop());
         }
         finally
         {
@@ -427,6 +459,12 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
+        if (IsDeletePlaylistDialogOpen)
+        {
+            CloseDeletePlaylistDialogCommand.Execute(null);
+            return true;
+        }
+
         // 正在播放页的歌词/播放列表面板先于覆盖层本身收起,与桌面端 Esc 的语义一致
         if (NowPlayingPanel != NowPlayingPanel.None)
         {
@@ -452,7 +490,70 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
+        // 防御性兜底：只要视觉上不在首页，就绝不能因历史缺失直接退出界面。
+        // 正常导航都会命中上面的历史；该分支覆盖恢复状态或后续新增页面漏记历史的情况。
+        if (!string.Equals(ActivePage, "Recommend", StringComparison.Ordinal))
+        {
+            _isGoingBack = true;
+            try
+            {
+                ActivePage = "Recommend";
+                SetSelectedNavWithoutNavigation(ShellNavItems.FirstOrDefault(n => n.Key == "Recommend"));
+            }
+            finally
+            {
+                _isGoingBack = false;
+            }
+            return true;
+        }
+
         return false;
+    }
+
+    private void PushCurrentNavigation()
+    {
+        _navigationHistory.Push(new NavigationEntry(
+            ActivePage,
+            SelectedNav?.Key,
+            ActivePage == "Favorites" ? Playlist.SelectedPlaylist : null,
+            ActivePage == "Favorites" ? Playlist.CurrentAggregate : null));
+        OnPropertyChanged(nameof(CanGoBack));
+    }
+
+    private void RestoreNavigation(NavigationEntry entry)
+    {
+        ActivePage = entry.Page;
+        SetSelectedNavWithoutNavigation(
+            entry.SelectedNavKey is null
+                ? null
+                : ShellNavItems.FirstOrDefault(n => n.Key == entry.SelectedNavKey));
+
+        if (entry.Page != "Favorites") return;
+        if (entry.Aggregate is not null)
+        {
+            Playlist.OpenAggregateCommand.Execute(entry.Aggregate);
+            return;
+        }
+
+        if (entry.Playlist is null) return;
+        if (entry.Playlist.Playlist.Source == MusicSource.QQ)
+            Playlist.OpenQqPlaylistCommand.Execute(entry.Playlist);
+        else
+            Playlist.OpenPlaylistCommand.Execute(entry.Playlist);
+    }
+
+    private void SetSelectedNavWithoutNavigation(NavItemViewModel? value)
+    {
+        _suppressSelectedNavNavigation = true;
+        try
+        {
+            SelectedNav = value;
+            OnPropertyChanged(nameof(CurrentPageTitle));
+        }
+        finally
+        {
+            _suppressSelectedNavNavigation = false;
+        }
     }
 
     /// <summary>内容区右上搜索图标。</summary>
@@ -613,6 +714,30 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         IsRenamePlaylistDialogOpen = false;
         _ = _playlist.RefreshAfterRenameAsync(item);
+    }
+
+    // ---- 删除歌单对话框 ----
+
+    /// <summary>删除歌单确认弹窗状态(WinUI3 ContentDialog 式窗口内弹层,宿主 MainWindow 绑定)。</summary>
+    [ObservableProperty] private bool _isDeletePlaylistDialogOpen;
+
+    /// <summary>打开删除歌单确认对话框(侧栏歌单子项右键):红心集合不可删
+    /// (菜单已隐藏,此处双保险),收藏的非本人歌单由服务端拒绝。</summary>
+    [RelayCommand]
+    private void OpenDeletePlaylistDialog(PlaylistItemViewModel? item)
+    {
+        if (item is null || _playlist.IsLikedPlaylist(item.Playlist)) return;
+        DeletePlaylistDialog.Refresh(item);
+        IsDeletePlaylistDialogOpen = true;
+    }
+
+    [RelayCommand] private void CloseDeletePlaylistDialog() => IsDeletePlaylistDialogOpen = false;
+
+    /// <summary>删除成功回调:关弹窗,后台刷新对应侧栏分组;被删歌单若正打开,详情页回占位态。</summary>
+    private void OnDeletePlaylistConfirmed(PlaylistItemViewModel item)
+    {
+        IsDeletePlaylistDialogOpen = false;
+        _ = _playlist.RefreshAfterDeleteAsync(item);
     }
 
     /// <summary>创建成功回调:关弹窗,后台刷新侧栏歌单分组并打开新歌单(复用歌单详情页)。</summary>

@@ -556,7 +556,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             ? _qqApi.RenamePlaylistAsync(item.Playlist, newName)
             : _api.RenamePlaylistAsync(item.Playlist, newName);
 
-    /// <summary>该歌单是否为红心集合("我喜欢"):红心集合不允许重命名,右键菜单据此隐藏。
+    /// <summary>删除自己创建的歌单(侧栏右键,确认弹窗后调用):按歌单音源路由到对应客户端。
+    /// 成功后由宿主刷新侧栏分组(RefreshAfterDeleteAsync);失败抛 ApiException(对话框内呈现)。</summary>
+    public Task DeletePlaylistAsync(PlaylistItemViewModel item)
+        => item.Playlist.Source == MusicSource.QQ
+            ? _qqApi.DeletePlaylistAsync(item.Playlist)
+            : _api.DeletePlaylistAsync(item.Playlist);
+
+    /// <summary>该歌单是否为红心集合("我喜欢"):红心集合不允许重命名/删除,右键菜单据此隐藏。
     /// QQ 按资产目录 id(201)识别,网易云按拉列表时定位到的喜欢集合歌单 id。</summary>
     public bool IsLikedPlaylist(Playlist playlist)
         => playlist.Source == MusicSource.QQ
@@ -582,6 +589,33 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             SelectedPlaylist = fresh;
             PlaylistTitle = fresh.Name;
         }
+    }
+
+    /// <summary>删除成功后刷新对应侧栏分组;若被删歌单正作为详情页打开,清空详情回到
+    /// "请选择歌单"占位态(自增加载代次使在途曲目加载作废)。</summary>
+    public async Task RefreshAfterDeleteAsync(PlaylistItemViewModel deleted)
+    {
+        var wasOpen = ReferenceEquals(SelectedPlaylist, deleted);
+        if (deleted.Playlist.Source == MusicSource.QQ)
+            await ReloadQqPlaylistsAsync();
+        else
+            await ReloadNetEasePlaylistsAsync();
+
+        if (!wasOpen) return;
+        _loadGeneration++;
+        _isCloud = false;
+        _currentAggregate = null;
+        IsAggregate = false;
+        SelectedPlaylist = null;
+        PlaylistTitle = "";
+        CreatorName = "";
+        Tracks.Clear();
+        _trackIds = new List<long>();
+        _known.Clear();
+        _queueSongs.Clear();
+        _materialized = 0;
+        IsBusy = false;
+        Message = null;
     }
 
     /// <summary>重新拉取网易云用户歌单(创建/删除歌单后刷新侧栏;静默失败,保底不清空现列表)。</summary>

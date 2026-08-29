@@ -416,9 +416,14 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         };
     }
 
-    /// <summary>删除自己创建的歌单:PlaylistBaseWrite/DelPlaylist(param {dirId})。
+    /// <summary>删除歌单(IUserMusicApi):QQ 用资产目录 dirId(列表侧值,新建歌单为小序号;
+    /// 收藏歌单无 dirId 时以 tid 兜底,服务端会拒绝非本人歌单)。</summary>
+    public Task DeletePlaylistAsync(Playlist playlist, CancellationToken ct = default)
+        => DeletePlaylistAsync(playlist.DirId != 0 ? playlist.DirId : playlist.Id, ct);
+
+    /// <summary>删除自己创建的歌单:PlaylistBaseWrite/DelPlaylist(param {dirId}),ag-1 加密通道。
     /// 参数必须是资产目录 dirId(创建响应/用户歌单列表返回的那个;新建歌单是小序号,未必与
-    /// tid 一致)。传 tid 不保证命中。UI 暂未接入,探针清理用。失败抛 ApiException。</summary>
+    /// tid 一致)。传 tid 不保证命中。失败抛 ApiException。</summary>
     public Task DeletePlaylistAsync(long dirId, CancellationToken ct = default)
     {
         if (!IsLoggedIn)

@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
@@ -57,6 +58,12 @@ public partial class NavigationPaneView : UserControl
         var copy = new MenuItem { Header = "复制链接" };
         copy.Click += (_, _) => _ = ClipboardService.TryCopyTextAsync(PlaylistShareLinks.For(playlist));
         menu.Items.Add(copy);
+
+        // 删除为破坏性操作:红色 + 分隔线隔开,且必须经确认弹窗
+        menu.Items.Add(new Separator());
+        var delete = new MenuItem { Header = "删除歌单", Foreground = new SolidColorBrush(Color.Parse("#E74C3C")) };
+        delete.Click += (_, _) => vm.OpenDeletePlaylistDialogCommand.Execute(item);
+        menu.Items.Add(delete);
 
         menu.ShowAt(row, true);
         e.Handled = true;

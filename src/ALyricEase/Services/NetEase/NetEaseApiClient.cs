@@ -679,6 +679,10 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         }
     }
 
+    /// <summary>删除歌单(IUserMusicApi):网易云用歌单 id。</summary>
+    public Task DeletePlaylistAsync(Playlist playlist, CancellationToken ct = default)
+        => DeletePlaylistAsync(playlist.Id, ct);
+
     /// <summary>删除自己创建的歌单(需登录):通道策略同创建(weapi 优先,被拦回落明文)。
     /// ⚠️ 参数名两边不同,是历史上删除一直失败的原因之一:
     /// 明文 /api/playlist/delete 只认 <c>pid</c>,传 <c>id</c> 恒返回 400「请求参数错误」(2026-08 实测);

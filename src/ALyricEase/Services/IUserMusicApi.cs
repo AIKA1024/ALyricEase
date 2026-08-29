@@ -28,6 +28,11 @@ public interface IUserMusicApi : IMusicApi
     /// 红心集合不允许重命名(UI 层隐藏入口);非本人歌单由服务端拒绝。失败抛 ApiException。</summary>
     Task RenamePlaylistAsync(Playlist playlist, string newName, CancellationToken ct = default);
 
+    /// <summary>删除自己创建的歌单(侧栏右键,UI 需确认弹窗)。网易云走 /api/playlist/delete(用 playlist.Id);
+    /// QQ 走 ag-1 加密通道 PlaylistBaseWrite/DelPlaylist(用 playlist.DirId 资产目录 id)。
+    /// 红心集合不可删(UI 层隐藏入口);收藏的非本人歌单由服务端拒绝。失败抛 ApiException。</summary>
+    Task DeletePlaylistAsync(Playlist playlist, CancellationToken ct = default);
+
     /// <summary>当前登录态能否执行红心操作(未登录/无法定位喜欢集合时为 false,UI 应引导登录)。</summary>
     bool CanToggleLike { get; }
 

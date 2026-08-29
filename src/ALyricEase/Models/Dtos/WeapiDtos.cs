@@ -16,6 +16,79 @@ public sealed record SearchResult
     [JsonPropertyName("songs")] public List<SearchSong>? Songs { get; init; }
 
     [JsonPropertyName("songCount")] public int SongCount { get; init; }
+
+    // ---- 多类型搜索(cloudsearch type=10/100/1000/1002;单请求只有对应一个列表非空) ----
+
+    [JsonPropertyName("albums")] public List<SearchAlbumItemDto>? Albums { get; init; }
+
+    [JsonPropertyName("artists")] public List<SearchArtistItemDto>? Artists { get; init; }
+
+    [JsonPropertyName("playlists")] public List<SearchPlaylistItemDto>? Playlists { get; init; }
+
+    [JsonPropertyName("userprofiles")] public List<SearchUserItemDto>? Userprofiles { get; init; }
+}
+
+/// <summary>type=10 专辑条目(publishTime 为毫秒时间戳)。</summary>
+public sealed record SearchAlbumItemDto
+{
+    public long Id { get; init; }
+
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("picUrl")] public string PicUrl { get; init; } = "";
+
+    [JsonPropertyName("publishTime")] public long PublishTimeMs { get; init; }
+
+    [JsonPropertyName("songCount")] public int SongCount { get; init; }
+
+    [JsonPropertyName("artist")] public SearchArtist? Artist { get; init; }
+}
+
+/// <summary>type=100 歌手条目(img1v1Url 为方形头像;alias 为别名列表)。</summary>
+public sealed record SearchArtistItemDto
+{
+    public long Id { get; init; }
+
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("img1v1Url")] public string Img1v1Url { get; init; } = "";
+
+    [JsonPropertyName("picUrl")] public string PicUrl { get; init; } = "";
+
+    [JsonPropertyName("alias")] public List<string>? Alias { get; init; }
+}
+
+/// <summary>type=1000 歌单条目(coverImgUrl 可能为 null,须回退 picUrl)。</summary>
+public sealed record SearchPlaylistItemDto
+{
+    public long Id { get; init; }
+
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("coverImgUrl")] public string? CoverImgUrl { get; init; }
+
+    [JsonPropertyName("picUrl")] public string? PicUrl { get; init; }
+
+    [JsonPropertyName("trackCount")] public int TrackCount { get; init; }
+
+    [JsonPropertyName("creator")] public SearchCreatorDto? Creator { get; init; }
+}
+
+public sealed record SearchCreatorDto
+{
+    [JsonPropertyName("nickname")] public string Nickname { get; init; } = "";
+}
+
+/// <summary>type=1002 用户条目。</summary>
+public sealed record SearchUserItemDto
+{
+    [JsonPropertyName("userId")] public long UserId { get; init; }
+
+    [JsonPropertyName("nickname")] public string Nickname { get; init; } = "";
+
+    [JsonPropertyName("avatarUrl")] public string AvatarUrl { get; init; } = "";
+
+    [JsonPropertyName("signature")] public string Signature { get; init; } = "";
 }
 
 /// <summary>搜索接口返回的单曲(ar/al 为搜索接口字段名;v3/song/detail 是 artists/album)。</summary>

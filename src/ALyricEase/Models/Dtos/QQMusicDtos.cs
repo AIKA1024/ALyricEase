@@ -573,3 +573,56 @@ public sealed record QQVipIdentityDto
 
     [JsonPropertyName("HugeVip")] public int HugeVip { get; init; }
 }
+
+
+// ---------- musicu.fcg music.search.SearchCgiService(搜索歌单) ----------
+
+/// <summary>musicu 复合响应外壳(req_1 节点)。</summary>
+public sealed record QQMusicuSearchPlaylistResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_1")] public QQMusicuSearchNode? Req1 { get; init; }
+}
+
+public sealed record QQMusicuSearchNode
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("data")] public QQMusicuSearchData? Data { get; init; }
+}
+
+public sealed record QQMusicuSearchData
+{
+    [JsonPropertyName("body")] public QQMusicuSearchBody? Body { get; init; }
+}
+
+public sealed record QQMusicuSearchBody
+{
+    /// <summary>search_type=3 返回的歌单容器(body.songlist.list)。</summary>
+    [JsonPropertyName("songlist")] public QQMusicuPlaylistContainer? Songlist { get; init; }
+}
+
+public sealed record QQMusicuPlaylistContainer
+{
+    [JsonPropertyName("list")] public List<QQMusicuPlaylistDto>? List { get; init; }
+}
+
+/// <summary>搜索歌单条目(dissid 上游回字符串)。</summary>
+public sealed record QQMusicuPlaylistDto
+{
+    [JsonPropertyName("dissid")] public string? DissId { get; init; }
+
+    [JsonPropertyName("dissname")] public string? DissName { get; init; }
+
+    [JsonPropertyName("imgurl")] public string? ImgUrl { get; init; }
+
+    [JsonPropertyName("song_count")] public int SongCount { get; init; }
+
+    [JsonPropertyName("creator")] public QQMusicuPlaylistCreatorDto? Creator { get; init; }
+}
+
+public sealed record QQMusicuPlaylistCreatorDto
+{
+    [JsonPropertyName("name")] public string? Name { get; init; }
+}

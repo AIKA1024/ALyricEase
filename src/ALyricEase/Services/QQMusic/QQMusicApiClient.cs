@@ -168,6 +168,92 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return resp.Data.Song.List.Select(MapTrack).ToList();
     }
 
+    /// <summary>多类型搜索:歌曲复用 client_search_cp;歌单走 musicu.fcg SearchCgiService。
+    /// client_search_cp 的专辑/歌手通道已废(实测 t=8/9 对热词恒空),musicu 匿名仅放行歌单,
+    /// 故本源只支持 全部(歌曲+歌单)/歌曲/歌单 三类,其余 kind 返回 null。</summary>
+    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
+    {
+        if (kind is SearchKind.Album or SearchKind.Artist or SearchKind.User)
+            return null;
+        var result = new SearchAllResult();
+        if (kind is SearchKind.All or SearchKind.Track)
+            result.Songs.AddRange(await SearchAsync(keyword, limit, 0, ct).ConfigureAwait(false));
+        if (kind is SearchKind.All or SearchKind.Playlist)
+        {
+            // All 页歌单路失败只空分区;歌单 Tab 失败整体抛给调用方
+            try
+            {
+                result.Playlists.AddRange(await SearchPlaylistsAsync(keyword, limit, ct).ConfigureAwait(false));
+            }
+            catch (ApiException)
+            {
+                if (kind == SearchKind.Playlist) throw;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>搜索歌单(musicu.fcg SearchCgiService,search_type=3;匿名可用)。
+    /// 注意:comm 版本必须用 ct=19/cv=1859(与网页端一致)——复用 PostMusicuAsync 的 ct=24/cv=4747474
+    /// 会得到 code=0 但全空列表(实测 2026-08),故此处在客户端外单独构造请求体。</summary>
+    private async Task<List<SearchPlaylistItem>> SearchPlaylistsAsync(string keyword, int limit, CancellationToken ct)
+    {
+        string json;
+        using (var ms = new MemoryStream())
+        {
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                w.WriteStartObject("comm");
+                w.WriteNumber("ct", 19);
+                w.WriteNumber("cv", 1859);
+                w.WriteString("uin", "");
+                w.WriteEndObject();
+                w.WriteStartObject("req_1");
+                w.WriteString("module", "music.search.SearchCgiService");
+                w.WriteString("method", "DoSearchForQQMusicDesktop");
+                w.WriteStartObject("param");
+                w.WriteNumber("search_type", 3);
+                w.WriteString("query", keyword);
+                w.WriteNumber("page_num", 1);
+                w.WriteNumber("num_per_page", limit);
+                w.WriteEndObject();
+                w.WriteEndObject();
+                w.WriteEndObject();
+            }
+            json = Encoding.UTF8.GetString(ms.ToArray());
+        }
+        using var httpReq = new HttpRequestMessage(HttpMethod.Post, MusicuUrl)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        httpReq.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/n/ryqq/search");
+        using var respMsg = await _http.SendAsync(httpReq, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(respMsg, ct).ConfigureAwait(false);
+        var respBody = await respMsg.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        using var doc = ParseJson(respBody);
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQMusicuSearchPlaylistResponse);
+        if (resp is null || resp.Code != 0)
+            throw new ApiException("搜索歌单失败", resp?.Code ?? -1);
+        if (resp.Req1 is not { Code: 0 })
+            throw new ApiException("搜索歌单失败", resp.Req1?.Code ?? -1);
+        var items = new List<SearchPlaylistItem>();
+        foreach (var p in resp.Req1.Data?.Body?.Songlist?.List ?? new List<QQMusicuPlaylistDto>())
+        {
+            if (!long.TryParse(p.DissId, out var tid)) continue; // dissid 上游为字符串
+            items.Add(new SearchPlaylistItem
+            {
+                Id = tid,
+                Name = p.DissName ?? "",
+                CoverUrl = p.ImgUrl ?? "",
+                Creator = p.Creator?.Name ?? "",
+                TrackCount = p.SongCount,
+                Source = MusicSource.QQ,
+            });
+        }
+        return items;
+    }
+
     /// <summary>播放地址:vkey.GetVkeyServer/CgiGetVkey。按档位取文件名前缀(M500=128k/M800=320k/F000=flac),
     /// 目标档拿不到 purl(VIP 或未登录)自动降级到 M500——与网易云 higher→standard 策略一致。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)

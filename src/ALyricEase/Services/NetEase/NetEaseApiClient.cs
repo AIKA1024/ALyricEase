@@ -344,6 +344,125 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return resp.Result.Songs.Select(MapSearchSong).ToList();
     }
 
+    /// <summary>多类型搜索(结果页分区/类型 Tab,对应原版 SearchResultView 的多类型模块)。
+    /// kind=All 并发拉五类(单曲/专辑/歌手/歌单/用户),单类失败只空该分区;其余 kind 只拉对应类型。
+    /// weapi cloudsearch 换 type 参数(1/10/100/1000/1002),被风控时回落明文 /api/cloudsearch/pc(结构一致)。</summary>
+    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
+    {
+        var result = new SearchAllResult();
+        if (kind == SearchKind.Track)
+        {
+            result.Songs.AddRange(await SearchAsync(keyword, limit, 0, ct).ConfigureAwait(false));
+            return result;
+        }
+
+        // All:并发拉五类,单路失败只空该分区;单类型 kind:只发对应请求,失败整体抛给调用方提示
+        var isAll = kind == SearchKind.All;
+        var songTask = WrapAsync(isAll, SearchAsync(keyword, limit, 0, ct));
+        var albumTask = KindTask(SearchKind.Album, 10);
+        var artistTask = KindTask(SearchKind.Artist, 100);
+        var playlistTask = KindTask(SearchKind.Playlist, 1000);
+        var userTask = KindTask(SearchKind.User, 1002);
+        await Task.WhenAll(songTask, albumTask, artistTask, playlistTask, userTask).ConfigureAwait(false);
+
+        result.Songs.AddRange(await songTask.ConfigureAwait(false));
+        if (albumTask.Result?.Result?.Albums is { } albums)
+            result.Albums.AddRange(albums.Select(MapAlbumItem));
+        if (artistTask.Result?.Result?.Artists is { } artists)
+            result.Artists.AddRange(artists.Select(MapArtistItem));
+        if (playlistTask.Result?.Result?.Playlists is { } playlists)
+            result.Playlists.AddRange(playlists.Select(MapPlaylistItem));
+        if (userTask.Result?.Result?.Userprofiles is { } users)
+            result.Users.AddRange(users.Select(MapUserItem));
+        return result;
+
+        // 不需要的类型直接以已完成任务短路;All 的分区失败按 null 处理(某类空了不影响整体)
+        Task<SearchResponse?> KindTask(SearchKind k, int type)
+        {
+            if (kind != SearchKind.All && kind != k)
+                return Task.FromResult<SearchResponse?>(null); // 非本类型,不发请求
+            return WrapAsync(isAll, TypedSearchAsync(keyword, type, limit, ct));
+        }
+
+        static async Task<T?> WrapAsync<T>(bool swallow, Task<T> task) where T : class
+        {
+            if (!swallow) return await task.ConfigureAwait(false);
+            try { return await task.ConfigureAwait(false); }
+            catch (ApiException) { return null; }
+        }
+    }
+
+    /// <summary>单类型搜索(weapi cloudsearch,风控回落明文 /api/cloudsearch/pc;失败抛 ApiException)。</summary>
+    private async Task<SearchResponse?> TypedSearchAsync(string keyword, int type, int limit, CancellationToken ct)
+    {
+        if (!_wafBlocked)
+        {
+            try
+            {
+                await EnsureAnonymousAsync(ct).ConfigureAwait(false);
+                var payload = new Dictionary<string, object?>
+                {
+                    ["s"] = keyword,
+                    ["type"] = type,
+                    ["limit"] = limit,
+                    ["offset"] = 0,
+                    ["csrf_token"] = "",
+                };
+                using var req = CreateWeapiRequest("weapi/cloudsearch/get/web", payload, includeRealIp: false);
+                using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+                return doc.RootElement.Deserialize(NetEaseJsonContext.Default.SearchResponse);
+            }
+            catch (ApiException ex) when (ex.Code == BlockedCode)
+            {
+                _wafBlocked = true; // 本网络加密通道被拦,后续直接走明文
+            }
+        }
+        var url = $"{BaseUrl}/api/cloudsearch/pc?s={Uri.EscapeDataString(keyword)}&type={type}&limit={limit}&offset=0";
+        using var plain = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(plain, includeRealIp: false);
+        using var plainDoc = await PostJsonAsync(plain, ct).ConfigureAwait(false);
+        return plainDoc.RootElement.Deserialize(NetEaseJsonContext.Default.SearchResponse);
+    }
+
+    private static SearchAlbumItem MapAlbumItem(SearchAlbumItemDto a) => new()
+    {
+        Id = a.Id,
+        Name = a.Name,
+        CoverUrl = a.PicUrl,
+        PublishDateText = a.PublishTimeMs > 0
+            ? DateTimeOffset.FromUnixTimeMilliseconds(a.PublishTimeMs).LocalDateTime.ToString("yyyy-M-d")
+            : "",
+        SongCount = a.SongCount,
+        ArtistName = a.Artist?.Name ?? "",
+        Source = MusicSource.NetEase,
+    };
+
+    private static SearchArtistItem MapArtistItem(SearchArtistItemDto a) => new()
+    {
+        Id = a.Id,
+        Name = a.Alias is { Count: > 0 } ? $"{a.Name}({string.Join("/", a.Alias)})" : a.Name,
+        AvatarUrl = a.Img1v1Url.Length > 0 ? a.Img1v1Url : a.PicUrl,
+        Source = MusicSource.NetEase,
+    };
+
+    private static SearchPlaylistItem MapPlaylistItem(SearchPlaylistItemDto p) => new()
+    {
+        Id = p.Id,
+        Name = p.Name,
+        CoverUrl = p.CoverImgUrl ?? p.PicUrl ?? "",
+        Creator = p.Creator?.Nickname ?? "",
+        TrackCount = p.TrackCount,
+        Source = MusicSource.NetEase,
+    };
+
+    private static SearchUserItem MapUserItem(SearchUserItemDto u) => new()
+    {
+        Id = u.UserId,
+        Name = u.Nickname,
+        AvatarUrl = u.AvatarUrl,
+        Signature = u.Signature,
+    };
+
     private async Task<LyricResult?> LyricLegacyAsync(long id, CancellationToken ct)
     {
         var url = $"{BaseUrl}/api/song/lyric?id={id}&lv=-1&kv=-1&tv=-1";

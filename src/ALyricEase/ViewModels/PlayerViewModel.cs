@@ -626,16 +626,23 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         _scrubbing = false;
 
-        if (CurrentSong is not null)
-        {
-            var ms = (long)Math.Round(positionMs);
-            PositionMs = ms;
-            ScrubPositionMs = ms;
-            _player.PositionMs = ms;
-            _seekPending = true;
-            _seekTarget = ms;
-            _ = ClearSeekPendingAfterTimeoutAsync();
-        }
+        SeekTo((long)Math.Round(positionMs));
+    }
+
+    /// <summary>跳到指定播放时间；供进度条、歌词点按等交互共用。</summary>
+    public void SeekTo(long positionMs)
+    {
+        if (CurrentSong is null) return;
+
+        var upperBound = DurationMs > 0 ? DurationMs : long.MaxValue;
+        var ms = Math.Clamp(positionMs, 0, upperBound);
+        PositionMs = ms;
+        ScrubPositionMs = ms;
+        _player.PositionMs = ms;
+        _lyric.UpdatePosition(ms);
+        _seekPending = true;
+        _seekTarget = ms;
+        _ = ClearSeekPendingAfterTimeoutAsync();
     }
 
     private async Task ClearSeekPendingAfterTimeoutAsync()

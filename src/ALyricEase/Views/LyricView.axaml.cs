@@ -1,7 +1,11 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using ALyricEase.Models;
+using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
@@ -12,6 +16,9 @@ namespace ALyricEase.Views;
 public partial class LyricView : UserControl
 {
     private int _scrollAnimationVersion;
+
+    /// <summary>用户点按一行歌词后，请求播放器跳到该行在实际播放时间轴上的位置。</summary>
+    public event EventHandler<LyricSeekRequestedEventArgs>? SeekRequested;
 
     /// <summary>歌词字号缩放系数(详情页字号档位 60%~150%,1 = 100%)。</summary>
     public static readonly StyledProperty<double> FontScaleProperty =
@@ -28,6 +35,12 @@ public partial class LyricView : UserControl
         InitializeComponent();
         // 虚拟化回收容器后类会丢,每次 realized 按当前距离重设
         LyricList.ContainerPrepared += OnContainerPrepared;
+        // ListBoxItem 会把首次点击标记为已处理（用于选中），仍需在同一次 Tap 中执行跳转。
+        LyricList.AddHandler(
+            InputElement.TappedEvent,
+            OnLyricListTapped,
+            RoutingStrategies.Bubble,
+            handledEventsToo: true);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -86,6 +99,20 @@ public partial class LyricView : UserControl
             ApplyProgressClasses(container, e.Index, LyricList.SelectedIndex);
     }
 
+    private void OnLyricListTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is not Visual source) return;
+
+        var container = source as ListBoxItem ?? source.FindAncestorOfType<ListBoxItem>();
+        if (container?.DataContext is not LyricLine line) return;
+
+        var positionMs = DataContext is LyricViewModel vm
+            ? vm.GetPlaybackPositionMs(line)
+            : Math.Max(0, line.TimeMs);
+        SeekRequested?.Invoke(this, new LyricSeekRequestedEventArgs(positionMs));
+        e.Handled = true;
+    }
+
     /// <summary>当前句变化后刷新所有已物化容器的方向性进度类。</summary>
     private void UpdateProgressClasses()
     {
@@ -102,4 +129,9 @@ public partial class LyricView : UserControl
         container.Classes.Set("below1", current >= 0 && index == current + 1);
         container.Classes.Set("below2", current >= 0 && index == current + 2);
     }
+}
+
+public sealed class LyricSeekRequestedEventArgs(long positionMs) : EventArgs
+{
+    public long PositionMs { get; } = positionMs;
 }

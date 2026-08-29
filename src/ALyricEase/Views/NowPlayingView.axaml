@@ -126,6 +126,13 @@
         <Style Selector="Button.queue-remove:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#33FFFFFF" />
         </Style>
+
+        <!-- 面板的初始隐藏态；实际 300ms 动画由代码统一提交到 Composition 层，
+             避免 IsVisible/Canvas 重排跳过隐式属性过渡。 -->
+        <Style Selector="Control.panel-surface">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+        </Style>
     </UserControl.Styles>
 
     <Grid Background="#FF000000">
@@ -143,14 +150,14 @@
              每个子元素通过 Composition Animation 动画 Translation,0.3s 平滑漂移到新位置。 -->
         <Canvas x:Name="DesktopCanvas" ClipToBounds="True">
             <!-- 封面:大屏/小屏无面板为大图居中;中屏无面板为居中中图;开面板缩为 60px 左上角迷你头 -->
-            <Border x:Name="Artwork" CornerRadius="16" ClipToBounds="True" Background="#22FFFFFF"
+            <Border x:Name="Artwork" Classes="bounds-animated" CornerRadius="16" ClipToBounds="True" Background="#22FFFFFF"
                     BoxShadow="0 10 50 #4D000000">
                 <Image Source="{Binding Player.Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
             </Border>
 
             <!-- 歌名/歌手:大/小屏无面板在封面下方左对齐;中屏无面板在窗口正上方(居中);
                  开面板在迷你封面右侧 -->
-            <StackPanel x:Name="InfoPanel" Spacing="4">
+            <StackPanel x:Name="InfoPanel" Classes="bounds-animated" Spacing="4">
                 <TextBlock x:Name="TitleText" Text="{Binding Player.Title}" FontSize="20" FontWeight="Bold" LetterSpacing="-0.2"
                            TextTrimming="CharacterEllipsis" Foreground="White" />
                 <TextBlock x:Name="ArtistText" Text="{Binding Player.Artist}" FontSize="16" TextTrimming="CharacterEllipsis" Foreground="#BFFFFFFF" />
@@ -165,7 +172,7 @@
             </Button>
 
             <!-- 进度条 + 两侧时间(参考 PlayerBarView 的自定义进度条,Pointer 事件直接驱动 ScrubPositionMs) -->
-            <Grid x:Name="ProgressArea" RowDefinitions="30,Auto">
+            <Grid x:Name="ProgressArea" Classes="layout-fade bounds-animated" RowDefinitions="30,Auto">
                 <Grid x:Name="ProgressRoot" Height="30" Background="#01FFFFFF"
                       IsVisible="{Binding Player.HasProgress}"
                       PointerPressed="OnProgressPointerPressed" PointerMoved="OnProgressPointerMoved"
@@ -188,11 +195,11 @@
             </Grid>
 
             <!-- 核心控制:上一曲/播放暂停/下一曲(各自独立定位,小屏无面板时隐藏上一曲) -->
-            <Button x:Name="PrevButton" Classes="player-button" Command="{Binding Player.PlayPreviousCommand}"
+            <Button x:Name="PrevButton" Classes="player-button layout-fade" Command="{Binding Player.PlayPreviousCommand}"
                     Width="50" Height="50" ToolTip.Tip="上一曲">
                 <TextBlock Text="{DynamicResource IconPrevious}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="White" />
             </Button>
-            <Button x:Name="PlayButton" Classes="player-button" Command="{Binding Player.TogglePlayPauseCommand}" Width="60" Height="60">
+            <Button x:Name="PlayButton" Classes="player-button layout-fade" Command="{Binding Player.TogglePlayPauseCommand}" Width="60" Height="60">
                 <Grid>
                     <TextBlock Text="{DynamicResource IconPause}" FontFamily="{DynamicResource LyricEaseIconsFilled}" FontSize="28" Foreground="White"
                                IsVisible="{Binding Player.ShowPauseIcon}" />
@@ -202,20 +209,20 @@
                                IsVisible="{Binding Player.ShowLoadingIcon}" />
                 </Grid>
             </Button>
-            <Button x:Name="NextButton" Classes="player-button" Command="{Binding Player.PlayNextCommand}"
+            <Button x:Name="NextButton" Classes="player-button layout-fade" Command="{Binding Player.PlayNextCommand}"
                     Width="50" Height="50" ToolTip.Tip="下一曲">
                 <TextBlock Text="{DynamicResource IconNext}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="White" />
             </Button>
 
             <!-- 红心:大屏/中屏在次级行居中;小屏无面板占据控制行左槽位;开面板隐藏 -->
-            <ToggleButton x:Name="LikeButton" Classes="le-like" Width="50" Height="50"
+            <ToggleButton x:Name="LikeButton" Classes="le-like layout-fade" Width="50" Height="50"
                           IsChecked="{Binding Player.IsCurrentLiked, Mode=OneWay}"
                           Command="{Binding Player.ToggleLikeCommand}" ToolTip.Tip="红心">
                 <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" />
             </ToggleButton>
 
             <!-- 播放模式:大屏/中屏在次级行左,弹出单选菜单;小屏隐藏 -->
-            <Button x:Name="ModeButton" Classes="player-button" Width="50" Height="50"
+            <Button x:Name="ModeButton" Classes="player-button layout-fade" Width="50" Height="50"
                     ToolTip.Tip="{Binding Player.PlaybackModeName}">
                 <TextBlock Text="{Binding Player.PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" Foreground="White" />
                 <Button.Flyout>
@@ -240,7 +247,7 @@
             </Button>
 
             <!-- 音量:大屏/中屏在次级行右;小屏无面板在底部行右;开面板隐藏 -->
-            <Button x:Name="VolumeButton" Classes="player-button" Width="50" Height="50" ToolTip.Tip="音量">
+            <Button x:Name="VolumeButton" Classes="player-button layout-fade" Width="50" Height="50" ToolTip.Tip="音量">
                 <TextBlock Text="{DynamicResource IconVolume}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="White" />
                 <Button.Flyout>
                     <Flyout Placement="Top">
@@ -272,39 +279,43 @@
             </ToggleButton>
 
             <!-- 歌词面板:大号歌词(距离渐变 + 上下淡出);右下翻译开关 + 字号菜单 -->
-            <Grid x:Name="LyricsPanel" IsVisible="{Binding ShowLyricsPanel}">
-                <views:LyricView Classes="detail" DataContext="{Binding Lyric}"
-                                 FontScale="{Binding LyricFontScale}" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                            Spacing="10" Margin="0,0,10,10">
-                    <ToggleButton Classes="le-toggle" Width="40" Height="40"
-                                  IsChecked="{Binding Lyric.ShowTranslation}">
-                        <TextBlock Text="{DynamicResource IconTranslation}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
-                    </ToggleButton>
-                    <Button Classes="le-panel-button" Width="40" Height="40">
-                        <TextBlock Text="{DynamicResource IconFontSize}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
-                        <Button.Flyout>
-                            <Flyout Placement="Top">
-                                <StackPanel Spacing="10" Margin="4">
-                                    <TextBlock Text="歌词字号" FontWeight="SemiBold" />
-                                    <ComboBox Width="200" SelectedIndex="{Binding Lyric.FontScaleIndex}">
-                                        <ComboBoxItem>自动</ComboBoxItem>
-                                        <ComboBoxItem>60%</ComboBoxItem>
-                                        <ComboBoxItem>80%</ComboBoxItem>
-                                        <ComboBoxItem>100%</ComboBoxItem>
-                                        <ComboBoxItem>120%</ComboBoxItem>
-                                        <ComboBoxItem>150%</ComboBoxItem>
-                                    </ComboBox>
-                                </StackPanel>
-                            </Flyout>
-                        </Button.Flyout>
-                    </Button>
-                </StackPanel>
+            <Grid x:Name="LyricsPanel" Classes="panel-surface" IsVisible="False">
+                <!-- 内容层单独做进退场位移，避免覆盖外层面板的响应式布局坐标。 -->
+                <Grid x:Name="LyricsPanelContent">
+                    <views:LyricView Classes="detail" DataContext="{Binding Lyric}" SeekRequested="OnLyricSeekRequested"
+                                     FontScale="{Binding LyricFontScale}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                Spacing="10" Margin="0,0,10,10">
+                        <ToggleButton Classes="le-toggle" Width="40" Height="40"
+                                      IsChecked="{Binding Lyric.ShowTranslation}">
+                            <TextBlock Text="{DynamicResource IconTranslation}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
+                        </ToggleButton>
+                        <Button Classes="le-panel-button" Width="40" Height="40">
+                            <TextBlock Text="{DynamicResource IconFontSize}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
+                            <Button.Flyout>
+                                <Flyout Placement="Top">
+                                    <StackPanel Spacing="10" Margin="4">
+                                        <TextBlock Text="歌词字号" FontWeight="SemiBold" />
+                                        <ComboBox Width="200" SelectedIndex="{Binding Lyric.FontScaleIndex}">
+                                            <ComboBoxItem>自动</ComboBoxItem>
+                                            <ComboBoxItem>60%</ComboBoxItem>
+                                            <ComboBoxItem>80%</ComboBoxItem>
+                                            <ComboBoxItem>100%</ComboBoxItem>
+                                            <ComboBoxItem>120%</ComboBoxItem>
+                                            <ComboBoxItem>150%</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+                    </StackPanel>
+                </Grid>
             </Grid>
 
             <!-- 播放列表面板:头部(接下来播放 + 播放来源) + 圆角边框列表(仿原版 PlaybackQueueListView) -->
-            <Grid x:Name="QueuePanel" IsVisible="{Binding ShowQueuePanel}">
-                <Grid RowDefinitions="Auto,*">
+            <Grid x:Name="QueuePanel" Classes="panel-surface" IsVisible="False">
+                <!-- 与歌词面板相同：外层负责定位，内容层负责 300ms 滑入/滑出。 -->
+                <Grid x:Name="QueuePanelContent" RowDefinitions="Auto,*">
                     <StackPanel Grid.Row="0" Spacing="10" Margin="0,21,0,14">
                         <TextBlock Text="接下来播放" FontSize="24" FontWeight="Bold" Foreground="White" />
                         <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding Player.HasQueueSource}">

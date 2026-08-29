@@ -90,6 +90,13 @@ public sealed partial class LyricViewModel : ViewModelBase
         if (idx != CurrentIndex) CurrentIndex = idx;
     }
 
+    /// <summary>把 LRC 行时间换算为播放器时间；与高亮查找使用相同的 offset 语义。</summary>
+    public long GetPlaybackPositionMs(LyricLine line)
+    {
+        var offsetMs = (long)(_doc?.Offset.TotalMilliseconds ?? 0);
+        return Math.Max(0, line.TimeMs - offsetMs);
+    }
+
     private void Reset()
     {
         _doc = null;

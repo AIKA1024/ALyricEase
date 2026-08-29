@@ -36,7 +36,11 @@ public partial class NowPlayingView : UserControl
   private MainViewModel? _vm;
   private bool _transitionsAttached;
   private bool _progressScrubbing;
+  private int _panelPresentationVersion;
   private readonly Dictionary<Control, Point> _positions = new();
+  private readonly Dictionary<Control, float> _opacityTargets = new();
+  private readonly Dictionary<Control, int> _opacityAnimationVersions = new();
+  private readonly Dictionary<Control, int> _sizeAnimationVersions = new();
 
   public NowPlayingView()
   {
@@ -67,6 +71,7 @@ public partial class NowPlayingView : UserControl
       _vm.Player.PropertyChanged += OnPlayerPropertyChanged;
       UpdateProgressBar();
     }
+    UpdatePanelPresentation(_vm?.NowPlayingPanel ?? NowPlayingPanel.None, animate: false);
     UpdateDesktopLayout();
   }
 
@@ -76,7 +81,10 @@ public partial class NowPlayingView : UserControl
     if (e.PropertyName is nameof(MainViewModel.ShowNowPlaying) && vm.ShowNowPlaying)
       Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Background);
     else if (e.PropertyName is nameof(MainViewModel.NowPlayingPanel))
+    {
       UpdateDesktopLayout(); // 面板开关 → 重算布局(控件漂移过去)
+      UpdatePanelPresentation(vm.NowPlayingPanel, animate: _transitionsAttached);
+    }
   }
 
   private void OnPlayerPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -136,6 +144,8 @@ public partial class NowPlayingView : UserControl
     var panelOpen = _vm is { NowPlayingPanel: not NowPlayingPanel.None };
 
     if (w >= 1200) LayoutLarge(w, h, panelOpen);
+    // 录屏中的 1093px 窗口：无面板仍是顶部信息的中屏布局；打开面板后则保留完整播放列并左右分栏。
+    else if (w >= 1000 && panelOpen) LayoutWidePanel(w, h);
     else if (w >= 700) LayoutMedium(w, h, panelOpen);
     else LayoutSmall(w, h, panelOpen);
 
@@ -221,6 +231,54 @@ public partial class NowPlayingView : UserControl
       SetVisibility(progress: false, prev: false, play: false, next: false, like: false, mode: false, volume: false,
         queueToggle: true);
     }
+  }
+
+  /// <summary>宽中屏(录屏 1093×1058)打开歌词/队列后的原版分栏：
+  /// 左侧播放列缩窄但保留全部控制，右侧面板占据剩余空间。</summary>
+  private void LayoutWidePanel(double w, double h)
+  {
+    var playerX = Math.Clamp(w * 0.025, 24, 40);
+    var playerW = Math.Clamp(w * 0.45, 420, 520);
+    var panelGap = Math.Clamp(w * 0.04, 36, 50);
+    var panelX = playerX + playerW + panelGap;
+    var panelRight = Math.Clamp(w * 0.035, 28, 44);
+
+    // 原版宽中屏的纵向节奏与窄屏播放列一致，所有控制锚定底部；
+    // 封面在播放列内居中，并为歌名区预留约 90px 的呼吸空间。
+    var togglesY = h - 62;
+    var secondaryY = togglesY - 94;
+    var transportY = secondaryY - 92;
+    var progressY = transportY - 86;
+    var infoY = progressY - 82;
+    var coverTop = Math.Clamp(h * 0.17, 130, 180);
+    var availableCover = Math.Max(260, infoY - coverTop - 94);
+    var cover = Math.Clamp(Math.Min(playerW * 0.75, availableCover), 260, 380);
+    var center = playerX + playerW / 2;
+
+    Artwork.CornerRadius = new CornerRadius(16);
+    SetRect(Artwork, center - cover / 2, coverTop, cover, cover);
+    SetRect(InfoPanel, playerX, infoY, playerW, 54);
+    SetRect(ProgressArea, playerX, progressY, playerW, 52);
+    MoveTo(PrevButton, center - 110, transportY + 5);
+    MoveTo(PlayButton, center - 30, transportY);
+    MoveTo(NextButton, center + 60, transportY + 5);
+    MoveTo(ModeButton, playerX, secondaryY);
+    MoveTo(LikeButton, center - 25, secondaryY);
+    MoveTo(VolumeButton, playerX + playerW - 50, secondaryY);
+    MoveTo(LyricsToggle, playerX, togglesY);
+    MoveTo(FullScreenToggle, center - 24, togglesY);
+    MoveTo(QueueToggle, playerX + playerW - 48, togglesY);
+
+    var panelTop = Math.Clamp(h * 0.095, 82, 106);
+    var panelW = Math.Max(300, w - panelX - panelRight);
+    var panelH = Math.Max(260, h - panelTop - 20);
+    SetRect(LyricsPanel, panelX, panelTop, panelW, panelH);
+    SetRect(QueuePanel, panelX, panelTop, panelW, panelH);
+
+    PlaceCollapseButton(w, topLeft: false);
+    SetInfoCentered(false);
+    SetVisibility(progress: true, prev: true, play: true, next: true, like: true, mode: true, volume: true,
+      queueToggle: true);
   }
 
   /// <summary>小屏(&lt;700,502x954 截图基准)。无面板:与大屏相同的完整控件栈,但各行横跨整列(边距 42),
@@ -318,14 +376,58 @@ public partial class NowPlayingView : UserControl
   private void SetVisibility(bool progress, bool prev, bool play, bool next, bool like, bool mode, bool volume,
     bool queueToggle)
   {
-    ProgressArea.IsVisible = progress;
-    PrevButton.IsVisible = prev;
-    PlayButton.IsVisible = play;
-    NextButton.IsVisible = next;
-    LikeButton.IsVisible = like;
-    ModeButton.IsVisible = mode;
-    VolumeButton.IsVisible = volume;
+    SetLayoutControlVisible(ProgressArea, progress);
+    SetLayoutControlVisible(PrevButton, prev);
+    SetLayoutControlVisible(PlayButton, play);
+    SetLayoutControlVisible(NextButton, next);
+    SetLayoutControlVisible(LikeButton, like);
+    SetLayoutControlVisible(ModeButton, mode);
+    SetLayoutControlVisible(VolumeButton, volume);
     QueueToggle.IsVisible = queueToggle;
+  }
+
+  private void SetLayoutControlVisible(Control control, bool visible)
+  {
+    // 不切 IsVisible，避免退出动画被立即裁掉；透明控件同时关闭命中测试。
+    control.IsHitTestVisible = visible;
+    AnimateOpacity(control, visible ? 1f : 0f);
+  }
+
+  /// <summary>歌词/队列面板使用常驻画布 + 300ms 交叉淡入淡出。
+  /// 退出面板延迟到动画完成后再折叠，快速连点时用版本号避免旧回调误隐藏新面板。</summary>
+  private void UpdatePanelPresentation(NowPlayingPanel panel, bool animate)
+  {
+    var version = ++_panelPresentationVersion;
+    SetPanelVisible(LyricsPanel, panel == NowPlayingPanel.Lyrics, version, animate);
+    SetPanelVisible(QueuePanel, panel == NowPlayingPanel.Queue, version, animate);
+  }
+
+  private void SetPanelVisible(Control control, bool visible, int version, bool animate)
+  {
+    if (visible)
+    {
+      control.IsVisible = true;
+      control.IsHitTestVisible = true;
+      AnimateOpacity(control, 1f, animate);
+      AnimatePanelSlide(GetPanelContent(control), entering: true, animate);
+      return;
+    }
+
+    control.IsHitTestVisible = false;
+    AnimateOpacity(control, 0f, animate);
+    AnimatePanelSlide(GetPanelContent(control), entering: false, animate);
+    if (!animate)
+    {
+      control.IsVisible = false;
+      return;
+    }
+
+    DispatcherTimer.RunOnce(() =>
+    {
+      if (version == _panelPresentationVersion
+          && _opacityTargets.GetValueOrDefault(control) <= 0)
+        control.IsVisible = false;
+    }, s_slideDuration);
   }
 
   // ── 定位与动画(Composition Animation) ─────────────────────────────────
@@ -366,11 +468,121 @@ public partial class NowPlayingView : UserControl
     _positions[control] = new Point(x, y);
   }
 
+  private Control GetPanelContent(Control panel)
+    => panel == LyricsPanel ? LyricsPanelContent : QueuePanelContent;
+
+  /// <summary>面板内容在自己的合成层做短距离纵向位移。外层面板仍由 MoveTo 定位，
+  /// 因而进退场动画不会覆盖响应式布局坐标，也不会把命中区域留在旧位置。</summary>
+  private void AnimatePanelSlide(Control content, bool entering, bool animate)
+  {
+    var visual = ElementComposition.GetElementVisual(content);
+    if (visual is null) return;
+
+    visual.StopAnimation("Translation");
+    var offset = new Vector3D(0, Math.Clamp(Bounds.Height * 0.065, 40, 68), 0);
+    var target = entering ? default : offset;
+    visual.Translation = target;
+    if (!_transitionsAttached || !animate) return;
+
+    var animation = visual.Compositor.CreateVector3DKeyFrameAnimation();
+    animation.Target = "Translation";
+    animation.Duration = s_slideDuration;
+    animation.InsertKeyFrame(0f, entering ? offset : default);
+    animation.InsertKeyFrame(1f, target, s_slideEase);
+    visual.StartAnimation("Translation", animation);
+  }
+
+  /// <summary>直接补间 Avalonia 的真实 Opacity 属性，动画结束时明确落到 0/1。
+  /// 这可以避免控件重排或视觉层重建后，旧的合成层透明度丢失而重新露出进度条。</summary>
+  private void AnimateOpacity(Control control, float target, bool animate = true)
+  {
+    var from = control.Opacity;
+    _opacityTargets[control] = target;
+    var version = _opacityAnimationVersions.GetValueOrDefault(control) + 1;
+    _opacityAnimationVersions[control] = version;
+
+    if (!_transitionsAttached || !animate || Math.Abs(from - target) < 0.001)
+    {
+      control.Opacity = target;
+      return;
+    }
+
+    if (TopLevel.GetTopLevel(this) is not { } topLevel)
+    {
+      control.Opacity = target;
+      return;
+    }
+
+    TimeSpan? startedAt = null;
+    Action<TimeSpan>? tick = null;
+    tick = now =>
+    {
+      if (_opacityAnimationVersions.GetValueOrDefault(control) != version) return;
+      startedAt ??= now;
+      var progress = Math.Clamp((now - startedAt.Value).TotalMilliseconds / s_slideDuration.TotalMilliseconds, 0, 1);
+      var eased = EaseOutCubic(progress);
+      control.Opacity = from + (target - from) * eased;
+      if (progress < 1)
+        topLevel.RequestAnimationFrame(tick!);
+      else
+        control.Opacity = target;
+    };
+    topLevel.RequestAnimationFrame(tick);
+  }
+
+  /// <summary>封面尺寸通过布局属性独立补间。不要再用 Composition Scale：Scale 会连同
+  /// Translation 一起变换，封面缩小时会把位移放大，视觉上就会从右下角飞向左上角。</summary>
+  private void SetArtworkSize(Size target)
+  {
+    var from = new Size(
+      double.IsNaN(Artwork.Width) ? Artwork.Bounds.Width : Artwork.Width,
+      double.IsNaN(Artwork.Height) ? Artwork.Bounds.Height : Artwork.Height);
+    var version = _sizeAnimationVersions.GetValueOrDefault(Artwork) + 1;
+    _sizeAnimationVersions[Artwork] = version;
+
+    if (!_transitionsAttached || from.Width <= 0 || from.Height <= 0
+        || (Math.Abs(from.Width - target.Width) < 0.5 && Math.Abs(from.Height - target.Height) < 0.5)
+        || TopLevel.GetTopLevel(this) is not { } topLevel)
+    {
+      Artwork.Width = target.Width;
+      Artwork.Height = target.Height;
+      return;
+    }
+
+    TimeSpan? startedAt = null;
+    Action<TimeSpan>? tick = null;
+    tick = now =>
+    {
+      if (_sizeAnimationVersions.GetValueOrDefault(Artwork) != version) return;
+      startedAt ??= now;
+      var progress = Math.Clamp((now - startedAt.Value).TotalMilliseconds / s_slideDuration.TotalMilliseconds, 0, 1);
+      var eased = EaseOutCubic(progress);
+      Artwork.Width = from.Width + (target.Width - from.Width) * eased;
+      Artwork.Height = from.Height + (target.Height - from.Height) * eased;
+      if (progress < 1)
+        topLevel.RequestAnimationFrame(tick!);
+      else
+      {
+        Artwork.Width = target.Width;
+        Artwork.Height = target.Height;
+      }
+    };
+    topLevel.RequestAnimationFrame(tick);
+  }
+
+  private static double EaseOutCubic(double progress) => 1 - Math.Pow(1 - progress, 3);
+
   private void SetRect(Control control, double x, double y, double w, double h)
   {
     // 防御:布局计算可能算出负尺寸(极小可用宽),Avalonia 的 Width/Height 不接受负值(抛 ArgumentException)
-    control.Width = Math.Max(0, w);
-    control.Height = Math.Max(0, h);
+    var newSize = new Size(Math.Max(0, w), Math.Max(0, h));
+    if (control == Artwork)
+      SetArtworkSize(newSize);
+    else
+    {
+      control.Width = newSize.Width;
+      control.Height = newSize.Height;
+    }
     MoveTo(control, x, y);
   }
 
@@ -441,6 +653,9 @@ public partial class NowPlayingView : UserControl
       e.Handled = true;
     }
   }
+
+  private void OnLyricSeekRequested(object? sender, LyricSeekRequestedEventArgs e)
+    => _vm?.Player.SeekTo(e.PositionMs);
 
   /// <summary>顶部拖拽条:按下并拖动时移动窗口(播放详情页盖住标题栏,靠这里拖)。</summary>
   private void OnTitleDragPressed(object? sender, PointerPressedEventArgs e)

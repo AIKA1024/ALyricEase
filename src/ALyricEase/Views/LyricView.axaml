@@ -22,7 +22,7 @@
         <!-- 详情页歌词面板模板(仿原版 PlaybackDetailView 歌词区):26 Bold 原文 + 18 翻译,
              字号随 FontScale 档位缩放;翻译行受"显示翻译"开关控制 -->
         <DataTemplate x:Key="DetailLyricItemTemplate" x:DataType="models:LyricLine">
-            <StackPanel Spacing="6">
+            <StackPanel>
                 <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap"
                            FontWeight="Bold" Foreground="#FFFFFFFF"
                            FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=26}" />
@@ -92,9 +92,13 @@
             </Setter>
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem">
-            <Setter Property="Padding" Value="10,12" />
+            <Setter Property="MinWidth" Value="100" />
+            <Setter Property="Padding" Value="10" />
             <Setter Property="Margin" Value="0,0" />
-            <Setter Property="RenderTransformOrigin" Value="0%,50%" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="RenderTransformOrigin" Value="0%,0%" />
             <Setter Property="Transitions">
                 <Transitions>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.5" />
@@ -135,6 +139,18 @@
             <Setter Property="Effect">
                 <BlurEffect Radius="0" />
             </Setter>
+        </Style>
+        <!-- 原版 Present 状态没有持久选中底色；压掉 Fluent ListBoxItem 的强调色背景，
+             仅在真实 pointerover/pressed 时显示交互底色。 -->
+        <Style Selector="views|LyricView.detail ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="views|LyricView.detail ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#33FFFFFF" />
+        </Style>
+        <Style Selector="views|LyricView.detail ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#66FFFFFF" />
         </Style>
     </UserControl.Styles>
     <Grid>

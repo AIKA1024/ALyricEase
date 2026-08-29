@@ -1,5 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:i="using:Avalonia.Xaml.Interactivity"
+        xmlns:behaviors="clr-namespace:ALyricEase.Infrastructure.Behaviors">
   <!-- WinUI/FluentAvalonia 风格滚动条(参考 amwx/FluentAvalonia 的 ScrollBarStyles/ScrollViewerStyles):
        12px 条,滑块 8px 居中于轨道(两侧各留 2px 缝隙),平时收成细线(scale 0.35 + 离边缘留缝),
        悬停展开全长轨道(含箭头区)与步进箭头;
@@ -355,4 +357,21 @@
     </Style>
   </ControlTheme>
   </Styles.Resources>
+
+  <!-- 平滑滚轮:默认挂给所有 ScrollViewer,页面里不必再逐个写 <i:Interaction.Behaviors>。
+       安全边界由行为自身保证(见 SmoothWheelScrollBehavior):
+       - 仅纵向接管;纵向 Disabled(横向区块)或内容未溢出时不接管,滚轮照常冒泡给外层容器;
+       - Ctrl 按下让位给 CtrlHorizontalWheelBehavior 等局部行为;
+       - 嵌套时内层优先,滚到尽头不消费(交给外层做链式滚动)。
+       优先级:元素上显式写的 <i:Interaction.Behaviors> 是 LocalValue,高于样式,不会被这里覆盖;
+       需要保留原生逐格滚动的容器加 Classes="native-scroll" 即可跳过。 -->
+  <Style Selector="ScrollViewer:not(.native-scroll)">
+    <Setter Property="(i:Interaction.Behaviors)">
+      <BehaviorCollectionTemplate>
+        <BehaviorCollection>
+          <behaviors:SmoothWheelScrollBehavior />
+        </BehaviorCollection>
+      </BehaviorCollectionTemplate>
+    </Setter>
+  </Style>
 </Styles>

@@ -4,8 +4,6 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
-             xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
-             xmlns:i="using:Avalonia.Xaml.Interactivity"
              x:DataType="vm:MainViewModel"
              mc:Ignorable="d"
              x:Class="ALyricEase.Views.AddAggregateDialogView">
@@ -64,9 +62,6 @@
                              Text="{Binding Name}" />
                     <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
-                        <i:Interaction.Behaviors>
-                            <b:SmoothWheelScrollBehavior />
-                        </i:Interaction.Behaviors>
                         <!-- 右侧 12 间距:滚动条浮在内容上,曲目数不被盖住 -->
                         <Border Padding="0,0,12,0">
                             <StackPanel Spacing="10">

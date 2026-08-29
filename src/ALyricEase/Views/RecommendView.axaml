@@ -127,9 +127,6 @@
       <TextBlock Text="个性推荐" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <i:Interaction.Behaviors>
-        <b:SmoothWheelScrollBehavior />
-      </i:Interaction.Behaviors>
       <StackPanel x:Name="PageContent" Spacing="34">
         <ItemsControl ItemsSource="{Binding Sections}">
           <ItemsControl.ItemTemplate>

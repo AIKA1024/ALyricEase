@@ -41,3 +41,35 @@ list.AddHandler(InputElement.PointerPressedEvent, OnPressed, RoutingStrategies.T
 ```
 
 在子控件模板内部处理之前拿到事件并吞掉(`PointerEntered/Exited` 是 Direct,没有这个玩法)。项目实例:`SmoothWheelScrollBehavior`(隧道接管滚轮做平滑滚动)、`CtrlHorizontalWheelBehavior`、上面的 `NavListTapBehavior`(隧道防按下选中 + Tapped 驱动动作)。
+
+## 用样式给控件"默认挂行为":BehaviorCollectionTemplate
+
+`<i:Interaction.Behaviors>` 是附加属性,可以在 Style 的 Setter 里赋值,
+用 `BehaviorCollectionTemplate` 让每个命中目标各自实例化一份集合:
+
+```xml
+<Style Selector="ScrollViewer:not(.native-scroll)">
+  <Setter Property="(i:Interaction.Behaviors)">
+    <BehaviorCollectionTemplate>
+      <BehaviorCollection>
+        <behaviors:SmoothWheelScrollBehavior />
+      </BehaviorCollection>
+    </BehaviorCollectionTemplate>
+  </Setter>
+</Style>
+```
+
+要点:
+
+- **不能直接挂到宿主控件上**。`Behavior<ScrollViewer>` 挂到 `ListBox` 会类型不匹配;
+  对 `ListBox`/`ComboBox` 这类模板里才有 `ScrollViewer` 的,用后代选择器 `ListBox ScrollViewer`
+  (或全局 `ScrollViewer`)命中内部容器。
+- **优先级**:元素上显式写的 `<i:Interaction.Behaviors>` 是 LocalValue,**高于**样式,
+  所以显式声明不会被全局样式覆盖;同一属性多个 Style 命中时只取优先级最高的那个,
+  不会出现"行为被添加两次"。
+- 行为只能靠"自身判断"保证无害(如 `SmoothWheelScrollBehavior` 纵向 Disabled 或内容未溢出时
+  不接管),因为样式会命中大量模板内控件(ComboBox 下拉、TextBox、Flyout 等)。
+  需要留原生行为的容器,用 `:not(.xxx)` 留一个 opt-out class。
+
+本项目落地:`Styles/Controls/Scrolling.axaml` 末尾的全局 `ScrollViewer` 样式,
+三个宿主(Desktop/Android/Headless)都通过 `StyleInclude` 引入该文件。

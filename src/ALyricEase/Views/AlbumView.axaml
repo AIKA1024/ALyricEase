@@ -3,8 +3,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="using:ALyricEase.Views"
-             xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
-             xmlns:i="using:Avalonia.Xaml.Interactivity"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:AlbumViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
@@ -14,9 +12,6 @@
       <TextBlock Text="专辑" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <i:Interaction.Behaviors>
-        <b:SmoothWheelScrollBehavior />
-      </i:Interaction.Behaviors>
       <StackPanel Margin="48,0,32,116" Spacing="0">
         <!-- 头部卡片(仿原版 AlbumDetailViewHeaderCard):300 高 + 260 封面 + 右下信息/按钮 -->
         <Border BorderBrush="{DynamicResource ListCardBorder}" BorderThickness="1"

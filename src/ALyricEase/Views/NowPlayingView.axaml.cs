@@ -28,6 +28,7 @@ public partial class NowPlayingView : UserControl
   // 大屏封面下方的控件栈高度:信息54+进度52+控制60+次级50+切换32 + 间距 22+18+14+16+24 = 342
   private const double BelowCoverStack = 342;
   private const double PanelGap = 50; // 大屏:播放列与右侧面板间距
+  private const double SmallSideMargin = 40;
 
   private static readonly TimeSpan s_slideDuration = TimeSpan.FromSeconds(0.3);
   private static readonly SplineEasing s_slideEase = new(0.215, 0.61, 0.355, 1); // 与主窗口覆盖层同曲线
@@ -290,8 +291,8 @@ public partial class NowPlayingView : UserControl
     {
       // 500×1000 原版实测基准:左右各 40、420px 正方形封面、封面顶 120；
       // 下方各行不是等距紧凑栈，而是 584/666/752/844/938 的节奏。
-      var rowX = 40.0;
-      var rowW = w - 80;
+      var rowX = SmallSideMargin;
+      var rowW = w - SmallSideMargin * 2;
       var togglesY = h - 62;
       var secondaryY = togglesY - 94;
       var transportY = secondaryY - 92;
@@ -327,7 +328,9 @@ public partial class NowPlayingView : UserControl
       var panelTop = 160.0;
       SetRect(LyricsPanel, 33, panelTop, w - 66, h - panelTop - 70);
       SetRect(QueuePanel, 33, panelTop, w - 66, h - panelTop - 70);
-      PlaceBottomToggles(42, w, h, queue: true);
+      // 底部三个切换按钮在开关面板前后必须保持同一坐标；否则 40→42 的
+      // 两像素差也会被 MoveTo 补间，看起来像按下后先外移再弹回来。
+      PlaceBottomToggles(SmallSideMargin, w, h, queue: true);
       SetVisibility(progress: false, prev: false, play: false, next: false, like: false, mode: false, volume: false,
         queueToggle: true);
     }
@@ -437,6 +440,14 @@ public partial class NowPlayingView : UserControl
     // RenderTransform 保留实际定位/命中测试;Composition Translation 只负责补间动画。
     var old = _positions.TryGetValue(control, out var p) ? p : new Point(x, y);
     control.RenderTransform = Translate(x, y);
+
+    // IsChecked/IsVisible 改变可能在同一轮布局中再次触发排版。目标坐标没变时
+    // 不要停止并重建 Translation 动画，否则按钮会在中途被吸回终点，形成回弹感。
+    if (Math.Abs(old.X - x) < 0.01 && Math.Abs(old.Y - y) < 0.01)
+    {
+      _positions[control] = new Point(x, y);
+      return;
+    }
 
     var visual = ElementComposition.GetElementVisual(control);
     if (visual is null)

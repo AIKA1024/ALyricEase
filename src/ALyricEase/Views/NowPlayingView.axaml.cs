@@ -67,6 +67,7 @@ public partial class NowPlayingView : UserControl
       _vm.Player.PropertyChanged += OnPlayerPropertyChanged;
       UpdateProgressBar();
     }
+    UpdateDesktopLayout();
   }
 
   private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -111,7 +112,7 @@ public partial class NowPlayingView : UserControl
 
   /// <summary>收起按钮:常规顶部居中;中屏无面板时信息区占窗口正上方,故挪到左上(原版行为)。</summary>
   private void PlaceCollapseButton(double w, bool topLeft)
-    => MoveTo(CollapseButton, topLeft ? 12 : w / 2 - 25, 16);
+    => MoveTo(CollapseButton, topLeft ? 12 : w / 2 - 25, 32);
 
   /// <summary>信息区文本对齐:中屏无面板时居中(窗口正上方),其余状态左对齐。</summary>
   private void SetInfoCentered(bool centered)
@@ -130,7 +131,9 @@ public partial class NowPlayingView : UserControl
     // 布局尚未就绪(或 Android 首次测量给极小值)时不排:后续 SizeChanged 会再触发。
     // 若在此处放过极小 w,LayoutSmall 的 rowW = w-84 会算出负数,Width 不接受负值直接抛异常。
     if (w < 60 || h <= 0) return;
-    var panelOpen = _vm?.NowPlayingPanel is not NowPlayingPanel.None;
+    // DataContext 尚未继承到时必须按“无面板”排版；nullable is-not 会把 null 误判为已打开，
+    // 导致首帧先落到迷你封面坐标，随后动画从错误起点飞入。
+    var panelOpen = _vm is { NowPlayingPanel: not NowPlayingPanel.None };
 
     if (w >= 1200) LayoutLarge(w, h, panelOpen);
     else if (w >= 700) LayoutMedium(w, h, panelOpen);
@@ -227,16 +230,18 @@ public partial class NowPlayingView : UserControl
   {
     if (!panelOpen)
     {
-      var rowX = 42.0;
-      var rowW = w - 84;
-      // 控件栈锚定底部(切换行底边距窗底 ~37);封面锚定 0.17h;封面→信息区间距吃掉剩余空间
-      var togglesY = h - 69;
-      var secondaryY = togglesY - 32 - 50;
-      var transportY = secondaryY - 24 - 60;
-      var progressY = transportY - 16 - 52;
-      var infoY = progressY - 32 - 54;
-      var coverTop = Math.Clamp(h * 0.17, 86, 165);
-      var cover = Math.Clamp(Math.Min(rowW * 0.75, h * 0.36), 160, Math.Max(160, infoY - coverTop - 20));
+      // 500×1000 原版实测基准:左右各 40、420px 正方形封面、封面顶 120；
+      // 下方各行不是等距紧凑栈，而是 584/666/752/844/938 的节奏。
+      var rowX = 40.0;
+      var rowW = w - 80;
+      var togglesY = h - 62;
+      var secondaryY = togglesY - 94;
+      var transportY = secondaryY - 92;
+      var progressY = transportY - 86;
+      var infoY = progressY - 82;
+      var coverTop = Math.Clamp(h * 0.12, 86, 120);
+      var availableCover = Math.Max(160, infoY - coverTop - 44);
+      var cover = Math.Clamp(Math.Min(rowW, availableCover), 160, 600);
       Artwork.CornerRadius = new CornerRadius(16);
       SetRect(Artwork, rowX + (rowW - cover) / 2, coverTop, cover, cover);
       var center = rowX + rowW / 2;

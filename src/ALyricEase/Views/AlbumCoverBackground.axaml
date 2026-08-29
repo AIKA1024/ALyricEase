@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="ALyricEase.Views.AlbumCoverBackground"
+             IsHitTestVisible="False">
+  <UserControl.Styles>
+    <Style Selector="Canvas.palette-layer">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.5" />
+        </Transitions>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 原版 AlbumCoverBackgroundControl 的 1000×1000 动画色层：
+       封面只负责取色，背景由柔化色团组成，最后统一压 40% 黑。 -->
+  <Grid ClipToBounds="True">
+    <Border x:Name="BaseLayer" Background="#FF111827">
+      <Border.Transitions>
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.5" />
+        </Transitions>
+      </Border.Transitions>
+    </Border>
+
+    <Viewbox Stretch="Fill" StretchDirection="Both"
+             HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+      <Grid Width="1000" Height="1000" ClipToBounds="True">
+        <Canvas x:Name="PaletteLayerA" Classes="palette-layer" Width="1000" Height="1000" Opacity="1">
+          <Ellipse x:Name="A0" Width="900" Height="900" Canvas.Left="-310" Canvas.Top="-330" />
+          <Ellipse x:Name="A1" Width="780" Height="780" Canvas.Left="520" Canvas.Top="-170" />
+          <Ellipse x:Name="A2" Width="930" Height="930" Canvas.Left="390" Canvas.Top="480" />
+          <Ellipse x:Name="A3" Width="820" Height="820" Canvas.Left="-300" Canvas.Top="520" />
+        </Canvas>
+        <Canvas x:Name="PaletteLayerB" Classes="palette-layer" Width="1000" Height="1000" Opacity="0">
+          <Ellipse x:Name="B0" Width="900" Height="900" Canvas.Left="-310" Canvas.Top="-330" />
+          <Ellipse x:Name="B1" Width="780" Height="780" Canvas.Left="520" Canvas.Top="-170" />
+          <Ellipse x:Name="B2" Width="930" Height="930" Canvas.Left="390" Canvas.Top="480" />
+          <Ellipse x:Name="B3" Width="820" Height="820" Canvas.Left="-300" Canvas.Top="520" />
+        </Canvas>
+      </Grid>
+    </Viewbox>
+
+    <Border Background="#66000000" />
+  </Grid>
+</UserControl>

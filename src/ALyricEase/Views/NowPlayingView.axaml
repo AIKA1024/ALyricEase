@@ -3,8 +3,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
               xmlns:infra="using:ALyricEase.Infrastructure"
-              xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
-              xmlns:i="using:Avalonia.Xaml.Interactivity"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:MainViewModel"
@@ -131,10 +129,9 @@
     </UserControl.Styles>
 
     <Grid Background="#FF000000">
-        <Image Source="{Binding Player.Cover}" Stretch="UniformToFill" Opacity="0.9">
-            <Image.Effect><BlurEffect Radius="100" /></Image.Effect>
-        </Image>
-        <Rectangle Fill="#CC000000" />
+        <!-- 原版不是把封面整张放大模糊，而是由 AlbumCoverBackgroundControl
+             根据封面代表色生成柔光色团并缓慢漂移。 -->
+        <views:AlbumCoverBackground Cover="{Binding Player.Cover}" />
 
         <!-- 顶部拖拽条:播放详情页盖住标题栏时,按住顶部空白区可拖动窗口。
              压在画布之下:Canvas 无背景不命中,顶部空白处仍穿透到这里拖拽;画布上的按钮自行命中 -->
@@ -261,16 +258,16 @@
             <!-- 底部切换:歌词(左) / 全屏(中) / 播放列表(右,小屏无面板时让位给音量) -->
             <ToggleButton x:Name="LyricsToggle" Classes="le-toggle" Width="48" Height="32"
                           IsChecked="{Binding ShowLyricsPanel, Mode=OneWay}"
-                          Command="{Binding ToggleLyricsPanelCommand}" ToolTip.Tip="歌词">
+                          Command="{Binding ToggleLyricsPanelCommand}">
                 <TextBlock Text="{DynamicResource IconLyrics}" FontFamily="{DynamicResource LyricEaseIconsOutline}" FontSize="16" />
             </ToggleButton>
             <ToggleButton x:Name="FullScreenToggle" Classes="le-toggle" Width="48" Height="32"
-                          Click="OnFullScreenClick" ToolTip.Tip="全屏">
+                          Click="OnFullScreenClick">
                 <TextBlock x:Name="FullScreenGlyph" Text="{DynamicResource IconEnterFullScreen}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
             </ToggleButton>
             <ToggleButton x:Name="QueueToggle" Classes="le-toggle" Width="48" Height="32"
                           IsChecked="{Binding ShowQueuePanel, Mode=OneWay}"
-                          Command="{Binding ToggleQueuePanelCommand}" ToolTip.Tip="播放列表">
+                          Command="{Binding ToggleQueuePanelCommand}">
                 <TextBlock Text="{DynamicResource IconPlaylist}" FontFamily="{DynamicResource LyricEaseIconsOutline}" FontSize="16" />
             </ToggleButton>
 
@@ -281,10 +278,10 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom"
                             Spacing="10" Margin="0,0,10,10">
                     <ToggleButton Classes="le-toggle" Width="40" Height="40"
-                                  IsChecked="{Binding Lyric.ShowTranslation}" ToolTip.Tip="翻译">
+                                  IsChecked="{Binding Lyric.ShowTranslation}">
                         <TextBlock Text="{DynamicResource IconTranslation}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
                     </ToggleButton>
-                    <Button Classes="le-panel-button" Width="40" Height="40" ToolTip.Tip="歌词字号">
+                    <Button Classes="le-panel-button" Width="40" Height="40">
                         <TextBlock Text="{DynamicResource IconFontSize}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
                         <Button.Flyout>
                             <Flyout Placement="Top">
@@ -319,9 +316,6 @@
                     <Border Grid.Row="1" Background="#0DFFFFFF" BorderBrush="#14FFFFFF" BorderThickness="1"
                             CornerRadius="8" ClipToBounds="True">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                          <i:Interaction.Behaviors>
-                            <b:SmoothWheelScrollBehavior />
-                          </i:Interaction.Behaviors>
                             <ItemsControl x:Name="QueueList" ItemsSource="{Binding Player.UpcomingItems}"
                                           ContainerPrepared="OnQueueContainerPrepared">
                                 <ItemsControl.ItemsPanel>
@@ -357,8 +351,8 @@
             </Grid>
         </Canvas>
 
-        <Button Classes="player-button top-action" Width="50" Height="50" Margin="0,16,20,0"
-                HorizontalAlignment="Right" VerticalAlignment="Top" IsEnabled="False"
+        <Button Classes="player-button top-action" Width="50" Height="50" Margin="0,32,20,0"
+                HorizontalAlignment="Right" VerticalAlignment="Top"
                 ToolTip.Tip="更多操作将在后续阶段接入" ZIndex="2">
             <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White" />
         </Button>

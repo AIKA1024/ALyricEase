@@ -10,8 +10,41 @@
              mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
              x:Class="ALyricEase.Views.AppShell">
 
+  <!-- 内容页 VM→视图映射:桌面/移动共用壳层,两端各写一份 Window/Application 级模板会漏同步
+       (设置页就因只在桌面补了模板,移动端渲染成 VM.ToString)。此表是唯一维护点;
+       内容区 PageHost(TransitioningContentControl)在此解析,新增页面时只改这里。 -->
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="vm:RecommendViewModel">
+      <views:RecommendView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:SearchViewModel">
+      <views:SearchView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:PlaylistViewModel">
+      <views:PlaylistView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:ArtistViewModel">
+      <views:ArtistView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:AlbumViewModel">
+      <views:AlbumView />
+    </DataTemplate>
+    <!-- 私人FM:页面直接绑定播放器 VM(FM 无限流在播放器内) -->
+    <DataTemplate DataType="vm:PlayerViewModel">
+      <views:PersonalFmView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:SettingsViewModel">
+      <views:SettingsView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:PlaceholderViewModel">
+      <views:PlaceholderView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:DebugViewModel">
+      <views:DebugView />
+    </DataTemplate>
+  </UserControl.DataTemplates>
 
-    <UserControl.Styles>
+  <UserControl.Styles>
     <Style Selector="Button.navigation-button">
       <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
       <Setter Property="Height" Value="40" /><Setter Property="CornerRadius" Value="4" />

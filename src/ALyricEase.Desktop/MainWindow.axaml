@@ -12,36 +12,7 @@
         WindowDecorations="BorderOnly"
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaTitleBarHeightHint="48">
-  <Window.DataTemplates>
-    <DataTemplate DataType="vm:RecommendViewModel">
-      <views:RecommendView />
-    </DataTemplate>
-    <DataTemplate DataType="vm:SearchViewModel">
-      <views:SearchView />
-    </DataTemplate>
-    <DataTemplate DataType="vm:PlaylistViewModel">
-      <views:PlaylistView />
-    </DataTemplate>
-    <DataTemplate DataType="vm:ArtistViewModel">
-      <views:ArtistView />
-    </DataTemplate>
-    <DataTemplate DataType="vm:AlbumViewModel">
-      <views:AlbumView />
-    </DataTemplate>
-    <DataTemplate DataType="vm:SettingsViewModel">
-      <views:SettingsView />
-    </DataTemplate>
-    <!-- 私人FM:页面直接绑定播放器 VM(FM 无限流在播放器内) -->
-    <DataTemplate DataType="vm:PlayerViewModel">
-      <views:PersonalFmView />
-    </DataTemplate>
-    <DataTemplate DataType="vm:PlaceholderViewModel">
-      <views:PlaceholderView />
-    </DataTemplate>
-    <DataTemplate DataType="vm:DebugViewModel">
-      <views:DebugView />
-    </DataTemplate>
-  </Window.DataTemplates>
+  <!-- 内容页 VM→视图映射已收敛至共用壳层 AppShell.axaml 的 UserControl.DataTemplates(桌面/移动单一维护点) -->
 
   <Window.Styles>
     <Style Selector="Button.navigation-button">

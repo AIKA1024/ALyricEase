@@ -36,34 +36,55 @@ public partial class NavigationPaneView : UserControl
         vm.GoAccountCommand.Execute(null);
     }
 
-    /// <summary>歌单子项右键/长按菜单:重命名 + 复制链接。在 code-behind 按命中行现建现用,
-    /// 不用 XAML 静态 ContextMenu——它会对所有行共用一份实例(绑定错行),且需按歌单身份
-    /// 裁剪菜单项(红心集合不允许重命名)。非歌单行不弹菜单。</summary>
+    /// <summary>歌单子项右键/长按菜单:平台歌单=重命名 + 复制链接 + 删除;聚合歌单=重命名 + 删除
+    /// (本地实体,无分享链接)。在 code-behind 按命中行现建现用,不用 XAML 静态 ContextMenu——
+    /// 它会对所有行共用一份实例(绑定错行),且需按歌单身份裁剪菜单项(红心集合不允许重命名/删除)。
+    /// 非歌单行不弹菜单。</summary>
     private void OnNavListContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (DataContext is not MainViewModel vm) return;
         var row = (e.Source as Visual)?.GetVisualAncestors().OfType<ListBoxItem>().FirstOrDefault();
-        if (row?.DataContext is not NavItemViewModel { Playlist: { } item }) return;
+        if (row?.DataContext is not NavItemViewModel nav) return;
 
-        var playlist = item.Playlist;
         var menu = new MenuFlyout();
 
-        if (!ServiceLocator.Get<PlaylistViewModel>().IsLikedPlaylist(playlist))
+        if (nav.Playlist is { } item)
+        {
+            var playlist = item.Playlist;
+
+            if (!ServiceLocator.Get<PlaylistViewModel>().IsLikedPlaylist(playlist))
+            {
+                var rename = new MenuItem { Header = "重命名歌单" };
+                rename.Click += (_, _) => vm.OpenRenamePlaylistDialogCommand.Execute(item);
+                menu.Items.Add(rename);
+            }
+
+            var copy = new MenuItem { Header = "复制链接" };
+            copy.Click += (_, _) => _ = ClipboardService.TryCopyTextAsync(PlaylistShareLinks.For(playlist));
+            menu.Items.Add(copy);
+
+            // 删除为破坏性操作:红色 + 分隔线隔开,且必须经确认弹窗
+            menu.Items.Add(new Separator());
+            var delete = new MenuItem { Header = "删除歌单", Foreground = new SolidColorBrush(Color.Parse("#E74C3C")) };
+            delete.Click += (_, _) => vm.OpenDeletePlaylistDialogCommand.Execute(item);
+            menu.Items.Add(delete);
+        }
+        else if (nav.Aggregate is { } aggregate)
         {
             var rename = new MenuItem { Header = "重命名歌单" };
-            rename.Click += (_, _) => vm.OpenRenamePlaylistDialogCommand.Execute(item);
+            rename.Click += (_, _) => vm.OpenRenameAggregateDialogCommand.Execute(aggregate);
             menu.Items.Add(rename);
+
+            // 删除仅移除聚合入口(成员歌单不受影响),同样红色 + 确认弹窗
+            menu.Items.Add(new Separator());
+            var delete = new MenuItem { Header = "删除歌单", Foreground = new SolidColorBrush(Color.Parse("#E74C3C")) };
+            delete.Click += (_, _) => vm.OpenDeleteAggregateDialogCommand.Execute(aggregate);
+            menu.Items.Add(delete);
         }
-
-        var copy = new MenuItem { Header = "复制链接" };
-        copy.Click += (_, _) => _ = ClipboardService.TryCopyTextAsync(PlaylistShareLinks.For(playlist));
-        menu.Items.Add(copy);
-
-        // 删除为破坏性操作:红色 + 分隔线隔开,且必须经确认弹窗
-        menu.Items.Add(new Separator());
-        var delete = new MenuItem { Header = "删除歌单", Foreground = new SolidColorBrush(Color.Parse("#E74C3C")) };
-        delete.Click += (_, _) => vm.OpenDeletePlaylistDialogCommand.Execute(item);
-        menu.Items.Add(delete);
+        else
+        {
+            return; // 非歌单行(导航项/分组头)不弹菜单
+        }
 
         menu.ShowAt(row, true);
         e.Handled = true;

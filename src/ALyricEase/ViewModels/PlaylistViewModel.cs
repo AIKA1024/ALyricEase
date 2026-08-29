@@ -601,7 +601,30 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         else
             await ReloadNetEasePlaylistsAsync();
 
-        if (!wasOpen) return;
+        if (wasOpen)
+            ResetDetailPage();
+    }
+
+    /// <summary>聚合歌单在侧栏被重命名(集合中已换新实例)后,若打开中的详情页正是它,
+    /// 换引用保持后续聚合设置弹窗的比较一致,并同步合成歌单名与标题(曲目不动)。</summary>
+    public void ApplyAggregateRename(Models.AggregatePlaylist old, Models.AggregatePlaylist fresh)
+    {
+        if (!ReferenceEquals(_currentAggregate, old)) return;
+        _currentAggregate = fresh;
+        SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = fresh.Name });
+        PlaylistTitle = fresh.Name;
+    }
+
+    /// <summary>聚合歌单被删除后清空详情页回占位态(自增加载代次使在途合并拉取作废)。</summary>
+    public void CloseAggregateDetail()
+    {
+        if (_currentAggregate is null && !IsAggregate) return;
+        ResetDetailPage();
+    }
+
+    /// <summary>详情页整体复位:清曲目与增量加载状态、解除打开的聚合引用,回到"请选择歌单"占位态。</summary>
+    private void ResetDetailPage()
+    {
         _loadGeneration++;
         _isCloud = false;
         _currentAggregate = null;

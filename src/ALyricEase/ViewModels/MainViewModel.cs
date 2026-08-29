@@ -38,8 +38,10 @@ public sealed partial class MainViewModel : ViewModelBase
         AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed);
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
         CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
-        RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed);
-        DeletePlaylistDialog = new DeletePlaylistDialogViewModel(playlist, OnDeletePlaylistConfirmed);
+        RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed,
+            RenameAggregateAsync, OnAggregateRenamed);
+        DeletePlaylistDialog = new DeletePlaylistDialogViewModel(playlist, OnDeletePlaylistConfirmed,
+            DeleteAggregateAsync, OnAggregateDeleted);
         // 折叠状态必须先于首次 RebuildShellNavigation 恢复(静态分组头实例随即被导航渲染消费)
         NetEasePlaylistsHeader.IsExpanded = appState.IsNetEaseGroupExpanded;
         QqPlaylistsHeader.IsExpanded = appState.IsQqGroupExpanded;
@@ -707,6 +709,15 @@ public sealed partial class MainViewModel : ViewModelBase
         IsRenamePlaylistDialogOpen = true;
     }
 
+    /// <summary>打开重命名对话框(聚合歌单子项右键;同一弹窗,目标为本地聚合实体)。</summary>
+    [RelayCommand]
+    private void OpenRenameAggregateDialog(Models.AggregatePlaylist? aggregate)
+    {
+        if (aggregate is null) return;
+        RenamePlaylistDialog.Refresh(aggregate);
+        IsRenamePlaylistDialogOpen = true;
+    }
+
     [RelayCommand] private void CloseRenamePlaylistDialog() => IsRenamePlaylistDialogOpen = false;
 
     /// <summary>重命名成功回调:关弹窗,后台刷新对应侧栏分组;打开中的详情页随刷新换新实例。</summary>
@@ -714,6 +725,31 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         IsRenamePlaylistDialogOpen = false;
         _ = _playlist.RefreshAfterRenameAsync(item);
+    }
+
+    /// <summary>聚合重命名回调:换实例/持久化/侧栏重建已在 RenameAggregateAsync 完成,这里只关弹窗。</summary>
+    private void OnAggregateRenamed(Models.AggregatePlaylist aggregate) => IsRenamePlaylistDialogOpen = false;
+
+    /// <summary>聚合歌单重命名(本地实体):Name 为 init-only,原位换新实例持久化;
+    /// 打开中的详情页同步换引用并更新标题,侧栏经重建刷新标签。</summary>
+    private Task RenameAggregateAsync(Models.AggregatePlaylist aggregate, string newName)
+    {
+        var idx = AppState.AggregatePlaylists.IndexOf(aggregate);
+        if (idx >= 0)
+        {
+            var fresh = new Models.AggregatePlaylist
+            {
+                Id = aggregate.Id,
+                Name = newName,
+                SourceOrder = aggregate.SourceOrder,
+                Members = aggregate.Members,
+            };
+            AppState.AggregatePlaylists[idx] = fresh;
+            AppState.Save();
+            _playlist.ApplyAggregateRename(aggregate, fresh);
+            RebuildShellNavigation();
+        }
+        return Task.CompletedTask;
     }
 
     // ---- 删除歌单对话框 ----
@@ -731,6 +767,15 @@ public sealed partial class MainViewModel : ViewModelBase
         IsDeletePlaylistDialogOpen = true;
     }
 
+    /// <summary>打开删除确认对话框(聚合歌单子项右键;同一弹窗,目标为本地聚合实体)。</summary>
+    [RelayCommand]
+    private void OpenDeleteAggregateDialog(Models.AggregatePlaylist? aggregate)
+    {
+        if (aggregate is null) return;
+        DeletePlaylistDialog.Refresh(aggregate);
+        IsDeletePlaylistDialogOpen = true;
+    }
+
     [RelayCommand] private void CloseDeletePlaylistDialog() => IsDeletePlaylistDialogOpen = false;
 
     /// <summary>删除成功回调:关弹窗,后台刷新对应侧栏分组;被删歌单若正打开,详情页回占位态。</summary>
@@ -738,6 +783,23 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         IsDeletePlaylistDialogOpen = false;
         _ = _playlist.RefreshAfterDeleteAsync(item);
+    }
+
+    /// <summary>聚合删除回调:移除/持久化/详情清理已在 DeleteAggregateAsync 完成,这里只关弹窗。</summary>
+    private void OnAggregateDeleted(Models.AggregatePlaylist aggregate) => IsDeletePlaylistDialogOpen = false;
+
+    /// <summary>聚合歌单删除(本地实体):仅移除聚合与成员引用(持久化于 state.json),
+    /// 成员歌单本身不受影响;打开中的聚合详情页清空回占位态。</summary>
+    private Task DeleteAggregateAsync(Models.AggregatePlaylist aggregate)
+    {
+        if (AppState.AggregatePlaylists.Remove(aggregate))
+        {
+            AppState.Save();
+            if (ReferenceEquals(Playlist.CurrentAggregate, aggregate))
+                _playlist.CloseAggregateDetail();
+            RebuildShellNavigation();
+        }
+        return Task.CompletedTask;
     }
 
     /// <summary>创建成功回调:关弹窗,后台刷新侧栏歌单分组并打开新歌单(复用歌单详情页)。</summary>

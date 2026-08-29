@@ -30,6 +30,13 @@ public static class RenameDialogProbe
 
         main.DeletePlaylistDialog.Refresh(item);
         Render(new DeletePlaylistDialogView { DataContext = main }, "deldlg.png");
+
+        var aggregate = new AggregatePlaylist { Id = "agg1", Name = "探针聚合歌单" };
+        main.RenamePlaylistDialog.Refresh(aggregate);
+        Render(new RenamePlaylistDialogView { DataContext = main }, "aggrename.png");
+
+        main.DeletePlaylistDialog.Refresh(aggregate);
+        Render(new DeletePlaylistDialogView { DataContext = main }, "aggdel.png");
     }
 
     private static void Render(Control dialog, string fileName)

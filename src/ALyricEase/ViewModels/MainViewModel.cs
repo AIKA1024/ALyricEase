@@ -35,7 +35,8 @@ public sealed partial class MainViewModel : ViewModelBase
         Settings = settings;
         _playlist = playlist;
         AppState = appState;
-        AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed);
+        AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed,
+            OnAggregateEditConfirmed);
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
         CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
         RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed,
@@ -800,6 +801,30 @@ public sealed partial class MainViewModel : ViewModelBase
             RebuildShellNavigation();
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>打开"选择成员歌单"对话框(聚合歌单子项右键;添加弹窗的编辑模式,预勾现有成员)。</summary>
+    [RelayCommand]
+    private void OpenEditAggregateDialog(Models.AggregatePlaylist? aggregate)
+    {
+        if (aggregate is null) return;
+        AddAggregateDialog.Refresh(aggregate);
+        IsAggregateDialogOpen = true;
+    }
+
+    /// <summary>成员选择保存回调:按 Id 原位换新实例持久化;若该聚合正打开,重开刷新合并曲目
+    /// (成员/顺序可能变化),否则仅重建侧栏标签。</summary>
+    private void OnAggregateEditConfirmed(Models.AggregatePlaylist updated)
+    {
+        IsAggregateDialogOpen = false;
+        var original = AppState.AggregatePlaylists.FirstOrDefault(a => a.Id == updated.Id);
+        if (original is null) return;
+        var idx = AppState.AggregatePlaylists.IndexOf(original);
+        AppState.AggregatePlaylists[idx] = updated;
+        AppState.Save();
+        if (ReferenceEquals(Playlist.CurrentAggregate, original))
+            Playlist.OpenAggregateCommand.Execute(updated); // 重开:成员变了,合并曲目需重拉
+        RebuildShellNavigation();
     }
 
     /// <summary>创建成功回调:关弹窗,后台刷新侧栏歌单分组并打开新歌单(复用歌单详情页)。</summary>

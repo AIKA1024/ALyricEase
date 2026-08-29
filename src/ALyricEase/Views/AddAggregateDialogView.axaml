@@ -56,11 +56,11 @@
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
                     BoxShadow="0 32 64 #66000000">
                 <StackPanel Spacing="12">
-                    <TextBlock Text="添加聚合歌单" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding TitleText}" FontSize="20" FontWeight="SemiBold" />
                     <TextBlock Text="勾选要合并的网易云/QQ 音乐歌单,打开聚合歌单时合并展示全部曲目。"
                                FontSize="13" TextWrapping="Wrap"
                                Foreground="{DynamicResource TextSecondary}" />
-                    <TextBox x:Name="NameBox" PlaceholderText="聚合歌单名称(可选,留空自动命名)"
+                    <TextBox x:Name="NameBox" PlaceholderText="{Binding NamePlaceholder}"
                              Text="{Binding Name}" />
                     <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
@@ -124,7 +124,7 @@
                                 Command="{Binding $parent[views:AddAggregateDialogView].((vm:MainViewModel)DataContext).CloseAggregateDialogCommand}"
                                 HotKeyManager.HotKey="Escape"
                                 MinWidth="96" Height="32" />
-                        <Button Grid.Column="2" Classes="dialog-primary" Content="添加"
+                        <Button Grid.Column="2" Classes="dialog-primary" Content="{Binding ConfirmText}"
                                 Command="{Binding ConfirmCommand}"
                                 MinWidth="96" Height="32" IsEnabled="{Binding CanConfirm}" />
                     </Grid>

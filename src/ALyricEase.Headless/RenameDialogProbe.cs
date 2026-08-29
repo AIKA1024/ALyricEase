@@ -37,6 +37,19 @@ public static class RenameDialogProbe
 
         main.DeletePlaylistDialog.Refresh(aggregate);
         Render(new DeletePlaylistDialogView { DataContext = main }, "aggdel.png");
+
+        // 选择成员歌单(添加弹窗编辑模式):塞两条假歌单做候选,聚合成员预勾一条
+        main.Playlist.Playlists.Add(new PlaylistItemViewModel(new Playlist { Id = 100, Source = MusicSource.NetEase, Name = "网易云歌单A", TrackCount = 12 }));
+        main.Playlist.Playlists.Add(new PlaylistItemViewModel(new Playlist { Id = 101, Source = MusicSource.NetEase, Name = "网易云歌单B", TrackCount = 7 }));
+        main.Playlist.QqPlaylists.Add(new PlaylistItemViewModel(new Playlist { Id = 200, DirId = 1, Source = MusicSource.QQ, Name = "QQ歌单C", TrackCount = 5 }));
+        var aggregate2 = new AggregatePlaylist
+        {
+            Id = "agg2",
+            Name = "探针聚合歌单",
+            Members = { new AggregatePlaylistMember { Source = MusicSource.NetEase, PlaylistId = 100, PlaylistName = "网易云歌单A" } },
+        };
+        main.AddAggregateDialog.Refresh(aggregate2);
+        Render(new AddAggregateDialogView { DataContext = main }, "aggedit.png");
     }
 
     private static void Render(Control dialog, string fileName)

@@ -75,6 +75,11 @@ public partial class NavigationPaneView : UserControl
             rename.Click += (_, _) => vm.OpenRenameAggregateDialogCommand.Execute(aggregate);
             menu.Items.Add(rename);
 
+            // 重选聚合的成员歌单(添加弹窗的编辑模式,预勾现有成员)
+            var edit = new MenuItem { Header = "选择成员歌单" };
+            edit.Click += (_, _) => vm.OpenEditAggregateDialogCommand.Execute(aggregate);
+            menu.Items.Add(edit);
+
             // 删除仅移除聚合入口(成员歌单不受影响),同样红色 + 确认弹窗
             menu.Items.Add(new Separator());
             var delete = new MenuItem { Header = "删除歌单", Foreground = new SolidColorBrush(Color.Parse("#E74C3C")) };

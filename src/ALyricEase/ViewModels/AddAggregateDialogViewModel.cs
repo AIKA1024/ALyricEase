@@ -8,20 +8,27 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>聚合歌单选择对话框 VM:列出网易云/QQ 音乐两源已加载的用户歌单供多选,
-/// 可选命名(留空自动命名);确认后构造 AggregatePlaylist 交给宿主(MainViewModel)
-/// 持久化并刷新侧栏聚合分组。</summary>
+/// <summary>聚合歌单选择对话框 VM:列出网易云/QQ 音乐两源已加载的用户歌单供多选。
+/// 双模式:添加(可选命名,留空自动命名;确认构造新 AggregatePlaylist 交宿主持久化)与
+/// 编辑(侧栏聚合子项右键"选择成员歌单"打开,预勾现有成员;某源未登录/未加载时,
+/// 该源现有成员按引用兜底补进候选,避免确认时被静默丢掉;确认后交宿主原位更新)。</summary>
 public sealed partial class AddAggregateDialogViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
     private readonly AppStateStore _appState;
     private readonly Action<AggregatePlaylist> _onConfirm;
+    private readonly Action<AggregatePlaylist> _onEditConfirm;
 
-    public AddAggregateDialogViewModel(PlaylistViewModel playlist, AppStateStore appState, Action<AggregatePlaylist> onConfirm)
+    /// <summary>编辑模式目标(null = 添加模式)。</summary>
+    private AggregatePlaylist? _editing;
+
+    public AddAggregateDialogViewModel(PlaylistViewModel playlist, AppStateStore appState,
+        Action<AggregatePlaylist> onConfirm, Action<AggregatePlaylist> onEditConfirm)
     {
         _playlist = playlist;
         _appState = appState;
         _onConfirm = onConfirm;
+        _onEditConfirm = onEditConfirm;
     }
 
     public ObservableCollection<AggregatePickerItemViewModel> NetEaseItems { get; } = new();
@@ -34,7 +41,7 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
     /// <summary>QQ音乐分区是否有可选项。</summary>
     [ObservableProperty] private bool _hasQq;
 
-    /// <summary>聚合歌单名称(可选;留空确认时自动命名)。</summary>
+    /// <summary>聚合歌单名称(添加模式可选留空自动命名;编辑模式预填现名,留空保留现名)。</summary>
     [ObservableProperty] private string _name = "";
 
     /// <summary>两源都没有可选项时显示提示。</summary>
@@ -43,23 +50,59 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
     /// <summary>至少勾选一个歌单才可确认。</summary>
     public bool CanConfirm => NetEaseItems.Concat(QqItems).Any(i => i.IsChecked);
 
-    /// <summary>打开对话框时调用:用两源已加载的歌单重建候选列表。</summary>
-    public void Refresh()
+    /// <summary>标题(添加/编辑模式区分)。</summary>
+    public string TitleText => _editing is null ? "添加聚合歌单" : "选择成员歌单";
+
+    /// <summary>确认按钮文案。</summary>
+    public string ConfirmText => _editing is null ? "添加" : "保存";
+
+    /// <summary>名称输入框占位文案。</summary>
+    public string NamePlaceholder => _editing is null
+        ? "聚合歌单名称(可选,留空自动命名)"
+        : "聚合歌单名称";
+
+    /// <summary>打开对话框时调用(添加模式):用两源已加载的歌单重建候选列表。</summary>
+    public void Refresh() => RefreshCore(null);
+
+    /// <summary>打开对话框时调用(编辑模式):预勾现有成员;成员所在源未加载时按成员引用兜底补行。</summary>
+    public void Refresh(AggregatePlaylist existing) => RefreshCore(existing);
+
+    private void RefreshCore(AggregatePlaylist? editing)
     {
-        Name = "";
+        _editing = editing;
+        Name = editing?.Name ?? "";
         NetEaseItems.Clear();
         QqItems.Clear();
         foreach (var p in _playlist.Playlists)
             AddItem(NetEaseItems, MusicSource.NetEase, p.Id, p.Name, p.TrackCount);
         foreach (var p in _playlist.QqPlaylists)
             AddItem(QqItems, MusicSource.QQ, p.Id, p.Name, p.TrackCount);
+
+        if (editing is not null)
+        {
+            // 预勾现有成员;候选里没有的(成员所在源未登录/未加载)按成员引用兜底补行,
+            // 保证现有成员始终可见、可主动取消 —— 否则确认会把它们静默丢掉
+            foreach (var m in editing.Members)
+            {
+                var items = m.Source == MusicSource.QQ ? QqItems : NetEaseItems;
+                var existingItem = items.FirstOrDefault(i => i.PlaylistId == m.PlaylistId);
+                if (existingItem is null)
+                    existingItem = AddItem(items, m.Source, m.PlaylistId, m.PlaylistName, 0);
+                existingItem.IsChecked = true;
+            }
+        }
+
         HasNetEase = NetEaseItems.Count > 0;
         HasQq = QqItems.Count > 0;
         OnPropertyChanged(nameof(CanConfirm));
         OnPropertyChanged(nameof(HasNothing));
+        OnPropertyChanged(nameof(TitleText));
+        OnPropertyChanged(nameof(ConfirmText));
+        OnPropertyChanged(nameof(NamePlaceholder));
     }
 
-    private void AddItem(ObservableCollection<AggregatePickerItemViewModel> list, MusicSource source, long id, string name, int trackCount)
+    private AggregatePickerItemViewModel AddItem(ObservableCollection<AggregatePickerItemViewModel> list,
+        MusicSource source, long id, string name, int trackCount)
     {
         var item = new AggregatePickerItemViewModel(source, id, name, trackCount);
         // 任一勾选变化 → 刷新确认按钮可用态
@@ -69,6 +112,7 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
                 OnPropertyChanged(nameof(CanConfirm));
         };
         list.Add(item);
+        return item;
     }
 
     [RelayCommand]
@@ -76,18 +120,35 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
     {
         var picked = NetEaseItems.Concat(QqItems).Where(i => i.IsChecked).ToList();
         if (picked.Count == 0) return;
-        var aggregate = new AggregatePlaylist
+        var members = picked.Select(i => new AggregatePlaylistMember
         {
-            Id = Guid.NewGuid().ToString("N"),
-            Name = Name.Trim().Length > 0 ? Name.Trim() : AutoName(),
-            Members = picked.Select(i => new AggregatePlaylistMember
+            Source = i.Source,
+            PlaylistId = i.PlaylistId,
+            PlaylistName = i.Name,
+        }).ToList();
+
+        if (_editing is { } editing)
+        {
+            // 编辑模式:保 Id/SourceOrder,换成员;名字留空保留现名
+            var updated = new AggregatePlaylist
             {
-                Source = i.Source,
-                PlaylistId = i.PlaylistId,
-                PlaylistName = i.Name,
-            }).ToList(),
-        };
-        _onConfirm(aggregate);
+                Id = editing.Id,
+                Name = Name.Trim().Length > 0 ? Name.Trim() : editing.Name,
+                SourceOrder = editing.SourceOrder,
+                Members = members,
+            };
+            _onEditConfirm(updated);
+        }
+        else
+        {
+            var aggregate = new AggregatePlaylist
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = Name.Trim().Length > 0 ? Name.Trim() : AutoName(),
+                Members = members,
+            };
+            _onConfirm(aggregate);
+        }
     }
 
     /// <summary>未命名自动生成:"聚合歌单 N"(按现有个数顺延,尽力避免重名)。</summary>

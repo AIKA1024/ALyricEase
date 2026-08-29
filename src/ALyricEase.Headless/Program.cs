@@ -122,6 +122,13 @@ public static class Program
             return;
         }
 
+        // TEMP-DIAG:手机尺寸下正在播放覆盖层是否盖住 Android 顶部横幅
+        if (args.Length > 0 && args[0] == "--npmobile")
+        {
+            NpMobileProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:搜索页导航行为验证(返回/重进/下钻三场景)
         if (args.Length > 0 && args[0] == "--searchnav")
         {

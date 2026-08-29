@@ -6,10 +6,11 @@ using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
-/// <summary>正在播放覆盖层的滑入/滑出驱动。覆盖层是窗口级 Grid(桌面端横跨窗口网格两行,
-/// 从而盖住标题栏;Android 端只在内容区一行内,不盖顶部横幅),常驻可视树,
+/// <summary>正在播放覆盖层的滑入/滑出驱动。覆盖层是宿主网格级 Grid,在桌面端与 Android 端
+/// 都横跨两行(分别盖住窗口标题栏 / 顶部横幅),常驻可视树,
 /// 靠 RenderTransform 在"原位/屏幕外"间切换(0.4s 过渡声明在宿主 XAML 上)。
-/// 关闭态"屏幕外"位移按覆盖层自身 Bounds.Height 计算,宿主在尺寸变化时调 UpdateClosedPosition。</summary>
+/// 关闭态"屏幕外"位移按覆盖层自身 Bounds.Height 计算,宿主在尺寸变化时调 UpdateClosedPosition
+/// —— 所以覆盖范围改了(加一行/减一行)不用动这里,位移自动跟上。</summary>
 public sealed class NowPlayingOverlayController : IDisposable
 {
     private const double s_offScreenGuard = 100000;

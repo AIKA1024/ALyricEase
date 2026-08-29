@@ -22,8 +22,11 @@
 
         <!-- 正在播放覆盖层:内容区 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
              RenderTransform 目标值由 NowPlayingOverlayController 按 MainViewModel.ShowNowPlaying 切换。
-             Android 顶部横幅是应用内容不是窗口标题栏 → 覆盖层只挂第 1 行,不往上盖。 -->
-        <Grid x:Name="NowPlayingOverlay" Grid.Row="1" ZIndex="100"
+             横跨两行(与桌面端一致)→ 打开时连顶部横幅一起盖住,整页沉浸式。
+             顶部横幅是应用内容不是系统栏,盖掉不影响状态栏:Avalonia 的 AndroidInsetsManager
+             默认按系统栏 insets 给整个视图加 padding,所以本 Grid 的 y=0 本来就在状态栏下方。
+             关闭态位移取覆盖层 Bounds.Height,横跨两行后自动 +48,无需改 Controller。 -->
+        <Grid x:Name="NowPlayingOverlay" Grid.Row="0" Grid.RowSpan="2" ZIndex="100"
               IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
             <Grid.Transitions>
                 <Transitions>

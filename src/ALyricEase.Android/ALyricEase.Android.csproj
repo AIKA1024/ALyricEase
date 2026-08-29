@@ -34,6 +34,8 @@
     <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0.3" />
     <PackageReference Include="Xamarin.AndroidX.Media" Version="1.8.0.1" />
     <PackageReference Include="Xamarin.AndroidX.Core" Version="1.19.0.1" />
+    <!-- 返回处理:OnBackPressedDispatcher/OnBackPressedCallback 所在;Avalonia 的返回链走 AndroidX,应用回调须在同一条栈上 -->
+    <PackageReference Include="Xamarin.AndroidX.Activity" Version="1.12.4.1" />
     <!-- 必须与上面的 Core 版本严格对齐,不能删。core-ktx 只是传递依赖,NuGet 会解析到
          旧版(1.17.0.2);而 core 1.19 把 AnimatorKt 等 Kotlin 扩展并入了自身,于是
          core.aar 与 core-ktx.aar 各带一份 androidx/core/animation/AnimatorKt,

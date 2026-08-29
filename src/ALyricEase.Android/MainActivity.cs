@@ -2,7 +2,6 @@ using System;
 using Android.App;
 using Android.Content.PM;
 using Android.OS;
-using Android.Window;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using ALyricEase.Infrastructure;
@@ -26,9 +25,12 @@ public class MainActivity : AvaloniaMainActivity
     /// <summary>返回相关日志标签(adb logcat -s ALyricEaseBack,D 可看返回有没有到应用层)。</summary>
     private const string BackLogTag = "ALyricEaseBack";
 
-    // Android 13+ 不再保证把返回事件转换成 Activity.OnBackPressed。直接持有平台回调，
-    // 同时也避免依赖 Avalonia/AndroidX 在不同厂商 ROM 上的桥接实现。
-    private IOnBackInvokedCallback? _platformBackCallback;
+    /// <summary>应用级返回回调,挂 AndroidX OnBackPressedDispatcher。
+    /// Avalonia 的 AvaloniaActivity 走的就是这条链(OnStart 里 AddCallback,Android 13+ 再由
+    /// AndroidX 桥接到平台 OnBackInvokedDispatcher):直接向系统注册平台回调会因注册时机早于
+    /// AndroidX 的桥接被压在栈下,返回事件到不了应用层,表现即"按返回直接退到桌面"。
+    /// AndroidX 调度器后注册者优先,base.OnStart() 之后再 AddCallback 即稳定排在 Avalonia 之前。</summary>
+    private BackCallback? _backCallback;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -40,34 +42,15 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnStart();
 
-        if (OperatingSystem.IsAndroidVersionAtLeast(33) && _platformBackCallback is null)
-        {
-            // Avalonia 会在 base.OnStart 中注册 AndroidX 返回回调，所以平台回调必须随后注册。
-            // 同优先级按注册逆序调用，这样系统稳定地先进入本应用的导航处理。
-            _platformBackCallback = new PlatformBackCallback(this);
-            OnBackInvokedDispatcher.RegisterOnBackInvokedCallback(
-                IOnBackInvokedDispatcher.PriorityDefault,
-                _platformBackCallback);
-        }
+        // 排在 AvaloniaActivity 的回调之后加入 = 调度器栈顶,系统返回必先经过这里
+        _backCallback = new BackCallback(this);
+        OnBackPressedDispatcher.AddCallback(this, _backCallback);
     }
-
-    /// <summary>Android 12 及以下的返回入口。Android 13+ 使用 OnBackInvokedDispatcher。</summary>
-#pragma warning disable CS0618 // API 32 及以下仍需覆写 Activity.OnBackPressed
-    public override void OnBackPressed()
-    {
-        global::Android.Util.Log.Debug(BackLogTag, "back via OnBackPressed");
-        HandleSystemBack();
-    }
-#pragma warning restore CS0618
 
     protected override void OnStop()
     {
-        if (OperatingSystem.IsAndroidVersionAtLeast(33) && _platformBackCallback is not null)
-        {
-            OnBackInvokedDispatcher.UnregisterOnBackInvokedCallback(_platformBackCallback);
-            _platformBackCallback.Dispose();
-            _platformBackCallback = null;
-        }
+        _backCallback?.Remove();
+        _backCallback = null;
 
         base.OnStop();
     }
@@ -83,13 +66,12 @@ public class MainActivity : AvaloniaMainActivity
         MoveTaskToBack(true);
     }
 
-    /// <summary>Android 13+ 原生返回回调，覆盖返回手势与三键导航的返回键。</summary>
-    private sealed class PlatformBackCallback(MainActivity activity) :
-        Java.Lang.Object, IOnBackInvokedCallback
+    /// <summary>覆盖返回手势与三键导航(≤32 走 Activity.OnBackPressed 路由,13+ 经 AndroidX 桥接)。</summary>
+    private sealed class BackCallback(MainActivity activity) : AndroidX.Activity.OnBackPressedCallback(true)
     {
-        public void OnBackInvoked()
+        public override void HandleOnBackPressed()
         {
-            global::Android.Util.Log.Debug(BackLogTag, "back via OnBackInvokedDispatcher");
+            global::Android.Util.Log.Debug(BackLogTag, "back via OnBackPressedDispatcher");
             activity.HandleSystemBack();
         }
     }

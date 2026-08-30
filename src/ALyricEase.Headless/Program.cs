@@ -114,6 +114,13 @@ public static class Program
             return;
         }
 
+        // 菜单滑入动画自查(不触网):仿 WinUI3 打开动画,采样一级/子菜单 Transform 起点/终点与重放
+        if (args.Length > 0 && args[0] == "--menuanim")
+        {
+            MenuAnimProbe.Run();
+            return;
+        }
+
         // 网易云加密通道诊断:定位 playlist/create 空响应成因(匿名注册晴雨表/明文写/weapi 原始响应)
         if (args.Length > 0 && args[0] == "--nediag")
         {

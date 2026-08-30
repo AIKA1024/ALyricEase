@@ -13,10 +13,13 @@
         TrimmerRoots). First run downloads the ILCompiler packs, so it takes a while.
 
     Android:
-        Also publishes the Android app to an APK under artifacts\aot-android
-        (or artifacts\android when -AndroidNoAot).
+        Also publishes per-ABI Android APKs under artifacts\aot-android-per-abi
+        (or artifacts\android-per-abi when -AndroidNoAot).
         Default mode uses the Mono toolchain: RunAOTCompilation=true compiles all
         IL to native ahead of time (full Mono AOT) -- this is NOT .NET NativeAOT.
+        It builds arm64-v8a and armeabi-v7a separately so each APK contains only
+        the native libraries needed by its target Android userspace. Final APK
+        names include the ABI, for example ALyricEase-arm64-v8a-Signed.apk.
         With -AndroidNativeAot the script passes PublishAot=true targeting
         android-arm64. KNOWN BROKEN WITH AVALONIA (tested 2026-08): the build
         succeeds but the app dies on the splash screen with UnsatisfiedLinkError
@@ -66,6 +69,27 @@ function Resolve-Jdk {
     return ""
 }
 
+function Get-ApkNativeAbis {
+    param([Parameter(Mandatory = $true)][string]$ApkPath)
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($ApkPath)
+    try {
+        return @(
+            $archive.Entries |
+                ForEach-Object {
+                    if ($_.FullName -match '^lib/([^/]+)/[^/]+[.]so$') {
+                        $Matches[1]
+                    }
+                } |
+                Sort-Object -Unique
+        )
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repoRoot "src\ALyricEase.Desktop\ALyricEase.Desktop.csproj"
 if (-not $Output) { $Output = Join-Path $repoRoot "artifacts\aot-$Runtime" }
@@ -109,25 +133,36 @@ if (-not $SkipAndroid) {
 
     $androidProject = Join-Path $repoRoot "src\ALyricEase.Android\ALyricEase.Android.csproj"
 
+    $androidTargets = @(
+        [pscustomobject]@{ Rid = "android-arm64"; Abi = "arm64-v8a" },
+        [pscustomobject]@{ Rid = "android-arm"; Abi = "armeabi-v7a" }
+    )
+    [string[]]$runtimeArgs = @()
     [string[]]$aotArgs = @()
     if ($AndroidNativeAot) {
+        $androidOutputRoot = Join-Path $repoRoot "artifacts\nativeaot-android"
+        $androidTargets = @([pscustomobject]@{ Rid = "android-arm64"; Abi = "arm64-v8a" })
+        $runtimeArgs = @("-r", "android-arm64")
+        $aotArgs = @(
+            "--self-contained", "true",
+            "-p:PublishAot=true"
+        )
         Write-Host "   WARNING: Android NativeAOT is known-broken with Avalonia.Android" -ForegroundColor Red
         Write-Host "   (UnsatisfiedLinkError at Application.OnCreate). Building anyway..." -ForegroundColor Red
     }
     elseif ($AndroidNoAot) {
-        $androidOutput = Join-Path $repoRoot "artifacts\android"
-        Write-Host "   AOT: off (JIT APK)" -ForegroundColor DarkGray
+        $androidOutputRoot = Join-Path $repoRoot "artifacts\android-per-abi"
+        Write-Host "   AOT: off (per-ABI JIT APKs)" -ForegroundColor DarkGray
     }
     else {
-        # Best available production mode: full Mono AOT, arm64 only.
-        $androidOutput = Join-Path $repoRoot "artifacts\aot-android"
+        # Best available production mode: one full Mono AOT APK per ARM ABI.
+        $androidOutputRoot = Join-Path $repoRoot "artifacts\aot-android-per-abi"
         $aotArgs = @(
-            "-r", "android-arm64",
             "--self-contained", "true",
             "-p:RunAOTCompilation=true",
             "-p:AndroidStripILAfterAOT=true"
         )
-        Write-Host "   AOT: on (Mono full AOT, android-arm64, IL stripped)" -ForegroundColor DarkGray
+        Write-Host "   AOT: on (per-ABI Mono full AOT, IL stripped)" -ForegroundColor DarkGray
     }
 
     $jdk = Resolve-Jdk
@@ -161,20 +196,53 @@ if (-not $SkipAndroid) {
         if (($env:PATH -split ';') -notcontains $ndkBin) { $env:PATH = "$ndkBin;$env:PATH" }
     }
 
-    dotnet publish $androidProject `
-        -c $Configuration `
-        -f net10.0-android `
-        @aotArgs `
-        -o $androidOutput
+    $publishedApks = @()
+    foreach ($target in $androidTargets) {
+        $androidOutput = Join-Path $androidOutputRoot $target.Abi
+        [string[]]$targetArgs = @("-p:AndroidTargetAbi=$($target.Abi)")
+        if ($AndroidNativeAot) { $targetArgs = $runtimeArgs }
+        Write-Host "-- Publishing $($target.Abi) ($($target.Rid))" -ForegroundColor Cyan
 
-    if ($LASTEXITCODE -ne 0) { throw "Android publish failed (exit code $LASTEXITCODE)" }
+        dotnet publish $androidProject `
+            -c $Configuration `
+            -f net10.0-android `
+            @targetArgs `
+            @aotArgs `
+            -o $androidOutput
 
-    $apk = Get-ChildItem -Path $androidOutput -Filter "*.apk" | Where-Object { $_.Name -like "*-Signed.apk" } | Select-Object -First 1
-    if (-not $apk) { $apk = Get-ChildItem -Path $androidOutput -Filter "*.apk" | Select-Object -First 1 }
-    if ($apk) {
+        if ($LASTEXITCODE -ne 0) {
+            throw "Android $($target.Abi) publish failed (exit code $LASTEXITCODE)"
+        }
+
+        $finalApkName = "ALyricEase-$($target.Abi)-Signed.apk"
+        $apk = Get-ChildItem -Path $androidOutput -Filter "*-Signed.apk" |
+            Where-Object { $_.Name -ne $finalApkName } |
+            Select-Object -First 1
+        if (-not $apk) { $apk = Get-ChildItem -Path $androidOutput -Filter "*.apk" | Select-Object -First 1 }
+        if (-not $apk) {
+            throw "Android $($target.Abi) publish completed, but no APK was found in $androidOutput"
+        }
+
+        $apkAbis = @(Get-ApkNativeAbis -ApkPath $apk.FullName)
+        if ($apkAbis.Count -ne 1 -or $apkAbis[0] -ne $target.Abi) {
+            throw "APK ABI verification failed for $($target.Abi). Found: $($apkAbis -join ', ')"
+        }
+
+        $finalApkPath = Join-Path $androidOutput $finalApkName
+        if ($apk.FullName -ne $finalApkPath) {
+            if (Test-Path -LiteralPath $finalApkPath) {
+                Remove-Item -LiteralPath $finalApkPath -Force
+            }
+            Move-Item -LiteralPath $apk.FullName -Destination $finalApkPath
+            $apk = Get-Item -LiteralPath $finalApkPath
+        }
+        Write-Host "   APK ABI: $($target.Abi)" -ForegroundColor DarkGray
         Write-Host "== OK: $($apk.FullName) ($([math]::Round($apk.Length / 1MB, 1)) MB)" -ForegroundColor Green
+        $publishedApks += $apk
     }
-    else {
-        Write-Host "== Published, but no .apk found. Check the output dir." -ForegroundColor Yellow
+
+    Write-Host "== Android packages ready:" -ForegroundColor Green
+    foreach ($apk in $publishedApks) {
+        Write-Host "   $($apk.FullName)" -ForegroundColor Green
     }
 }

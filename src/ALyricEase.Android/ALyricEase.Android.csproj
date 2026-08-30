@@ -12,6 +12,12 @@
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <!-- Some Android Automotive images run a 32-bit userspace on 64-bit ARM
+         hardware. Normal Release builds support both ARM ABIs. The Rider
+         publish script sets AndroidTargetAbi to produce two smaller APKs. -->
+    <RuntimeIdentifiers Condition="'$(Configuration)' == 'Release' and '$(AndroidTargetAbi)' == 'arm64-v8a'">android-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="'$(Configuration)' == 'Release' and '$(AndroidTargetAbi)' == 'armeabi-v7a'">android-arm</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="'$(Configuration)' == 'Release' and '$(AndroidTargetAbi)' == '' and '$(RuntimeIdentifier)' == ''">android-arm;android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>

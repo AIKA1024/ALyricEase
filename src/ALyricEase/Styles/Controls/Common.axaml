@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctrl="using:ALyricEase.Controls">
     <Styles.Resources>
         <!-- 播放详情页进度条(仿原版 TimelineSlider):2px 轨道(灰)+ 已播放段(teal,由 DecreaseButton 充当)
              + 12px teal 圆形滑块。默认 Fluent 模板在 30px 高度下滑块下半被模板裁剪且用系统强调色,故自定义。
@@ -78,19 +79,11 @@
     </Style>
 
     <!-- 所有 MenuFlyoutPresenter(一级+子菜单都自动创建 MenuFlyoutPresenter,子菜单不继承父级 FlyoutPresenterClasses):
-         统一淡入动画 + 圆角;阴影/内边距放模板根 Border(MenuFlyoutPresenter 模板不绑 {TemplateBinding Padding}) -->
+         统一圆角;阴影/内边距放模板根 Border(MenuFlyoutPresenter 模板不绑 {TemplateBinding Padding})。
+         打开动画(仿 WinUI3 淡入+滑入,方向按锚点自动判断)走 ctrl:FlyoutOpenAnimation 合成动画 -->
     <Style Selector="MenuFlyoutPresenter">
         <Setter Property="CornerRadius" Value="12" />
-        <Style.Animations>
-            <Animation Duration="0:0:0.12">
-                <KeyFrame Cue="0%">
-                    <Setter Property="Opacity" Value="0" />
-                </KeyFrame>
-                <KeyFrame Cue="100%">
-                    <Setter Property="Opacity" Value="1" />
-                </KeyFrame>
-            </Animation>
-        </Style.Animations>
+        <Setter Property="ctrl:FlyoutOpenAnimation.IsEnabled" Value="True" />
     </Style>
     <Style Selector="MenuFlyoutPresenter /template/ Border">
         <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
@@ -99,22 +92,13 @@
     </Style>
 
     <!-- 子菜单容器:MenuItem 模板里 Popup#PART_Popup 的 Border(子菜单不是 MenuFlyoutPresenter,是这里承载;
-         给它阴影/圆角/内边距/淡入,一级二级外观统一) -->
+         给它阴影/圆角/内边距,一级二级外观统一)。打开动画同样走 ctrl:FlyoutOpenAnimation -->
     <Style Selector="MenuItem /template/ Popup#PART_Popup Border">
         <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
         <Setter Property="Margin" Value="4 0 4 14" />
         <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Padding" Value="4" />
-        <Style.Animations>
-            <Animation Duration="0:0:0.12">
-                <KeyFrame Cue="0%">
-                    <Setter Property="Opacity" Value="0" />
-                </KeyFrame>
-                <KeyFrame Cue="100%">
-                    <Setter Property="Opacity" Value="1" />
-                </KeyFrame>
-            </Animation>
-        </Style.Animations>
+        <Setter Property="ctrl:FlyoutOpenAnimation.IsEnabled" Value="True" />
     </Style>
     <!-- 子菜单内边距均衡:清掉模板里 ItemsPresenter 的 MenuFlyoutScrollerMargin(左右不对称),只留 Border 的 Padding=4 -->
     <Style Selector="MenuItem /template/ Popup#PART_Popup ScrollViewer ItemsPresenter">

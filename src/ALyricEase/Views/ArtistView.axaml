@@ -27,6 +27,10 @@
     <Style Selector="Button.album-card:pointerover Border.album-card-mask">
       <Setter Property="Opacity" Value="0.2" />
     </Style>
+    <!-- 横向虚拟化面板(VirtualizingStackPanel)无 Spacing:卡片间距改由容器右边距提供(SongGridView 同款做法) -->
+    <Style Selector="ItemsControl.hcards > ContentPresenter">
+      <Setter Property="Margin" Value="0,0,12,0" />
+    </Style>
   </UserControl.Styles>
 
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -66,10 +70,11 @@
           <i:Interaction.Behaviors>
             <b:CtrlHorizontalWheelBehavior />
           </i:Interaction.Behaviors>
-          <ItemsControl ItemsSource="{Binding Albums}" ContainerPrepared="OnAlbumContainerPreparing">
+          <ItemsControl Classes="hcards" ItemsSource="{Binding Albums}" ContainerPrepared="OnAlbumContainerPreparing">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" Spacing="12" />
+                <!-- 横向虚拟化:只实化视口及 CacheLength 缓冲内的卡片,封面经 ContainerPrepared 按需加载 -->
+                <VirtualizingStackPanel Orientation="Horizontal" CacheLength="0.5" />
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
@@ -99,10 +104,11 @@
           <i:Interaction.Behaviors>
             <b:CtrlHorizontalWheelBehavior />
           </i:Interaction.Behaviors>
-          <ItemsControl ItemsSource="{Binding Singles}" ContainerPrepared="OnAlbumContainerPreparing">
+          <ItemsControl Classes="hcards" ItemsSource="{Binding Singles}" ContainerPrepared="OnAlbumContainerPreparing">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" Spacing="12" />
+                <!-- 横向虚拟化:只实化视口及 CacheLength 缓冲内的卡片,封面经 ContainerPrepared 按需加载 -->
+                <VirtualizingStackPanel Orientation="Horizontal" CacheLength="0.5" />
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>

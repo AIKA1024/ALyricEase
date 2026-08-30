@@ -121,6 +121,10 @@
     <Style Selector="Button.play-all:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource LyricEaseRedHover}" />
     </Style>
+    <!-- 横向虚拟化面板(VirtualizingStackPanel)无 Spacing:卡片间距改由容器右边距提供(SongGridView 同款做法) -->
+    <Style Selector="ItemsControl.hcards > ContentPresenter">
+      <Setter Property="Margin" Value="0,0,12,0" />
+    </Style>
   </UserControl.Styles>
   <Grid RowDefinitions="96,*">
     <Grid Grid.Row="0" Margin="48,0,32,0">
@@ -148,17 +152,18 @@
                 <Grid>
                   <!-- 每日歌曲推荐:共享容器控件(Controls/SongGridView),歌手页热门歌曲同款 -->
                   <controls:SongGridView IsVisible="{Binding IsBordered}" ItemsSource="{Binding Items}" />
-                  <!-- 其余区块:单行横向滚动,无容器;面板底部留 14px 给水平滚动条,避免压住卡片标题 -->
+                  <!-- 其余区块:单行横向滚动,无容器;滚动条底部 Padding 留 14px,避免压住卡片标题 -->
                   <ScrollViewer IsVisible="{Binding IsBordered, Converter={x:Static BoolConverters.Not}}"
-                                HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                Padding="0,0,0,14">
                     <i:Interaction.Behaviors>
                       <b:CtrlHorizontalWheelBehavior />
                     </i:Interaction.Behaviors>
-                    <ItemsControl ItemsSource="{Binding Items}" ContainerPrepared="OnItemContainerPrepared">
+                    <ItemsControl Classes="hcards" ItemsSource="{Binding Items}" ContainerPrepared="OnItemContainerPrepared">
                       <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                          <!-- 列距 12px = 原版 GridViewItem 边距2 + 卡片 Margin右8 + 下一项边距2 -->
-                          <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,14" />
+                          <!-- 横向虚拟化:只实化视口及 CacheLength 缓冲内的卡片,封面经 ContainerPrepared 按需加载 -->
+                          <VirtualizingStackPanel Orientation="Horizontal" CacheLength="0.5" />
                         </ItemsPanelTemplate>
                       </ItemsControl.ItemsPanel>
                     </ItemsControl>

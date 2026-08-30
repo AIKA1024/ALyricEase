@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ALyricEase.Headless.BareCardsWindow"
+        x:CompileBindings="False"
+        Width="1000" Height="400" Background="White">
+  <!-- 裸窗口对照组(与 VGridWindow 同构,卡片化):无外层竖向 ScrollViewer、无 Padding,
+       用于和 ArtistView 内嵌横向区块对比 Extent 传播差异 -->
+  <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+    <ItemsControl x:Name="Cards">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <VirtualizingStackPanel Orientation="Horizontal" CacheLength="0.5" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Border Width="200" Height="200" Margin="0,0,12,0" Background="Gray" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </ScrollViewer>
+</Window>

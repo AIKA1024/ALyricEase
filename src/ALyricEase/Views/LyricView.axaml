@@ -19,16 +19,16 @@
                            IsVisible="{Binding HasTranslation}" />
             </StackPanel>
         </DataTemplate>
-        <!-- 详情页歌词面板模板(仿原版 PlaybackDetailView 歌词区):26 Bold 原文 + 18 翻译,
+        <!-- 详情页歌词面板模板(仿原版 PlaybackDetailView 歌词区):32 Bold 原文 + 22 翻译,
              字号随 FontScale 档位缩放;翻译行受"显示翻译"开关控制 -->
         <DataTemplate x:Key="DetailLyricItemTemplate" x:DataType="models:LyricLine">
             <StackPanel>
                 <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap"
                            FontWeight="Bold" Foreground="#FFFFFFFF"
-                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=26}" />
+                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=32}" />
                 <TextBlock Text="{Binding Translation}" TextAlignment="Left" TextWrapping="Wrap"
                            Foreground="#BFFFFFFF"
-                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=18}">
+                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=22}">
                     <TextBlock.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
                             <Binding Path="HasTranslation" />

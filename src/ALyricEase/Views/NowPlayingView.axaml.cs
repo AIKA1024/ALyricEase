@@ -27,7 +27,6 @@ public partial class NowPlayingView : UserControl
 
   // 大屏封面下方的控件栈高度:信息54+进度52+控制60+次级50+切换32 + 间距 22+18+14+16+24 = 342
   private const double BelowCoverStack = 342;
-  private const double PanelGap = 50; // 大屏:播放列与右侧面板间距
   private const double SmallSideMargin = 40;
 
   private static readonly TimeSpan s_slideDuration = TimeSpan.FromSeconds(0.3);
@@ -144,7 +143,11 @@ public partial class NowPlayingView : UserControl
     // 导致首帧先落到迷你封面坐标，随后动画从错误起点飞入。
     var panelOpen = _vm is { NowPlayingPanel: not NowPlayingPanel.None };
 
-    if (w >= 1200) LayoutLarge(w, h, panelOpen);
+    // 原版在“很宽但很矮”的窗口中使用独立的横向布局：信息固定在顶部，
+    // 封面按高度缩小，但 600px 播放控制列不跟着缩小。此前只按宽度分档，
+    // 1750×600 一类窗口会误入紧凑播放列，正是截图中黑色版本的差异来源。
+    if (w >= 1200 && h < 720) LayoutShortWide(w, h, panelOpen);
+    else if (w >= 1200) LayoutLarge(w, h, panelOpen);
     // 录屏中的 1093px 窗口：无面板仍是顶部信息的中屏布局；打开面板后则保留完整播放列并左右分栏。
     else if (w >= 1000 && panelOpen) LayoutWidePanel(w, h);
     else if (w >= 700) LayoutMedium(w, h, panelOpen);
@@ -155,21 +158,87 @@ public partial class NowPlayingView : UserControl
       Dispatcher.UIThread.Post(() => _transitionsAttached = true, DispatcherPriority.Loaded);
   }
 
+  /// <summary>矮宽中屏（原版约 1750×620 截图基准）。
+  /// 信息始终位于顶部中央；封面只随可用高度缩放；进度和两侧按钮保持 600px 宽。
+  /// 打开歌词/队列后，播放列整体左移，面板从其右侧开始并吃掉剩余宽度。</summary>
+  private void LayoutShortWide(double w, double h, bool panelOpen)
+  {
+    const double controlWidth = 600;
+    const double artworkTop = 126;
+    var rowWidth = Math.Min(controlWidth, w - 2 * SmallSideMargin);
+    var closedRowX = (w - rowWidth) / 2;
+    var openRowX = Math.Clamp(w * 0.06, 72, 104);
+    var rowX = panelOpen ? openRowX : closedRowX;
+    var center = rowX + rowWidth / 2;
+
+    // 618px 高时约为 194px；窗口降到 584px 时仍保留 160px，且底部按钮完整可见。
+    var cover = Math.Clamp(h - 424, 120, Math.Min(300, rowWidth));
+    Artwork.CornerRadius = new CornerRadius(16);
+    SetRect(Artwork, center - cover / 2, artworkTop, cover, cover);
+
+    var infoWidth = Math.Min(600, w - 160);
+    SetRect(InfoPanel, (w - infoWidth) / 2, 36, infoWidth, 54);
+    SetInfoCentered(true);
+    MoveTo(CollapseButton, 0, 32);
+
+    // 以下 Y 坐标锚定窗口底部，避免 1300×584 时切换按钮落到屏幕外。
+    var togglesY = h - 65;
+    var secondaryY = togglesY - 66;
+    var transportY = secondaryY - 65;
+    var progressY = transportY - 58;
+    SetRect(ProgressArea, rowX, progressY, rowWidth, 52);
+    MoveTo(PrevButton, center - 110, transportY + 5);
+    MoveTo(PlayButton, center - 30, transportY);
+    MoveTo(NextButton, center + 60, transportY + 5);
+    MoveTo(ModeButton, rowX, secondaryY);
+    MoveTo(LikeButton, center - 25, secondaryY);
+    MoveTo(VolumeButton, rowX + rowWidth - 50, secondaryY);
+    MoveTo(LyricsToggle, rowX, togglesY);
+    MoveTo(FullScreenToggle, center - 24, togglesY);
+    MoveTo(QueueToggle, rowX + rowWidth - 48, togglesY);
+
+    if (panelOpen)
+    {
+      const double panelGap = 40;
+      var panelX = rowX + rowWidth + panelGap;
+      var panelRight = Math.Clamp(w * 0.052, 68, 92);
+      var panelTop = 84.0;
+      var panelW = Math.Max(280, w - panelX - panelRight);
+      var panelH = Math.Max(260, h - panelTop - 20);
+      SetRect(LyricsPanel, panelX, panelTop, panelW, panelH);
+      SetRect(QueuePanel, panelX, panelTop, panelW, panelH);
+    }
+
+    SetVisibility(progress: true, prev: true, play: true, next: true, like: true, mode: true, volume: true,
+      queueToggle: true);
+  }
+
   /// <summary>大屏(≥1200,1920 截图基准):播放列 = 封面+信息+进度+控制+次级+切换;
   /// 无面板居中;开面板整组左移,面板占剩余宽度(1920 时恰为 898)。</summary>
   private void LayoutLarge(double w, double h, bool panelOpen)
   {
     var margin = 40.0;
-    var cover = Math.Clamp(Math.Min(h - BelowCoverStack - 114, w - margin * 2), 180, 600);
+    // 宽窗口也可能很矮（例如 1300×584）。原公式已经为顶部标题栏和底部按钮
+    // 预留了 114px，但窗口标称高度还可能包含宿主窗口区域，必须再按本视图的
+    // 实际 Bounds 钳制最终矩形，不能依赖 MinHeight 推算。
+    var preferredCover = Math.Min(h - BelowCoverStack - 114, w - margin * 2);
+    var maxCoverToFit = Math.Max(48, h - BelowCoverStack - 24);
+    var cover = Math.Clamp(preferredCover, 48, Math.Min(600, maxCoverToFit));
     var colH = cover + BelowCoverStack;
-    var colTop = (h - colH) / 2 + 35;
+    var preferredTop = (h - colH) / 2 + 35;
+    var latestVisibleTop = Math.Max(8, h - colH - 16);
+    var colTop = Math.Clamp(preferredTop, 8, latestVisibleTop);
     double colX;
     if (panelOpen)
     {
-      colX = margin;
-      var panelW = Math.Max(280, w - margin * 2 - cover - PanelGap);
-      SetRect(LyricsPanel, colX + cover + PanelGap, colTop, panelW, colH);
-      SetRect(QueuePanel, colX + cover + PanelGap, colTop, panelW, colH);
+      // 原版大屏是左右两个等宽区域，而不是“左侧=封面宽、右侧=剩余宽”。
+      // 以中心线为轴留出沟槽，两侧使用同一 margin，因此无论窗口多宽都严格 50/50。
+      var splitGap = Math.Clamp(w * 0.025, 32, 56);
+      var paneW = Math.Max(280, w / 2 - splitGap / 2 - margin);
+      var panelX = w / 2 + splitGap / 2;
+      colX = margin + (paneW - cover) / 2;
+      SetRect(LyricsPanel, panelX, colTop, paneW, colH);
+      SetRect(QueuePanel, panelX, colTop, paneW, colH);
     }
     else
     {
@@ -239,10 +308,11 @@ public partial class NowPlayingView : UserControl
   private void LayoutWidePanel(double w, double h)
   {
     var playerX = Math.Clamp(w * 0.025, 24, 40);
-    var playerW = Math.Clamp(w * 0.45, 420, 520);
     var panelGap = Math.Clamp(w * 0.04, 36, 50);
-    var panelX = playerX + playerW + panelGap;
-    var panelRight = Math.Clamp(w * 0.035, 28, 44);
+    // 与大屏一致，以窗口中心线切出两个严格等宽的可用区域。
+    var playerW = Math.Max(320, w / 2 - panelGap / 2 - playerX);
+    var panelX = w / 2 + panelGap / 2;
+    var panelW = playerW;
 
     // 原版宽中屏的纵向节奏与窄屏播放列一致，所有控制锚定底部；
     // 封面在播放列内居中，并为歌名区预留约 90px 的呼吸空间。
@@ -271,7 +341,6 @@ public partial class NowPlayingView : UserControl
     MoveTo(QueueToggle, playerX + playerW - 48, togglesY);
 
     var panelTop = Math.Clamp(h * 0.095, 82, 106);
-    var panelW = Math.Max(300, w - panelX - panelRight);
     var panelH = Math.Max(260, h - panelTop - 20);
     SetRect(LyricsPanel, panelX, panelTop, panelW, panelH);
     SetRect(QueuePanel, panelX, panelTop, panelW, panelH);

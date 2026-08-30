@@ -86,7 +86,8 @@
                                  粘贴的整段 cookie 由 SetMusicUCookie 解析,无需多行 -->
                             <TextBox x:Name="MusicUBox" Text="{Binding MusicUInput}"
                                      PlaceholderText="粘贴 MUSIC_U 的值"
-                                     TextWrapping="Wrap" Height="64" FontSize="13" />
+                                     TextWrapping="Wrap" Height="64" FontSize="13"
+                                     PastingFromClipboard="OnPastingFromClipboard" />
                             <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
                                 <StackPanel Spacing="5">
                                     <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />
@@ -105,7 +106,8 @@
                             <TextBlock Text="QQ 音乐登录" FontSize="13" FontWeight="SemiBold" />
                             <TextBox x:Name="QQBox" Text="{Binding QqCookieInput}"
                                      PlaceholderText="粘贴 y.qq.com 的整段 Cookie"
-                                     TextWrapping="Wrap" Height="64" FontSize="13" />
+                                     TextWrapping="Wrap" Height="64" FontSize="13"
+                                     PastingFromClipboard="OnPastingFromClipboard" />
                             <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
                                 <StackPanel Spacing="5">
                                     <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />

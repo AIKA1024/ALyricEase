@@ -26,6 +26,10 @@ public partial class App : Avalonia.Application
         // 触控为主的输入模式:必须在任何视图创建前声明(TrackRow 构造按此订阅单击播放/挂 touch 类)
         InteractionDefaults.Init(touchPrimary: true);
 
+        // 部分 Android Automotive ROM 的 ClipDescription 缺少标准 text/* MIME；
+        // Avalonia 因而不暴露 DataFormat.Text。仅在标准读取为空时直接 CoerceToText。
+        ClipboardService.RegisterTextReaderFallback(AndroidClipboardTextReader.TryGetTextAsync);
+
         ConfigureServices();
 
         if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)

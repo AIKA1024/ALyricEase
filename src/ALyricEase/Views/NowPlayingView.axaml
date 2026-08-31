@@ -226,7 +226,7 @@
                     ToolTip.Tip="{Binding Player.PlaybackModeName}">
                 <TextBlock Text="{Binding Player.PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" Foreground="White" />
                 <Button.Flyout>
-                    <MenuFlyout Placement="Top">
+                    <MenuFlyout Placement="Top" ShowMode="Transient">
                         <MenuItem Header="列表循环" ToggleType="Radio" IsChecked="{Binding Player.IsListLoopMode}">
                             <MenuItem.Icon>
                                 <TextBlock Text="{DynamicResource IconRepeatList}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />

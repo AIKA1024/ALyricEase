@@ -163,7 +163,7 @@ public partial class SearchView : UserControl
         TabItems.HorizontalAlignment = overflow ? HorizontalAlignment.Left : HorizontalAlignment.Center;
 
         if (!overflow) return;
-        var flyout = new MenuFlyout();
+        var flyout = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
         for (var i = 0; i < tabs.Count; i++)
         {
             if (visible[i]) continue;

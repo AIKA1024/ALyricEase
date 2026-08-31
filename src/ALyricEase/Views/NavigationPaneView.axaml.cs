@@ -46,7 +46,7 @@ public partial class NavigationPaneView : UserControl
         var row = (e.Source as Visual)?.GetVisualAncestors().OfType<ListBoxItem>().FirstOrDefault();
         if (row?.DataContext is not NavItemViewModel nav) return;
 
-        var menu = new MenuFlyout();
+        var menu = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
 
         if (nav.Playlist is { } item)
         {

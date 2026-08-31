@@ -73,7 +73,7 @@
                   <Button.Resources>
                     <!-- MenuFlyout:原生 hover 子菜单/延迟/定位(多歌手"表演者"子项),不再手写计时器;
                          菜单项/弹层观感走全局 MenuItem/MenuFlyoutPresenter 默认样式(同侧栏右键菜单) -->
-                    <MenuFlyout x:Key="TrackMenuFlyout">
+                    <MenuFlyout x:Key="TrackMenuFlyout" ShowMode="Transient">
                       <!-- 单歌手:直接跳歌手页 -->
                       <MenuItem Header="{Binding Artist, StringFormat='表演者: {0}'}"
                                 Command="{Binding OpenArtistCommand}"
@@ -199,7 +199,7 @@
                 </StackPanel>
                 <Button.Resources>
                   <!-- 多歌手菜单:点击歌手按钮直接平铺歌手名(仅表演者,不设"表演者>"分级),逐项跳对应歌手页 -->
-                  <MenuFlyout x:Key="ArtistMenuFlyout" FlyoutPresenterClasses="track-menu-presenter"
+                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" FlyoutPresenterClasses="track-menu-presenter"
                               ItemsSource="{Binding Artists}">
                     <MenuFlyout.ItemContainerTheme>
                       <!-- 仅绑定每项的路由数据;观感走全局 MenuItem 默认样式(同 track-menu 项) -->
@@ -283,7 +283,7 @@
                              TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <Button.Resources>
-                  <MenuFlyout x:Key="ArtistMenuFlyout" ItemsSource="{Binding Artists}">
+                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
                     <MenuFlyout.ItemContainerTheme>
                       <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
                                     BasedOn="{StaticResource {x:Type MenuItem}}">

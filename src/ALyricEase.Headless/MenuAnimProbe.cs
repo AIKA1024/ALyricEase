@@ -7,6 +7,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Logging;
 using Avalonia.Media.Imaging;
 using Avalonia.Rendering.Composition;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ALyricEase.Controls;
@@ -15,10 +16,21 @@ namespace ALyricEase.Headless;
 
 /// <summary>菜单打开动画探针(--menuanim):验证 FlyoutOpenAnimation(合成动画)的方向规则与真实启动。
 /// 1) 纯函数 ComputeStartOffset 六条方向规则断言(下开/上开/右侧子菜单/左翻转/指针下开/指针上开);
-/// 2) 真实打开 MenuFlyout(下方开、Placement=Top 上方开)、展开子菜单、关闭重开,
+/// 2) 真实打开普通 Flyout 与 MenuFlyout(下方开、Placement=Top 上方开)、展开子菜单、关闭重开,
 ///    通过 Started 诊断回报每次实际启动的起始偏移(合成动画值不可读,以此验证)。</summary>
 public static class MenuAnimProbe
 {
+    private sealed class CapturingFlyout : Flyout
+    {
+        public FlyoutPresenter? Presenter { get; private set; }
+
+        protected override Control CreatePresenter()
+        {
+            Presenter = (FlyoutPresenter)base.CreatePresenter();
+            return Presenter;
+        }
+    }
+
     private sealed class CapturingMenuFlyout : MenuFlyout
     {
         public MenuFlyoutPresenter? Presenter { get; private set; }
@@ -63,6 +75,80 @@ public static class MenuAnimProbe
         var starts = new List<(Control Surface, double Dx, double Dy)>();
         FlyoutOpenAnimation.Started += OnStarted;
         void OnStarted(Visual surface, double dx, double dy) => starts.Add(((Control)surface, dx, dy));
+
+        // 普通 Flyout(音量/歌词字号同类):全局 FlyoutPresenter 样式必须启动同款淡入+滑入。
+        var slider = new Slider
+        {
+            Width = 200,
+            Minimum = 0,
+            Maximum = 100,
+            Value = 50,
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            TickPlacement = TickPlacement.Outside,
+            TickFrequency = 20,
+        };
+        ControlTheme? sliderControlTheme = null;
+        if (Application.Current?.Styles.TryGetResource("WinUISliderTheme", null, out var sliderTheme) == true
+            && sliderTheme is ControlTheme controlTheme)
+        {
+            sliderControlTheme = controlTheme;
+            slider.Theme = controlTheme;
+        }
+        else
+        {
+            Console.WriteLine("[menuanim] FAIL: 未找到 WinUISliderTheme");
+            _failCount++;
+        }
+
+        var volumeText = new TextBlock { Text = "50", Width = 28, TextAlignment = Avalonia.Media.TextAlignment.Right };
+        var ordinary = new CapturingFlyout
+        {
+            Placement = PlacementMode.Top,
+            Content = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 10,
+                Children = { new TextBlock { Text = "音量" }, slider, volumeText },
+            },
+        };
+        ordinary.ShowAt(button);
+        Dispatcher.UIThread.RunJobs();
+        Dispatcher.UIThread.RunJobs();
+        ReportStart("普通 Flyout", starts.LastOrDefault(), ordinary.Presenter, resolvedExpected: true);
+        AssertStableSliderTrack(slider, volumeText);
+        ordinary.Hide();
+        Dispatcher.UIThread.RunJobs();
+
+        // PlayerBar 的垂直音量结构：确认数字宽度变化不会带动弹层/Slider，且底轨下端保持固定。
+        var verticalSlider = new Slider
+        {
+            Theme = sliderControlTheme,
+            Height = 150,
+            Minimum = 0,
+            Maximum = 100,
+            Value = 50,
+            Orientation = Avalonia.Layout.Orientation.Vertical,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            TickPlacement = TickPlacement.Outside,
+            TickFrequency = 20,
+        };
+        var verticalVolumeText = new TextBlock { Text = "50", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center };
+        var verticalFlyout = new CapturingFlyout
+        {
+            Placement = PlacementMode.Top,
+            Content = new StackPanel
+            {
+                Spacing = 8,
+                Margin = new Thickness(4),
+                Children = { verticalSlider, verticalVolumeText },
+            },
+        };
+        verticalFlyout.ShowAt(button);
+        Dispatcher.UIThread.RunJobs();
+        Dispatcher.UIThread.RunJobs();
+        AssertStableVerticalSliderTrack(verticalSlider, verticalVolumeText, verticalFlyout.Presenter);
+        verticalFlyout.Hide();
+        Dispatcher.UIThread.RunJobs();
 
         // 下方打开:期望动画启动且矩形/目标解析成功(headless 无定位器,方向绝对值由纯函数断言覆盖)
         flyout.ShowAt(button);
@@ -136,6 +222,80 @@ public static class MenuAnimProbe
         Console.WriteLine($"[menuanim] {label}: 启动偏移=({actual.Dx:F0},{actual.Dy:F0}) " +
             $"矩形/目标解析={resolved} (期望 {resolvedExpected}) 表面正确={ReferenceEquals(actual.Surface, expectedSurface)} {(ok ? "OK" : "FAIL")}");
         if (!ok)
+        {
+            _failCount++;
+        }
+    }
+
+    private static void AssertStableSliderTrack(Slider slider, TextBlock volumeText)
+    {
+        var baseTrack = slider.GetVisualDescendants().OfType<Border>()
+            .FirstOrDefault(x => x.Name == "TrackBaseBackground");
+        if (baseTrack is null)
+        {
+            Console.WriteLine("[menuanim] FAIL: 横向音量滑块没有固定底轨");
+            _failCount++;
+            return;
+        }
+
+        var rightEdges = new List<double>();
+        foreach (var value in new[] { 0d, 1d, 9d, 10d, 11d, 50d, 99d, 100d })
+        {
+            slider.Value = value;
+            volumeText.Text = value.ToString("0");
+            Dispatcher.UIThread.RunJobs();
+            var right = baseTrack.TranslatePoint(new Point(baseTrack.Bounds.Width, 0), slider)?.X ?? double.NaN;
+            rightEdges.Add(right);
+        }
+
+        var stable = rightEdges.All(x => double.IsFinite(x) && Math.Abs(x - rightEdges[0]) < 0.01);
+        Console.WriteLine($"[menuanim] 音量底轨右端稳定: {stable} " +
+                          $"范围={rightEdges.Min():F2}..{rightEdges.Max():F2} TextWidth={volumeText.Bounds.Width:F0}");
+        if (!stable || Math.Abs(volumeText.Bounds.Width - 28) > 0.01)
+        {
+            _failCount++;
+        }
+    }
+
+    private static void AssertStableVerticalSliderTrack(Slider slider, TextBlock volumeText, FlyoutPresenter? presenter)
+    {
+        var baseTrack = slider.GetVisualDescendants().OfType<Border>()
+            .FirstOrDefault(x => x.Name == "TrackBaseBackground");
+        var decrease = slider.GetVisualDescendants().OfType<RepeatButton>()
+            .FirstOrDefault(x => x.Name == "PART_DecreaseButton");
+        if (baseTrack is null || decrease is null || presenter is null)
+        {
+            Console.WriteLine("[menuanim] FAIL: 垂直音量滑块诊断元素不完整");
+            _failCount++;
+            return;
+        }
+
+        var baseBottoms = new List<double>();
+        var fillBottoms = new List<double>();
+        var sliderLefts = new List<double>();
+        var presenterWidths = new List<double>();
+        foreach (var value in new[] { 0d, 1d, 9d, 10d, 11d, 50d, 99d, 100d })
+        {
+            slider.Value = value;
+            volumeText.Text = value.ToString("0");
+            Dispatcher.UIThread.RunJobs();
+            baseBottoms.Add(baseTrack.TranslatePoint(new Point(0, baseTrack.Bounds.Height), slider)?.Y ?? double.NaN);
+            fillBottoms.Add(decrease.TranslatePoint(new Point(0, decrease.Bounds.Height), slider)?.Y ?? double.NaN);
+            sliderLefts.Add(slider.TranslatePoint(default, presenter)?.X ?? double.NaN);
+            presenterWidths.Add(presenter.Bounds.Width);
+        }
+
+        static bool Stable(IReadOnlyList<double> values) =>
+            values.All(x => double.IsFinite(x) && Math.Abs(x - values[0]) < 0.01);
+
+        var stable = Stable(baseBottoms) && Stable(fillBottoms) && Stable(sliderLefts) && Stable(presenterWidths);
+        Console.WriteLine($"[menuanim] 垂直音量布局稳定: {stable} " +
+                          $"底轨={baseBottoms.Min():F2}..{baseBottoms.Max():F2} " +
+                          $"填充端={fillBottoms.Min():F2}..{fillBottoms.Max():F2} " +
+                          $"SliderX={sliderLefts.Min():F2}..{sliderLefts.Max():F2} " +
+                          $"FlyoutW={presenterWidths.Min():F2}..{presenterWidths.Max():F2} " +
+                          $"TextW={volumeText.Bounds.Width:F2}");
+        if (!stable)
         {
             _failCount++;
         }

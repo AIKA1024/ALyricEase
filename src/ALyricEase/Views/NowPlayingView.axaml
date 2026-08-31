@@ -221,29 +221,11 @@
                 <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" />
             </ToggleButton>
 
-            <!-- 播放模式:大屏/中屏在次级行左,弹出单选菜单;小屏隐藏 -->
+            <!-- 播放模式:大屏/中屏在次级行左；点击直接按 列表→单曲→随机 循环切换；小屏隐藏 -->
             <Button x:Name="ModeButton" Classes="player-button layout-fade" Width="50" Height="50"
+                    Command="{Binding Player.TogglePlaybackModeCommand}"
                     ToolTip.Tip="{Binding Player.PlaybackModeName}">
                 <TextBlock Text="{Binding Player.PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" Foreground="White" />
-                <Button.Flyout>
-                    <MenuFlyout Placement="Top" ShowMode="Transient">
-                        <MenuItem Header="列表循环" ToggleType="Radio" IsChecked="{Binding Player.IsListLoopMode}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="{DynamicResource IconRepeatList}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="单曲循环" ToggleType="Radio" IsChecked="{Binding Player.IsSingleLoopMode}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="{DynamicResource IconRepeatOne}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="随机播放" ToggleType="Radio" IsChecked="{Binding Player.IsShuffleMode}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="{DynamicResource IconShuffle}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                    </MenuFlyout>
-                </Button.Flyout>
             </Button>
 
             <!-- 音量:大屏/中屏在次级行右;小屏无面板在底部行右;开面板隐藏 -->
@@ -251,12 +233,16 @@
                 <TextBlock Text="{DynamicResource IconVolume}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" Foreground="White" />
                 <Button.Flyout>
                     <Flyout Placement="Top">
-                        <StackPanel Spacing="10" Margin="4">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Text="{DynamicResource IconVolume}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding Player.Volume}" Width="28" FontSize="16" VerticalAlignment="Center" />
-                            </StackPanel>
-                            <Slider Value="{Binding Player.Volume}" Minimum="0" Maximum="100" Width="200" />
+                        <StackPanel Orientation="Horizontal" Spacing="10" Margin="4">
+                            <TextBlock Text="{DynamicResource IconVolume}" FontFamily="{DynamicResource LyricEaseIcons}"
+                                       FontSize="16" VerticalAlignment="Center" />
+                            <!-- 与 PlayerBar 音量共用 WinUI3 Slider 主题；不固定高度，给 Outside 的上下刻度保留完整空间。 -->
+                            <Slider Theme="{StaticResource WinUISliderTheme}"
+                                    Value="{Binding Player.Volume}" Minimum="0" Maximum="100"
+                                    Width="200" Orientation="Horizontal" VerticalAlignment="Center"
+                                    TickPlacement="Outside" TickFrequency="20" />
+                            <TextBlock Text="{Binding Player.Volume}" Width="28" FontSize="16"
+                                       TextAlignment="Right" VerticalAlignment="Center" />
                         </StackPanel>
                     </Flyout>
                 </Button.Flyout>

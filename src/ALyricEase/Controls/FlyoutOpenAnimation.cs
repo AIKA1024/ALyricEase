@@ -28,7 +28,7 @@ namespace ALyricEase.Controls;
 /// 越界部分被窗口裁掉,随滑动逐渐露出。启动时机在 PopupRoot.PositionChanged(Win32 对隐藏窗口
 /// SetWindowPos 也会触发,此时窗口尚未显示)→ 方向已定且首帧未渲染,无闪现。
 ///
-/// 用法:样式对菜单表面(MenuFlyoutPresenter / 子菜单 Popup#PART_Popup Border)设 IsEnabled=True;
+/// 用法:样式对弹层表面(FlyoutPresenter / MenuFlyoutPresenter / 子菜单 Popup#PART_Popup Border)设 IsEnabled=True;
 /// 弹窗关闭即销毁宿主,样式随 attach 重新应用,故每次打开都会重放。
 /// </summary>
 public class FlyoutOpenAnimation

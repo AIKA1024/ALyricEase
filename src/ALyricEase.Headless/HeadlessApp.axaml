@@ -47,6 +47,7 @@
         <FluentTheme />
         <StyleInclude Source="avares://ALyricEase/Styles/Foundation/Typography.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Controls/Buttons.axaml" />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/Sliders.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Controls/Common.axaml" />
         <StyleInclude Source="avares://ALyricEase/Views/TrackRow.axaml" />
     </Application.Styles>

@@ -83,6 +83,15 @@
                         <RowDefinition Height="{DynamicResource SliderPostContentMargin}" />
                       </Grid.RowDefinitions>
 
+                      <!-- 未填充轨道保持为固定整条底轨，避免 IncreaseButton 随 Value 重排时的像素取整
+                           令右端点产生 1px 左右抖动；强调色填充段仍由 DecreaseButton 覆盖。 -->
+                      <Border Name="TrackBaseBackground"
+                              Grid.Row="1" Grid.ColumnSpan="3"
+                              Background="{TemplateBinding Background}"
+                              CornerRadius="{DynamicResource SliderTrackCornerRadius}"
+                              Height="{DynamicResource SliderTrackThemeHeight}"
+                              VerticalAlignment="Center" />
+
                       <TickBar Name="TopTickBar"
                                Placement="Top"
                                Height="{DynamicResource SliderOutsideTickBarThemeHeight}"
@@ -123,14 +132,7 @@
                                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                             <RepeatButton.Template>
                               <ControlTemplate>
-                                <Grid>
-                                  <Border Name="FocusTarget" Background="Transparent" Margin="0,-10" />
-                                  <Border Name="TrackBackground"
-                                          Background="{TemplateBinding Background}"
-                                          CornerRadius="{DynamicResource SliderTrackCornerRadius}"
-                                          Height="{DynamicResource SliderTrackThemeHeight}"
-                                          VerticalAlignment="Center" />
-                                </Grid>
+                                <Border Name="FocusTarget" Background="Transparent" Margin="0,-10" />
                               </ControlTemplate>
                             </RepeatButton.Template>
                           </RepeatButton>
@@ -171,6 +173,14 @@
                         <ColumnDefinition Width="{DynamicResource SliderPostContentMargin}" />
                       </Grid.ColumnDefinitions>
 
+                      <!-- 与横向模板一致：底轨尺寸固定，仅填充段随 Value 变化。 -->
+                      <Border Name="TrackBaseBackground"
+                              Grid.Column="1" Grid.RowSpan="3"
+                              Background="{TemplateBinding Background}"
+                              CornerRadius="{DynamicResource SliderTrackCornerRadius}"
+                              Width="{DynamicResource SliderTrackThemeHeight}"
+                              HorizontalAlignment="Center" />
+
                       <TickBar Name="LeftTickBar"
                                Placement="Left"
                                Width="{DynamicResource SliderOutsideTickBarThemeHeight}"
@@ -180,8 +190,10 @@
                                Width="{DynamicResource SliderOutsideTickBarThemeHeight}"
                                HorizontalAlignment="Left" Margin="4,0,0,0" Grid.Column="2" Grid.RowSpan="3" />
 
+                      <!-- 垂直分段长度通常含小数；避免分别取整后让靠数值侧的填充端在相邻像素间跳动。 -->
                       <Track Name="PART_Track" Grid.Column="1" Grid.RowSpan="3"
                              Orientation="Vertical"
+                             UseLayoutRounding="False"
                              Minimum="{TemplateBinding Minimum}"
                              Maximum="{TemplateBinding Maximum}"
                              Value="{TemplateBinding Value, Mode=TwoWay}"
@@ -210,14 +222,7 @@
                                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                             <RepeatButton.Template>
                               <ControlTemplate>
-                                <Grid>
-                                  <Border Name="FocusTarget" Background="Transparent" Margin="0,-10" />
-                                  <Border Name="TrackBackground"
-                                          Background="{TemplateBinding Background}"
-                                          CornerRadius="{DynamicResource SliderTrackCornerRadius}"
-                                          Width="{DynamicResource SliderTrackThemeHeight}"
-                                          HorizontalAlignment="Center" />
-                                </Grid>
+                                <Border Name="FocusTarget" Background="Transparent" Margin="0,-10" />
                               </ControlTemplate>
                             </RepeatButton.Template>
                           </RepeatButton>
@@ -271,7 +276,7 @@
         <Style Selector="^ /template/ RepeatButton#PART_DecreaseButton">
           <Setter Property="Background" Value="{DynamicResource SliderFillPointerOver}" />
         </Style>
-        <Style Selector="^ /template/ RepeatButton#PART_IncreaseButton">
+        <Style Selector="^ /template/ Border#TrackBaseBackground">
           <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
         </Style>
       </Style>
@@ -283,7 +288,7 @@
         <Style Selector="^ /template/ RepeatButton#PART_DecreaseButton">
           <Setter Property="Background" Value="{DynamicResource SliderFillPressed}" />
         </Style>
-        <Style Selector="^ /template/ RepeatButton#PART_IncreaseButton">
+        <Style Selector="^ /template/ Border#TrackBaseBackground">
           <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
         </Style>
       </Style>
@@ -292,7 +297,7 @@
         <Style Selector="^ /template/ RepeatButton#PART_DecreaseButton">
           <Setter Property="Background" Value="{DynamicResource TextDisabled}" />
         </Style>
-        <Style Selector="^ /template/ RepeatButton#PART_IncreaseButton">
+        <Style Selector="^ /template/ Border#TrackBaseBackground">
           <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
         </Style>
         <Style Selector="^ /template/ TickBar">

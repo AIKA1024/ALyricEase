@@ -67,15 +67,19 @@
         <Setter Property="Background" Value="{DynamicResource NavigationSelected}" />
     </Style>
 
-    <!-- 所有 Flyout 表面内边距收窄为 4(默认 8 太大);仅覆盖 Padding,保留默认模板的阴影/圆角表面 -->
+    <!-- 所有普通 Flyout 表面内边距收窄为 4，并复用菜单同款 WinUI3 淡入+纵向滑入动画。
+         音量、歌词字号等都由 FlyoutPresenter 承载；此前只给 MenuFlyoutPresenter 启用动画，
+         因而这些普通 Flyout 会直接出现。 -->
     <Style Selector="FlyoutPresenter">
         <Setter Property="Padding" Value="4" />
+        <Setter Property="ctrl:FlyoutOpenAnimation.IsEnabled" Value="True" />
     </Style>
 
     <!-- 普通 Flyout 投影(菜单表面走下面全局 MenuFlyoutPresenter 样式) -->
     <Style Selector="FlyoutPresenter /template/ Border">
         <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
-        <Setter Property="Margin" Value="4 0 4 4" />
+        <!-- 4px 下偏移 + 10px 模糊需要相应的底部绘制空间，避免 Popup 边界裁掉投影。 -->
+        <Setter Property="Margin" Value="4 0 4 14" />
     </Style>
 
     <!-- 所有 MenuFlyoutPresenter(一级+子菜单都自动创建 MenuFlyoutPresenter,子菜单不继承父级 FlyoutPresenterClasses):

@@ -61,6 +61,12 @@ public sealed class AppStateFile
 
     /// <summary>交叉淡化时长(秒)。</summary>
     public double? CrossfadeSeconds { get; set; }
+
+    /// <summary>播放模式(0=列表循环 1=单曲循环 2=随机播放)。</summary>
+    public int? PlaybackMode { get; set; }
+
+    /// <summary>播放器音量(0-100)。</summary>
+    public int? Volume { get; set; }
 }
 
 /// <summary>聚合歌单落盘形态。</summary>

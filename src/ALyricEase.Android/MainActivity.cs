@@ -5,6 +5,7 @@ using Android.OS;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using ALyricEase.ViewModels;
 using Avalonia.Android;
 
@@ -49,6 +50,9 @@ public class MainActivity : AvaloniaMainActivity
 
     protected override void OnStop()
     {
+        // Android 可能在后台直接回收进程；进入后台前同步刷新高频配置的延迟保存。
+        ServiceLocator.Get<AppStateStore>().Flush();
+
         _backCallback?.Remove();
         _backCallback = null;
 

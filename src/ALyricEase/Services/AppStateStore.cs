@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
+using Avalonia.Threading;
 
 namespace ALyricEase.Services;
 
@@ -12,7 +13,10 @@ namespace ALyricEase.Services;
 /// 写入走 tmp+Move 原子替换;文件损坏按全部默认值处理。</summary>
 public sealed class AppStateStore
 {
+    private static readonly TimeSpan DeferredSaveDelay = TimeSpan.FromMilliseconds(400);
     private readonly string _path;
+    private DispatcherTimer? _deferredSaveTimer;
+    private bool _hasPendingSave;
 
     /// <summary>网易云歌单分组是否展开。</summary>
     public bool IsNetEaseGroupExpanded { get; set; } = true;
@@ -41,7 +45,7 @@ public sealed class AppStateStore
     /// <summary>上次关闭时是否处于最大化(恢复时套用,尺寸/位置字段保存的是常规态值)。</summary>
     public bool WindowMaximized { get; set; }
 
-    // ---- 设置页偏好(SettingsViewModel 绑定;改任意项即 Save) ----
+    // ---- 设置页偏好(SettingsViewModel 绑定;离散项即时保存,连续滑块延迟合并保存) ----
 
     /// <summary>主题:System/Light/Dark。</summary>
     public string Theme { get; set; } = "System";
@@ -69,6 +73,12 @@ public sealed class AppStateStore
 
     /// <summary>交叉淡化时长(秒)。</summary>
     public double CrossfadeSeconds { get; set; } = 4;
+
+    /// <summary>播放模式(0=列表循环 1=单曲循环 2=随机播放)。</summary>
+    public int PlaybackMode { get; set; }
+
+    /// <summary>播放器音量(0-100)。</summary>
+    public int Volume { get; set; } = 80;
 
     public AppStateStore()
     {
@@ -108,6 +118,8 @@ public sealed class AppStateStore
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
             Crossfade = dto.Crossfade ?? false;
             CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;
+            PlaybackMode = dto.PlaybackMode is >= 0 and <= 2 ? dto.PlaybackMode.Value : 0;
+            Volume = Math.Clamp(dto.Volume ?? 80, 0, 100);
 
             AggregatePlaylists.Clear();
             foreach (var f in dto.AggregatePlaylists ?? new List<AggregatePlaylistFile>())
@@ -142,8 +154,11 @@ public sealed class AppStateStore
         }
     }
 
+    /// <summary>立即保存完整状态，并取消尚未执行的延迟保存。</summary>
     public void Save()
     {
+        StopDeferredSaveTimer();
+        _hasPendingSave = true;
         try
         {
             var dto = new AppStateFile
@@ -181,14 +196,47 @@ public sealed class AppStateStore
                 LegacyPlaybackControl = LegacyPlaybackControl,
                 Crossfade = Crossfade,
                 CrossfadeSeconds = CrossfadeSeconds,
+                PlaybackMode = PlaybackMode,
+                Volume = Volume,
             };
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, AppStateJsonContext.Default.AppStateFile));
             File.Move(tmp, _path, overwrite: true);
+            _hasPendingSave = false;
         }
         catch
         {
-            // 写失败不致命,下次再存
+            // 写失败不致命；保留 dirty 标记，生命周期 Flush 或下次 Save 会重试。
         }
     }
+
+    /// <summary>高频连续值使用的合并保存：每次调用都把保存推迟 400ms，停止变化后才落盘。
+    /// 调用方均来自 Avalonia UI 线程，计时器也在 UI Dispatcher 的后台优先级执行。</summary>
+    public void ScheduleSave()
+    {
+        _hasPendingSave = true;
+        _deferredSaveTimer ??= CreateDeferredSaveTimer();
+        _deferredSaveTimer.Stop();
+        _deferredSaveTimer.Start();
+    }
+
+    /// <summary>应用退出或进入后台时同步写完尚未落盘的延迟状态。</summary>
+    public void Flush()
+    {
+        StopDeferredSaveTimer();
+        if (_hasPendingSave)
+            Save();
+    }
+
+    private DispatcherTimer CreateDeferredSaveTimer()
+    {
+        var timer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = DeferredSaveDelay,
+        };
+        timer.Tick += (_, _) => Save();
+        return timer;
+    }
+
+    private void StopDeferredSaveTimer() => _deferredSaveTimer?.Stop();
 }

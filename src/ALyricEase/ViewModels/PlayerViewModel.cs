@@ -34,6 +34,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private readonly MusicApiProvider _sources;
     private readonly LyricViewModel _lyric;
     private readonly ISmtcService _smtc;
+    private readonly AppStateStore _appState;
 
     private bool _scrubbing;
     private bool _seekPending;
@@ -62,23 +63,31 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty] private bool _isFmActive;
 
-    public PlayerViewModel(IAudioPlayer player, NetEaseApiClient api, MusicApiProvider sources, LyricViewModel lyric, ISmtcService smtc)
+    public PlayerViewModel(
+        IAudioPlayer player,
+        NetEaseApiClient api,
+        MusicApiProvider sources,
+        LyricViewModel lyric,
+        ISmtcService smtc,
+        AppStateStore appState)
     {
         _player = player;
         _api = api;
         _sources = sources;
         _lyric = lyric;
         _smtc = smtc;
+        _appState = appState;
         _smtc.PlayPauseRequested += OnSmtcPlayPause;
         _smtc.SeekRequested += OnSmtcSeek;
         _smtc.NextRequested += OnSmtcNext;
         _smtc.PreviousRequested += OnSmtcPrevious;
-        _player.Volume = 80;
+        _playbackMode = (PlaybackMode)_appState.PlaybackMode;
+        _player.Volume = _appState.Volume;
         _player.StateChanged += OnStateChanged;
         _player.PositionChanged += OnPositionChanged;
         _player.DurationChanged += OnDurationChanged;
         _player.ErrorOccurred += OnError;
-        Volume = _player.Volume;
+        _volume = _player.Volume;
     }
 
     [ObservableProperty] private Song? _currentSong;
@@ -149,6 +158,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsListLoopMode));
         OnPropertyChanged(nameof(IsSingleLoopMode));
         OnPropertyChanged(nameof(IsShuffleMode));
+        _appState.PlaybackMode = (int)value;
+        _appState.Save();
     }
 
     /// <summary>详情页播放模式菜单的单选绑定项(ToggleType=Radio):选中即切到对应模式。</summary>
@@ -176,7 +187,12 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private void TogglePlaybackMode()
         => PlaybackMode = (PlaybackMode)(((int)PlaybackMode + 1) % 3);
 
-    partial void OnVolumeChanged(int value) => _player.Volume = value;
+    partial void OnVolumeChanged(int value)
+    {
+        _player.Volume = value;
+        _appState.Volume = Math.Clamp(value, 0, 100);
+        _appState.ScheduleSave();
+    }
 
     /// <summary>时间文本跟 ScrubPositionMs(进度条显示位置)走而非 PositionMs:拖动进度条时
     /// 只有 ScrubPositionMs 在变,气泡/时间文本才能随拖动位置实时更新;正常播放、悬停球、

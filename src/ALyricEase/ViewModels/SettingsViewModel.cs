@@ -141,14 +141,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public string CrossfadeText => Crossfade ? "已启用" : "未启用";
 
-    /// <summary>交叉淡化时长(秒)。</summary>
+    /// <summary>交叉淡化时长(秒)；滑块停止变化 400ms 后合并保存。</summary>
     public double CrossfadeSeconds
     {
         get => _state.CrossfadeSeconds;
         set
         {
             _state.CrossfadeSeconds = Math.Round(value, 1);
-            _state.Save();
+            _state.ScheduleSave();
             OnPropertyChanged(nameof(CrossfadeSeconds));
             OnPropertyChanged(nameof(CrossfadeSecondsText));
         }

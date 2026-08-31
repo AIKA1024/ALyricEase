@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using ALyricEase.Services.Smtc;
 using ALyricEase.Services.Taskbar;
 using ALyricEase.ViewModels;
@@ -24,6 +25,9 @@ public partial class App : Application
   {
     if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
     {
+      // 窗口关闭通常已经保存几何；Exit 再刷新一次尚未触发的音量/时长延迟保存。
+      desktop.Exit += (_, _) => ServiceLocator.Get<AppStateStore>().Flush();
+
       desktop.MainWindow = new MainWindow
       {
         DataContext = ServiceLocator.Get<MainViewModel>(),

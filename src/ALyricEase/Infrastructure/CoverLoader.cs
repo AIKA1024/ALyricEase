@@ -8,35 +8,70 @@ using Avalonia.Media.Imaging;
 
 namespace ALyricEase.Infrastructure;
 
-/// <summary>远程封面图加载:内存缓存(按解码字节预算,超限按插入顺序淘汰最旧)+ 后台解码,失败返回 null(不抛异常)。
+/// <summary>远程封面图加载:内存缓存(按解码字节预算,超限按最近使用顺序淘汰)+ 后台解码,失败返回 null(不抛异常)。
 /// 返回的 Bitmap 不可变,可跨线程使用。
 /// 预算按字节而非张数:播放条/正在播放页的大封面(640px≈1.6MB)也进同一缓存,
-/// 若按张数 300 上限会堆到 ~480MB;按字节预算则总量恒定有界。</summary>
+/// 若按张数 300 上限会堆到 ~480MB;缓存自身按字节与条目数双重有界。
+/// 同一规格 URL 的并发请求共享一个在途任务,避免列表同时实化时重复下载与解码。</summary>
 public static class CoverLoader
 {
     /// <summary>缓存总解码字节预算(~48MB):歌曲行 100px≈40KB 能存上千张,640px 大封面只留 ~30 张。</summary>
     private const long MaxCacheBytes = 48L * 1024 * 1024;
 
+    /// <summary>条目数兜底:失败项不占像素预算,仍必须限制其 URL/字典节点数量。</summary>
+    private const int MaxCacheEntries = 1536;
+
+    /// <summary>失败结果只短暂缓存:防离线/瞬时失败时每行反复请求,同时允许网络恢复后自动重试。</summary>
+    private static readonly TimeSpan FailedEntryLifetime = TimeSpan.FromMinutes(2);
+
     /// <summary>并发下载上限:首页/列表一次会触发几十张封面,不限流会把慢网连接占满、
     /// 拖慢同批 API 请求与封面填图速度(实测 30 并发 vs 6 并发,填满时间差不大但整体稳定)。</summary>
     private const int MaxConcurrentDownloads = 6;
 
-    private static readonly HttpClient Http = new() { Timeout = System.TimeSpan.FromSeconds(10) };
-    private static readonly Dictionary<string, IImage?> Cache = new();
-    private static readonly Queue<string> Order = new();
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private static readonly object CacheGate = new();
+    private static readonly Dictionary<string, CacheEntry> Cache = new();
+    private static readonly LinkedList<string> LruOrder = new();
+    private static readonly Dictionary<string, Task<IImage?>> InFlight = new();
     private static readonly SemaphoreSlim DownloadGate = new(MaxConcurrentDownloads, MaxConcurrentDownloads);
     private static long _cacheBytes;
 
+    private sealed record CacheEntry(
+        IImage? Image,
+        long Cost,
+        DateTimeOffset? ExpiresAt,
+        LinkedListNode<string> Node);
+
     /// <summary>加载封面。size>0 时请求对应缩略图(param=WxH),列表项务必用 ~100 的小图,避免全尺寸大图撑爆内存。</summary>
-    public static async Task<IImage?> LoadAsync(string url, int size = 0)
+    public static Task<IImage?> LoadAsync(string url, int size = 0)
     {
-        if (string.IsNullOrEmpty(url)) return null;
+        if (string.IsNullOrEmpty(url)) return Task.FromResult<IImage?>(null);
         if (size > 0) url = BuildSizedUrl(url, size);
-        lock (Cache)
+
+        TaskCompletionSource<IImage?>? owner = null;
+        Task<IImage?> sharedTask;
+        lock (CacheGate)
         {
-            if (Cache.TryGetValue(url, out var hit)) return hit;
+            if (TryGetCachedLocked(url, out var hit))
+                return Task.FromResult(hit);
+
+            if (InFlight.TryGetValue(url, out sharedTask!))
+                return sharedTask;
+
+            owner = new TaskCompletionSource<IImage?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            sharedTask = owner.Task;
+            InFlight.Add(url, sharedTask);
         }
 
+        _ = DownloadAndPublishAsync(url, owner!);
+        return sharedTask;
+    }
+
+    /// <summary>single-flight 的唯一生产者:完成时把同一个 Bitmap 发布给所有等待方。</summary>
+    private static async Task DownloadAndPublishAsync(string url, TaskCompletionSource<IImage?> completion)
+    {
+        IImage? result = null;
+        var succeeded = false;
         try
         {
             await DownloadGate.WaitAsync().ConfigureAwait(false);
@@ -48,22 +83,8 @@ public static class CoverLoader
                     using var ms = new MemoryStream(bytes);
                     return new Bitmap(ms);
                 }).ConfigureAwait(false);
-                lock (Cache)
-                {
-                    var cost = EstimateBytes(bitmap);
-                    // 单张超过预算 → 不进缓存(避免一张超超大图独占预算),直接用
-                    if (cost > MaxCacheBytes) return bitmap;
-                    while (_cacheBytes + cost > MaxCacheBytes && Order.Count > 0)
-                    {
-                        var oldest = Order.Dequeue();
-                        if (Cache.Remove(oldest, out var old))
-                            _cacheBytes -= EstimateBytes(old);
-                    }
-                    Cache[url] = bitmap;
-                    _cacheBytes += cost;
-                    Order.Enqueue(url);
-                }
-                return bitmap;
+                result = bitmap;
+                succeeded = true;
             }
             finally
             {
@@ -72,9 +93,78 @@ public static class CoverLoader
         }
         catch
         {
-            lock (Cache) Cache[url] = null;
-            return null;
+            // 失败由下方写入短期负缓存并统一发布 null。
         }
+
+        lock (CacheGate)
+        {
+            if (succeeded && result is not null)
+            {
+                var cost = EstimateBytes(result);
+                // 单张超过预算不进缓存,但本次并发等待方仍共享同一个实例。
+                if (cost <= MaxCacheBytes)
+                    AddOrReplaceLocked(url, result, cost, expiresAt: null);
+            }
+            else
+            {
+                AddOrReplaceLocked(url, image: null, cost: 0,
+                    expiresAt: DateTimeOffset.UtcNow + FailedEntryLifetime);
+            }
+
+            // Continuation 异步调度,可在锁内先发布结果再移除在途项,杜绝完成/移除之间的新请求窗口。
+            completion.TrySetResult(result);
+            if (InFlight.TryGetValue(url, out var current) && ReferenceEquals(current, completion.Task))
+                InFlight.Remove(url);
+        }
+    }
+
+    private static bool TryGetCachedLocked(string url, out IImage? image)
+    {
+        if (!Cache.TryGetValue(url, out var entry))
+        {
+            image = null;
+            return false;
+        }
+
+        if (entry.ExpiresAt is { } expiresAt && expiresAt <= DateTimeOffset.UtcNow)
+        {
+            RemoveLocked(url, entry);
+            image = null;
+            return false;
+        }
+
+        // 命中即移到末尾,缓存按最近使用顺序淘汰。
+        LruOrder.Remove(entry.Node);
+        LruOrder.AddLast(entry.Node);
+        image = entry.Image;
+        return true;
+    }
+
+    private static void AddOrReplaceLocked(string url, IImage? image, long cost, DateTimeOffset? expiresAt)
+    {
+        if (Cache.TryGetValue(url, out var existing))
+            RemoveLocked(url, existing);
+
+        var node = LruOrder.AddLast(url);
+        Cache.Add(url, new CacheEntry(image, cost, expiresAt, node));
+        _cacheBytes += cost;
+
+        while ((_cacheBytes > MaxCacheBytes || Cache.Count > MaxCacheEntries)
+               && LruOrder.First is { } oldest)
+        {
+            var oldestUrl = oldest.Value;
+            if (Cache.TryGetValue(oldestUrl, out var entry))
+                RemoveLocked(oldestUrl, entry);
+            else
+                LruOrder.RemoveFirst();
+        }
+    }
+
+    private static void RemoveLocked(string url, CacheEntry entry)
+    {
+        Cache.Remove(url);
+        LruOrder.Remove(entry.Node);
+        _cacheBytes -= entry.Cost;
     }
 
     /// <summary>解码像素占用估计(StridePixelFormats.Bgra8888 = 4 字节/像素)。</summary>

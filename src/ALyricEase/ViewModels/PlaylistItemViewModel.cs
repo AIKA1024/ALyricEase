@@ -17,6 +17,7 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
     {
         Playlist = playlist;
         _currentCoverUrl = playlist.CoverUrl;
+        _trackCount = playlist.TrackCount;
     }
 
     /// <summary>容器 realized 时调用:首次才拉封面(幂等)。</summary>
@@ -38,9 +39,20 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
     /// <summary>有简介才显示(API 多数歌单无简介)。</summary>
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
 
-    public int TrackCount => Playlist.TrackCount;
+    private int _trackCount;
+
+    public int TrackCount => _trackCount;
 
     public string TrackCountText => $"{TrackCount} 首";
+
+    /// <summary>流式加载页面更新已物化数量，不必反复替换整个 VM 或重新加载头部封面。</summary>
+    public void UpdateTrackCount(int value)
+    {
+        if (_trackCount == value) return;
+        _trackCount = value;
+        OnPropertyChanged(nameof(TrackCount));
+        OnPropertyChanged(nameof(TrackCountText));
+    }
 
     [ObservableProperty] private IImage? _cover;
 

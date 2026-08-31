@@ -32,6 +32,21 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
+        // 封面 single-flight/LRU 回归：32 个同 URL 请求应只下载一次并共享同一解码实例。
+        if (args.Length > 0 && args[0] == "--cover-cache")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(CoverLoaderProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 聚合歌单流式加载回归：来源稳定排序、100/300 批尺寸、范围集合单通知。
+        if (args.Length > 0 && args[0] == "--aggregate-load")
+        {
+            Environment.ExitCode = AggregateLoadingProbe.Run();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--probe")
         {
             PerfProbe.Run();

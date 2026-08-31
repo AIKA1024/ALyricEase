@@ -48,7 +48,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
 
     // 私人FM:激活后"下一曲/播完自动切"持续从 FM 接口取歌(无限流);播放其他列表自动退出。
-    // 队列保持"当前曲后至少预补 2 首",详情页"接下来播放"能看到后续 FM 曲目。
+    // 队列保持"当前曲后至少预补 2 首",并只保留少量已播放历史,避免长时间收听时线性增长。
+    private const int MaxFmHistoryCount = 5;
     private readonly Queue<Song> _fmBuffer = new();
     private bool _fmFetching;
 
@@ -346,11 +347,22 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 _queue.Add(song);
                 _queueVms.Add(new QueueItemViewModel(song, PlayQueueItem, RemoveFromQueue));
             }
-            RefreshUpcomingItems();
         }
         _ = PrefetchFmAsync();
         _queueIndex++;
+        TrimFmHistory();
         await PlayAsync(_queue[_queueIndex]);
+    }
+
+    /// <summary>FM 是无限流,只保留当前曲之前最近几首供"上一曲"使用。
+    /// 当前曲与预取的后续曲不动,Song/QueueItemVM(含已加载封面)随旧历史一起释放。</summary>
+    private void TrimFmHistory()
+    {
+        var removeCount = Math.Max(0, _queueIndex - MaxFmHistoryCount);
+        if (removeCount == 0) return;
+        _queue.RemoveRange(0, removeCount);
+        _queueVms.RemoveRange(0, removeCount);
+        _queueIndex -= removeCount;
     }
 
     /// <summary>后台补充 FM 缓冲(缓冲剩余 ≤1 时拉一批)。</summary>
@@ -545,8 +557,9 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         if (IsFmActive)
         {
-            if (_queue.Count == 0) return;
-            _queueIndex = (_queueIndex - 1 + _queue.Count) % _queue.Count;
+            // FM 只保留有限历史;到达最旧一首后不循环跳到尚未播放的队尾。
+            if (_queue.Count == 0 || _queueIndex <= 0) return;
+            _queueIndex--;
             await PlayAsync(_queue[_queueIndex]);
             return;
         }

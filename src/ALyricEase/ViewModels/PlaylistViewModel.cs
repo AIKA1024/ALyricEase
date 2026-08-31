@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
@@ -8,6 +9,7 @@ using ALyricEase.Services.Auth;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -18,6 +20,10 @@ namespace ALyricEase.ViewModels;
 /// 登录对话框支持双音源切换:网易云(MUSIC_U)与 QQ 音乐(uin+qqmusic_key cookie,解锁 VIP 音质)。</summary>
 public sealed partial class PlaylistViewModel : ViewModelBase
 {
+    internal const int AggregateNetEaseBatchSize = 100;
+    internal const int AggregateQqPageSize = 300;
+    private const int AggregateUiBatchSize = 50;
+
     private readonly NetEaseApiClient _api;
     private readonly QQMusicApiClient _qqApi;
     private readonly CookieStore _cookie;
@@ -80,7 +86,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     private bool _qqPlaylistsLoaded;
 
-    public ObservableCollection<SongItemViewModel> Tracks { get; } = new();
+    public RangeObservableCollection<SongItemViewModel> Tracks { get; } = new();
 
     /// <summary>登录态变化后重算各曲目行可播性(登录成会员后 VIP 歌曲行恢复可点)。</summary>
     public void RefreshPlayability()
@@ -110,8 +116,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             if (liked is not null)
                 await OpenQqPlaylistAsync(liked);
         }
-        if (IsLoggedIn || _cookie.MusicU is null) return;
-        await LoadProfileAndPlaylistsAsync();
+        if (!IsLoggedIn && _cookie.MusicU is not null)
+            await LoadProfileAndPlaylistsAsync();
     }
 
     /// <summary>恢复 QQ 登录态(cookie 纯本地解析)并按需拉取 QQ 用户歌单(失败静默,下次进入重试)。</summary>
@@ -207,6 +213,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>清除本地 Cookie 并重置登录态(账号页"删除本地Cookie"按钮调用);网易云与 QQ 一并清除。</summary>
     public void Logout()
     {
+        _loadGeneration++;
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = null;
+        IsLoadingMore = false;
         _cookie.MusicU = null;
         _cookie.Save();
         _qqApi.ClearCookie();
@@ -233,9 +244,35 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     // 点击播放时 PlayerViewModel.SetQueue 会 ToList() 快照,即"此刻已物化的完整歌单"。
     private readonly List<Song> _queueSongs = new();
     private int _materialized;          // 已物化进 Tracks 的曲目数(按 trackIds 顺序)
-    private bool _isLoadingMore;
+    [ObservableProperty] private bool _isLoadingMore;
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
+    private CancellationTokenSource? _loadCancellation;
     private bool _isCloud;              // 当前展示的是音乐云盘(而非用户歌单)
+
+    private sealed class AggregateLoadState
+    {
+        public required IReadOnlyList<AggregatePlaylistMember> Members { get; init; }
+        public int MemberIndex { get; set; }
+        public IReadOnlyList<long>? NetEaseTrackIds { get; set; }
+        public Dictionary<long, Song> NetEaseKnown { get; } = new();
+        public int NetEaseCursor { get; set; }
+        public int QqBegin { get; set; }
+        public int FailedCount { get; set; }
+        public bool CoverSet { get; set; }
+        public bool HasMore => MemberIndex < Members.Count;
+
+        public void AdvanceMember()
+        {
+            MemberIndex++;
+            NetEaseTrackIds = null;
+            NetEaseKnown.Clear();
+            NetEaseCursor = 0;
+            QqBegin = 0;
+        }
+    }
+
+    private sealed record AggregateSongBatch(MusicSource Source, IReadOnlyList<Song> Songs);
+    private AggregateLoadState? _aggregateLoad;
 
     /// <summary>当前展示的聚合歌单(null = 非聚合页)。齿轮设置按钮按它显隐/定位。</summary>
     private Models.AggregatePlaylist? _currentAggregate;
@@ -255,15 +292,42 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch { /* SelfTest/Headless 等无宿主环境 */ }
     }
 
+    /// <summary>开始新的详情页加载并取消旧页面仍在进行的 HTTP 请求。</summary>
+    private (int Generation, CancellationToken Token) BeginLoad()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = new CancellationTokenSource();
+        // 旧代次的 finally 不会再改新页面状态，必须在这里解除它持有的单飞标记。
+        IsLoadingMore = false;
+        return (++_loadGeneration, _loadCancellation.Token);
+    }
+
+    /// <summary>页面离开时停止当前网络与增量任务；导航恢复对应入口时会建立新的加载代次。</summary>
+    public void CancelCurrentLoad()
+    {
+        _loadGeneration++;
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = null;
+        _isCloud = false;
+        IsBusy = false;
+        IsLoadingMore = false;
+    }
+
+    private bool IsCurrentLoad(int generation, CancellationToken token)
+        => generation == _loadGeneration && !token.IsCancellationRequested;
+
     /// <summary>音乐云盘:复用歌单页展示。分页拉全量云盘曲目(500/页,跟随 hasMore),
     /// 行队列共享 → 播放全部/上一曲/下一曲都在云盘列表内。已在云盘页时跳过(保留现有内容)。</summary>
     [RelayCommand]
     private async Task OpenCloudAsync()
     {
         if (!IsLoggedIn || _isCloud) return;
-        var generation = ++_loadGeneration;
+        var (generation, ct) = BeginLoad();
         _isCloud = true;
         _currentAggregate = null;
+        _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘" });
         Tracks.Clear();
@@ -280,8 +344,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var hasMore = true;
             while (hasMore)
             {
-                var (songs, totalCount, more) = await _api.GetCloudListAsync(500, offset);
-                if (generation != _loadGeneration) return; // 期间打开了别的歌单,丢弃过期结果
+                var (songs, totalCount, more) = await _api.GetCloudListAsync(500, offset, ct);
+                if (!IsCurrentLoad(generation, ct)) return;
                 if (offset == 0)
                 {
                     // 首页拿到总数后重建头部(TrackCount/CoverUrl init-only);封面用第一首有封面的歌(仿歌单页)
@@ -299,13 +363,16 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 hasMore = more && songs.Count > 0 && offset < 3000; // 3000 首兜底,防接口异常时死循环
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
         catch (ApiException ex)
         {
             if (generation == _loadGeneration) Message = $"加载云盘失败:{ex.Message}";
         }
         finally
         {
-            if (generation == _loadGeneration) IsBusy = false;
+            if (IsCurrentLoad(generation, ct)) IsBusy = false;
         }
     }
 
@@ -315,9 +382,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private async Task OpenPlaylistAsync(PlaylistItemViewModel? playlist)
     {
         if (playlist is null) return;
-        var generation = ++_loadGeneration;
+        var (generation, ct) = BeginLoad();
         _isCloud = false;
         _currentAggregate = null;
+        _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded(); // 头部大封面
@@ -333,8 +401,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         Message = null;
         try
         {
-            var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id);
-            if (generation != _loadGeneration) return; // 期间切了别的歌单,丢弃过期结果
+            var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
             playlist.RefreshCover(overview.CoverUrl); // 封面随曲目变化(如"我喜欢的音乐"),URL 变了才重载
             _trackIds = overview.TrackIds.ToList();
             foreach (var s in overview.PrefixTracks)
@@ -344,7 +412,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             IsBusy = false;
 
             // 后台静默补充到 ~200 首,让首屏滚动不断档(至多一次 song/detail 请求,不阻塞 UI)
-            await LoadMoreAsync(fillTo: 200, generation: generation);
+            await LoadMoreAsync(fillTo: 200, generation: generation, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
         }
         catch (ApiException ex)
         {
@@ -352,7 +423,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
         finally
         {
-            if (generation == _loadGeneration) IsBusy = false;
+            if (IsCurrentLoad(generation, ct)) IsBusy = false;
         }
     }
 
@@ -362,9 +433,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private async Task OpenQqPlaylistAsync(PlaylistItemViewModel? playlist)
     {
         if (playlist is null) return;
-        var generation = ++_loadGeneration;
+        var (generation, ct) = BeginLoad();
         _isCloud = false;
         _currentAggregate = null;
+        _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded();
@@ -380,13 +452,16 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         Message = null;
         try
         {
-            var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id);
-            if (generation != _loadGeneration) return; // 期间切了别的歌单,丢弃过期结果
+            var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
             foreach (var s in songs)
             {
                 Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs, null, playlist.Name));
                 _queueSongs.Add(s);
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
         }
         catch (ApiException ex)
         {
@@ -394,23 +469,28 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
         finally
         {
-            if (generation == _loadGeneration) IsBusy = false;
+            if (IsCurrentLoad(generation, ct)) IsBusy = false;
         }
     }
 
-    /// <summary>点开聚合歌单:按 SourceOrder 排序成员(网易云在前/QQ在前,组内保持原序),
-    /// 依次拉取各成员歌单全量曲目(网易云 GetPlaylistDetailAsync / QQ GetPlaylistTracksAsync)
-    /// 合并进同一个列表与共享队列;单成员失败不影响其余(Message 提示),
-    /// 合并完成后重建头部显示合计曲目数与成员歌单名。</summary>
+    /// <summary>点开聚合歌单:按 SourceOrder 稳定排序成员并建立流式游标。
+    /// 首批立即上屏；网易云按 100 个 trackId 补详情，QQ 按服务端 300 首分页；
+    /// 当前成员耗尽后才推进下一成员，从而在动态加载时仍严格保持聚合顺序。</summary>
     [RelayCommand]
     private async Task OpenAggregateAsync(Models.AggregatePlaylist? aggregate)
     {
         if (aggregate is null) return;
-        var generation = ++_loadGeneration;
+        var (generation, ct) = BeginLoad();
         _isCloud = false;
         _currentAggregate = aggregate;
         IsAggregate = true;
-        SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = aggregate.Name });
+        var members = OrderAggregateMembers(aggregate);
+        _aggregateLoad = new AggregateLoadState { Members = members };
+        SelectedPlaylist = new PlaylistItemViewModel(new Playlist
+        {
+            Name = aggregate.Name,
+            Description = string.Join(" · ", members.Select(m => m.PlaylistName)),
+        });
         Tracks.Clear();
         PlaylistTitle = aggregate.Name;
         CreatorName = $"聚合歌单 · {aggregate.Members.Count} 个歌单";
@@ -420,91 +500,207 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _materialized = 0;
         IsBusy = true;
         Message = null;
-        var failed = 0;
+
         try
         {
-            // 按来源分组排序(稳定排序:同源成员保持原顺序)
-            var members = aggregate.SourceOrder == AggregateSourceOrder.QqFirst
-                ? aggregate.Members.OrderBy(m => m.Source == MusicSource.QQ ? 0 : 1).ToList()
-                : aggregate.Members.OrderBy(m => m.Source == MusicSource.NetEase ? 0 : 1).ToList();
-            foreach (var member in members)
+            // 第一批优先完成并解除页面忙碌态；随后静默补到约 200 首，避免首屏刚出现就断档。
+            await LoadMoreAggregateAsync(generation, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            IsBusy = false;
+            while (Tracks.Count < 200 && _aggregateLoad is { HasMore: true })
             {
-                if (generation != _loadGeneration) return; // 期间切了别的歌单,丢弃过期结果
-                List<Song> songs;
-                try
-                {
-                    songs = member.Source == MusicSource.QQ
-                        ? await _qqApi.GetPlaylistTracksAsync(member.PlaylistId)
-                        : await _api.GetPlaylistDetailAsync(member.PlaylistId);
-                }
-                catch (ApiException ex)
-                {
-                    failed++;
-                    Message = $"歌单[{member.PlaylistName}]拉取失败:{ex.Message}";
-                    continue;
-                }
-                foreach (var s in songs)
-                {
-                    Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs,
-                        member.Source == MusicSource.QQ ? null : _api, PlaylistTitle));
-                    _queueSongs.Add(s);
-                }
+                var before = Tracks.Count;
+                await LoadMoreAggregateAsync(generation, ct);
+                if (!IsCurrentLoad(generation, ct) || Tracks.Count == before) break;
             }
-            if (generation != _loadGeneration) return;
-            // 合并完成:重建头部显示合计曲目数;封面取显示顺序第一首歌曲的封面
-            // (走 400px 大图加载,QQ 图床自动就近升档到 500,避免直接用小缩略图 URL 发糊),
-            // 简介按显示顺序列成员歌单名
-            var cover = Tracks.Count > 0 ? Tracks[0].Song.CoverUrl : "";
-            SelectedPlaylist = new PlaylistItemViewModel(new Playlist
-            {
-                Name = aggregate.Name,
-                TrackCount = Tracks.Count,
-                CoverUrl = cover,
-                Description = string.Join(" · ", members.Select(m => m.PlaylistName)),
-            });
-            if (cover.Length > 0)
-            {
-                SelectedPlaylist.EnsureCoverLoaded();
-                _ = SelectedPlaylist.EnsureLargeCoverLoadedAsync(); // 头部 260px 大图
-            }
-            if (failed > 0 && Message is null) Message = $"{failed} 个歌单拉取失败,已展示其余成员";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
         }
         finally
         {
-            if (generation == _loadGeneration) IsBusy = false;
+            if (IsCurrentLoad(generation, ct)) IsBusy = false;
         }
     }
 
-    /// <summary>滚动接近底部时调用：补齐下一批(≤100)曲目元数据并物化。</summary>
-    public Task LoadMoreAsync() => LoadMoreAsync(fillTo: null, generation: _loadGeneration);
-
-    private async Task LoadMoreAsync(int? fillTo, int generation)
+    private async Task LoadMoreAggregateAsync(int generation, CancellationToken ct)
     {
-        if (_isLoadingMore) return;
-        _isLoadingMore = true;
+        if (IsLoadingMore || _aggregateLoad is not { HasMore: true } state) return;
+        IsLoadingMore = true;
+        try
+        {
+            var batch = await ReadNextAggregateBatchAsync(state, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            if (batch is null)
+            {
+                if (state.FailedCount > 0)
+                    Message = $"{state.FailedCount} 个歌单拉取失败,已展示其余成员";
+                return;
+            }
+            await AppendAggregateBatchAsync(batch, state, generation, ct);
+
+            if (!state.HasMore && state.FailedCount > 0)
+                Message = $"{state.FailedCount} 个歌单拉取失败,已展示其余成员";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (generation == _loadGeneration) IsLoadingMore = false;
+        }
+    }
+
+    /// <summary>读取当前成员的下一网络批次；空歌单/失败成员会在同一次请求中跳过，直到拿到数据或全部结束。</summary>
+    private async Task<AggregateSongBatch?> ReadNextAggregateBatchAsync(AggregateLoadState state, CancellationToken ct)
+    {
+        while (state.HasMore)
+        {
+            ct.ThrowIfCancellationRequested();
+            var member = state.Members[state.MemberIndex];
+            try
+            {
+                if (member.Source == MusicSource.QQ)
+                {
+                    var page = await _qqApi.GetPlaylistTrackPageAsync(
+                        member.PlaylistId, state.QqBegin, AggregateQqPageSize, ct);
+                    state.QqBegin += AggregateQqPageSize;
+                    if (!page.HasMore) state.AdvanceMember();
+                    if (page.Songs.Count > 0)
+                        return new AggregateSongBatch(MusicSource.QQ, page.Songs);
+                    continue;
+                }
+
+                if (state.NetEaseTrackIds is null)
+                {
+                    var overview = await _api.GetPlaylistTrackOverviewAsync(member.PlaylistId, ct);
+                    state.NetEaseTrackIds = overview.TrackIds;
+                    foreach (var song in overview.PrefixTracks)
+                        if (song.Id != 0) state.NetEaseKnown[song.Id] = song;
+                }
+
+                if (state.NetEaseCursor >= state.NetEaseTrackIds.Count)
+                {
+                    state.AdvanceMember();
+                    continue;
+                }
+
+                var ids = state.NetEaseTrackIds
+                    .Skip(state.NetEaseCursor)
+                    .Take(AggregateNetEaseBatchSize)
+                    .ToList();
+                var missing = ids.Where(id => !state.NetEaseKnown.ContainsKey(id)).ToList();
+                if (missing.Count > 0)
+                {
+                    var details = await _api.GetSongsByIdsAsync(missing, ct);
+                    foreach (var song in details)
+                        if (song.Id != 0) state.NetEaseKnown[song.Id] = song;
+                }
+
+                var songs = ids
+                    .Where(state.NetEaseKnown.ContainsKey)
+                    .Select(id => state.NetEaseKnown[id])
+                    .ToList();
+                // 已物化歌曲由 Tracks/_queueSongs 持有；游标字典只保留后续批次，避免再重复保活整份成员歌单。
+                foreach (var id in ids)
+                    state.NetEaseKnown.Remove(id);
+                state.NetEaseCursor += ids.Count;
+                if (state.NetEaseCursor >= state.NetEaseTrackIds.Count)
+                    state.AdvanceMember();
+                if (songs.Count > 0)
+                    return new AggregateSongBatch(MusicSource.NetEase, songs);
+            }
+            catch (ApiException ex)
+            {
+                state.FailedCount++;
+                Message = $"歌单[{member.PlaylistName}]拉取失败:{ex.Message}";
+                state.AdvanceMember();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>网络批次按最多 50 行一次的集合通知应用到 UI，给输入/渲染队列留下调度机会。</summary>
+    private async Task AppendAggregateBatchAsync(
+        AggregateSongBatch batch, AggregateLoadState state, int generation, CancellationToken ct)
+    {
+        for (var offset = 0; offset < batch.Songs.Count; offset += AggregateUiBatchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+            var songs = batch.Songs.Skip(offset).Take(AggregateUiBatchSize).ToList();
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!IsCurrentLoad(generation, ct)) return;
+
+                var rowStart = Tracks.Count;
+                _queueSongs.AddRange(songs);
+                var rows = songs.Select((song, index) => new SongItemViewModel(
+                    song, _player.PlayFromList, rowStart + index + 1, _queueSongs,
+                    batch.Source == MusicSource.QQ ? null : _api, PlaylistTitle)).ToList();
+                Tracks.AddRange(rows);
+                SelectedPlaylist?.UpdateTrackCount(Tracks.Count);
+
+                if (!state.CoverSet)
+                {
+                    var cover = songs.FirstOrDefault(song => !string.IsNullOrEmpty(song.CoverUrl))?.CoverUrl ?? "";
+                    if (cover.Length > 0)
+                    {
+                        state.CoverSet = true;
+                        SelectedPlaylist?.RefreshCover(cover);
+                    }
+                }
+            }, DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>按来源分组稳定排序，同源成员保持用户配置的原始顺序。</summary>
+    internal static List<AggregatePlaylistMember> OrderAggregateMembers(AggregatePlaylist aggregate)
+        => aggregate.SourceOrder == AggregateSourceOrder.QqFirst
+            ? aggregate.Members.OrderBy(member => member.Source == MusicSource.QQ ? 0 : 1).ToList()
+            : aggregate.Members.OrderBy(member => member.Source == MusicSource.NetEase ? 0 : 1).ToList();
+
+    /// <summary>滚动接近底部时调用：补齐下一批(≤100)曲目元数据并物化。</summary>
+    public Task LoadMoreAsync()
+    {
+        var cancellation = _loadCancellation;
+        if (cancellation is null || cancellation.IsCancellationRequested) return Task.CompletedTask;
+        return IsAggregate
+            ? LoadMoreAggregateAsync(_loadGeneration, cancellation.Token)
+            : LoadMoreAsync(fillTo: null, generation: _loadGeneration, cancellation.Token);
+    }
+
+    private async Task LoadMoreAsync(int? fillTo, int generation, CancellationToken ct)
+    {
+        if (IsLoadingMore) return;
+        IsLoadingMore = true;
         try
         {
             var target = fillTo ?? Math.Min(_trackIds.Count, _materialized + 100);
             while (_materialized < target && _materialized < _trackIds.Count)
             {
+                ct.ThrowIfCancellationRequested();
                 // 从当前未解析位置取下一段(≤100 个缺失 id)
                 var slice = new List<long>();
                 for (var i = _materialized; i < _trackIds.Count && slice.Count < 100; i++)
                     if (!_known.ContainsKey(_trackIds[i])) slice.Add(_trackIds[i]);
                 if (slice.Count > 0)
                 {
-                    var songs = await _api.GetSongsByIdsAsync(slice);
-                    if (generation != _loadGeneration) return; // 已切歌单
+                    var songs = await _api.GetSongsByIdsAsync(slice, ct);
+                    if (!IsCurrentLoad(generation, ct)) return;
                     foreach (var s in songs)
                         if (s.Id != 0) _known[s.Id] = s;
                 }
 
                 var before = _materialized;
                 AppendKnownTracks();
-                if (generation != _loadGeneration) return;
+                if (!IsCurrentLoad(generation, ct)) return;
                 // 本批未推进(缺失 id 全部无法解析)则停止,避免死循环
                 if (_materialized == before) break;
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
         }
         catch (ApiException)
         {
@@ -512,7 +708,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
         finally
         {
-            _isLoadingMore = false;
+            if (generation == _loadGeneration) IsLoadingMore = false;
         }
     }
 
@@ -538,7 +734,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         if (Tracks.Count == 0) return;
         // 静默补齐更多已物化曲目(不阻塞),使“播放全部”的队列更长
-        _ = LoadMoreAsync(fillTo: Math.Min(_trackIds.Count, _materialized + 300), generation: _loadGeneration);
+        var cancellation = _loadCancellation;
+        if (cancellation is { IsCancellationRequested: false })
+            _ = LoadMoreAsync(fillTo: Math.Min(_trackIds.Count, _materialized + 300),
+                generation: _loadGeneration, cancellation.Token);
         await Tracks[0].PlayCommand.ExecuteAsync(null);
     }
 
@@ -626,8 +825,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private void ResetDetailPage()
     {
         _loadGeneration++;
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = null;
         _isCloud = false;
         _currentAggregate = null;
+        _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = null;
         PlaylistTitle = "";
@@ -638,6 +841,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _queueSongs.Clear();
         _materialized = 0;
         IsBusy = false;
+        IsLoadingMore = false;
         Message = null;
     }
 

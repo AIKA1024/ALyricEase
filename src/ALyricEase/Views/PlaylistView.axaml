@@ -166,21 +166,27 @@
           <Border Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
                   BorderThickness="1" CornerRadius="8" Padding="8,6">
             <!-- 外层 ScrollViewer(仿 UWP ListView 模板)直接包裹 ItemsControl + VirtualizingStackPanel -->
-
-            <!-- 底部留白由 detail-shell 的底部 margin 提供(仿 UWP ScrollViewer 内容末尾留白) -->
-            <ItemsControl x:Name="TracksList" Classes="tracks" ItemsSource="{Binding Tracks}"
-                          ContainerPrepared="OnTrackContainerPreparing">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <VirtualizingStackPanel />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:SongItemViewModel">
-                  <views:TrackRow />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <Grid RowDefinitions="Auto,Auto">
+              <!-- 底部留白由 detail-shell 的底部 margin 提供(仿 UWP ScrollViewer 内容末尾留白) -->
+              <ItemsControl x:Name="TracksList" Classes="tracks" ItemsSource="{Binding Tracks}"
+                            ContainerPrepared="OnTrackContainerPreparing">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SongItemViewModel">
+                    <views:TrackRow />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <StackPanel Grid.Row="1" Margin="12,10" Spacing="7" IsVisible="{Binding IsLoadingMore}">
+                <ProgressBar Height="3" IsIndeterminate="True" />
+                <TextBlock Text="正在加载更多歌曲…" HorizontalAlignment="Center" FontSize="12"
+                           Foreground="{DynamicResource TextTertiary}" />
+              </StackPanel>
+            </Grid>
           </Border>
           <!-- 卡片顶部内阴影:覆盖卡片内侧顶边(圆角贴合,Margin 1px 避开边框),不拦截点击 -->
           <Border IsHitTestVisible="False" Height="12" VerticalAlignment="Top" CornerRadius="8,8,0,0"

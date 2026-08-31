@@ -193,14 +193,15 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private bool _isNavigationDrawerOpen;
 
     /// <summary>导航历史不能只记 ActivePage：所有歌单详情都复用 Favorites，
-    /// 在歌单之间切换时页面键不会变化。这里同时保存具体歌单/聚合歌单与选中项。</summary>
+    /// 在歌单之间切换时页面键不会变化。这里只保存轻量领域对象,不让历史栈持有带封面的页面 VM。</summary>
     private sealed record NavigationEntry(
         string Page,
         string? SelectedNavKey,
-        PlaylistItemViewModel? Playlist,
+        Models.Playlist? Playlist,
         Models.AggregatePlaylist? Aggregate);
 
-    private readonly Stack<NavigationEntry> _navigationHistory = new();
+    private const int MaxNavigationHistory = 50;
+    private readonly List<NavigationEntry> _navigationHistory = new();
     private bool _isGoingBack;
     private bool _selectionNavigationInProgress;
     private bool _suppressSelectedNavNavigation;
@@ -232,6 +233,10 @@ public sealed partial class MainViewModel : ViewModelBase
         if (!_isGoingBack && !_selectionNavigationInProgress
             && !string.Equals(oldValue, newValue, StringComparison.Ordinal))
             PushCurrentNavigation();
+
+        // 离开歌单视图时真正取消在途分页；返回时 PlaylistViewModel 会按当前入口恢复。
+        if (oldValue is "Favorites" or "CloudDrive" && newValue != oldValue)
+            _playlist.CancelCurrentLoad();
     }
 
     partial void OnActivePageChanged(string value)
@@ -428,7 +433,11 @@ public sealed partial class MainViewModel : ViewModelBase
         _isGoingBack = true;
         try
         {
-            RestoreNavigation(_navigationHistory.Pop());
+            var last = _navigationHistory.Count - 1;
+            var entry = _navigationHistory[last];
+            _navigationHistory.RemoveAt(last);
+            OnPropertyChanged(nameof(CanGoBack));
+            RestoreNavigation(entry);
         }
         finally
         {
@@ -534,10 +543,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void PushCurrentNavigation()
     {
-        _navigationHistory.Push(new NavigationEntry(
+        if (_navigationHistory.Count == MaxNavigationHistory)
+            _navigationHistory.RemoveAt(0);
+
+        _navigationHistory.Add(new NavigationEntry(
             ActivePage,
             SelectedNav?.Key,
-            ActivePage == "Favorites" ? Playlist.SelectedPlaylist : null,
+            ActivePage == "Favorites" ? Playlist.SelectedPlaylist?.Playlist : null,
             ActivePage == "Favorites" ? Playlist.CurrentAggregate : null));
         OnPropertyChanged(nameof(CanGoBack));
     }
@@ -558,10 +570,16 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         if (entry.Playlist is null) return;
-        if (entry.Playlist.Playlist.Source == MusicSource.QQ)
-            Playlist.OpenQqPlaylistCommand.Execute(entry.Playlist);
+        // 侧栏歌单仍存在时复用它的 VM；历史本身只保存轻量模型，不额外保活 400px 大封面。
+        var playlist = SelectedNav?.Playlist is { } navPlaylist
+            && navPlaylist.Id == entry.Playlist.Id
+            && navPlaylist.Playlist.Source == entry.Playlist.Source
+                ? navPlaylist
+                : new PlaylistItemViewModel(entry.Playlist);
+        if (entry.Playlist.Source == MusicSource.QQ)
+            Playlist.OpenQqPlaylistCommand.Execute(playlist);
         else
-            Playlist.OpenPlaylistCommand.Execute(entry.Playlist);
+            Playlist.OpenPlaylistCommand.Execute(playlist);
     }
 
     private void SetSelectedNavWithoutNavigation(NavItemViewModel? value)

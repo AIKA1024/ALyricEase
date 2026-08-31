@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -39,8 +38,12 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>登录态下随请求发送的完整 Cookie 头原文。</summary>
     private string _cookieHeader = "";
 
-    /// <summary>数字 id → songmid 解析缓存(搜索/详情响应顺带填充;播放/歌词按 mid 取地址)。</summary>
-    private readonly ConcurrentDictionary<long, string> _midById = new();
+    /// <summary>数字 id → songmid 解析缓存(搜索/详情响应顺带填充;播放/歌词按 mid 取地址)。
+    /// Song.Mid 是主路径,这里只给缺 mid 的旧入口兜底,限制容量避免长会话遍历大量歌曲后持续增长。</summary>
+    private const int MaxMidCacheEntries = 4096;
+    private readonly object _midCacheGate = new();
+    private readonly Dictionary<long, (string Mid, LinkedListNode<long> Node)> _midById = new();
+    private readonly LinkedList<long> _midLru = new();
 
     public QQMusicApiClient(Auth.CookieStore cookie)
     {
@@ -449,7 +452,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
         await EnsureLikedIdsAsync(ct).ConfigureAwait(false); // 尽力加载;失败按空集处理 → 目标为添加
         var target = !IsLiked(id);
-        var mid = _midById.TryGetValue(id, out var m) ? m : "";
+        var mid = TryGetCachedMid(id, out var m) ? m : "";
 
         await SecureAssetWriteAsync("music.musicasset.PlaylistDetailWrite",
             target ? "AddSonglist" : "DelSonglist", p =>
@@ -935,50 +938,62 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             .ToList();
     }
 
+    /// <summary>QQ 歌单原生分页结果。HasMore 依据页长与服务端总数共同判断。</summary>
+    internal sealed record PlaylistTrackPage(IReadOnlyList<Song> Songs, bool HasMore);
+
+    /// <summary>读取 QQ 歌单的一页曲目。聚合歌单用它逐页上屏，普通 QQ 歌单仍可在外层拉齐全量。</summary>
+    internal async Task<PlaylistTrackPage> GetPlaylistTrackPageAsync(
+        long id, int begin, int pageSize = 300, CancellationToken ct = default)
+    {
+        using var doc = await PostMusicuAsync(w =>
+        {
+            WriteModuleReq(w, "music.srfDissInfo.aiDissInfo", "uniform_get_Dissinfo", p =>
+            {
+                p.WriteNumber("disstid", id);
+                p.WriteNumber("userinfo", 1);
+                p.WriteNumber("tag", 1);
+                p.WriteNumber("orderlist", 1);
+                p.WriteNumber("song_begin", begin);
+                p.WriteNumber("song_num", pageSize);
+                p.WriteNumber("onlysonglist", 0);
+                p.WriteString("enc_host_uin", "");
+            });
+        }, ct).ConfigureAwait(false);
+
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQUniformDissResponse);
+        var req = resp?.Req0;
+        if (resp is null || req is null || req.Code != 0 || req.Data is null || req.Data.Code != 0)
+            throw new ApiException(req?.Code == 1000 || req is { Code: 0, Data.Code: 1000 }
+                ? "登录已失效或 Cookie 不完整,请重新登录"
+                : $"获取歌单曲目失败(code={req?.Code ?? -1}/{req?.Data?.Code ?? -1},可能是无效或不可见的歌单)",
+                PickErrorCode(req?.Code, req?.Data?.Code));
+
+        var pageSonglist = req.Data.Songlist ?? [];
+        var songs = new List<Song>(pageSonglist.Count);
+        foreach (var t in pageSonglist)
+        {
+            var song = MapTrack(t);
+            if (song.Id != 0 || song.Mid.Length > 0) songs.Add(song);
+        }
+
+        var total = req.Data.TotalSongNum;
+        var hasMore = pageSonglist.Count >= pageSize && (total <= 0 || begin + pageSonglist.Count < total);
+        return new PlaylistTrackPage(songs, hasMore);
+    }
+
     /// <summary>歌单全量曲目:music.srfDissInfo.aiDissInfo/uniform_get_Dissinfo(与网页端同源,
     /// 条目为 track_info 同构复用 MapTrack)。旧 DissInfo/CgiGetDiss 与 qzone fcg_ucc 均已失效 ——
     /// CgiGetDiss 现网对缺 userinfo/tag/orderlist 的请求只回 code=0 但 songlist 空(详情页白屏);
     /// 按 song_begin/song_num 分页拉齐 total_song_num。</summary>
     public async Task<List<Song>> GetPlaylistTracksAsync(long id, CancellationToken ct = default)
     {
-        const int PageSize = 300;
+        const int pageSize = 300;
         var songs = new List<Song>();
-        for (var begin = 0; ; begin += PageSize)
+        for (var begin = 0; ; begin += pageSize)
         {
-            using var doc = await PostMusicuAsync(w =>
-            {
-                WriteModuleReq(w, "music.srfDissInfo.aiDissInfo", "uniform_get_Dissinfo", p =>
-                {
-                    p.WriteNumber("disstid", id);
-                    p.WriteNumber("userinfo", 1);
-                    p.WriteNumber("tag", 1);
-                    p.WriteNumber("orderlist", 1);
-                    p.WriteNumber("song_begin", begin);
-                    p.WriteNumber("song_num", PageSize);
-                    p.WriteNumber("onlysonglist", 0);
-                    p.WriteString("enc_host_uin", "");
-                });
-            }, ct).ConfigureAwait(false);
-
-            var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQUniformDissResponse);
-            var req = resp?.Req0;
-            if (resp is null || req is null || req.Code != 0 || req.Data is null || req.Data.Code != 0)
-                throw new ApiException(req?.Code == 1000 || req is { Code: 0, Data.Code: 1000 }
-                    ? "登录已失效或 Cookie 不完整,请重新登录"
-                    : $"获取歌单曲目失败(code={req?.Code ?? -1}/{req?.Data?.Code ?? -1},可能是无效或不可见的歌单)",
-                    PickErrorCode(req?.Code, req?.Data?.Code));
-
-            var pageSonglist = req.Data.Songlist ?? [];
-            foreach (var t in pageSonglist)
-            {
-                var s = MapTrack(t);
-                if (s.Id != 0 || s.Mid.Length > 0) songs.Add(s);
-            }
-
-            // 终止:本页不满一页(没有更多);total 已知且已达总量同理(total 缺省为 0 时靠页长判断)
-            var total = req.Data.TotalSongNum;
-            var hasMore = pageSonglist.Count >= PageSize && (total <= 0 || songs.Count < total);
-            if (!hasMore) break;
+            var page = await GetPlaylistTrackPageAsync(id, begin, pageSize, ct).ConfigureAwait(false);
+            songs.AddRange(page.Songs);
+            if (!page.HasMore) break;
         }
         return songs;
     }
@@ -1313,7 +1328,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private async Task<string> EnsureMidAsync(Song song, CancellationToken ct)
     {
         if (song.Mid.Length > 0) return song.Mid;
-        if (_midById.TryGetValue(song.Id, out var cached) && cached.Length > 0) return cached;
+        if (TryGetCachedMid(song.Id, out var cached) && cached.Length > 0) return cached;
         try
         {
             var detail = await GetSongDetailAsync(song.Id, ct).ConfigureAwait(false);
@@ -1499,7 +1514,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         var albumMid = FirstNonEmpty(t.AlbumMidFlat, t.Album?.AlbumMid, t.Album?.Mid);
         var albumName = FirstNonEmpty(t.AlbumNameFlat, t.Album?.AlbumName, t.Album?.Name);
 
-        if (id != 0 && mid.Length > 0) _midById[id] = mid;
+        if (id != 0 && mid.Length > 0) RememberMid(id, mid);
 
         return new Song
         {
@@ -1521,6 +1536,46 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrEmpty(v)) ?? "";
+
+    private bool TryGetCachedMid(long id, out string mid)
+    {
+        lock (_midCacheGate)
+        {
+            if (!_midById.TryGetValue(id, out var entry))
+            {
+                mid = "";
+                return false;
+            }
+
+            _midLru.Remove(entry.Node);
+            _midLru.AddLast(entry.Node);
+            mid = entry.Mid;
+            return true;
+        }
+    }
+
+    private void RememberMid(long id, string mid)
+    {
+        lock (_midCacheGate)
+        {
+            if (_midById.TryGetValue(id, out var existing))
+            {
+                _midLru.Remove(existing.Node);
+                _midLru.AddLast(existing.Node);
+                _midById[id] = (mid, existing.Node);
+                return;
+            }
+
+            if (_midById.Count == MaxMidCacheEntries && _midLru.First is { } oldest)
+            {
+                _midById.Remove(oldest.Value);
+                _midLru.RemoveFirst();
+            }
+
+            var node = _midLru.AddLast(id);
+            _midById.Add(id, (mid, node));
+        }
+    }
 
     /// <summary>从多个模块业务码中挑一个代表性异常码:优先负数(协议错),其次任意非零,全零则 -1。</summary>
     private static int PickErrorCode(params int?[] codes)

@@ -113,6 +113,16 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
             var semi = musicU.IndexOf(';');
             if (semi >= 0) musicU = musicU[..semi];
         }
+        else if (LooksLikeCookieHeader(musicU))
+        {
+            // 不能把“没有 MUSIC_U 的整段 Cookie”当成 MUSIC_U 本身保存。
+            // 最常见情况是在网易云页签误贴 QQ 音乐 Cookie；旧行为会导致下次启动
+            // CookieContainer 在解析分号时抛 CookieException，整应用无法启动。
+            throw new ApiException("粘贴的整段 Cookie 中没有 MUSIC_U，请确认当前选择的是网易云登录页签", -1);
+        }
+
+        if (!IsValidStoredCookieValue(musicU))
+            throw new ApiException("MUSIC_U 格式无效，请只粘贴 MUSIC_U 的值或包含 MUSIC_U 的网易云 Cookie", -1);
 
         _cookie.MusicU = musicU;
         _cookie.Csrf = null; // 换号后旧令牌作废,下次写操作重新暖场获取
@@ -1151,18 +1161,66 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private void RestoreCookies()
     {
+        var storeChanged = false;
         if (_cookie.MusicU is { Length: > 0 } u)
-            AddCookie("MUSIC_U", u);
+        {
+            if (!TryAddCookie("MUSIC_U", u))
+            {
+                // 历史版本可能把整段 QQ Cookie 串进 MusicU。损坏值不能阻止应用启动；
+                // 只清网易云槽及其绑定的 CSRF，QQCookieRaw 保持不变。
+                _cookie.MusicU = null;
+                _cookie.Csrf = null;
+                storeChanged = true;
+            }
+        }
         if (_cookie.AnonymousMusicA is { Length: > 0 } a && _cookie.AnonymousExpiresUtc > DateTime.UtcNow)
-            AddCookie("MUSIC_A", a);
+        {
+            if (!TryAddCookie("MUSIC_A", a))
+            {
+                _cookie.AnonymousMusicA = null;
+                _cookie.AnonymousExpiresUtc = DateTime.MinValue;
+                storeChanged = true;
+            }
+        }
         if (_cookie.Csrf is { Length: > 0 } c)
-            AddCookie("__csrf", c);
+        {
+            if (!TryAddCookie("__csrf", c))
+            {
+                _cookie.Csrf = null;
+                storeChanged = true;
+            }
+        }
+        if (storeChanged) _cookie.Save();
     }
 
     private void AddCookie(string name, string value)
     {
-        _cookieContainer.Add(new Uri(BaseUrl), new Cookie(name, value) { Path = "/" });
+        if (!TryAddCookie(name, value))
+            throw new ApiException($"{name} Cookie 格式无效", -1);
     }
+
+    private bool TryAddCookie(string name, string value)
+    {
+        if (!IsValidStoredCookieValue(value)) return false;
+        try
+        {
+            _cookieContainer.Add(new Uri(BaseUrl), new Cookie(name, value) { Path = "/" });
+            return true;
+        }
+        catch (CookieException)
+        {
+            return false;
+        }
+    }
+
+    private static bool LooksLikeCookieHeader(string value)
+        => value.Contains(';')
+           || value.Contains("qqmusic_key=", StringComparison.OrdinalIgnoreCase)
+           || value.Contains("qm_keyst=", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsValidStoredCookieValue(string value)
+        => !string.IsNullOrWhiteSpace(value)
+           && value.IndexOfAny([';', '\r', '\n', '\0']) < 0;
 
     private static string Truncate(string s, int max)
         => s.Length <= max ? s : s[..max] + "...";

@@ -18,6 +18,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private const string PlayerReferer = "https://y.qq.com/portal/player.html";
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+    private const int MaxCookieHeaderLength = 32 * 1024;
 
     /// <summary>专辑封面模板(albummid 填充;尺寸段 R300x300 由 CoverLoader 按需改写)。</summary>
     private const string CoverTemplate = "https://y.gtimg.cn/music/photo_new/T002R300x300M000{0}.jpg";
@@ -73,6 +74,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     {
         rawCookie = rawCookie.Trim();
         if (rawCookie.Length == 0) throw new ApiException("QQ Cookie 为空", -1);
+        if (!IsSafeCookieHeader(rawCookie))
+            throw new ApiException("QQ Cookie 格式无效或内容过长", -1);
 
         var uin = ExtractCookieValue(rawCookie, "uin");
         if (uin is null || !uin.TrimStart('o').All(char.IsDigit) || uin.TrimStart('o').Length == 0)
@@ -118,18 +121,33 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         try
         {
             if (_cookie.QQCookieRaw is not { Length: > 0 } raw) return;
+            if (!IsSafeCookieHeader(raw))
+            {
+                ClearCookie();
+                return;
+            }
             var uin = ExtractCookieValue(raw, "uin");
             var key = ExtractCookieValue(raw, "qqmusic_key") ?? ExtractCookieValue(raw, "qm_keyst");
-            if (uin is not { Length: > 0 } || string.IsNullOrEmpty(key)) return;
-            _uin = uin.TrimStart('o');
+            var normalizedUin = uin?.TrimStart('o') ?? "";
+            if (normalizedUin.Length == 0 || !normalizedUin.All(char.IsDigit) || string.IsNullOrEmpty(key))
+            {
+                ClearCookie();
+                return;
+            }
+            _uin = normalizedUin;
             _authst = key!;
             _cookieHeader = raw;
         }
         catch
         {
-            // 存档损坏按匿名处理
+            // 存档损坏按匿名处理，并尽力清掉坏值，避免每次启动重复解析。
+            ClearCookie();
         }
     }
+
+    private static bool IsSafeCookieHeader(string raw)
+        => raw.Length is > 0 and <= MaxCookieHeaderLength
+           && raw.IndexOfAny(['\r', '\n', '\0']) < 0;
 
     /// <summary>从 cookie 串取指定键的值(大小写敏感键名,容忍空格与分号分隔)。</summary>
     private static string? ExtractCookieValue(string raw, string name)

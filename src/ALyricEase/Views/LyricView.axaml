@@ -19,16 +19,16 @@
                            IsVisible="{Binding HasTranslation}" />
             </StackPanel>
         </DataTemplate>
-        <!-- 详情页歌词面板模板(仿原版 PlaybackDetailView 歌词区):32 Bold 原文 + 22 翻译,
-             字号随 FontScale 档位缩放;翻译行受"显示翻译"开关控制 -->
+        <!-- 详情页按选中态最大字号 33.6/23.1 参与测量，普通态再缩至 1/1.05，
+             因而视觉字号仍为 32/22，但换行提前为选中放大预留空间。 -->
         <DataTemplate x:Key="DetailLyricItemTemplate" x:DataType="models:LyricLine">
             <StackPanel>
                 <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap"
                            FontWeight="Bold" Foreground="#FFFFFFFF"
-                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=32}" />
+                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=33.6}" />
                 <TextBlock Text="{Binding Translation}" TextAlignment="Left" TextWrapping="Wrap"
                            Foreground="#BFFFFFFF"
-                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=22}">
+                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=23.1}">
                     <TextBlock.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
                             <Binding Path="HasTranslation" />
@@ -93,12 +93,17 @@
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem">
             <Setter Property="MinWidth" Value="100" />
-            <Setter Property="Padding" Value="10" />
+            <!-- RenderTransform 不参与列表测量。上下各留 12px，并让选中缩放围绕
+                 行中心展开，避免长歌词/翻译/150% 字号向下盖住后一行。 -->
+            <Setter Property="Padding" Value="10,12" />
             <Setter Property="Margin" Value="0,0" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="HorizontalAlignment" Value="Left" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="RenderTransformOrigin" Value="0%,0%" />
+            <Setter Property="RenderTransformOrigin" Value="0%,50%" />
+            <!-- 0.952381 = 1 / 1.05。布局按最大选中态测量，普通态缩小；
+                 选中时恢复 1.0，视觉相对放大仍与原版一致。 -->
+            <Setter Property="RenderTransform" Value="scale(0.952381,0.952381)" />
             <Setter Property="Transitions">
                 <Transitions>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.5" />
@@ -135,7 +140,7 @@
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem:selected">
             <Setter Property="Opacity" Value="1" />
-            <Setter Property="RenderTransform" Value="scale(1.05,1.05)" />
+            <Setter Property="RenderTransform" Value="scale(1,1)" />
             <Setter Property="Effect">
                 <BlurEffect Radius="0" />
             </Setter>

@@ -47,6 +47,14 @@ public static class Program
             return;
         }
 
+        // 懒歌单播放回归：完整随机范围、未显示歌曲按需解析、缓存有界。
+        if (args.Length > 0 && args[0] == "--lazy-playback")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(LazyPlaybackQueueProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--probe")
         {
             PerfProbe.Run();

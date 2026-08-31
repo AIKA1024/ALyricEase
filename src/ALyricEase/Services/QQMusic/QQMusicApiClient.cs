@@ -938,8 +938,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             .ToList();
     }
 
-    /// <summary>QQ 歌单原生分页结果。HasMore 依据页长与服务端总数共同判断。</summary>
-    internal sealed record PlaylistTrackPage(IReadOnlyList<Song> Songs, bool HasMore);
+    /// <summary>QQ 歌单原生分页结果。HasMore 依据页长与服务端总数共同判断；
+    /// TotalCount 供逻辑全量播放队列定位未物化歌曲。</summary>
+    internal sealed record PlaylistTrackPage(IReadOnlyList<Song> Songs, bool HasMore, int TotalCount);
 
     /// <summary>读取 QQ 歌单的一页曲目。聚合歌单用它逐页上屏，普通 QQ 歌单仍可在外层拉齐全量。</summary>
     internal async Task<PlaylistTrackPage> GetPlaylistTrackPageAsync(
@@ -978,7 +979,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
         var total = req.Data.TotalSongNum;
         var hasMore = pageSonglist.Count >= pageSize && (total <= 0 || begin + pageSonglist.Count < total);
-        return new PlaylistTrackPage(songs, hasMore);
+        var totalCount = total is > int.MaxValue ? int.MaxValue : (int)Math.Max(total, begin + pageSonglist.Count);
+        return new PlaylistTrackPage(songs, hasMore, totalCount);
     }
 
     /// <summary>歌单全量曲目:music.srfDissInfo.aiDissInfo/uniform_get_Dissinfo(与网页端同源,

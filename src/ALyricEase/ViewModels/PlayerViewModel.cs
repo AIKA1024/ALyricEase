@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
@@ -43,6 +44,12 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private int _queueIndex = -1;
     // 队列行 VM 缓存(与 _queue 同序对齐):详情页"接下来播放"列表重建时复用,封面不用重载。
     private List<QueueItemViewModel> _queueVms = new();
+    // 懒歌单播放源:逻辑下标覆盖完整歌单，Song 仅在切到该下标时解析。
+    // _queue/_queueVms 在此模式下只是“已经物化、可展示的队列窗口”，不再决定随机范围。
+    private ILazySongQueue? _lazyQueue;
+    private readonly List<int> _lazyQueueVmIndices = new();
+    private readonly HashSet<int> _excludedLazyIndices = new();
+    private CancellationTokenSource? _queueRequestCancellation;
 
     private PlaybackState _prevState;
     private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
@@ -273,12 +280,43 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     public void SetQueue(IReadOnlyList<Song> queue, Song current, string? source = null)
     {
         if (queue is not { Count: > 0 }) return;
+        ResetLazyQueue();
         _queue = queue.ToList();
         _queueIndex = _queue.FindIndex(s => s.Id == current.Id);
         if (_queueIndex < 0) { _queue.Insert(0, current); _queueIndex = 0; }
         QueueSourceName = source;
         _queueVms = _queue.Select(s => new QueueItemViewModel(s, PlayQueueItem, RemoveFromQueue)).ToList();
         RefreshUpcomingItems();
+    }
+
+    /// <summary>
+    /// 从懒歌单播放：界面只传当前已物化窗口，随机/上一首/下一首通过 lazyQueue 的全量逻辑下标按需取歌。
+    /// </summary>
+    internal Task<bool> PlayFromLazyList(
+        Song song,
+        ILazySongQueue lazyQueue,
+        int logicalIndex,
+        IReadOnlyList<Song> materialized,
+        string? source = null)
+    {
+        IsFmActive = false;
+        ResetLazyQueue();
+        _lazyQueue = lazyQueue;
+        _queueRequestCancellation = new CancellationTokenSource();
+        _queue = materialized.ToList();
+        _queueVms = _queue.Select(candidate => new QueueItemViewModel(
+            candidate, PlayQueueItem, RemoveFromQueue)).ToList();
+        _lazyQueueVmIndices.AddRange(Enumerable.Range(0, _queue.Count));
+        _queueIndex = logicalIndex;
+        if (!_lazyQueueVmIndices.Contains(logicalIndex))
+        {
+            _queue.Add(song);
+            _queueVms.Add(new QueueItemViewModel(song, PlayQueueItem, RemoveFromQueue));
+            _lazyQueueVmIndices.Add(logicalIndex);
+        }
+        QueueSourceName = source;
+        RefreshUpcomingItems();
+        return PlayAsync(song);
     }
 
     /// <summary>从列表播放:先记录队列,再播当前曲。供 SongItemViewModel 的队列播放回调使用。
@@ -292,6 +330,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             SetQueue(queue, song, source);
         else
         {
+            ResetLazyQueue();
             _queue = new List<Song> { song };
             _queueIndex = 0;
             QueueSourceName = null;
@@ -400,6 +439,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         UpcomingItems.Clear();
         if (_queueIndex < 0) return;
+        if (_lazyQueue is not null)
+        {
+            // 详情页仍只展示已物化窗口；排序按完整歌单逻辑下标从当前曲之后循环。
+            foreach (var pair in _lazyQueueVmIndices
+                         .Select((logicalIndex, vmIndex) => (logicalIndex, vmIndex))
+                         .Where(pair => pair.logicalIndex != _queueIndex
+                                        && !_excludedLazyIndices.Contains(pair.logicalIndex))
+                         .OrderBy(pair => pair.logicalIndex > _queueIndex ? 0 : 1)
+                         .ThenBy(pair => pair.logicalIndex))
+                UpcomingItems.Add(_queueVms[pair.vmIndex]);
+            return;
+        }
         for (var i = 1; i < _queueVms.Count; i++)
             UpcomingItems.Add(_queueVms[(_queueIndex + i) % _queueVms.Count]);
     }
@@ -409,6 +460,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         var idx = _queueVms.IndexOf(item);
         if (idx < 0) return Task.CompletedTask;
+        if (_lazyQueue is not null)
+        {
+            _queueIndex = _lazyQueueVmIndices[idx];
+            return PlayAsync(_queue[idx]);
+        }
         _queueIndex = idx;
         return PlayAsync(_queue[idx]);
     }
@@ -418,10 +474,30 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         var idx = _queueVms.IndexOf(item);
         if (idx < 0) return;
+        if (_lazyQueue is not null)
+        {
+            var logicalIndex = _lazyQueueVmIndices[idx];
+            _excludedLazyIndices.Add(logicalIndex);
+            _lazyQueueVmIndices.RemoveAt(idx);
+            _queue.RemoveAt(idx);
+            _queueVms.RemoveAt(idx);
+            RefreshUpcomingItems();
+            return;
+        }
         _queue.RemoveAt(idx);
         _queueVms.RemoveAt(idx);
         if (idx <= _queueIndex) _queueIndex--;
         RefreshUpcomingItems();
+    }
+
+    private void ResetLazyQueue()
+    {
+        _queueRequestCancellation?.Cancel();
+        _queueRequestCancellation?.Dispose();
+        _queueRequestCancellation = null;
+        _lazyQueue = null;
+        _lazyQueueVmIndices.Clear();
+        _excludedLazyIndices.Clear();
     }
 
     /// <summary>播放一首歌:查播放地址(higher→standard 自动降级),null 提示 VIP/不可播。
@@ -531,7 +607,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             await PlayFmNextAsync();
             return;
         }
-        if (_queue.Count == 0) return;
+        if (_queue.Count == 0 && _lazyQueue is null) return;
         switch (PlaybackMode)
         {
             case PlaybackMode.SingleLoop when CurrentSong is not null:
@@ -542,6 +618,9 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 break;
             case PlaybackMode.Heartbeat:
                 await PlayLikedAsync(forward: true);
+                break;
+            case PlaybackMode.ListLoop when _lazyQueue is not null:
+                await PlayLazyAdjacentAsync(forward: true);
                 break;
             default: // ListLoop:尾→头循环
                 _queueIndex = (_queueIndex + 1) % _queue.Count;
@@ -563,7 +642,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             await PlayAsync(_queue[_queueIndex]);
             return;
         }
-        if (_queue.Count == 0) return;
+        if (_queue.Count == 0 && _lazyQueue is null) return;
         switch (PlaybackMode)
         {
             case PlaybackMode.SingleLoop when CurrentSong is not null:
@@ -575,6 +654,9 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             case PlaybackMode.Heartbeat:
                 await PlayLikedAsync(forward: false);
                 break;
+            case PlaybackMode.ListLoop when _lazyQueue is not null:
+                await PlayLazyAdjacentAsync(forward: false);
+                break;
             default: // ListLoop:头→尾循环
                 _queueIndex = (_queueIndex - 1 + _queue.Count) % _queue.Count;
                 await PlayAsync(_queue[_queueIndex]);
@@ -585,6 +667,43 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// <summary>随机播放:队列中随机挑一首(队列 &gt; 1 时避开当前曲)。</summary>
     private async Task PlayShuffleAsync()
     {
+        if (_lazyQueue is not null)
+        {
+            var source = _lazyQueue;
+            var ct = _queueRequestCancellation?.Token ?? CancellationToken.None;
+            try
+            {
+                var count = await source.GetCountAsync(ct);
+                for (var attempt = 0; attempt < count; attempt++)
+                {
+                    var index = SelectShuffleIndex(count, _queueIndex, _excludedLazyIndices, Random.Shared);
+                    if (index < 0)
+                    {
+                        if (CurrentSong is not null) await PlayAsync(CurrentSong);
+                        return;
+                    }
+                    var song = await source.GetSongAsync(index, ct);
+                    if (!ReferenceEquals(source, _lazyQueue)) return;
+                    if (song is null)
+                    {
+                        _excludedLazyIndices.Add(index);
+                        continue;
+                    }
+                    _queueIndex = index;
+                    RememberLazyDisplaySong(index, song);
+                    await PlayAsync(song);
+                    return;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                Message = $"加载播放队列失败:{ex.Message}";
+            }
+            return;
+        }
         if (_queue.Count <= 1)
         {
             if (CurrentSong is not null) await PlayAsync(CurrentSong);
@@ -599,6 +718,12 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// <summary>心动模式:沿队列方向找下一首红心(喜欢的)歌;队列里没有红心则退回列表循环。</summary>
     private async Task PlayLikedAsync(bool forward)
     {
+        // 心动模式尚未开放给懒歌单；保持完整队列语义，退化为按方向取逻辑相邻歌曲。
+        if (_lazyQueue is not null)
+        {
+            await PlayLazyAdjacentAsync(forward);
+            return;
+        }
         if (_queue.Count == 0) return;
         await _api.EnsureLikedIdsAsync(); // 已加载则幂等;未登录 → 空集合
         for (var i = 1; i <= _queue.Count; i++)
@@ -614,6 +739,81 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         // 无红心 → 退回列表循环方向
         _queueIndex = (forward ? _queueIndex + 1 : _queueIndex - 1 + _queue.Count) % _queue.Count;
         await PlayAsync(_queue[_queueIndex]);
+    }
+
+    private async Task PlayLazyAdjacentAsync(bool forward)
+    {
+        var source = _lazyQueue;
+        if (source is null) return;
+        var ct = _queueRequestCancellation?.Token ?? CancellationToken.None;
+        try
+        {
+            var count = await source.GetCountAsync(ct);
+            if (count <= 0) return;
+            for (var step = 1; step <= count; step++)
+            {
+                var index = forward
+                    ? (_queueIndex + step) % count
+                    : (_queueIndex - step % count + count) % count;
+                if (_excludedLazyIndices.Contains(index)) continue;
+                var song = await source.GetSongAsync(index, ct);
+                if (!ReferenceEquals(source, _lazyQueue)) return;
+                if (song is null)
+                {
+                    _excludedLazyIndices.Add(index);
+                    continue;
+                }
+                _queueIndex = index;
+                RememberLazyDisplaySong(index, song);
+                await PlayAsync(song);
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载播放队列失败:{ex.Message}";
+        }
+    }
+
+    private void RememberLazyDisplaySong(int logicalIndex, Song song)
+    {
+        var existing = _lazyQueueVmIndices.IndexOf(logicalIndex);
+        if (existing >= 0)
+        {
+            _queue[existing] = song;
+            return;
+        }
+        _queue.Add(song);
+        _queueVms.Add(new QueueItemViewModel(song, PlayQueueItem, RemoveFromQueue));
+        _lazyQueueVmIndices.Add(logicalIndex);
+    }
+
+    /// <summary>在完整逻辑范围内等概率选取一个未排除且非当前的下标。</summary>
+    internal static int SelectShuffleIndex(
+        int count,
+        int currentIndex,
+        IReadOnlySet<int> excluded,
+        Random random)
+    {
+        if (count <= 0) return -1;
+        var eligible = 0;
+        for (var index = 0; index < count; index++)
+            if (index != currentIndex && !excluded.Contains(index)) eligible++;
+        if (eligible == 0)
+            return currentIndex >= 0 && currentIndex < count && !excluded.Contains(currentIndex)
+                ? currentIndex
+                : -1;
+
+        var target = random.Next(eligible);
+        for (var index = 0; index < count; index++)
+        {
+            if (index == currentIndex || excluded.Contains(index)) continue;
+            if (target-- == 0) return index;
+        }
+        return -1;
     }
 
     private void OnSmtcSeek(long ms)
@@ -721,6 +921,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        ResetLazyQueue();
         _smtc.PlayPauseRequested -= OnSmtcPlayPause;
         _smtc.SeekRequested -= OnSmtcSeek;
         _player.StateChanged -= OnStateChanged;

@@ -232,6 +232,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         CreatorName = "";
         _qqPlaylistsLoaded = false;
         Tracks.Clear();
+        _trackIds = new List<long>();
+        _known.Clear();
+        _queueSongs.Clear();
+        _playbackQueue = null;
+        _aggregatePlaybackQueue = null;
+        _materialized = 0;
         _isCloud = false;
         _currentAggregate = null;
         IsAggregate = false;
@@ -240,9 +246,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     // 增量加载状态:trackIds 是全量权威顺序;仅已解析的歌曲会物化进 Tracks。
     private List<long> _trackIds = new();
     private readonly Dictionary<long, Song> _known = new();
-    // 当前歌单的共享播放队列:所有曲目行持有同一列表引用,随物化增长;
-    // 点击播放时 PlayerViewModel.SetQueue 会 ToList() 快照,即"此刻已物化的完整歌单"。
+    // 当前页已物化歌曲窗口：供“接下来播放”直接展示；完整的随机/顺序范围由 _playbackQueue
+    // 保存轻量 trackId/成员分页描述，命中未显示下标时再解析 Song。
     private readonly List<Song> _queueSongs = new();
+    private ILazySongQueue? _playbackQueue;
+    private AggregateSongQueue? _aggregatePlaybackQueue;
     private int _materialized;          // 已物化进 Tracks 的曲目数(按 trackIds 顺序)
     [ObservableProperty] private bool _isLoadingMore;
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
@@ -335,6 +343,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
+        _playbackQueue = null;
+        _aggregatePlaybackQueue = null;
         _materialized = 0;
         IsBusy = true;
         Message = null;
@@ -396,6 +406,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
+        _playbackQueue = null;
+        _aggregatePlaybackQueue = null;
         _materialized = 0;
         IsBusy = true;
         Message = null;
@@ -407,6 +419,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _trackIds = overview.TrackIds.ToList();
             foreach (var s in overview.PrefixTracks)
                 if (s.Id != 0) _known[s.Id] = s;
+            _playbackQueue = new IndexedSongQueue(
+                _trackIds, overview.PrefixTracks, _api.GetSongsByIdsAsync);
 
             AppendKnownTracks();
             IsBusy = false;
@@ -447,6 +461,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
+        _playbackQueue = null;
+        _aggregatePlaybackQueue = null;
         _materialized = 0;
         IsBusy = true;
         Message = null;
@@ -497,6 +513,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
+        _aggregatePlaybackQueue = CreateAggregatePlaybackQueue(members);
+        _playbackQueue = _aggregatePlaybackQueue;
         _materialized = 0;
         IsBusy = true;
         Message = null;
@@ -560,10 +578,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var member = state.Members[state.MemberIndex];
             try
             {
+                var memberIndex = state.MemberIndex;
                 if (member.Source == MusicSource.QQ)
                 {
+                    var begin = state.QqBegin;
                     var page = await _qqApi.GetPlaylistTrackPageAsync(
-                        member.PlaylistId, state.QqBegin, AggregateQqPageSize, ct);
+                        member.PlaylistId, begin, AggregateQqPageSize, ct);
+                    _aggregatePlaybackQueue?.ConfigureQqMember(memberIndex, page.TotalCount);
                     state.QqBegin += AggregateQqPageSize;
                     if (!page.HasMore) state.AdvanceMember();
                     if (page.Songs.Count > 0)
@@ -575,6 +596,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 {
                     var overview = await _api.GetPlaylistTrackOverviewAsync(member.PlaylistId, ct);
                     state.NetEaseTrackIds = overview.TrackIds;
+                    _aggregatePlaybackQueue?.ConfigureNetEaseMember(memberIndex, overview);
                     foreach (var song in overview.PrefixTracks)
                         if (song.Id != 0) state.NetEaseKnown[song.Id] = song;
                 }
@@ -585,8 +607,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     continue;
                 }
 
+                var memberOffset = state.NetEaseCursor;
                 var ids = state.NetEaseTrackIds
-                    .Skip(state.NetEaseCursor)
+                    .Skip(memberOffset)
                     .Take(AggregateNetEaseBatchSize)
                     .ToList();
                 var missing = ids.Where(id => !state.NetEaseKnown.ContainsKey(id)).ToList();
@@ -612,6 +635,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             }
             catch (ApiException ex)
             {
+                _aggregatePlaybackQueue?.MarkMemberUnavailable(state.MemberIndex);
                 state.FailedCount++;
                 Message = $"歌单[{member.PlaylistName}]拉取失败:{ex.Message}";
                 state.AdvanceMember();
@@ -635,9 +659,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
                 var rowStart = Tracks.Count;
                 _queueSongs.AddRange(songs);
-                var rows = songs.Select((song, index) => new SongItemViewModel(
-                    song, _player.PlayFromList, rowStart + index + 1, _queueSongs,
-                    batch.Source == MusicSource.QQ ? null : _api, PlaylistTitle)).ToList();
+                var rows = songs.Select((song, index) =>
+                    CreateTrackRow(song, rowStart + index,
+                        batch.Source == MusicSource.QQ ? null : _api)).ToList();
                 Tracks.AddRange(rows);
                 SelectedPlaylist?.UpdateTrackCount(Tracks.Count);
 
@@ -659,6 +683,20 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         => aggregate.SourceOrder == AggregateSourceOrder.QqFirst
             ? aggregate.Members.OrderBy(member => member.Source == MusicSource.QQ ? 0 : 1).ToList()
             : aggregate.Members.OrderBy(member => member.Source == MusicSource.NetEase ? 0 : 1).ToList();
+
+    private AggregateSongQueue CreateAggregatePlaybackQueue(IReadOnlyList<AggregatePlaylistMember> members)
+    {
+        var descriptors = members.Select(member =>
+        {
+            var item = member.Source == MusicSource.QQ
+                ? QqPlaylists.FirstOrDefault(candidate => candidate.Id == member.PlaylistId)
+                : Playlists.FirstOrDefault(candidate => candidate.Id == member.PlaylistId);
+            // 0 既可能是真空歌单，也可能是列表接口未给计数；交给播放源做一次轻量元数据确认。
+            int? knownCount = item?.Playlist.TrackCount is > 0 ? item.Playlist.TrackCount : null;
+            return new AggregateSongQueue.Member(member, knownCount);
+        }).ToList();
+        return new AggregateSongQueue(_api, _qqApi, descriptors);
+    }
 
     /// <summary>滚动接近底部时调用：补齐下一批(≤100)曲目元数据并物化。</summary>
     public Task LoadMoreAsync()
@@ -713,29 +751,42 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     }
 
     /// <summary>把 trackIds 里连续已解析的曲目物化成列表项。
-    /// 所有行共享 _queueSongs(与 Tracks 同步增长):先物化的行不会再拿到比后加载批次更短的旧队列,
-    /// 点击播放时按"此刻已物化的完整歌单"快照入队。</summary>
+    /// UI 行与 _queueSongs 仍同步增长，但播放使用 _playbackQueue 的完整逻辑范围。</summary>
     private void AppendKnownTracks()
     {
         while (_materialized < _trackIds.Count)
         {
             var id = _trackIds[_materialized];
             if (!_known.TryGetValue(id, out var song)) break;
-            Tracks.Add(new SongItemViewModel(song, _player.PlayFromList, _materialized + 1, _queueSongs, _api, PlaylistTitle));
+            Tracks.Add(CreateTrackRow(song, _materialized, _api));
             _queueSongs.Add(song);
             _materialized++;
         }
     }
 
-    /// <summary>头部「播放全部」:从第一首开始播放,播放队列 = 当前已物化的完整歌单(经首行共享队列注入)。
-    /// 增量模式下先保证队列里有足量已物化曲目,再开始播。</summary>
+    private SongItemViewModel CreateTrackRow(Song song, int zeroBasedIndex, NetEaseApiClient? api)
+    {
+        var lazyQueue = _playbackQueue;
+        if (lazyQueue is null)
+            return new SongItemViewModel(
+                song, _player.PlayFromList, zeroBasedIndex + 1, _queueSongs, api, PlaylistTitle);
+
+        lazyQueue.Remember(zeroBasedIndex, song);
+        var source = PlaylistTitle;
+        return new SongItemViewModel(song,
+            candidate => _player.PlayFromLazyList(
+                candidate, lazyQueue, zeroBasedIndex, _queueSongs, source),
+            zeroBasedIndex + 1, api);
+    }
+
+    /// <summary>头部「播放全部」:从第一首开始播放；懒歌单只物化首屏，播放器按需解析完整逻辑队列。</summary>
     [RelayCommand]
     private async Task PlayAllAsync()
     {
         if (Tracks.Count == 0) return;
-        // 静默补齐更多已物化曲目(不阻塞),使“播放全部”的队列更长
+        // 非懒队列保留原行为；懒队列无需为了播放器提前创建更多 Song/UI 行。
         var cancellation = _loadCancellation;
-        if (cancellation is { IsCancellationRequested: false })
+        if (_playbackQueue is null && cancellation is { IsCancellationRequested: false })
             _ = LoadMoreAsync(fillTo: Math.Min(_trackIds.Count, _materialized + 300),
                 generation: _loadGeneration, cancellation.Token);
         await Tracks[0].PlayCommand.ExecuteAsync(null);
@@ -839,6 +890,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
+        _playbackQueue = null;
+        _aggregatePlaybackQueue = null;
         _materialized = 0;
         IsBusy = false;
         IsLoadingMore = false;

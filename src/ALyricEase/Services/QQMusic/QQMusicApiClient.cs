@@ -307,10 +307,16 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             // 主通道异常 → 走回落
         }
 
-        if (original.Length == 0 && translation.Length == 0)
+        // 旧网页接口目前通常只返回原文、Trans 为空。只在两者都为空时回落会让
+        // QQ 歌曲永远拿不到翻译；新接口同时用于补齐缺失的一侧，已有结果不覆盖。
+        if (original.Length == 0 || translation.Length == 0)
         {
-            var fallback = await TryLyricByMusicuAsync(mid, song.Id, ct).ConfigureAwait(false);
-            if (fallback is not null) return fallback;
+            var fallback = await TryLyricByMusicuAsync(song, mid, ct).ConfigureAwait(false);
+            if (fallback is not null)
+            {
+                if (original.Length == 0) original = fallback.Original;
+                if (translation.Length == 0) translation = fallback.Translation;
+            }
         }
         return new LyricResult { Original = original, Translation = translation };
     }
@@ -1294,7 +1300,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return domain.TrimEnd('/') + "/" + purl.TrimStart('/');
     }
 
-    private async Task<LyricResult?> TryLyricByMusicuAsync(string mid, long songId, CancellationToken ct)
+    private async Task<LyricResult?> TryLyricByMusicuAsync(Song song, string mid, CancellationToken ct)
     {
         try
         {
@@ -1302,14 +1308,25 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             {
                 WriteModuleReq(w, "music.musichallSong.PlayLyricInfo", "GetPlayLyricInfo", p =>
                 {
-                    p.WriteString("songMID", mid);
-                    p.WriteNumber("songID", songId);
-                    p.WriteNumber("trans_t", 0);
-                    p.WriteNumber("roma_t", 0);
-                    p.WriteNumber("qrc_t", 0);
-                    p.WriteNumber("crypt", 1);
+                    // 当前接口只有在附带歌曲元数据并显式 trans=1 时才返回翻译。
+                    // qrc=0 + crypt=0 请求 Base64 LRC；qrc=1 会返回需另行解密的加密 QRC。
+                    p.WriteString("albumName", EncodeBase64(song.Album));
+                    p.WriteNumber("crypt", 0);
+                    p.WriteNumber("ct", 19);
+                    p.WriteNumber("cv", 2111);
+                    p.WriteNumber("interval", Math.Max(0, song.DurationMs / 1000));
                     p.WriteNumber("lrc_t", 0);
-                    p.WriteNumber("interval", 0);
+                    p.WriteNumber("qrc", 0);
+                    p.WriteNumber("qrc_t", 0);
+                    p.WriteNumber("roma", 0);
+                    p.WriteNumber("roma_t", 0);
+                    p.WriteString("singerName", EncodeBase64(song.Artist));
+                    p.WriteString("songMID", mid);
+                    p.WriteNumber("songID", song.Id);
+                    p.WriteString("songName", EncodeBase64(song.Name));
+                    p.WriteNumber("trans", 1);
+                    p.WriteNumber("trans_t", 0);
+                    p.WriteNumber("type", 0);
                 });
             }, ct).ConfigureAwait(false);
             var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQMusicuLyricResponse);
@@ -1502,6 +1519,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             return value;
         }
     }
+
+    private static string EncodeBase64(string value)
+        => Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
 
     /// <summary>统一映射到领域 Song。兼容两种形态:搜索(songname/songmid + 平铺 albumid/albummid/albumname)
     /// 与 track_info(name/mid + 嵌套 album:{id,mid,name})。歌手/专辑 id 不填充:与网易云 id 空间

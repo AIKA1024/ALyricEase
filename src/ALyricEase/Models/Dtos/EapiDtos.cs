@@ -20,6 +20,9 @@ public sealed record PlayUrlItem
 
     public int Br { get; init; }
 
+    /// <summary>服务端实际返回的音质档位；可能低于请求档位。</summary>
+    public string Level { get; init; } = "";
+
     public int Fee { get; init; }
 
     /// <summary>true 表示仅 30 秒试听。</summary>

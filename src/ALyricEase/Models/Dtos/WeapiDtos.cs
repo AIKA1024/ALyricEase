@@ -92,7 +92,35 @@ public sealed record SearchUserItemDto
 }
 
 /// <summary>搜索接口返回的单曲(ar/al 为搜索接口字段名;v3/song/detail 是 artists/album)。</summary>
-public sealed record SearchSong
+public abstract record NetEaseTrackAudioDto
+{
+    [JsonPropertyName("h")] public NetEaseAudioFileDto? High { get; init; }
+
+    [JsonPropertyName("m")] public NetEaseAudioFileDto? Medium { get; init; }
+
+    [JsonPropertyName("l")] public NetEaseAudioFileDto? Low { get; init; }
+
+    [JsonPropertyName("sq")] public NetEaseAudioFileDto? Lossless { get; init; }
+
+    [JsonPropertyName("hr")] public NetEaseAudioFileDto? HiRes { get; init; }
+
+    [JsonPropertyName("je")] public NetEaseAudioFileDto? Spatial { get; init; }
+
+    [JsonPropertyName("sky")] public NetEaseAudioFileDto? Surround { get; init; }
+
+    [JsonPropertyName("jm")] public NetEaseAudioFileDto? Master { get; init; }
+}
+
+public sealed record NetEaseAudioFileDto
+{
+    [JsonPropertyName("br")] public int BitRate { get; init; }
+
+    public long Size { get; init; }
+
+    public bool IsAvailable => BitRate > 0 || Size > 0;
+}
+
+public sealed record SearchSong : NetEaseTrackAudioDto
 {
     public long Id { get; init; }
 
@@ -272,7 +300,7 @@ public sealed record SongDetailResponse
 }
 
 /// <summary>v3/song/detail 的曲目(字段是 artists/album)。</summary>
-public sealed record SongDetailItem
+public sealed record SongDetailItem : NetEaseTrackAudioDto
 {
     public long Id { get; init; }
 

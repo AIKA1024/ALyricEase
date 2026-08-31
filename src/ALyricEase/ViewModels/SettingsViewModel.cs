@@ -35,7 +35,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public IReadOnlyList<string> PerformanceOptions { get; } = ["平衡(默认)", "最佳性能", "最佳质量"];
 
-    public IReadOnlyList<string> AudioQualityOptions { get; } = ["标准", "较高", "极高", "无损(仅VIP可用)"];
+    public IReadOnlyList<string> AudioQualityOptions { get; } =
+    [
+        "标准",
+        "较高",
+        "极高",
+        "无损(仅VIP可用)",
+        "最高可用音质",
+    ];
 
     // ---- 外观 ----
 
@@ -104,11 +111,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // ---- 播放 ----
 
-    /// <summary>音频质量档位(当前仅存储偏好,播放器选流尚未接入)。</summary>
+    /// <summary>统一音频质量档位；播放时按歌曲来源映射到网易云或 QQ 的对应档位。</summary>
     public int AudioQualityIndex
     {
         get => _state.AudioQuality;
-        set { _state.AudioQuality = value; _state.Save(); OnPropertyChanged(nameof(AudioQualityIndex)); }
+        set
+        {
+            _state.AudioQuality = AudioQualityMapper.NormalizeIndex(value);
+            _state.Save();
+            OnPropertyChanged(nameof(AudioQualityIndex));
+        }
     }
 
     /// <summary>传统播放控制。</summary>

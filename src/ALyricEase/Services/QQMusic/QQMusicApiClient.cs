@@ -275,18 +275,34 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return items;
     }
 
-    /// <summary>播放地址:vkey.GetVkeyServer/CgiGetVkey。按档位取文件名前缀(M500=128k/M800=320k/F000=flac),
-    /// 目标档拿不到 purl(VIP 或未登录)自动降级到 M500——与网易云 higher→standard 策略一致。</summary>
+    /// <summary>播放地址:vkey.GetVkeyServer/CgiGetVkey。按档位取文件名前缀
+    /// (TL01=NAC、M500=128k MP3、M800=320k MP3、F000=FLAC)，目标档不可用时自动降级。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
     {
         var mid = await EnsureMidAsync(song, ct).ConfigureAwait(false);
         if (mid.Length == 0) return null;
 
+        if (string.Equals(level, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            var prefix = await ResolveAutomaticQualityAsync(song, ct).ConfigureAwait(false);
+            var selected = QualityFromPrefix(prefix);
+            var selectedUrl = await TryVkeyAsync(mid, selected.Prefix, selected.Ext, ct).ConfigureAwait(false);
+            return string.IsNullOrEmpty(selectedUrl)
+                ? null
+                : new PlayUrlItem
+                {
+                    Id = song.Id,
+                    Url = selectedUrl,
+                    Br = selected.Br,
+                    Level = selected.Prefix,
+                };
+        }
+
         foreach (var (prefix, ext, br) in Qualities(level))
         {
             var url = await TryVkeyAsync(mid, prefix, ext, ct).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(url))
-                return new PlayUrlItem { Id = song.Id, Url = url, Br = br };
+                return new PlayUrlItem { Id = song.Id, Url = url, Br = br, Level = prefix };
         }
         return null; // 全部档位不可播(VIP/版权),由调用方提示
     }
@@ -1274,13 +1290,71 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     // ---------- 内部 ----------
 
-    /// <summary>level → 文件名前缀链:目标档在前,不可播逐级降级,末档恒为 M500(128k mp3)。</summary>
+    /// <summary>level → 文件名前缀链:目标档在前,不可播逐级降级,末档恒为 M500(128k MP3)。</summary>
     private static IEnumerable<(string Prefix, string Ext, int Br)> Qualities(string level) => level.ToLowerInvariant() switch
     {
         "lossless" or "hires" => [("F000", ".flac", 999000), ("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
+        "nac" => [("TL01", ".nac", 0), ("M500", ".mp3", 128000)],
+        "aac" => [("C400", ".m4a", 96000), ("M500", ".mp3", 128000)],
         "higher" => [("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
         _ => [("M500", ".mp3", 128000)],
     };
+
+    /// <summary>自动最高保存的是 QQ 文件名前缀；解析后只调用一次 VKey。</summary>
+    private static (string Prefix, string Ext, int Br) QualityFromPrefix(string prefix) => prefix.ToUpperInvariant() switch
+    {
+        "DT03" => ("DT03", ".mp4", 0),
+        "AI00" => ("AI00", ".flac", 0),
+        "Q003" => ("Q003", ".ogg", 0),
+        "Q001" => ("Q001", ".flac", 0),
+        "Q000" => ("Q000", ".flac", 0),
+        "D004" => ("D004", ".mp4", 0),
+        "RS01" => ("RS01", ".flac", 0),
+        "TL01" => ("TL01", ".nac", 0),
+        "F000" => ("F000", ".flac", 999000),
+        "O801" => ("O801", ".ogg", 640000),
+        "O800" => ("O800", ".ogg", 320000),
+        "M800" => ("M800", ".mp3", 320000),
+        "C600" => ("C600", ".m4a", 192000),
+        "O600" => ("O600", ".ogg", 192000),
+        "C400" => ("C400", ".m4a", 96000),
+        "O400" => ("O400", ".ogg", 96000),
+        "C200" => ("C200", ".m4a", 48000),
+        _ => ("M500", ".mp3", 128000),
+    };
+
+    /// <summary>补一次完整详情并写回 Song；以后重播直接复用元数据。</summary>
+    private async Task<string> ResolveAutomaticQualityAsync(Song song, CancellationToken ct)
+    {
+        if (!song.AudioQualityInfoComplete)
+        {
+            try
+            {
+                if (await GetSongDetailAsync(song.Id, ct).ConfigureAwait(false) is { } detail)
+                {
+                    song.AvailableAudioQualities = detail.AvailableAudioQualities;
+                    song.AudioQualityInfoComplete = detail.AudioQualityInfoComplete;
+                }
+            }
+            catch (ApiException)
+            {
+                // 详情失败时保持单次 URL 请求，回到所有 QQ 曲目共同支持的 M500。
+            }
+        }
+
+        if (IsLoggedIn && !IsVipLoaded)
+            await EnsureVipStatusAsync(ct).ConfigureAwait(false);
+
+        if (IsVip)
+            return song.AvailableAudioQualities.FirstOrDefault() ?? "M500";
+
+        // 非会员不把“曲库存在”误判为“账号可播”；从免费档里选择最高项。
+        foreach (var prefix in song.AvailableAudioQualities)
+        {
+            if (prefix is "M500" or "C400" or "O400" or "C200") return prefix;
+        }
+        return "M500";
+    }
 
     private async Task<string> TryVkeyAsync(string mid, string prefix, string ext, CancellationToken ct)
     {
@@ -1369,6 +1443,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         try
         {
             var detail = await GetSongDetailAsync(song.Id, ct).ConfigureAwait(false);
+            if (detail is not null)
+            {
+                song.AvailableAudioQualities = detail.AvailableAudioQualities;
+                song.AudioQualityInfoComplete = detail.AudioQualityInfoComplete;
+            }
             return detail?.Mid ?? "";
         }
         catch (ApiException)
@@ -1556,6 +1635,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
         if (id != 0 && mid.Length > 0) RememberMid(id, mid);
 
+        var availableQualities = GetAvailableAudioQualities(t);
         return new Song
         {
             Id = id,
@@ -1571,7 +1651,53 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             AlbumId = albumId,
             AlbumMid = albumMid,
             Source = MusicSource.QQ,
+            AvailableAudioQualities = availableQualities,
+            AudioQualityInfoComplete = t.File is not null,
         };
+    }
+
+    /// <summary>把 track_info.file 的文件大小映射成普通 VKey 可请求的前缀，顺序与平台音质一致。</summary>
+    private static IReadOnlyList<string> GetAvailableAudioQualities(QQTrackDto track)
+    {
+        if (track.File is not { } file)
+        {
+            var basic = new List<string>(4);
+            if (track.SizeFlacFlat > 0) basic.Add("F000");
+            if (track.Size320Mp3Flat > 0) basic.Add("M800");
+            if (track.Size128Mp3Flat > 0) basic.Add("M500");
+            if (track.SizeOggFlat > 0) basic.Add("O600");
+            return basic;
+        }
+
+        var result = new List<string>(18);
+        AddIfPositive(result, "DT03", file.SizeDts);
+        AddIfPositive(result, "AI00", NewSize(file, 0));
+        // 新版 size_new 在旧的 0..5 槽位后追加 7.1/NAC/杜比等格式。
+        AddIfPositive(result, "Q003", NewSize(file, 6));
+        AddIfPositive(result, "Q001", NewSize(file, 2));
+        AddIfPositive(result, "Q000", NewSize(file, 1));
+        AddIfPositive(result, "D004", file.SizeDolby > 0 ? file.SizeDolby : NewSize(file, 8));
+        AddIfPositive(result, "RS01", file.SizeHiRes);
+        AddIfPositive(result, "TL01", NewSize(file, 7));
+        AddIfPositive(result, "F000", file.SizeFlac);
+        AddIfPositive(result, "O801", NewSize(file, 5));
+        AddIfPositive(result, "O800", NewSize(file, 3));
+        AddIfPositive(result, "M800", file.Size320Mp3);
+        AddIfPositive(result, "C600", file.Size192Aac);
+        AddIfPositive(result, "O600", file.Size192Ogg);
+        AddIfPositive(result, "M500", file.Size128Mp3);
+        AddIfPositive(result, "C400", file.Size96Aac);
+        AddIfPositive(result, "O400", file.Size96Ogg);
+        AddIfPositive(result, "C200", file.Size48Aac);
+        return result;
+    }
+
+    private static long NewSize(QQTrackFileDto file, int index)
+        => file.SizeNew is { } sizes && index >= 0 && index < sizes.Count ? sizes[index] : 0;
+
+    private static void AddIfPositive(List<string> target, string prefix, long size)
+    {
+        if (size > 0) target.Add(prefix);
     }
 
     private static string FirstNonEmpty(params string?[] values)

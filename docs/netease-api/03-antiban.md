@@ -75,13 +75,17 @@
 - 加密 POST 收到空 body → 置 `_wafBlocked`，**同一会话不再重试加密通道**，直接走明文。
 - 这是"发现被拦就换通道"，不是无限重试。
 
-### 4.2 音质降级链
+### 4.2 音质选择与降级链
 
 ```
-hires/lossless → higher → standard   每级只重试 1 次
+auto: 从歌曲详情 jm → sky → je → hr → sq → h → m → l 中选择第一个存在的档位，只请求 1 次播放地址
+sky → jyeffect → lossless → exhigh → higher → standard
+jyeffect/hires/lossless/exhigh/higher 从自身所在层级继续降级，每级只尝试 1 次
 ```
-- VIP 曲目明文路径返回 `code -110 / url:null` → **不要再试更高音质**，视为不可播。
-- 免费曲拿不到 higher 会再试 standard，仍失败则放弃。
+- 曲目模型缓存完整音质列表；已有详情时不增加请求，缺详情时每个 `Song` 只补一次并写回模型。
+- `auto` 不逐档探测 URL；网易云若按账号权限返回较低档，以响应里的实际 `level` 为准。
+- VIP 曲目逐级降到 `standard` 仍返回 `url:null` 时，视为不可播。
+- 明文回落按 `br` 去重；高级无损/空间音频不会重复发起相同的 999000 请求。
 
 ### 4.3 一般请求失败
 

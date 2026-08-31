@@ -543,7 +543,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         try
         {
             var api = _sources.Resolve(song);
-            var item = await api.GetPlayUrlAsync(song, "higher");
+            var qualityLevel = AudioQualityMapper.GetRequestLevel(song.Source, _appState.AudioQuality);
+            var item = await api.GetPlayUrlAsync(song, qualityLevel);
             if (item is null || string.IsNullOrEmpty(item.Url))
             {
                 // 区分"未登录/非会员"与"版权限制":VIP 歌曲失败先确保会员状态已加载再给文案

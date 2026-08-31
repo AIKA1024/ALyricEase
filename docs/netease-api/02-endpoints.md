@@ -153,14 +153,15 @@ GET /api/song/enhance/player/url?ids=[186016]&br=320000
 | 参数 | 值 | 说明 |
 |---|---|---|
 | `ids` | `[id]` | JSON 数组字面量 |
-| `br` | `128000` / `320000` / `999000` | **明文路径必带 br**，不带返回空 |
+| `br` | `128000` / `192000` / `320000` / `999000` | **明文路径必带 br**，不带返回空 |
 
 **level → br 映射**（`LevelToBr`）：
 
 | level | br |
 |---|---|
-| `hires` / `lossless` | 999000 |
-| `higher` | 320000 |
+| `jymaster` / `dolby` / `sky` / `jyeffect` / `hires` / `lossless` | 999000（明文端点不支持高级格式，按无损请求） |
+| `exhigh` | 320000 |
+| `higher` | 192000 |
 | `standard` / 其他 | 128000 |
 
 两者响应相同（`PlayUrlResponse`）：

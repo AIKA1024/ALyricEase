@@ -79,9 +79,14 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     public string DisplayName => "网易云";
 
-    /// <summary>接口入口(按 Song 路由):委托给按 id 的具体实现。</summary>
-    public Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
-        => GetPlayUrlAsync(song.Id, level, ct);
+    /// <summary>接口入口(按 Song 路由)。自动音质先从曲目元数据选出最高档，再只请求一次播放地址。</summary>
+    public async Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
+    {
+        var automatic = string.Equals(level, "auto", StringComparison.OrdinalIgnoreCase);
+        if (automatic)
+            level = await ResolveAutomaticQualityAsync(song, ct).ConfigureAwait(false);
+        return await GetPlayUrlCoreAsync(song.Id, level, allowFallback: !automatic, ct).ConfigureAwait(false);
+    }
 
     public Task<LyricResult?> GetLyricAsync(Song song, CancellationToken ct = default)
         => GetLyricAsync(song.Id, ct);
@@ -210,18 +215,30 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return await SearchLegacyAsync(keyword, limit, offset, ct).ConfigureAwait(false);
     }
 
-    /// <summary>获取播放地址。匿名时免费歌可得 standard(128k);VIP 曲返回试听或 null。
-    /// 自动降级:higher 拿不到 → standard 再试一次。eapi 被风控拦截时回落明文 GET。</summary>
+    /// <summary>按纯 id 获取播放地址；auto 会先补歌曲详情，选出最高元数据档位。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(long id, string level = "higher", CancellationToken ct = default)
     {
+        var automatic = string.Equals(level, "auto", StringComparison.OrdinalIgnoreCase);
+        if (automatic)
+            level = await ResolveAutomaticQualityAsync(new Song { Id = id }, ct).ConfigureAwait(false);
+        return await GetPlayUrlCoreAsync(id, level, allowFallback: !automatic, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>固定档位保留自动降级；自动最高已经解析为具体档位，因此只发一次 URL 请求。</summary>
+    private async Task<PlayUrlItem?> GetPlayUrlCoreAsync(
+        long id, string level, bool allowFallback, CancellationToken ct)
+    {
+        var candidates = allowFallback ? QualityFallbacks(level) : [level];
         if (!_wafBlocked)
         {
             try
             {
                 await EnsureAnonymousAsync(ct).ConfigureAwait(false);
-                var item = await TryPlayUrlEapiAsync(id, level, ct).ConfigureAwait(false);
-                item ??= await TryPlayUrlEapiAsync(id, "standard", ct).ConfigureAwait(false);
-                if (item is { Url.Length: > 0 }) return item;
+                foreach (var candidate in candidates)
+                {
+                    var item = await TryPlayUrlEapiAsync(id, candidate, ct).ConfigureAwait(false);
+                    if (item is { Url.Length: > 0 }) return item;
+                }
             }
             catch (ApiException ex) when (ex.Code == BlockedCode)
             {
@@ -229,14 +246,15 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
             }
         }
 
-        // 明文回落,保留 higher→standard 降级
-        var legacy = await TryPlayUrlLegacyAsync(id, level, ct).ConfigureAwait(false);
-        if (legacy is null || string.IsNullOrEmpty(legacy.Url))
+        // 明文端点只认识 br；空间音频档会回落为同等级无损码率，再逐级降低。
+        var triedBitrates = new HashSet<int>();
+        foreach (var candidate in candidates)
         {
-            if (!string.Equals(level, "standard", StringComparison.OrdinalIgnoreCase))
-                legacy = await TryPlayUrlLegacyAsync(id, "standard", ct).ConfigureAwait(false);
+            if (!triedBitrates.Add(LevelToBr(candidate))) continue;
+            var legacy = await TryPlayUrlLegacyAsync(id, candidate, ct).ConfigureAwait(false);
+            if (legacy is { Url.Length: > 0 }) return legacy;
         }
-        return legacy;
+        return null;
     }
 
     public async Task<LyricResult?> GetLyricAsync(long id, CancellationToken ct = default)
@@ -289,6 +307,27 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (resp is null || resp.Code != 200 || resp.Data is null)
             return null;
         return resp.Data.FirstOrDefault(i => i.Id == id) ?? resp.Data.FirstOrDefault();
+    }
+
+    /// <summary>补全并缓存曲目音质元数据，返回平台所有文件档位中的最高档。</summary>
+    private async Task<string> ResolveAutomaticQualityAsync(Song song, CancellationToken ct)
+    {
+        if (!song.AudioQualityInfoComplete)
+        {
+            try
+            {
+                if (await GetSongDetailAsync(song.Id, ct).ConfigureAwait(false) is { } detail)
+                {
+                    song.AvailableAudioQualities = detail.AvailableAudioQualities;
+                    song.AudioQualityInfoComplete = detail.AudioQualityInfoComplete;
+                }
+            }
+            catch (ApiException)
+            {
+                // 详情被风控时仍只做一次播放地址请求；standard 是所有曲目共同的安全兜底。
+            }
+        }
+        return song.AvailableAudioQualities.FirstOrDefault() ?? "standard";
     }
 
     // ---------- weapi 主路径 ----------
@@ -503,11 +542,24 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return resp.Data.FirstOrDefault(i => i.Id == id) ?? resp.Data.FirstOrDefault();
     }
 
-    /// <summary>level → br 码率:lossless/hires→999000,higher→320000,standard/其他→128000。</summary>
+    /// <summary>网易云目标档位的降级顺序。高阶空间音频不可用时先尝试无损/HQ，最后回到标准。</summary>
+    private static IEnumerable<string> QualityFallbacks(string level) => level.ToLowerInvariant() switch
+    {
+        "sky" => ["sky", "jyeffect", "lossless", "exhigh", "higher", "standard"],
+        "jyeffect" => ["jyeffect", "lossless", "exhigh", "higher", "standard"],
+        "hires" => ["hires", "lossless", "exhigh", "higher", "standard"],
+        "lossless" => ["lossless", "exhigh", "higher", "standard"],
+        "exhigh" => ["exhigh", "higher", "standard"],
+        "higher" => ["higher", "standard"],
+        _ => ["standard"],
+    };
+
+    /// <summary>明文端点 level → br；空间音频无独立 br 参数，按无损码率请求。</summary>
     private static int LevelToBr(string level) => level.ToLowerInvariant() switch
     {
-        "hires" or "lossless" => 999000,
-        "higher" => 320000,
+        "jymaster" or "dolby" or "sky" or "jyeffect" or "hires" or "lossless" => 999000,
+        "exhigh" => 320000,
+        "higher" => 192000,
         _ => 128000,
     };
 
@@ -1251,6 +1303,9 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
         ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
         AlbumId = s.Album?.Id ?? 0,
+        AvailableAudioQualities = GetAvailableAudioQualities(s),
+        // 搜索接口常只返回基础 h/m/l；不能据此认定 je/sky/jm 等高阶档不存在。
+        AudioQualityInfoComplete = false,
     };
 
     private static Song MapDetailSong(SongDetailItem s) => new()
@@ -1265,5 +1320,27 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
         ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
         AlbumId = s.Album?.Id ?? 0,
+        AvailableAudioQualities = GetAvailableAudioQualities(s),
+        AudioQualityInfoComplete = true,
     };
+
+    /// <summary>网易云详情字段 jm/sky/je/hr/sq/h/m/l 映射为 URL API 的 level，保持从高到低。</summary>
+    private static IReadOnlyList<string> GetAvailableAudioQualities(NetEaseTrackAudioDto s)
+    {
+        var result = new List<string>(8);
+        AddIfAvailable(result, "jymaster", s.Master);
+        AddIfAvailable(result, "sky", s.Surround);
+        AddIfAvailable(result, "jyeffect", s.Spatial);
+        AddIfAvailable(result, "hires", s.HiRes);
+        AddIfAvailable(result, "lossless", s.Lossless);
+        AddIfAvailable(result, "exhigh", s.High);
+        AddIfAvailable(result, "higher", s.Medium);
+        AddIfAvailable(result, "standard", s.Low);
+        return result;
+    }
+
+    private static void AddIfAvailable(List<string> target, string level, NetEaseAudioFileDto? file)
+    {
+        if (file is { IsAvailable: true }) target.Add(level);
+    }
 }

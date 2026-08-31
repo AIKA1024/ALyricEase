@@ -96,6 +96,52 @@ public sealed record QQTrackDto
     public QQAlbumRefDto? Album { get; init; }
 
     public QQPayDto? Pay { get; init; }
+
+    /// <summary>musicu track_info 的完整文件信息；老搜索接口没有此对象。</summary>
+    public QQTrackFileDto? File { get; init; }
+
+    // client_search_cp 的平铺文件大小，只能表示基础档位，不能据此认定完整。
+    [JsonPropertyName("size128")] public long Size128Mp3Flat { get; init; }
+
+    [JsonPropertyName("size320")] public long Size320Mp3Flat { get; init; }
+
+    [JsonPropertyName("sizeflac")] public long SizeFlacFlat { get; init; }
+
+    [JsonPropertyName("sizeogg")] public long SizeOggFlat { get; init; }
+}
+
+/// <summary>QQ musicu track_info.file；文件大小大于 0 表示曲库存在该档文件。</summary>
+public sealed record QQTrackFileDto
+{
+    [JsonPropertyName("media_mid")] public string? MediaMid { get; init; }
+
+    [JsonPropertyName("size_48aac")] public long Size48Aac { get; init; }
+
+    [JsonPropertyName("size_96aac")] public long Size96Aac { get; init; }
+
+    [JsonPropertyName("size_192aac")] public long Size192Aac { get; init; }
+
+    [JsonPropertyName("size_96ogg")] public long Size96Ogg { get; init; }
+
+    [JsonPropertyName("size_192ogg")] public long Size192Ogg { get; init; }
+
+    [JsonPropertyName("size_128mp3")] public long Size128Mp3 { get; init; }
+
+    [JsonPropertyName("size_320mp3")] public long Size320Mp3 { get; init; }
+
+    [JsonPropertyName("size_flac")] public long SizeFlac { get; init; }
+
+    [JsonPropertyName("size_hires")] public long SizeHiRes { get; init; }
+
+    [JsonPropertyName("size_dolby")] public long SizeDolby { get; init; }
+
+    [JsonPropertyName("size_dts")] public long SizeDts { get; init; }
+
+    /// <summary>
+    /// QQ 新音质文件大小表：0=AI00 母带，1=Q000 全景声 2.0，2=Q001 全景声 5.1，
+    /// 3=O800 OGG 320k，5=O801 OGG 640k；后续槽位由新版客户端扩展。
+    /// </summary>
+    [JsonPropertyName("size_new")] public List<long>? SizeNew { get; init; }
 }
 
 public sealed record QQVkeyResponse

@@ -203,11 +203,16 @@
       </Border>
 
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <Grid ColumnDefinitions="Auto,*,Auto">
+        <Grid ColumnDefinitions="Auto,*">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
-          <TextBlock Grid.Column="1" Classes="setting-title" Text="音频质量" />
-          <ComboBox Grid.Column="2" MinWidth="190" Height="32" VerticalAlignment="Center"
-                    ItemsSource="{Binding AudioQualityOptions}" SelectedIndex="{Binding AudioQualityIndex}" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock Classes="setting-title" Text="音频质量" />
+            <TextBlock Text="同一档位会按当前歌曲的音乐平台自动映射" FontSize="12"
+                       Foreground="{DynamicResource TextSecondary}" Margin="0,2,0,0" />
+            <ComboBox Height="32" Margin="0,8,0,0" HorizontalAlignment="Stretch" MaxWidth="440"
+                      ItemsSource="{CompiledBinding AudioQualityOptions}"
+                      SelectedIndex="{CompiledBinding AudioQualityIndex, Mode=TwoWay}" />
+          </StackPanel>
         </Grid>
       </Border>
 

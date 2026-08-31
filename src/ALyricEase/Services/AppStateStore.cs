@@ -62,7 +62,7 @@ public sealed class AppStateStore
     /// <summary>兼容的视觉效果。</summary>
     public bool CompatibilityVisual { get; set; } = true;
 
-    /// <summary>音频质量档位(0=标准 1=较高 2=极高 3=无损)。</summary>
+    /// <summary>统一音频质量选项(0-4；由 AudioQualityMapper 按音源映射)。</summary>
     public int AudioQuality { get; set; }
 
     /// <summary>传统播放控制。</summary>
@@ -114,7 +114,7 @@ public sealed class AppStateStore
             PerformanceMode = string.IsNullOrEmpty(dto.PerformanceMode) ? "Balanced" : dto.PerformanceMode;
             DynamicBackground = dto.DynamicBackground ?? true;
             CompatibilityVisual = dto.CompatibilityVisual ?? true;
-            AudioQuality = dto.AudioQuality ?? 0;
+            AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 0);
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
             Crossfade = dto.Crossfade ?? false;
             CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;

@@ -1178,10 +1178,29 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return songs.Take(count).ToList();
     }
 
-    /// <summary>明文 /api/song/detail 批量取曲目(legacy 格式:artists/album/duration)。</summary>
+    /// <summary>批量取曲目元数据(歌单补页"正在加载更多歌曲…"走这里)。
+    /// 明文 GET /api/song/detail 已被网易云限速(实测整批回 405"操作频繁",每批拖到超时,
+    /// 歌单页永远停在 v6 概览的前 10 首),优先走 weapi v3 加密通道(真实网页客户端同款),
+    /// 加密通道失败再回落明文。</summary>
     private async Task<List<Song>> GetSongDetailsLegacyAsync(List<long> ids, CancellationToken ct)
     {
         if (ids.Count == 0) return new List<Song>();
+        try
+        {
+            var c = $"[{string.Join(",", ids.Select(id => $"{{\"id\":{id}}}"))}]";
+            var payload = new Dictionary<string, object?> { ["c"] = c, ["csrf_token"] = "" };
+            using var weapiReq = CreateWeapiRequest("weapi/v3/song/detail", payload, includeRealIp: false);
+            using var weapiDoc = await PostJsonAsync(weapiReq, ct).ConfigureAwait(false);
+            var weapiResp = weapiDoc.RootElement.Deserialize(NetEaseJsonContext.Default.SongDetailResponse);
+            if (weapiResp is { Code: 200 } && weapiResp.Songs is not null)
+                return weapiResp.Songs.Select(MapDetailSong).ToList();
+        }
+        catch (ApiException)
+        {
+            // 加密通道被 WAF 拦/失败 → 回落明文;限速期明文同样会被 405,
+            // 由调用方"本批未推进即停"保护兜底,滚动重试时再试加密通道
+        }
+
         var url = $"{BaseUrl}/api/song/detail?ids={Uri.EscapeDataString($"[{string.Join(",", ids)}]")}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);

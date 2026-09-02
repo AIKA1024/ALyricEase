@@ -24,12 +24,11 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // TEMP-DIAG:真窗口+真合成器变体(--lyricswitch-real):GDI 抓屏 vs 重渲染对比
+        // TEMP-DIAG:真窗口+真合成器变体(--lyricswitch-real):GDI 抓屏对比
         if (args.Length > 0 && args[0] == "--lyricswitch-real")
         {
             var realBuilder = AppBuilder.Configure<HeadlessApp>()
-                .UsePlatformDetect()
-                .SetupWithoutStarting();
+                .UsePlatformDetect();
             HeadlessApp.ConfigureServices();
             Dispatcher.UIThread.Post(async () =>
             {
@@ -135,6 +134,14 @@ public static class Program
         if (args.Length > 0 && args[0] == "--qqqr")
         {
             Environment.ExitCode = System.Threading.Tasks.Task.Run(QqQrLoginProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 网易云歌单加载计时:v6 概览 + 分批补页逐步耗时(复刻歌单页加载路径)
+        if (args.Length > 0 && args[0] == "--nefill")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(NetEasePlaylistFillProbe.RunAsync)
                 .GetAwaiter().GetResult();
             return;
         }

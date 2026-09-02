@@ -51,6 +51,8 @@
       <Setter Property="Height" Value="32" />
       <Setter Property="Padding" Value="14,0" />
       <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <!-- 开源项目链接按钮 -->
     <Style Selector="Button.link-button">
@@ -277,20 +279,42 @@
 
       <Border Classes="setting-card" Margin="0,0,0,8">
         <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+            <TextBlock Classes="setting-title" Text="缓存上限" />
+            <TextBlock Text="音乐、封面、原文歌词和翻译共用此容量;每首歌优先保留最高已缓存音质,超出上限后自动清理最久未使用的内容。"
+                       FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"
+                       Margin="0,2,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <NumericUpDown Width="116" Height="32"
+                           Minimum="128" Maximum="10240" Increment="128"
+                           Value="{CompiledBinding MusicCacheMaximumSizeMb, Mode=TwoWay}" />
+            <TextBlock Text="MB" FontSize="13" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondary}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Classes="setting-card" Margin="0,0,0,8">
+        <Grid ColumnDefinitions="Auto,*,Auto">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconDatabase}" />
           <StackPanel Grid.Column="1" VerticalAlignment="Center">
-            <TextBlock Classes="setting-title" Text="管理您的数据" />
+            <TextBlock Classes="setting-title" Text="管理缓存" />
             <TextBlock Classes="about-link" Text="关于该选项"
-                       ToolTip.Tip="清除封面图、歌词等临时缓存文件,不会删除您的歌单与登录信息。" />
+                       ToolTip.Tip="清除音乐、封面、原文歌词和翻译缓存,不会删除您的歌单与登录信息。" />
           </StackPanel>
-          <Button Grid.Column="2" Classes="setting-action" Command="{Binding ClearCacheCommand}">
+          <Button Grid.Column="2" Classes="setting-action" Command="{CompiledBinding ClearCacheCommand}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock Text="{DynamicResource IconBroom}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
-              <TextBlock Text="清除数据缓存" />
+              <TextBlock Text="清除缓存" />
             </StackPanel>
           </Button>
         </Grid>
       </Border>
+
+      <TextBlock IsVisible="{CompiledBinding HasStatus}" Text="{CompiledBinding Status}"
+                 FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="4,0,0,0" />
 
       <!-- ============ 关于 ============ -->
       <TextBlock Classes="section-header" Text="关于" />

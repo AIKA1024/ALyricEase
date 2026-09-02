@@ -9,6 +9,7 @@ using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.Audio;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using ALyricEase.Services.Smtc;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -35,6 +36,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private readonly LyricViewModel _lyric;
     private readonly ISmtcService _smtc;
     private readonly AppStateStore _appState;
+    private readonly MusicCacheService _musicCache;
+    private MusicCacheLease? _musicCacheLease;
 
     private bool _scrubbing;
     private bool _seekPending;
@@ -69,7 +72,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         MusicApiProvider sources,
         LyricViewModel lyric,
         ISmtcService smtc,
-        AppStateStore appState)
+        AppStateStore appState,
+        MusicCacheService musicCache)
     {
         _player = player;
         _api = api;
@@ -77,6 +81,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _lyric = lyric;
         _smtc = smtc;
         _appState = appState;
+        _musicCache = musicCache;
         _smtc.PlayPauseRequested += OnSmtcPlayPause;
         _smtc.SeekRequested += OnSmtcSeek;
         _smtc.NextRequested += OnSmtcNext;
@@ -241,10 +246,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>红心需要登录(未登录时触发,由宿主打开登录窗口)。</summary>
-    public event Action? LoginRequired;
+    /// <summary>红心需要有效登录或登录凭证已失效时触发。参数=需要(重新)登录的音源,
+    /// 失效提示文本(未登录引导为 null)。由宿主打开登录窗口并定位到对应标签。</summary>
+    public event Action<MusicSource?, string?>? LoginRequired;
 
-    /// <summary>切换当前曲红心:乐观更新,失败回滚;未登录时触发 LoginRequired 弹登录窗口。</summary>
+    /// <summary>切换当前曲红心:乐观更新,失败回滚;未登录或凭证失效时触发 LoginRequired 弹登录窗口。</summary>
     [RelayCommand]
     private async Task ToggleLikeAsync()
     {
@@ -254,7 +260,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         catch { return; }
         if (!api.CanToggleLike)
         {
-            LoginRequired?.Invoke();
+            LoginRequired?.Invoke(CurrentSong.Source, null);
             return;
         }
         var prev = IsCurrentLiked;
@@ -266,6 +272,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             IsCurrentLiked = prev; // 失败回滚
+            if (ex is ApiException apiError && CurrentSong.Source == MusicSource.QQ &&
+                QQMusicApiClient.ShouldPromptRelogin(apiError.Code))
+            {
+                // 服务端判定凭证失效或写权限被拒:本地"已登录"是假象,弹登录窗引导重登(此前静默失败无提示)
+                LoginRequired?.Invoke(CurrentSong.Source, QQMusicApiClient.ReloginHintText);
+                return;
+            }
             if (CurrentSong.Source != MusicSource.NetEase)
                 Message = $"QQ 红心写入未生效({(ex as ApiException)?.Message ?? ex.Message})";
         }
@@ -297,8 +310,9 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         if (queue is not { Count: > 0 }) return;
         ResetLazyQueue();
-        _queue = queue.ToList();
-        _queueIndex = _queue.FindIndex(s => s.Id == current.Id);
+        // 当前曲一定保留；其余播放前已经能确定不可播的歌曲不进入队列。
+        _queue = queue.Where(song => SameSong(song, current) || CanAttemptPlayback(song)).ToList();
+        _queueIndex = FindQueueIndex(current);
         if (_queueIndex < 0) { _queue.Insert(0, current); _queueIndex = 0; }
         QueueSourceName = source;
         _queueVms = _queue.Select(s => new QueueItemViewModel(s, PlayQueueItem, RemoveFromQueue)).ToList();
@@ -308,21 +322,30 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// 从懒歌单播放：界面只传当前已物化窗口，随机/上一首/下一首通过 lazyQueue 的全量逻辑下标按需取歌。
     /// </summary>
-    internal Task<bool> PlayFromLazyList(
+    internal async Task<bool> PlayFromLazyList(
         Song song,
         ILazySongQueue lazyQueue,
         int logicalIndex,
         IReadOnlyList<Song> materialized,
         string? source = null)
     {
+        if (!CanAttemptPlayback(song)) return false;
+        var result = await TryPlayAsync(song);
+        if (result == PlayAttemptResult.Unavailable) return false;
+        if (result != PlayAttemptResult.Started) return true;
+
         IsFmActive = false;
         ResetLazyQueue();
         _lazyQueue = lazyQueue;
         _queueRequestCancellation = new CancellationTokenSource();
-        _queue = materialized.ToList();
+        var displaySongs = materialized
+            .Select((candidate, index) => (candidate, index))
+            .Where(pair => SameSong(pair.candidate, song) || CanAttemptPlayback(pair.candidate))
+            .ToList();
+        _queue = displaySongs.Select(pair => pair.candidate).ToList();
         _queueVms = _queue.Select(candidate => new QueueItemViewModel(
             candidate, PlayQueueItem, RemoveFromQueue)).ToList();
-        _lazyQueueVmIndices.AddRange(Enumerable.Range(0, _queue.Count));
+        _lazyQueueVmIndices.AddRange(displaySongs.Select(pair => pair.index));
         _queueIndex = logicalIndex;
         if (!_lazyQueueVmIndices.Contains(logicalIndex))
         {
@@ -332,15 +355,20 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
         QueueSourceName = source;
         RefreshUpcomingItems();
-        return PlayAsync(song);
+        return true;
     }
 
-    /// <summary>从列表播放:先记录队列,再播当前曲。供 SongItemViewModel 的队列播放回调使用。
+    /// <summary>从列表播放:当前曲确认开始播放后再提交新队列，避免失败歌曲污染当前队列。
     /// 返回是否真正开始播放(false = 该曲当前不可播,调用方把歌曲行置为禁用)。
     /// 无来源列表时退化为单曲队列:不能沿用旧队列,否则下一曲/播完自动切会跳回之前歌单里毫不相干的歌。
     /// 播放任何其他列表都会退出私人FM。</summary>
-    public Task<bool> PlayFromList(Song song, IReadOnlyList<Song>? queue, string? source = null)
+    public async Task<bool> PlayFromList(Song song, IReadOnlyList<Song>? queue, string? source = null)
     {
+        if (!CanAttemptPlayback(song)) return false;
+        var result = await TryPlayAsync(song);
+        if (result == PlayAttemptResult.Unavailable) return false;
+        if (result != PlayAttemptResult.Started) return true;
+
         IsFmActive = false;
         if (queue is { Count: > 0 })
             SetQueue(queue, song, source);
@@ -353,7 +381,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             _queueVms = new List<QueueItemViewModel> { new(song, PlayQueueItem, RemoveFromQueue) };
             RefreshUpcomingItems();
         }
-        return PlayAsync(song);
+        return true;
     }
 
     // ---------- 私人FM ----------
@@ -380,7 +408,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         SetQueue(batch, batch[0], "私人FM");
         IsFmActive = true;
         _ = PrefetchFmAsync();
-        await PlayAsync(batch[0]);
+        var result = await TryPlayAsync(batch[0]);
+        if (result == PlayAttemptResult.Unavailable)
+        {
+            var failedIndex = FindQueueIndex(batch[0]);
+            if (failedIndex >= 0) RemoveQueueEntryAt(failedIndex);
+            await PlayFmNextAsync();
+        }
     }
 
     /// <summary>进入 FM 页时调用(幂等):未激活才启动。</summary>
@@ -389,24 +423,54 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// <summary>FM 下一曲:队列接近尾部时从缓冲预补(空则再拉一批),然后前进到下一首。</summary>
     private async Task PlayFmNextAsync()
     {
-        if (_queueIndex >= _queue.Count - 1)
+        const int maxUnavailableSkips = 50;
+        var unavailableSkips = 0;
+        for (var attempt = 0; attempt < maxUnavailableSkips; attempt++)
         {
-            while (_queue.Count - 1 - _queueIndex < 2)
+            if (_queueIndex >= _queue.Count - 1)
             {
-                if (_fmBuffer.Count == 0 && !await FillFmBufferAsync())
+                while (_queue.Count - 1 - _queueIndex < 2)
                 {
-                    Message = "私人FM获取失败,请稍后重试";
-                    return;
+                    if (_fmBuffer.Count == 0 && !await FillFmBufferAsync())
+                    {
+                        Message = "私人FM获取失败,请稍后重试";
+                        return;
+                    }
+                    var bufferedSong = _fmBuffer.Dequeue();
+                    if (!CanAttemptPlayback(bufferedSong))
+                    {
+                        if (++unavailableSkips >= maxUnavailableSkips)
+                        {
+                            Message = "私人FM连续歌曲均不可播放,请稍后重试";
+                            return;
+                        }
+                        continue;
+                    }
+                    _queue.Add(bufferedSong);
+                    _queueVms.Add(new QueueItemViewModel(bufferedSong, PlayQueueItem, RemoveFromQueue));
                 }
-                var song = _fmBuffer.Dequeue();
-                _queue.Add(song);
-                _queueVms.Add(new QueueItemViewModel(song, PlayQueueItem, RemoveFromQueue));
             }
+            _ = PrefetchFmAsync();
+            var index = _queueIndex + 1;
+            var song = _queue[index];
+            if (!CanAttemptPlayback(song))
+            {
+                RemoveQueueEntryAt(index);
+                continue;
+            }
+            var result = await TryPlayAsync(song);
+            if (result == PlayAttemptResult.TransientFailure) return;
+            if (result == PlayAttemptResult.Unavailable)
+            {
+                RemoveQueueEntryAt(index);
+                continue;
+            }
+            _queueIndex = FindQueueIndex(song);
+            TrimFmHistory();
+            RefreshUpcomingItems();
+            return;
         }
-        _ = PrefetchFmAsync();
-        _queueIndex++;
-        TrimFmHistory();
-        await PlayAsync(_queue[_queueIndex]);
+        Message = "私人FM连续歌曲均不可播放,请稍后重试";
     }
 
     /// <summary>FM 是无限流,只保留当前曲之前最近几首供"上一曲"使用。
@@ -472,17 +536,42 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>点播放列表行:直接播该曲(队列不变,仅移动当前位置)。</summary>
-    private Task PlayQueueItem(QueueItemViewModel item)
+    private async Task PlayQueueItem(QueueItemViewModel item)
     {
         var idx = _queueVms.IndexOf(item);
-        if (idx < 0) return Task.CompletedTask;
+        if (idx < 0) return;
+        var song = _queue[idx];
+        if (!CanAttemptPlayback(song))
+        {
+            RemoveQueueEntryAt(idx);
+            return;
+        }
+
         if (_lazyQueue is not null)
         {
-            _queueIndex = _lazyQueueVmIndices[idx];
-            return PlayAsync(_queue[idx]);
+            var logicalIndex = _lazyQueueVmIndices[idx];
+            var result = await TryPlayAsync(song);
+            if (result == PlayAttemptResult.Started)
+            {
+                _queueIndex = logicalIndex;
+                RefreshUpcomingItems();
+            }
+            else if (result == PlayAttemptResult.Unavailable)
+            {
+                RemoveQueueEntryAt(idx);
+            }
+            return;
         }
-        _queueIndex = idx;
-        return PlayAsync(_queue[idx]);
+        var playResult = await TryPlayAsync(song);
+        if (playResult == PlayAttemptResult.Started)
+        {
+            _queueIndex = idx;
+            RefreshUpcomingItems();
+        }
+        else if (playResult == PlayAttemptResult.Unavailable)
+        {
+            RemoveQueueEntryAt(idx);
+        }
     }
 
     /// <summary>从队列移除一首。移除当前曲不打断播放,当前位置挪到它的前一首(下一曲=被移除曲的后一首)。</summary>
@@ -490,20 +579,61 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         var idx = _queueVms.IndexOf(item);
         if (idx < 0) return;
+        RemoveQueueEntryAt(idx);
+    }
+
+    private void RemoveQueueEntryAt(int idx)
+    {
+        if ((uint)idx >= (uint)_queue.Count) return;
         if (_lazyQueue is not null)
         {
             var logicalIndex = _lazyQueueVmIndices[idx];
-            _excludedLazyIndices.Add(logicalIndex);
-            _lazyQueueVmIndices.RemoveAt(idx);
-            _queue.RemoveAt(idx);
-            _queueVms.RemoveAt(idx);
-            RefreshUpcomingItems();
+            ExcludeLazyIndex(logicalIndex);
             return;
         }
         _queue.RemoveAt(idx);
         _queueVms.RemoveAt(idx);
-        if (idx <= _queueIndex) _queueIndex--;
+        var playingIndex = CurrentSong is null
+            ? -1
+            : FindQueueIndex(CurrentSong);
+        _queueIndex = playingIndex >= 0
+            ? playingIndex
+            : _queue.Count == 0 ? -1 : Math.Min(idx - 1, _queue.Count - 1);
         RefreshUpcomingItems();
+    }
+
+    private void ExcludeLazyIndex(int logicalIndex)
+    {
+        _excludedLazyIndices.Add(logicalIndex);
+        var displayIndex = _lazyQueueVmIndices.IndexOf(logicalIndex);
+        if (displayIndex >= 0)
+        {
+            _lazyQueueVmIndices.RemoveAt(displayIndex);
+            _queue.RemoveAt(displayIndex);
+            _queueVms.RemoveAt(displayIndex);
+        }
+        RefreshUpcomingItems();
+    }
+
+    private bool CanAttemptPlayback(Song song)
+    {
+        try
+        {
+            return PlaybackAvailability.CanAttempt(song, _sources.Resolve(song));
+        }
+        catch (NotSupportedException)
+        {
+            return true;
+        }
+    }
+
+    private static bool SameSong(Song left, Song right)
+        => left.Source == right.Source && left.Id == right.Id;
+
+    private int FindQueueIndex(Song song)
+    {
+        var index = _queue.FindIndex(candidate => ReferenceEquals(candidate, song));
+        return index >= 0 ? index : _queue.FindIndex(candidate => SameSong(candidate, song));
     }
 
     private void ResetLazyQueue()
@@ -518,51 +648,66 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     /// <summary>播放一首歌:查播放地址(higher→standard 自动降级),null 提示 VIP/不可播。
     /// 队列在 SongItemViewModel 播放前经 SetQueue 注入,这里只播单曲。
-    /// 返回 true=已开始播放(含试听),false=该曲当前不可播(调用方把歌曲行置为禁用)。
-    /// 网络/接口瞬时异常返回 true(不视为"不可播放",行保持可点)。</summary>
+    /// 返回 false=该曲已确认不可播(调用方把歌曲行置为禁用)；成功与瞬时网络异常返回 true，
+    /// 后者只表示“不应禁用歌曲行”。</summary>
+    private enum PlayAttemptResult
+    {
+        Started,
+        Unavailable,
+        TransientFailure,
+    }
+
     [RelayCommand]
     public async Task<bool> PlayAsync(Song? song)
+        => await TryPlayAsync(song) != PlayAttemptResult.Unavailable;
+
+    private async Task<PlayAttemptResult> TryPlayAsync(Song? song)
     {
-        if (song is null) return false;
+        if (song is null) return PlayAttemptResult.Unavailable;
 
         _advancing++; // 到 finally 才减:PlayUrl 内部 Stop() 会瞬时置 Idle,别把它当"播完"触发自动切歌
-        CurrentSong = song;
-        Title = song.Name;
-        Artist = song.Artist;
-        _smtc.SetNowPlaying(song.Name, song.Artist, song.Album, song.CoverUrl);
-        SongStarted?.Invoke();
-        PositionMs = 0;
-        ScrubPositionMs = 0; // 时间文本跟 ScrubPositionMs 走,切歌时一并清零(显示 00:00)
-        DurationMs = 0;
         Message = null;
         IsLoading = true;
-        IsPlaying = false;
-        _ = LoadCoverAsync(song.CoverUrl);
-        _ = _lyric.LoadAsync(song); // 并发加载歌词(按音源路由),失败不阻塞播放
 
         try
         {
-            var api = _sources.Resolve(song);
             var qualityLevel = AudioQualityMapper.GetRequestLevel(song.Source, _appState.AudioQuality);
+            if (_musicCache.TryAcquire(song, qualityLevel) is { } cached)
+            {
+                song.IsPlaybackUnavailable = false;
+                PrepareSongPlayback(song);
+                StartPlayer(cached.FilePath, cached);
+                return PlayAttemptResult.Started;
+            }
+
+            var api = _sources.Resolve(song);
             var item = await api.GetPlayUrlAsync(song, qualityLevel);
             if (item is null || string.IsNullOrEmpty(item.Url))
             {
+                song.IsPlaybackUnavailable = true;
                 // 区分"未登录/非会员"与"版权限制":VIP 歌曲失败先确保会员状态已加载再给文案
                 if (song.Fee != 0 && api.IsLoggedIn)
                     await api.EnsureVipStatusAsync();
                 Message = BuildUnplayableMessage(song, api);
-                return false;
+                return PlayAttemptResult.Unavailable;
             }
 
+            song.IsPlaybackUnavailable = false;
+            PrepareSongPlayback(song);
             if (item.IsTrial == true)
                 Message = "VIP 歌曲仅试听 30 秒";
-            _player.PlayUrl(item.Url);
-            return true;
+            StartPlayer(item.Url, cacheLease: null);
+            if (item.IsTrial != true)
+                _ = _musicCache.CacheAsync(
+                    song,
+                    string.IsNullOrWhiteSpace(item.Level) ? qualityLevel : item.Level,
+                    item.Url);
+            return PlayAttemptResult.Started;
         }
         catch (ApiException ex)
         {
             Message = $"播放失败:{ex.Message}";
-            return true; // 瞬时异常:不判"不可播放"
+            return PlayAttemptResult.TransientFailure; // 瞬时异常:不判"不可播放"
         }
         finally
         {
@@ -640,8 +785,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 await PlayLazyAdjacentAsync(forward: true);
                 break;
             default: // ListLoop:尾→头循环
-                _queueIndex = (_queueIndex + 1) % _queue.Count;
-                await PlayAsync(_queue[_queueIndex]);
+                await PlayQueueAdjacentAsync(forward: true);
                 break;
         }
     }
@@ -654,9 +798,26 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         if (IsFmActive)
         {
             // FM 只保留有限历史;到达最旧一首后不循环跳到尚未播放的队尾。
-            if (_queue.Count == 0 || _queueIndex <= 0) return;
-            _queueIndex--;
-            await PlayAsync(_queue[_queueIndex]);
+            while (_queue.Count > 0 && _queueIndex > 0)
+            {
+                var index = _queueIndex - 1;
+                var song = _queue[index];
+                if (!CanAttemptPlayback(song))
+                {
+                    RemoveQueueEntryAt(index);
+                    continue;
+                }
+                var result = await TryPlayAsync(song);
+                if (result == PlayAttemptResult.TransientFailure) return;
+                if (result == PlayAttemptResult.Unavailable)
+                {
+                    RemoveQueueEntryAt(index);
+                    continue;
+                }
+                _queueIndex = FindQueueIndex(song);
+                RefreshUpcomingItems();
+                return;
+            }
             return;
         }
         if (_queue.Count == 0 && _lazyQueue is null) return;
@@ -675,9 +836,70 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 await PlayLazyAdjacentAsync(forward: false);
                 break;
             default: // ListLoop:头→尾循环
-                _queueIndex = (_queueIndex - 1 + _queue.Count) % _queue.Count;
-                await PlayAsync(_queue[_queueIndex]);
+                await PlayQueueAdjacentAsync(forward: false);
                 break;
+        }
+    }
+
+    private void PrepareSongPlayback(Song song)
+    {
+        CurrentSong = song;
+        Title = song.Name;
+        Artist = song.Artist;
+        _smtc.SetNowPlaying(song.Name, song.Artist, song.Album, song.CoverUrl);
+        SongStarted?.Invoke();
+        PositionMs = 0;
+        ScrubPositionMs = 0; // 时间文本跟 ScrubPositionMs 走,切歌时一并清零(显示 00:00)
+        DurationMs = 0;
+        _ = LoadCoverAsync(song.CoverUrl);
+        _ = _lyric.LoadAsync(song); // 并发加载歌词(按音源路由),失败不阻塞播放
+    }
+
+    private void StartPlayer(string source, MusicCacheLease? cacheLease)
+    {
+        var previousLease = _musicCacheLease;
+        try
+        {
+            _player.PlayUrl(source);
+            _musicCacheLease = cacheLease;
+        }
+        catch
+        {
+            _musicCacheLease = null;
+            cacheLease?.Dispose();
+            throw;
+        }
+        finally
+        {
+            previousLease?.Dispose();
+        }
+    }
+
+    /// <summary>普通队列按方向寻找可播歌曲；确认不可播的项立即从队列移除并继续。</summary>
+    private async Task PlayQueueAdjacentAsync(bool forward)
+    {
+        var remainingAttempts = _queue.Count;
+        while (_queue.Count > 0 && remainingAttempts-- > 0)
+        {
+            var index = forward
+                ? (_queueIndex + 1 + _queue.Count) % _queue.Count
+                : (_queueIndex - 1 + _queue.Count) % _queue.Count;
+            var song = _queue[index];
+            if (!CanAttemptPlayback(song))
+            {
+                RemoveQueueEntryAt(index);
+                continue;
+            }
+
+            var result = await TryPlayAsync(song);
+            if (result == PlayAttemptResult.Started)
+            {
+                _queueIndex = FindQueueIndex(song);
+                RefreshUpcomingItems();
+                return;
+            }
+            if (result == PlayAttemptResult.TransientFailure) return;
+            RemoveQueueEntryAt(index);
         }
     }
 
@@ -706,9 +928,21 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                         _excludedLazyIndices.Add(index);
                         continue;
                     }
+                    if (!CanAttemptPlayback(song))
+                    {
+                        ExcludeLazyIndex(index);
+                        continue;
+                    }
+                    var result = await TryPlayAsync(song);
+                    if (result == PlayAttemptResult.Unavailable)
+                    {
+                        ExcludeLazyIndex(index);
+                        continue;
+                    }
+                    if (result == PlayAttemptResult.TransientFailure) return;
                     _queueIndex = index;
                     RememberLazyDisplaySong(index, song);
-                    await PlayAsync(song);
+                    RefreshUpcomingItems();
                     return;
                 }
             }
@@ -721,15 +955,28 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             }
             return;
         }
-        if (_queue.Count <= 1)
+        var remainingAttempts = _queue.Count;
+        while (_queue.Count > 1 && remainingAttempts-- > 0)
         {
-            if (CurrentSong is not null) await PlayAsync(CurrentSong);
-            return;
+            int index;
+            do { index = Random.Shared.Next(_queue.Count); } while (index == _queueIndex);
+            var song = _queue[index];
+            if (!CanAttemptPlayback(song))
+            {
+                RemoveQueueEntryAt(index);
+                continue;
+            }
+            var result = await TryPlayAsync(song);
+            if (result == PlayAttemptResult.Started)
+            {
+                _queueIndex = FindQueueIndex(song);
+                RefreshUpcomingItems();
+                return;
+            }
+            if (result == PlayAttemptResult.TransientFailure) return;
+            RemoveQueueEntryAt(index);
         }
-        int idx;
-        do { idx = Random.Shared.Next(_queue.Count); } while (idx == _queueIndex);
-        _queueIndex = idx;
-        await PlayAsync(_queue[idx]);
+        if (CurrentSong is not null) await PlayAsync(CurrentSong);
     }
 
     /// <summary>心动模式:沿队列方向找下一首红心(喜欢的)歌;队列里没有红心则退回列表循环。</summary>
@@ -743,19 +990,34 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
         if (_queue.Count == 0) return;
         await _api.EnsureLikedIdsAsync(); // 已加载则幂等;未登录 → 空集合
+        var candidates = new List<Song>();
         for (var i = 1; i <= _queue.Count; i++)
         {
             var idx = (forward ? _queueIndex + i : _queueIndex - i + _queue.Count) % _queue.Count;
             if (_api.IsLiked(_queue[idx].Id))
+                candidates.Add(_queue[idx]);
+        }
+        foreach (var song in candidates)
+        {
+            var index = FindQueueIndex(song);
+            if (index < 0) continue;
+            if (!CanAttemptPlayback(song))
             {
-                _queueIndex = idx;
-                await PlayAsync(_queue[idx]);
+                RemoveQueueEntryAt(index);
+                continue;
+            }
+            var result = await TryPlayAsync(song);
+            if (result == PlayAttemptResult.Started)
+            {
+                _queueIndex = FindQueueIndex(song);
+                RefreshUpcomingItems();
                 return;
             }
+            if (result == PlayAttemptResult.TransientFailure) return;
+            RemoveQueueEntryAt(index);
         }
         // 无红心 → 退回列表循环方向
-        _queueIndex = (forward ? _queueIndex + 1 : _queueIndex - 1 + _queue.Count) % _queue.Count;
-        await PlayAsync(_queue[_queueIndex]);
+        await PlayQueueAdjacentAsync(forward);
     }
 
     private async Task PlayLazyAdjacentAsync(bool forward)
@@ -763,6 +1025,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         var source = _lazyQueue;
         if (source is null) return;
         var ct = _queueRequestCancellation?.Token ?? CancellationToken.None;
+        var originIndex = _queueIndex;
         try
         {
             var count = await source.GetCountAsync(ct);
@@ -770,8 +1033,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             for (var step = 1; step <= count; step++)
             {
                 var index = forward
-                    ? (_queueIndex + step) % count
-                    : (_queueIndex - step % count + count) % count;
+                    ? (originIndex + step) % count
+                    : (originIndex - step % count + count) % count;
                 if (_excludedLazyIndices.Contains(index)) continue;
                 var song = await source.GetSongAsync(index, ct);
                 if (!ReferenceEquals(source, _lazyQueue)) return;
@@ -780,9 +1043,21 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                     _excludedLazyIndices.Add(index);
                     continue;
                 }
+                if (!CanAttemptPlayback(song))
+                {
+                    ExcludeLazyIndex(index);
+                    continue;
+                }
+                var result = await TryPlayAsync(song);
+                if (result == PlayAttemptResult.Unavailable)
+                {
+                    ExcludeLazyIndex(index);
+                    continue;
+                }
+                if (result == PlayAttemptResult.TransientFailure) return;
                 _queueIndex = index;
                 RememberLazyDisplaySong(index, song);
-                await PlayAsync(song);
+                RefreshUpcomingItems();
                 return;
             }
         }
@@ -938,6 +1213,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _musicCacheLease?.Dispose();
+        _musicCacheLease = null;
         ResetLazyQueue();
         _smtc.PlayPauseRequested -= OnSmtcPlayPause;
         _smtc.SeekRequested -= OnSmtcSeek;

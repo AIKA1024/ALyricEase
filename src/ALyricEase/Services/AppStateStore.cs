@@ -62,7 +62,7 @@ public sealed class AppStateStore
     /// <summary>兼容的视觉效果。</summary>
     public bool CompatibilityVisual { get; set; } = true;
 
-    /// <summary>统一音频质量选项(0-4；由 AudioQualityMapper 按音源映射)。</summary>
+    /// <summary>统一音频质量选项(0-3；旧值 4 加载时自动归一为无损)。</summary>
     public int AudioQuality { get; set; }
 
     /// <summary>传统播放控制。</summary>
@@ -79,6 +79,9 @@ public sealed class AppStateStore
 
     /// <summary>播放器音量(0-100)。</summary>
     public int Volume { get; set; } = 80;
+
+    /// <summary>音乐、封面和歌词的统一磁盘缓存容量上限(MB)。</summary>
+    public int MusicCacheMaximumSizeMb { get; set; } = MusicCacheService.DefaultMaximumSizeMb;
 
     public AppStateStore()
     {
@@ -120,6 +123,8 @@ public sealed class AppStateStore
             CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;
             PlaybackMode = dto.PlaybackMode is >= 0 and <= 2 ? dto.PlaybackMode.Value : 0;
             Volume = Math.Clamp(dto.Volume ?? 80, 0, 100);
+            MusicCacheMaximumSizeMb = MusicCacheService.NormalizeMaximumSizeMb(
+                dto.MusicCacheMaximumSizeMb ?? MusicCacheService.DefaultMaximumSizeMb);
 
             AggregatePlaylists.Clear();
             foreach (var f in dto.AggregatePlaylists ?? new List<AggregatePlaylistFile>())
@@ -198,6 +203,7 @@ public sealed class AppStateStore
                 CrossfadeSeconds = CrossfadeSeconds,
                 PlaybackMode = PlaybackMode,
                 Volume = Volume,
+                MusicCacheMaximumSizeMb = MusicCacheMaximumSizeMb,
             };
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, AppStateJsonContext.Default.AppStateFile));

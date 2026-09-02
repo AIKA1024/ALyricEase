@@ -3,12 +3,13 @@ using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using ALyricEase.Services;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 
 namespace ALyricEase.Infrastructure;
 
-/// <summary>远程封面图加载:内存缓存(按解码字节预算,超限按最近使用顺序淘汰)+ 后台解码,失败返回 null(不抛异常)。
+/// <summary>封面图加载:优先读取统一媒体磁盘缓存，再走网络；解码后另有内存 LRU，失败返回 null(不抛异常)。
 /// 返回的 Bitmap 不可变,可跨线程使用。
 /// 预算按字节而非张数:播放条/正在播放页的大封面(640px≈1.6MB)也进同一缓存,
 /// 若按张数 300 上限会堆到 ~480MB;缓存自身按字节与条目数双重有界。
@@ -35,6 +36,7 @@ public static class CoverLoader
     private static readonly Dictionary<string, Task<IImage?>> InFlight = new();
     private static readonly SemaphoreSlim DownloadGate = new(MaxConcurrentDownloads, MaxConcurrentDownloads);
     private static long _cacheBytes;
+    private static int _cacheGeneration;
 
     private sealed record CacheEntry(
         IImage? Image,
@@ -63,12 +65,15 @@ public static class CoverLoader
             InFlight.Add(url, sharedTask);
         }
 
-        _ = DownloadAndPublishAsync(url, owner!);
+        _ = DownloadAndPublishAsync(url, owner!, Volatile.Read(ref _cacheGeneration));
         return sharedTask;
     }
 
     /// <summary>single-flight 的唯一生产者:完成时把同一个 Bitmap 发布给所有等待方。</summary>
-    private static async Task DownloadAndPublishAsync(string url, TaskCompletionSource<IImage?> completion)
+    private static async Task DownloadAndPublishAsync(
+        string url,
+        TaskCompletionSource<IImage?> completion,
+        int cacheGeneration)
     {
         IImage? result = null;
         var succeeded = false;
@@ -77,13 +82,31 @@ public static class CoverLoader
             await DownloadGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
-                var bitmap = await Task.Run(() =>
+                var persistentCache = GetPersistentCache();
+                var bytes = persistentCache is null
+                    ? null
+                    : await persistentCache.TryGetCoverAsync(url).ConfigureAwait(false);
+
+                if (bytes is not null)
                 {
-                    using var ms = new MemoryStream(bytes);
-                    return new Bitmap(ms);
-                }).ConfigureAwait(false);
-                result = bitmap;
+                    try
+                    {
+                        result = await DecodeAsync(bytes).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await persistentCache!.RemoveCoverAsync(url).ConfigureAwait(false);
+                        bytes = null;
+                    }
+                }
+
+                if (bytes is null)
+                {
+                    bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
+                    result = await DecodeAsync(bytes).ConfigureAwait(false);
+                    if (persistentCache is not null)
+                        _ = persistentCache.CacheCoverAsync(url, bytes);
+                }
                 succeeded = true;
             }
             finally
@@ -98,7 +121,9 @@ public static class CoverLoader
 
         lock (CacheGate)
         {
-            if (succeeded && result is not null)
+            if (succeeded
+                && result is not null
+                && cacheGeneration == Volatile.Read(ref _cacheGeneration))
             {
                 var cost = EstimateBytes(result);
                 // 单张超过预算不进缓存,但本次并发等待方仍共享同一个实例。
@@ -115,6 +140,38 @@ public static class CoverLoader
             completion.TrySetResult(result);
             if (InFlight.TryGetValue(url, out var current) && ReferenceEquals(current, completion.Task))
                 InFlight.Remove(url);
+        }
+    }
+
+    /// <summary>清空解码后的内存封面；视图仍持有的图片对象不会被主动释放。</summary>
+    public static void ClearMemoryCache()
+    {
+        Interlocked.Increment(ref _cacheGeneration);
+        lock (CacheGate)
+        {
+            Cache.Clear();
+            LruOrder.Clear();
+            _cacheBytes = 0;
+        }
+    }
+
+    private static Task<Bitmap> DecodeAsync(byte[] bytes) => Task.Run(() =>
+    {
+        using var stream = new MemoryStream(bytes);
+        return new Bitmap(stream);
+    });
+
+    private static MusicCacheService? GetPersistentCache()
+    {
+        try
+        {
+            return ServiceLocator.Provider is null
+                ? null
+                : ServiceLocator.Get<MusicCacheService>();
+        }
+        catch
+        {
+            return null;
         }
     }
 

@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.IO;
+using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using Avalonia;
 using Avalonia.Styling;
@@ -17,13 +17,15 @@ public sealed record OpenSourceProject(string Name, string Url);
 public sealed partial class SettingsViewModel : ViewModelBase
 {
     private readonly AppStateStore _state;
+    private readonly MusicCacheService _musicCache;
 
     /// <summary>操作结果反馈(清除缓存/占位入口提示),显示在存储分区下方。</summary>
     [ObservableProperty] private string? _status;
 
-    public SettingsViewModel(AppStateStore state)
+    public SettingsViewModel(AppStateStore state, MusicCacheService musicCache)
     {
         _state = state;
+        _musicCache = musicCache;
         ApplyTheme(_state.Theme); // 启动恢复已保存的主题
     }
 
@@ -41,7 +43,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         "较高",
         "极高",
         "无损(仅VIP可用)",
-        "最高可用音质",
     ];
 
     // ---- 外观 ----
@@ -204,25 +205,32 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // ---- 存储 ----
 
-    /// <summary>清除数据缓存:删除应用数据目录下的 cache 目录(封面/音频缓存未来落在这里)。</summary>
+    /// <summary>音乐、封面和歌词的统一磁盘缓存上限(MB)。</summary>
+    public decimal MusicCacheMaximumSizeMb
+    {
+        get => _state.MusicCacheMaximumSizeMb;
+        set
+        {
+            var normalized = MusicCacheService.NormalizeMaximumSizeMb(
+                (int)Math.Round(value, MidpointRounding.AwayFromZero));
+            if (_state.MusicCacheMaximumSizeMb == normalized) return;
+
+            _state.MusicCacheMaximumSizeMb = normalized;
+            _state.Save();
+            OnPropertyChanged(nameof(MusicCacheMaximumSizeMb));
+            _ = _musicCache.SetMaximumSizeMbAsync(normalized);
+        }
+    }
+
+    /// <summary>清除音乐、封面、原文歌词和翻译缓存。</summary>
     [RelayCommand]
-    private void ClearCache()
+    private async Task ClearCacheAsync()
     {
         try
         {
-            var cacheDir = Path.Combine(
-#if ANDROID
-                global::Android.App.Application.Context.FilesDir!.AbsolutePath,
-#else
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-#endif
-                "ALyricEase", "cache");
-            if (Directory.Exists(cacheDir))
-            {
-                Directory.Delete(cacheDir, recursive: true);
-            }
-
-            Status = "已清除数据缓存";
+            await _musicCache.ClearAsync();
+            CoverLoader.ClearMemoryCache();
+            Status = "已清除缓存";
         }
         catch
         {

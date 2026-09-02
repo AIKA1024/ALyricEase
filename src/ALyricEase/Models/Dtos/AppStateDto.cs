@@ -67,6 +67,9 @@ public sealed class AppStateFile
 
     /// <summary>播放器音量(0-100)。</summary>
     public int? Volume { get; set; }
+
+    /// <summary>音乐、封面和歌词的统一磁盘缓存容量上限(MB)。</summary>
+    public int? MusicCacheMaximumSizeMb { get; set; }
 }
 
 /// <summary>聚合歌单落盘形态。</summary>

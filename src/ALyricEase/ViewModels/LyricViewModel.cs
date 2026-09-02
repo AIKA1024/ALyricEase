@@ -14,13 +14,18 @@ public sealed partial class LyricViewModel : ViewModelBase
 {
     private readonly MusicApiProvider _sources;
     private readonly DispatcherService _dispatcher;
+    private readonly MusicCacheService _cache;
     private LyricDocument? _doc;
     private int _loadVersion;
 
-    public LyricViewModel(MusicApiProvider sources, DispatcherService dispatcher)
+    public LyricViewModel(
+        MusicApiProvider sources,
+        DispatcherService dispatcher,
+        MusicCacheService cache)
     {
         _sources = sources;
         _dispatcher = dispatcher;
+        _cache = cache;
     }
 
     public ObservableCollection<LyricLine> Lines { get; } = new();
@@ -47,7 +52,7 @@ public sealed partial class LyricViewModel : ViewModelBase
 
     partial void OnHasLyricChanged(bool value) => OnPropertyChanged(nameof(ShowEmpty));
 
-    /// <summary>切歌/首播时调用:按音源路由拉取并解析歌词。不阻塞播放,失败静默显示空态。</summary>
+    /// <summary>切歌/首播时调用:优先读取原文+翻译缓存，未命中才按音源请求。不阻塞播放。</summary>
     public async Task LoadAsync(Song song)
     {
         var version = ++_loadVersion;
@@ -56,8 +61,14 @@ public sealed partial class LyricViewModel : ViewModelBase
         LyricDocument? doc = null;
         try
         {
-            var api = _sources.Resolve(song);
-            var lrc = await api.GetLyricAsync(song).ConfigureAwait(false);
+            var lrc = await _cache.TryGetLyricAsync(song).ConfigureAwait(false);
+            if (lrc is null)
+            {
+                var api = _sources.Resolve(song);
+                lrc = await api.GetLyricAsync(song).ConfigureAwait(false);
+                if (lrc is not null)
+                    await _cache.CacheLyricAsync(song, lrc).ConfigureAwait(false);
+            }
             if (lrc is not null)
                 doc = LrcParser.Parse(lrc.Original, lrc.Translation);
         }

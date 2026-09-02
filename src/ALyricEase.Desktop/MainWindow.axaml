@@ -7,7 +7,7 @@
         x:DataType="vm:MainViewModel"
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="720"
         x:Class="ALyricEase.MainWindow"
-        Title="ALyricEase" Width="1200" Height="720" MinWidth="360" MinHeight="560"
+        Title="ALyricEase" MinWidth="360" MinHeight="560"
         Icon="avares://ALyricEase/Assets/app.ico" Background="Transparent" TransparencyLevelHint="AcrylicBlur"
         WindowDecorations="BorderOnly"
         ExtendClientAreaToDecorationsHint="True"

@@ -7,7 +7,9 @@
              x:DataType="vm:ArtistSongsPageViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.ArtistSongsPageView">
-  <Grid RowDefinitions="96,Auto,*">
+  <!-- 行 1 必须 bounded(*):若为 Auto,ScrollViewer 会撑到全部内容高,viewport==extent,
+       滚动条消失且补页守卫失效(内容网格与 AlbumView 的 96,* 结构对齐) -->
+  <Grid RowDefinitions="96,*">
     <!-- 页头:歌手名(与专辑页 page-title 同级视觉) -->
     <Grid Grid.Row="0" Margin="48,0,32,0">
       <TextBlock Text="{Binding Name}" Classes="page-title" VerticalAlignment="Center" />

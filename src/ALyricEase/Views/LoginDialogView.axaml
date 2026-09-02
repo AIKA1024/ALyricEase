@@ -7,135 +7,311 @@
              x:DataType="vm:MainViewModel"
              mc:Ignorable="d"
              x:Class="ALyricEase.Views.LoginDialogView">
-    <!-- 登录对话框(WinUI3 ContentDialog 式窗口内弹层,代替原独立 LoginWindow):
-         烟雾层(#99000000)盖住整窗拦截输入 + 居中卡片(圆角 8、内边距 24、标题 20 SemiBold、
-         按钮右下:取消 + 强调色主按钮)。Esc=取消(取消按钮 HotKey,弹层隐藏时自动失效);
-         Enter=默认主按钮(卡片 KeyBinding,焦点在 TextBox/卡片内时触发;按钮自身处理 Enter 不会冒泡)。
-         宿主把本控件放在窗口网格顶层(ZIndex 高于正在播放覆盖层):播放详情页里点红心也能弹登录。
-         根 UserControl 的 DataContext 由宿主绑定为 MainViewModel,卡片自行切到 Playlist。 -->
     <Grid x:Name="Root">
         <Grid.Styles>
-            <!-- 打开时 0→1 淡入由 code-behind 触发(IsVisible 翻转不跑过渡,先置 0 下一帧再置 1) -->
             <Style Selector="Grid#Root">
                 <Setter Property="Transitions">
                     <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.14" />
                     </Transitions>
                 </Setter>
             </Style>
-            <!-- 音源页签按钮:未选中描边灰底,选中强调色 -->
-            <Style Selector="Button.tab-active">
+            <Style Selector="Button.source-tab">
+                <Setter Property="MinWidth" Value="116" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="16,0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+            <Style Selector="Button.source-tab.active">
                 <Setter Property="Background" Value="{DynamicResource AppSurface}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
-            <Style Selector="Button.tab-active.active">
+            <Style Selector="Button.login-method">
+                <Setter Property="Height" Value="58" />
+                <Setter Property="Padding" Value="12,8" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+            <Style Selector="Button.login-method.active">
+                <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+            </Style>
+            <Style Selector="Button.dialog-primary">
                 <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
                 <Setter Property="Foreground" Value="White" />
                 <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="6" />
+            </Style>
+            <Style Selector="Button.dialog-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+            </Style>
+            <Style Selector="Button.dialog-primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
+            </Style>
+            <Style Selector="Border.field-card">
+                <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="16" />
+            </Style>
+            <Style Selector="TextBlock.section-label">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style Selector="TextBlock.supporting">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style Selector="Grid#Root.compact StackPanel#MethodList">
+                <Setter Property="Orientation" Value="Horizontal" />
+            </Style>
+            <Style Selector="Grid#Root.compact TextBlock#MethodLabel">
+                <Setter Property="IsVisible" Value="False" />
+            </Style>
+            <Style Selector="Grid#Root.compact Button.login-method">
+                <Setter Property="Width" Value="150" />
+                <Setter Property="Height" Value="54" />
+            </Style>
+            <Style Selector="Grid#Root.compact Grid#QqMethodContent">
+                <Setter Property="Grid.Column" Value="0" />
+                <Setter Property="Grid.Row" Value="1" />
+                <Setter Property="Margin" Value="0,16,0,0" />
+            </Style>
+            <Style Selector="Grid#Root.compact Border#NetEaseHelp">
+                <Setter Property="Grid.Column" Value="0" />
+                <Setter Property="Grid.Row" Value="1" />
+                <Setter Property="Margin" Value="0,12,0,0" />
             </Style>
         </Grid.Styles>
-        <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
-        <Panel Background="#99000000" />
+
+        <Panel Background="#66000000" />
+
         <Grid DataContext="{Binding Playlist}" x:DataType="vm:PlaylistViewModel"
-              HorizontalAlignment="Center" VerticalAlignment="Center">
-            <Grid.KeyBindings>
-                <KeyBinding Gesture="Enter" Command="{Binding LoginCommand}" />
-            </Grid.KeyBindings>
-            <Border MaxWidth="440" MinWidth="320" Margin="24" Padding="24" CornerRadius="8"
+              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16">
+            <Border x:Name="DialogCard" Width="760" MaxHeight="680" CornerRadius="16"
                     Background="{DynamicResource AppSurface}"
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
-                    BoxShadow="0 32 64 #66000000">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="登录 ALyricEase" FontSize="20" FontWeight="SemiBold" />
-                    <TextBlock Text="网易云登录解锁红心/歌单/私人FM;QQ音乐登录解锁 VIP 曲目与高音质播放。"
-                               FontSize="13" TextWrapping="Wrap"
-                               Foreground="{DynamicResource TextSecondary}" />
-                    <!-- 音源页签:网易云 / QQ音乐 -->
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="网易云" MinWidth="88" Height="30" CornerRadius="15"
-                                Classes="tab-active" Classes.active="{Binding IsNetEaseLoginTab}"
-                                Command="{Binding SelectNetEaseLoginTabCommand}" />
-                        <Button Content="QQ音乐" MinWidth="88" Height="30" CornerRadius="15"
-                                Classes="tab-active" Classes.active="{Binding IsQQLoginTab}"
-                                Command="{Binding SelectQQLoginTabCommand}" />
-                    </StackPanel>
-                    <!-- 音源内容区:两个面板重叠(Grid 取两者较大高度),切换只改透明度 →
-                         弹窗尺寸恒定不跳变。隐藏面板 Opacity=0 + IsEnabled=false(不可聚焦/交互) -->
-                    <Grid>
-                        <Grid.Styles>
-                            <Style Selector="StackPanel.tabpane">
-                                <Setter Property="Opacity" Value="0" />
-                                <Setter Property="IsHitTestVisible" Value="False" />
-                                <Setter Property="Transitions">
-                                    <Transitions>
-                                        <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
-                                    </Transitions>
-                                </Setter>
-                            </Style>
-                            <Style Selector="StackPanel.tabpane.on">
-                                <Setter Property="Opacity" Value="1" />
-                                <Setter Property="IsHitTestVisible" Value="True" />
-                            </Style>
-                        </Grid.Styles>
-                        <!-- 网易云:MUSIC_U 输入 -->
-                        <StackPanel Classes="tabpane" Classes.on="{Binding IsNetEaseLoginTab}"
-                                    IsEnabled="{Binding IsNetEaseLoginTab}" Spacing="6">
-                            <TextBlock Text="MUSIC_U Cookie" FontSize="13" FontWeight="SemiBold" />
-                            <!-- 单行:Enter 留给"默认按钮"语义(冒泡到卡片 KeyBinding 触发登录);
-                                 粘贴的整段 cookie 由 SetMusicUCookie 解析,无需多行 -->
-                            <TextBox x:Name="MusicUBox" Text="{Binding MusicUInput}"
-                                     PlaceholderText="粘贴 MUSIC_U 的值"
-                                     TextWrapping="Wrap" Height="64" FontSize="13"
-                                     PastingFromClipboard="OnPastingFromClipboard" />
-                            <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
-                                <StackPanel Spacing="5">
-                                    <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />
-                                    <TextBlock Text="1. 用浏览器打开 music.163.com 并登录你的账号" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="2. 按 F12 → Application → Cookies → https://music.163.com" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="3. 复制 MUSIC_U 的值,粘贴到上方输入框后点登录" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
+                    BoxShadow="0 12 40 #52000000" ClipToBounds="True">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="28,24,20,16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="连接音乐账号" FontSize="24" FontWeight="SemiBold" />
+                            <TextBlock Text="同步歌单，并使用账号可用的会员音质"
+                                       FontSize="13" Foreground="{DynamicResource TextSecondary}" />
                         </StackPanel>
-                        <!-- QQ音乐:整段完整 Cookie 粘贴(账号接口要求完整字段,精简两项过不了校验) -->
-                        <StackPanel Classes="tabpane" Classes.on="{Binding IsQQLoginTab}"
-                                    IsEnabled="{Binding IsQQLoginTab}" Spacing="6">
-                            <TextBlock Text="QQ 音乐登录" FontSize="13" FontWeight="SemiBold" />
-                            <TextBox x:Name="QQBox" Text="{Binding QqCookieInput}"
-                                     PlaceholderText="粘贴 y.qq.com 的整段 Cookie"
-                                     TextWrapping="Wrap" Height="64" FontSize="13"
-                                     PastingFromClipboard="OnPastingFromClipboard" />
-                            <Border Background="{DynamicResource AppSurfaceElevated}" CornerRadius="6" Padding="12,10">
-                                <StackPanel Spacing="5">
-                                    <TextBlock Text="如何获取 Cookie" FontSize="13" FontWeight="SemiBold" />
-                                    <TextBlock Text="1. 用浏览器打开 y.qq.com 并登录你的 QQ 账号" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="2. 按 F12 → Network(网络)→ 任选一个 y.qq.com 请求 → Request Headers(请求标头)" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="3. 复制其中整段 Cookie 粘贴到上方输入框后点登录" FontSize="12"
-                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
-                                    <TextBlock Text="必须粘贴整段 Cookie(含 uin、qqmusic_key 等全部字段)才能通过服务端校验,解锁 VIP 播放、歌单与每日推荐" FontSize="11.5"
-                                               Foreground="{DynamicResource SystemAccentColor}" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                        <TextBlock Grid.Column="0" Text="{Binding Message}" FontSize="12"
-                                   Foreground="{DynamicResource LyricEaseRed}" TextWrapping="Wrap"
-                                   VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Content="取消"
+                        <Button Grid.Column="1" Content="✕" Width="36" Height="36" Padding="0"
+                                Background="Transparent" BorderThickness="0"
                                 Command="{Binding $parent[views:LoginDialogView].((vm:MainViewModel)DataContext).CloseLoginDialogCommand}"
                                 HotKeyManager.HotKey="Escape"
-                                MinWidth="96" Height="32" />
-                        <Button Grid.Column="2" Classes="dialog-primary" Content="登录"
-                                Command="{Binding LoginCommand}"
-                                MinWidth="96" Height="32" IsEnabled="{Binding !IsBusy}" />
+                                AutomationProperties.Name="关闭登录窗口" />
                     </Grid>
-                </StackPanel>
+
+                    <Border Grid.Row="1" Margin="28,0,28,20" Padding="3" CornerRadius="9"
+                            Background="{DynamicResource AppSurfaceElevated}"
+                            BorderThickness="1" BorderBrush="{DynamicResource AppBorder}">
+                        <StackPanel Orientation="Horizontal" Spacing="3">
+                            <Button Classes="source-tab" Classes.active="{Binding IsNetEaseLoginTab}"
+                                    Command="{Binding SelectNetEaseLoginTabCommand}"
+                                    AutomationProperties.Name="选择网易云音乐登录">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource LyricEaseRed}" />
+                                    <TextBlock Text="网易云音乐" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Classes="source-tab" Classes.active="{Binding IsQQLoginTab}"
+                                    Command="{Binding SelectQQLoginTabCommand}"
+                                    AutomationProperties.Name="选择 QQ 音乐登录">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="#31C27C" />
+                                    <TextBlock Text="QQ 音乐" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="28,0" MinHeight="370">
+                        <Grid IsVisible="{Binding IsNetEaseLoginTab}" RowDefinitions="Auto,*,Auto" RowSpacing="18">
+                            <StackPanel Grid.Row="0" Spacing="4">
+                                <TextBlock Text="使用 MUSIC_U 登录" FontSize="18" FontWeight="SemiBold" />
+                                <TextBlock Classes="supporting"
+                                           Text="网易云音乐暂不提供适合桌面客户端的扫码接口，请粘贴浏览器登录凭证。" />
+                            </StackPanel>
+                            <Grid x:Name="NetEaseFields" Grid.Row="1" ColumnDefinitions="1.15*,0.85*" ColumnSpacing="18">
+                                <StackPanel Grid.Column="0" Spacing="7">
+                                    <TextBlock Classes="section-label" Text="MUSIC_U Cookie" />
+                                    <TextBox x:Name="MusicUBox" Text="{Binding MusicUInput}"
+                                             PlaceholderText="粘贴 MUSIC_U 的值" Height="84"
+                                             TextWrapping="Wrap" AcceptsReturn="False"
+                                             PastingFromClipboard="OnPastingFromClipboard"
+                                             AutomationProperties.Name="网易云 MUSIC_U Cookie"
+                                             AutomationProperties.HelpText="仅保存在当前设备" />
+                                </StackPanel>
+                                <Border x:Name="NetEaseHelp" Grid.Column="1" Classes="field-card">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Classes="section-label" Text="从浏览器获取" />
+                                        <TextBlock Classes="supporting" Text="1  登录 music.163.com" />
+                                        <TextBlock Classes="supporting" Text="2  打开开发者工具的 Application → Cookies" />
+                                        <TextBlock Classes="supporting" Text="3  复制 MUSIC_U 的值" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            <Button Grid.Row="2" Classes="dialog-primary" Content="登录网易云音乐"
+                                    Command="{Binding LoginCommand}" HorizontalAlignment="Left"
+                                    MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}"
+                                    AutomationProperties.Name="登录网易云音乐" />
+                        </Grid>
+
+                        <Grid x:Name="QqLayout" IsVisible="{Binding IsQQLoginTab}" ColumnDefinitions="178,*" ColumnSpacing="24">
+                            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="MethodList" Spacing="6">
+                                <TextBlock x:Name="MethodLabel" Text="登录方式" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextSecondary}" Margin="4,0,0,4" />
+                                <Button Classes="login-method" Classes.active="{Binding IsQqQrLoginMethod}"
+                                        Command="{Binding SelectQqQrLoginMethodCommand}"
+                                        AutomationProperties.Name="选择手机客户端扫码登录">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="手机客户端扫码" FontWeight="SemiBold" />
+                                        <TextBlock Text="推荐，完整原生凭证" FontSize="11.5"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="login-method" Classes.active="{Binding IsQqPhoneLoginMethod}"
+                                        Command="{Binding SelectQqPhoneLoginMethodCommand}"
+                                        AutomationProperties.Name="选择手机号验证码登录">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="手机号验证码" FontWeight="SemiBold" />
+                                        <TextBlock Text="无需打开客户端" FontSize="11.5"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="login-method" Classes.active="{Binding IsQqCookieLoginMethod}"
+                                        Command="{Binding SelectQqCookieLoginMethodCommand}"
+                                        AutomationProperties.Name="选择浏览器 Cookie 登录">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="浏览器 Cookie" FontWeight="SemiBold" />
+                                        <TextBlock Text="兼容方式" FontSize="11.5"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            </ScrollViewer>
+
+                            <Grid x:Name="QqMethodContent" Grid.Column="1" MinHeight="370">
+                                <StackPanel IsVisible="{Binding IsQqQrLoginMethod}" Spacing="12">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="使用 QQ 音乐扫码" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Classes="supporting" Text="打开手机 QQ 音乐，扫描二维码并确认登录。" />
+                                    </StackPanel>
+                                    <Border Width="214" Height="214" Background="White" CornerRadius="10" Padding="10"
+                                            HorizontalAlignment="Left" BorderThickness="1" BorderBrush="#18000000">
+                                        <Grid>
+                                            <Image Source="{Binding QqQrImage}" Stretch="Uniform"
+                                                   IsVisible="{Binding HasQqQrImage}"
+                                                   AutomationProperties.Name="QQ 音乐登录二维码" />
+                                            <StackPanel IsVisible="{Binding !HasQqQrImage}" VerticalAlignment="Center"
+                                                        HorizontalAlignment="Center" Spacing="6">
+                                                <TextBlock Text="扫码登录" Foreground="#3A3A3A" FontSize="16"
+                                                           FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                                <TextBlock Text="点击下方按钮生成二维码" Foreground="#6B6B6B" FontSize="11.5" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="{Binding QqQrStatus}" FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsQqQrLoginActive}"
+                                                     Width="214" HorizontalAlignment="Left" Height="3" />
+                                    </StackPanel>
+                                    <Button x:Name="QqQrButton" Classes="dialog-primary" Content="获取或刷新二维码"
+                                            Command="{Binding StartQqQrLoginCommand}" HorizontalAlignment="Left"
+                                            MinWidth="160" Height="38" IsEnabled="{Binding !IsBusy}" />
+                                </StackPanel>
+
+                                <StackPanel IsVisible="{Binding IsQqPhoneLoginMethod}" Spacing="16">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="使用手机号登录" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Classes="supporting" Text="验证码由 QQ 音乐发送，ALyricEase 不会保存手机号或短信验证码。" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Classes="section-label" Text="手机号" />
+                                        <Grid ColumnDefinitions="86,*" ColumnSpacing="8">
+                                            <TextBox Text="{Binding QqPhoneCountryCode}" PlaceholderText="86" MaxLength="4"
+                                                     HorizontalContentAlignment="Center"
+                                                     AutomationProperties.Name="国家或地区代码" />
+                                            <TextBox x:Name="QqPhoneBox" Grid.Column="1" Text="{Binding QqPhoneNumber}"
+                                                     PlaceholderText="请输入手机号" MaxLength="20"
+                                                     AutomationProperties.Name="QQ 音乐登录手机号" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Classes="section-label" Text="短信验证码" />
+                                        <Grid ColumnDefinitions="*,132" ColumnSpacing="8">
+                                            <TextBox Text="{Binding QqPhoneCode}" PlaceholderText="6 位验证码" MaxLength="6"
+                                                     AutomationProperties.Name="短信验证码" />
+                                            <Button Grid.Column="1" Content="{Binding QqPhoneSendButtonText}"
+                                                    Command="{Binding SendQqPhoneCodeCommand}"
+                                                    IsEnabled="{Binding CanSendQqPhoneCode}"
+                                                    AutomationProperties.Name="发送短信验证码" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding QqPhoneStatus}" Classes="supporting" />
+                                    <Button Classes="dialog-primary" Content="使用验证码登录"
+                                            Command="{Binding LoginQqPhoneCommand}" HorizontalAlignment="Left"
+                                            MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}"
+                                            AutomationProperties.Name="使用手机号验证码登录 QQ 音乐" />
+                                </StackPanel>
+
+                                <StackPanel IsVisible="{Binding IsQqCookieLoginMethod}" Spacing="16">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="使用浏览器 Cookie" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Classes="supporting"
+                                                   Text="适用于已在 y.qq.com 登录，并能取得完整请求 Cookie 的情况。" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Classes="section-label" Text="完整 Cookie" />
+                                        <TextBox x:Name="QQBox" Text="{Binding QqCookieInput}"
+                                                 PlaceholderText="粘贴 y.qq.com 请求中的整段 Cookie"
+                                                 TextWrapping="Wrap" Height="112"
+                                                 PastingFromClipboard="OnPastingFromClipboard"
+                                                 AutomationProperties.Name="QQ 音乐浏览器 Cookie"
+                                                 AutomationProperties.HelpText="需包含 uin 与 qqmusic_key" />
+                                    </StackPanel>
+                                    <Border Classes="field-card">
+                                        <TextBlock Classes="supporting"
+                                                   Text="浏览器凭证可能缺少客户端会员播放能力；优先使用扫码或手机号登录。" />
+                                    </Border>
+                                    <Button Classes="dialog-primary" Content="使用 Cookie 登录"
+                                            Command="{Binding LoginCommand}" HorizontalAlignment="Left"
+                                            MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}" />
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                    </ScrollViewer>
+
+                    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="28,18,28,24" ColumnSpacing="16">
+                        <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Message}" FontSize="12" Foreground="{DynamicResource LyricEaseRed}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Text="登录凭证仅保存在此设备，可随时在设置中退出登录。"
+                                       FontSize="11.5" Foreground="{DynamicResource TextSecondary}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="关闭" MinWidth="88" Height="36"
+                                Command="{Binding $parent[views:LoginDialogView].((vm:MainViewModel)DataContext).CloseLoginDialogCommand}" />
+                    </Grid>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

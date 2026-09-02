@@ -40,6 +40,14 @@ public static class Program
             return;
         }
 
+        // 统一媒体缓存回归：音质升级/复用、封面、歌词翻译与清理。
+        if (args.Length > 0 && args[0] == "--music-cache")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(MusicCacheProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 聚合歌单流式加载回归：来源稳定排序、100/300 批尺寸、范围集合单通知。
         if (args.Length > 0 && args[0] == "--aggregate-load")
         {
@@ -103,6 +111,22 @@ public static class Program
         if (args.Length > 0 && args[0] == "--createpl")
         {
             Environment.ExitCode = System.Threading.Tasks.Task.Run(CreatePlaylistProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // QQ 扫码登录管线探针:QIMEI/会话/二维码/MQTT 全链路(不真实扫码)
+        if (args.Length > 0 && args[0] == "--qqqr")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqQrLoginProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // QQ 凭证过期诊断:同一份 Cookie 打 校验/账号摘要/红心写入 三条链路,打印真实错误码
+        if (args.Length > 0 && args[0] == "--qqdiag")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqCredentialDiagProbe.RunAsync)
                 .GetAwaiter().GetResult();
             return;
         }
@@ -184,6 +208,20 @@ public static class Program
         if (args.Length > 0 && args[0] == "--realwin")
         {
             RealWindowProbe.Run();
+            return;
+        }
+
+        // 登录弹窗三种 QQ 登录方式渲染自查（不触网、不发送验证码）。
+        if (args.Length > 0 && args[0] == "--logindlg")
+        {
+            LoginDialogProbe.Run();
+            return;
+        }
+
+        // Fluent 2 账号页双平台卡片渲染自查（使用内存预览数据，不读取真实凭证）。
+        if (args.Length > 0 && args[0] == "--accountview")
+        {
+            AccountViewProbe.Run();
             return;
         }
 

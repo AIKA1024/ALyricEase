@@ -25,6 +25,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     private readonly HttpClient _http;
     private readonly Auth.CookieStore _cookie;
+    private readonly QQMusicQrLoginService _qrLogin;
 
     /// <summary>vkey 请求 guid(会话内随机数即可,与播放器侧保持一致)。</summary>
     private readonly string _guid =
@@ -46,9 +47,16 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private readonly Dictionary<long, (string Mid, LinkedListNode<long> Node)> _midById = new();
     private readonly LinkedList<long> _midLru = new();
 
+    /// <summary>QQ 登录凭证验证/刷新单飞锁。刷新会占用登录设备名额，同一份 Cookie
+    /// 在一个进程生命周期内最多执行一次，避免并发账号请求重复刷新。</summary>
+    private readonly SemaphoreSlim _credentialGate = new(1, 1);
+    private bool _credentialValidated;
+    private bool _credentialRefreshAttempted;
+
     public QQMusicApiClient(Auth.CookieStore cookie)
     {
         _cookie = cookie;
+        _qrLogin = new QQMusicQrLoginService(cookie);
         _http = new HttpClient(new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
@@ -67,9 +75,43 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>是否已设置有效 QQ 音乐登录 Cookie(uin + qqmusic_key 齐全)。</summary>
     public bool IsLoggedIn => _uin != "0" && _authst.Length > 0;
 
-    /// <summary>粘贴 QQ 音乐 Cookie 登录:解析 uin 与 qqmusic_key(容忍贴整段 cookie),
-    /// 校验齐全后把【完整原文】持久化 —— 播放链路只用 uin+qqmusic_key,但歌单/每日推荐等
-    /// 账号接口需要完整浏览器 Cookie(含 p_skey 等)才能通过校验。格式不对抛 ApiException。</summary>
+    /// <summary>用手机 QQ 音乐扫码取得原生 musicid/musickey，并转换为现有请求链路可复用的 Cookie 形态。</summary>
+    public async Task<QQMusicQrCredential> LoginWithQrAsync(
+        IProgress<QQMusicQrLoginUpdate> progress,
+        CancellationToken ct = default)
+    {
+        var credential = await _qrLogin.LoginAsync(progress, ct).ConfigureAwait(false);
+        SetCookie($"uin={credential.MusicId}; qqmusic_uin={credential.MusicId}; " +
+                  $"qm_keyst={credential.MusicKey}; qqmusic_key={credential.MusicKey}; " +
+                  $"tmeLoginType={credential.LoginType}");
+        // 扫码服务刚通过 Android GetLoginUserInfo 验证过同一把 key，无需立刻用 Web comm 再验一次。
+        _credentialValidated = true;
+        _credentialRefreshAttempted = false;
+        return credential;
+    }
+
+    /// <summary>通过 QQ 音乐 Android 原生协议发送手机号验证码。</summary>
+    public Task<QQMusicPhoneCodeResult> SendPhoneCodeAsync(
+        string phone, string countryCode, CancellationToken ct = default)
+        => _qrLogin.SendPhoneCodeAsync(phone, countryCode, ct);
+
+    /// <summary>通过手机号验证码取得并持久化原生 QQ 音乐凭证。</summary>
+    public async Task<QQMusicQrCredential> LoginWithPhoneCodeAsync(
+        string phone, string countryCode, string authCode, CancellationToken ct = default)
+    {
+        var credential = await _qrLogin.LoginWithPhoneCodeAsync(phone, countryCode, authCode, ct)
+            .ConfigureAwait(false);
+        SetCookie($"uin={credential.MusicId}; qqmusic_uin={credential.MusicId}; " +
+                  $"qm_keyst={credential.MusicKey}; qqmusic_key={credential.MusicKey}; " +
+                  $"tmeLoginType={credential.LoginType}; alyric_native_login=phone");
+        _credentialValidated = true;
+        _credentialRefreshAttempted = false;
+        return credential;
+    }
+
+    /// <summary>设置 QQ 音乐登录凭证:解析 uin 与 qqmusic_key(容忍网页整段 Cookie 或扫码生成的原生 Cookie),
+    /// 校验齐全后把原文持久化。网页 Cookie 会保留全部附加字段；扫码凭证携带原生 tmeLoginType。
+    /// 格式不对抛 ApiException。</summary>
     public void SetCookie(string rawCookie)
     {
         rawCookie = rawCookie.Trim();
@@ -93,6 +135,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _vipLoaded = false;
         _vipLoading = false;
         IsVip = false;
+        ResetVipDetails();
+        _credentialValidated = false;
+        _credentialRefreshAttempted = false;
         _cookie.QQCookieRaw = rawCookie;
         _cookie.Save();
     }
@@ -109,6 +154,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _vipLoaded = false;
         _vipLoading = false;
         IsVip = false;
+        ResetVipDetails();
+        _credentialValidated = false;
+        _credentialRefreshAttempted = false;
         if (_cookie.QQCookieRaw is not null)
         {
             _cookie.QQCookieRaw = null;
@@ -137,6 +185,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             _uin = normalizedUin;
             _authst = key!;
             _cookieHeader = raw;
+            _credentialValidated = false;
+            _credentialRefreshAttempted = false;
         }
         catch
         {
@@ -161,6 +211,252 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             if (v.Length > 0) return v;
         }
         return null;
+    }
+
+    /// <summary>登录/恢复登录时由服务端确认 musickey 是否仍有效；失效时用 Cookie 中的
+    /// OAuth token 刷新一次并立即持久化新凭证。不能用 VIP 接口的全 0 结果判断过期。</summary>
+    public async Task EnsureCredentialValidAsync(CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("QQ 音乐尚未登录", 104401);
+        if (_credentialValidated) return;
+
+        await _credentialGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_credentialValidated) return;
+            if (!await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false))
+            {
+                _credentialValidated = true;
+                return;
+            }
+
+            if (_credentialRefreshAttempted)
+                throw new ApiException("QQ 音乐登录凭证已失效，请重新登录并粘贴新 Cookie", 104401);
+
+            // 在发请求前就置位：网络中断时无法确认服务端是否已占用设备名额，不能盲目重发。
+            _credentialRefreshAttempted = true;
+            await RefreshCredentialCoreAsync(ct).ConfigureAwait(false);
+
+            if (await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false))
+                throw new ApiException("QQ 音乐凭证刷新后仍无效，请重新登录", 104401);
+            _credentialValidated = true;
+        }
+        finally
+        {
+            _credentialGate.Release();
+        }
+    }
+
+    /// <summary>这些错误无法靠重试恢复；启动恢复登录时可清除旧凭证并引导重新登录。</summary>
+    public static bool RequiresFreshLogin(int code)
+        => code is 1000 or 104400 or 104401 or 20279;
+
+    /// <summary>红心等 asset 写操作失败时是否应引导重登:除常规失效码外,写通道(ag-1)把
+    /// "凭证不被写接口接受"一律归并为 80105 —— 2026-09 实测:校验/读接口全部通过、key 为
+    /// 刷新补发的新 key 时写仍被拒,此时重登换全新网页凭证是唯一自愈手段。</summary>
+    public static bool ShouldPromptRelogin(int code)
+        => RequiresFreshLogin(code) || code == 80105;
+
+    /// <summary>红心/账号写操作触发重登引导时,登录弹层底部显示的提示文案(两处 UI 保持一致)。</summary>
+    public const string ReloginHintText = "QQ 音乐登录凭证需要更新，请重新登录";
+
+    private async Task<bool> CheckCredentialExpiredCoreAsync(CancellationToken ct)
+    {
+        var credential = ReadCredentialSnapshot();
+        if (credential.LoginType == 6 || credential.IsNativePhoneLogin)
+            return !await _qrLogin.ValidateStoredCredentialAsync(
+                credential.StrMusicId, credential.MusicKey, credential.LoginType, ct).ConfigureAwait(false);
+
+        using var doc = await PostCredentialRequestAsync(
+            "music.UserInfo.userInfoServer", "GetLoginUserInfo", _ => { }, credential.LoginType, ct)
+            .ConfigureAwait(false);
+        var code = PickCredentialCode(doc.RootElement);
+        if (code < 0)
+            throw new ApiException("QQ 音乐凭证验证响应异常", -2);
+        return code != 0;
+    }
+
+    /// <summary>用 Cookie 中的 OAuth token 强制续期一次凭证并落盘(internal:诊断探针需要
+    /// 绕过"校验通过才续期"的门槛,验证续期后的 key 是否恢复写权限)。失败抛 ApiException。</summary>
+    internal Task RefreshCredentialForProbeAsync(CancellationToken ct) => RefreshCredentialCoreAsync(ct);
+
+    private async Task RefreshCredentialCoreAsync(CancellationToken ct)
+    {
+        var credential = ReadCredentialSnapshot();
+        if (credential.OpenId.Length == 0 || credential.RefreshToken.Length == 0 ||
+            (credential.LoginType == 2 && credential.AccessToken.Length == 0))
+        {
+            throw new ApiException(
+                credential.LoginType == 6 || credential.IsNativePhoneLogin
+                    ? "QQ 音乐原生登录凭证已过期，请重新登录"
+                    : "QQ 音乐凭证已过期，Cookie 缺少刷新字段，请在网页版重新登录后粘贴新 Cookie", 104401);
+        }
+
+        using var doc = await PostCredentialRequestAsync(
+            "music.login.LoginServer", "Login", p =>
+            {
+                p.WriteString("openid", credential.OpenId);
+                if (credential.LoginType != 1)
+                    p.WriteString("access_token", credential.AccessToken);
+                p.WriteString("refresh_token", credential.RefreshToken);
+                if (credential.LoginType == 2)
+                {
+                    p.WriteNumber("expired_in", credential.ExpiredAt);
+                    p.WriteNumber("musicid", credential.MusicId);
+                }
+                else
+                {
+                    p.WriteString("str_musicid", credential.StrMusicId);
+                    if (credential.LoginType != 1)
+                        p.WriteNumber("musicid", credential.MusicId);
+                    p.WriteString("unionid", credential.UnionId);
+                }
+                p.WriteString("musickey", credential.MusicKey);
+                p.WriteString("refresh_key", credential.RefreshKey);
+                p.WriteNumber("loginMode", 2);
+            }, credential.LoginType, ct).ConfigureAwait(false);
+
+        var code = PickCredentialCode(doc.RootElement);
+        if (code != 0)
+        {
+            var message = TryPickCredentialMessage(doc.RootElement);
+            if (code == 20279)
+                throw new ApiException("QQ 音乐登录设备数已达上限，请在 QQ 设置中移除设备或重新登录", code);
+            if (code is 1000 or 104400 or 104401)
+                throw new ApiException("QQ 音乐刷新凭证失败，请在网页版重新登录后粘贴新 Cookie", code);
+            throw new ApiException(message is { Length: > 0 }
+                ? $"QQ 音乐刷新凭证失败：{message}"
+                : $"QQ 音乐刷新凭证失败(code={code})", code);
+        }
+
+        var data = TryGetPath(doc.RootElement, "req_0", "data");
+        if (data is not { ValueKind: JsonValueKind.Object })
+            throw new ApiException("QQ 音乐刷新凭证响应缺少数据", -2);
+        ApplyRefreshedCredential(data.Value, credential);
+    }
+
+    private CredentialSnapshot ReadCredentialSnapshot()
+    {
+        var musicIdText = ExtractCookieValue(_cookieHeader, "uin")?.TrimStart('o') ?? _uin;
+        _ = long.TryParse(musicIdText, out var musicId);
+        var musicKey = ExtractCookieValue(_cookieHeader, "qm_keyst")
+                       ?? ExtractCookieValue(_cookieHeader, "qqmusic_key")
+                       ?? _authst;
+        var loginType = ParseCookieLong("tmeLoginType");
+        if (loginType == 0) loginType = musicKey.StartsWith("W_X", StringComparison.Ordinal) ? 1 : 2;
+        return new CredentialSnapshot
+        {
+            MusicId = musicId,
+            StrMusicId = musicIdText,
+            MusicKey = musicKey,
+            EncryptUin = ExtractCookieValue(_cookieHeader, "euin") ?? "",
+            LoginType = (int)loginType,
+            OpenId = ExtractCookieValue(_cookieHeader, "psrf_qqopenid") ?? "",
+            AccessToken = ExtractCookieValue(_cookieHeader, "psrf_qqaccess_token") ?? "",
+            RefreshToken = ExtractCookieValue(_cookieHeader, "psrf_qqrefresh_token") ?? "",
+            RefreshKey = ExtractCookieValue(_cookieHeader, "psrf_qqrefresh_key") ?? "",
+            UnionId = ExtractCookieValue(_cookieHeader, "psrf_qqunionid") ?? "",
+            ExpiredAt = ParseCookieLong("psrf_access_token_expiresAt"),
+            MusicKeyCreateTime = ParseCookieLong("psrf_musickey_createtime"),
+            IsNativePhoneLogin = string.Equals(
+                ExtractCookieValue(_cookieHeader, "alyric_native_login"), "phone", StringComparison.Ordinal),
+        };
+    }
+
+    private long ParseCookieLong(string name)
+        => long.TryParse(ExtractCookieValue(_cookieHeader, name), out var value) ? value : 0;
+
+    private void ApplyRefreshedCredential(JsonElement data, CredentialSnapshot previous)
+    {
+        var musicKey = PickString(data, "musickey");
+        var musicId = PickLongFlexible(data, "musicid");
+        var strMusicId = PickString(data, "str_musicid");
+        if (musicId == 0 && long.TryParse(strMusicId, out var parsedId)) musicId = parsedId;
+        if (musicId == 0) musicId = previous.MusicId;
+        if (strMusicId.Length == 0) strMusicId = musicId.ToString();
+        if (musicKey.Length == 0 || musicId == 0)
+            throw new ApiException("QQ 音乐刷新响应未返回有效 musickey", -2);
+
+        var updates = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["uin"] = strMusicId,
+            ["qqmusic_uin"] = strMusicId,
+            ["qm_keyst"] = musicKey,
+            ["qqmusic_key"] = musicKey,
+        };
+        AddCredentialUpdate(updates, "euin", PickString(data, "encryptUin"));
+        AddCredentialUpdate(updates, "psrf_qqopenid", PickString(data, "openid"));
+        AddCredentialUpdate(updates, "psrf_qqaccess_token", PickString(data, "access_token"));
+        AddCredentialUpdate(updates, "psrf_qqrefresh_token", PickString(data, "refresh_token"));
+        AddCredentialUpdate(updates, "psrf_qqrefresh_key", PickString(data, "refresh_key"));
+        AddCredentialUpdate(updates, "psrf_qqunionid", PickString(data, "unionid"));
+        AddCredentialUpdate(updates, "psrf_access_token_expiresAt", PickLongFlexible(data, "expired_at").ToString());
+        AddCredentialUpdate(updates, "psrf_musickey_createtime", PickLongFlexible(data, "musickeyCreateTime").ToString());
+        var loginType = PickLongFlexible(data, "loginType");
+        updates["tmeLoginType"] = (loginType > 0 ? loginType : previous.LoginType).ToString();
+
+        _uin = strMusicId.TrimStart('o');
+        _authst = musicKey;
+        _cookieHeader = UpdateCookieHeader(_cookieHeader, updates);
+        _cookie.QQCookieRaw = _cookieHeader;
+        _cookie.Save(); // 刷新成功后必须先落盘，后续请求才可继续。
+
+        _likedDissTid = 0;
+        _likedIds = null;
+        _vipLoaded = false;
+        _vipLoading = false;
+        IsVip = false;
+    }
+
+    private static void AddCredentialUpdate(IDictionary<string, string> updates, string name, string value)
+    {
+        if (value.Length > 0 && value != "0") updates[name] = value;
+    }
+
+    private static string UpdateCookieHeader(string raw, IReadOnlyDictionary<string, string> updates)
+    {
+        var remaining = new Dictionary<string, string>(updates, StringComparer.OrdinalIgnoreCase);
+        var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var parts = new List<string>();
+        foreach (var segment in raw.Split(';'))
+        {
+            var trimmed = segment.Trim();
+            if (trimmed.Length == 0) continue;
+            var separator = trimmed.IndexOf('=');
+            if (separator <= 0)
+            {
+                parts.Add(trimmed);
+                continue;
+            }
+            var name = trimmed[..separator].Trim();
+            if (updates.TryGetValue(name, out var replacement))
+            {
+                remaining.Remove(name);
+                if (emitted.Add(name)) parts.Add($"{name}={replacement}");
+            }
+            else
+                parts.Add(trimmed);
+        }
+        parts.AddRange(remaining.Select(pair => $"{pair.Key}={pair.Value}"));
+        return string.Join("; ", parts);
+    }
+
+    private sealed record CredentialSnapshot
+    {
+        public long MusicId { get; init; }
+        public string StrMusicId { get; init; } = "";
+        public string MusicKey { get; init; } = "";
+        public string EncryptUin { get; init; } = "";
+        public int LoginType { get; init; }
+        public string OpenId { get; init; } = "";
+        public string AccessToken { get; init; } = "";
+        public string RefreshToken { get; init; } = "";
+        public string RefreshKey { get; init; } = "";
+        public string UnionId { get; init; } = "";
+        public long ExpiredAt { get; init; }
+        public long MusicKeyCreateTime { get; init; }
+        public bool IsNativePhoneLogin { get; init; }
     }
 
     // ---------- 端点方法 ----------
@@ -282,22 +578,6 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         var mid = await EnsureMidAsync(song, ct).ConfigureAwait(false);
         if (mid.Length == 0) return null;
 
-        if (string.Equals(level, "auto", StringComparison.OrdinalIgnoreCase))
-        {
-            var prefix = await ResolveAutomaticQualityAsync(song, ct).ConfigureAwait(false);
-            var selected = QualityFromPrefix(prefix);
-            var selectedUrl = await TryVkeyAsync(mid, selected.Prefix, selected.Ext, ct).ConfigureAwait(false);
-            return string.IsNullOrEmpty(selectedUrl)
-                ? null
-                : new PlayUrlItem
-                {
-                    Id = song.Id,
-                    Url = selectedUrl,
-                    Br = selected.Br,
-                    Level = selected.Prefix,
-                };
-        }
-
         foreach (var (prefix, ext, br) in Qualities(level))
         {
             var url = await TryVkeyAsync(mid, prefix, ext, ct).ConfigureAwait(false);
@@ -395,6 +675,10 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private bool _vipLoaded;
     private bool _vipLoading;
     private Task? _vipLoadTask;
+    private int _vipLevel;
+    private int _musicLevel;
+    private string _membershipName = "普通用户";
+    private DateTimeOffset? _membershipExpiresAt;
 
     /// <summary>当前登录用户是否为 QQ 音乐会员(绿钻 identity.vip/huge_vip;未登录/未加载为 false)。
     /// 播放 VIP 歌曲失败消息用;经 EnsureVipStatusAsync 惰性加载。</summary>
@@ -419,13 +703,21 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             using var doc = await PostMusicuAsync(w =>
                 WriteModuleReq(w, "VipLogin.VipLoginInter", "vip_login_base", _ => { }), ct).ConfigureAwait(false);
             var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQVipLoginResponse);
-            var identity = resp?.Req0?.Data?.Identity;
+            var data = resp?.Req0?.Data;
+            var identity = data?.Identity;
             IsVip = resp is { Code: 0 } && resp.Req0 is { Code: 0 } &&
                     ((identity?.Vip ?? 0) != 0 || (identity?.HugeVip ?? 0) != 0);
+            _vipLevel = identity?.Level ?? 0;
+            _musicLevel = data?.Userinfo?.MusicLevel ?? 0;
+            _membershipName = (identity?.HugeVip ?? 0) != 0
+                ? "豪华绿钻"
+                : (identity?.Vip ?? 0) != 0 ? "绿钻会员" : "普通用户";
+            _membershipExpiresAt = ToDateTimeOffset(data?.Userinfo?.Expire ?? 0);
         }
         catch
         {
             IsVip = false; // 网络失败按非会员(播放消息兜底;下次登录重载)
+            ResetVipDetails();
         }
         finally
         {
@@ -639,12 +931,35 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return doc;
     }
 
+    /// <summary>明文签名写通道(参考 L-1124/QQMusicApi 的实现):与 ag-1 同 body(comm + req_0)、
+    /// 同 zzcSign,但**不加密**,POST u.y.qq.com/cgi-bin/musics.fcg?_=&amp;sign=...,响应为普通 JSON。
+    /// 2026-09 引入:ag-1 加密通道对刷新补发的 key 一律回 80105(校验/读接口全通过),此通道用于
+    /// 对照验证"是加密传输层被拒还是凭证本身被拒"。仅供诊断探针调用。</summary>
+    internal async Task<JsonDocument> ProbeSignedPlaintextWriteAsync(string module, string method,
+        Action<Utf8JsonWriter> writeParam, CancellationToken ct)
+    {
+        var dataStr = BuildAg1Json(module, method, writeParam).Replace("\r", "").Replace("\n", "");
+        var sign = BuildZzcSign(dataStr);
+
+        using var req = new HttpRequestMessage(HttpMethod.Post,
+            $"https://u.y.qq.com/cgi-bin/musics.fcg?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}&sign={sign}");
+        req.Headers.TryAddWithoutValidation("Content-Type", "application/json");
+        req.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/");
+        if (IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
+        req.Content = new StringContent(dataStr, Encoding.UTF8, "application/json");
+
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+            throw new ApiException($"明文签名通道 HTTP {(int)resp.StatusCode}", (int)resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return JsonDocument.Parse(body);
+    }
+
     /// <summary>探针用重载:param 以键值对给出,按值的运行时类型写成对应 JSON 类型
     /// (string/number/bool/null),便于逆向时快速试各种参数组合。仅供诊断探针调用。</summary>
     internal Task<JsonDocument> ProbeAssetWriteAsync(string module, string method,
         IReadOnlyDictionary<string, object?> param, string actionText, CancellationToken ct = default)
-        => SecureAssetWriteAsync(module, method, w =>
-        {
+        => SecureAssetWriteAsync(module, method, w =>        {
             foreach (var (k, v) in param)
             {
                 switch (v)
@@ -760,6 +1075,40 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return -1;
     }
 
+    private static bool IsCredentialExpiredResponse(JsonElement root)
+    {
+        static bool Expired(int code) => code is 1000 or 104400 or 104401;
+        if (root.TryGetProperty("code", out var outer) && outer.TryGetInt32(out var outerCode) &&
+            Expired(outerCode))
+            return true;
+        foreach (var property in root.EnumerateObject())
+        {
+            if (!property.Name.StartsWith("req_", StringComparison.Ordinal) ||
+                property.Value.ValueKind != JsonValueKind.Object) continue;
+            if (property.Value.TryGetProperty("code", out var code) && code.TryGetInt32(out var value) &&
+                Expired(value))
+                return true;
+            if (property.Value.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object &&
+                data.TryGetProperty("code", out code) && code.TryGetInt32(out value) && Expired(value))
+                return true;
+        }
+        return false;
+    }
+
+    private static int PickCredentialCode(JsonElement root)
+    {
+        if (!root.TryGetProperty("req_0", out var req) || req.ValueKind != JsonValueKind.Object)
+            return -1;
+        var requestCode = req.TryGetProperty("code", out var code) && code.TryGetInt32(out var parsed)
+            ? parsed
+            : -1;
+        if (requestCode != 0) return requestCode;
+        if (req.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object &&
+            data.TryGetProperty("code", out var businessCode) && businessCode.TryGetInt32(out parsed))
+            return parsed;
+        return requestCode;
+    }
+
     /// <summary>从写请求响应里捞人读错误信息(data.code_msg / data.msg),缺省 null。</summary>
     private static string? TryPickMessage(JsonElement root)
     {
@@ -772,6 +1121,19 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 if (d.TryGetProperty(name, out var m) && m.ValueKind == JsonValueKind.String &&
                     m.GetString() is { Length: > 0 } s)
                     return s;
+        }
+        return null;
+    }
+
+    private static string? TryPickCredentialMessage(JsonElement root)
+    {
+        var data = TryGetPath(root, "req_0", "data");
+        if (data is not { ValueKind: JsonValueKind.Object }) return null;
+        foreach (var name in new[] { "errMsg", "errtip", "errTip2", "message", "msg" })
+        {
+            if (data.Value.TryGetProperty(name, out var value) &&
+                value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } text)
+                return text;
         }
         return null;
     }
@@ -815,6 +1177,29 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return 0;
     }
 
+    private static long PickLongFlexible(JsonElement node, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!node.TryGetProperty(name, out var value)) continue;
+            if (value.TryGetInt64(out var number)) return number;
+            if (value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), out number))
+                return number;
+        }
+        return 0;
+    }
+
+    private static string PickString(JsonElement node, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!node.TryGetProperty(name, out var value)) continue;
+            if (value.ValueKind == JsonValueKind.String) return value.GetString() ?? "";
+            if (value.ValueKind == JsonValueKind.Number) return value.GetRawText();
+        }
+        return "";
+    }
+
     // ---------- IUserMusicApi 账号能力(需有效登录 Cookie) ----------
 
     /// <summary>c6.y.qq.com 用户主页:一次返回 creator 资料 + mydiss.list 歌单列表。</summary>
@@ -848,6 +1233,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     public async Task<UserProfile> GetUserProfileAsync(CancellationToken ct = default)
     {
+        await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
         // 官方 asset 通道:userInfo.BaseUserInfoServer/get_user_baseinfo_v2,按 uin 键回 map_userinfo。
         try
         {
@@ -895,12 +1281,53 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         };
     }
 
+    public async Task<MusicAccountSummary> GetAccountSummaryAsync(CancellationToken ct = default)
+    {
+        var profile = await GetUserProfileAsync(ct).ConfigureAwait(false);
+        await EnsureVipStatusAsync(ct).ConfigureAwait(false);
+        return new MusicAccountSummary
+        {
+            UserId = profile.UserId,
+            Nickname = profile.Nickname,
+            AvatarUrl = profile.AvatarUrl,
+            IsVip = IsVip,
+            MembershipName = _membershipName,
+            MembershipLevel = _vipLevel,
+            AccountLevel = _musicLevel,
+            MembershipExpiresAt = _membershipExpiresAt,
+        };
+    }
+
+    private void ResetVipDetails()
+    {
+        _vipLevel = 0;
+        _musicLevel = 0;
+        _membershipName = "普通用户";
+        _membershipExpiresAt = null;
+    }
+
+    private static DateTimeOffset? ToDateTimeOffset(long value)
+    {
+        if (value <= 0) return null;
+        try
+        {
+            return value > 10_000_000_000
+                ? DateTimeOffset.FromUnixTimeMilliseconds(value)
+                : DateTimeOffset.FromUnixTimeSeconds(value);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>用户歌单:官方 asset 双模块一次复合拉取 —— PlaylistBaseRead/GetPlaylistByUin(自建,
     /// tid/dirName/picUrl/songNum)+ PlaylistFavRead/GetPlaylistFavInfo(收藏,tid/name/logo/songnum),
     /// 参考开源 multiPlatformMusicApi。老 homepage mydiss 通道对部分账号不再下发歌单名(界面呈现空名),
     /// 仅作为 asset 整体失败时的回落。</summary>
     public async Task<List<Playlist>> GetUserPlaylistsAsync(CancellationToken ct = default)
     {
+        await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
         try
         {
             using var doc = await PostMusicuMultiAsync(
@@ -1293,68 +1720,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>level → 文件名前缀链:目标档在前,不可播逐级降级,末档恒为 M500(128k MP3)。</summary>
     private static IEnumerable<(string Prefix, string Ext, int Br)> Qualities(string level) => level.ToLowerInvariant() switch
     {
-        "lossless" or "hires" => [("F000", ".flac", 999000), ("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
+        "lossless" => [("F000", ".flac", 999000), ("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
         "nac" => [("TL01", ".nac", 0), ("M500", ".mp3", 128000)],
-        "aac" => [("C400", ".m4a", 96000), ("M500", ".mp3", 128000)],
         "higher" => [("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
         _ => [("M500", ".mp3", 128000)],
     };
-
-    /// <summary>自动最高保存的是 QQ 文件名前缀；解析后只调用一次 VKey。</summary>
-    private static (string Prefix, string Ext, int Br) QualityFromPrefix(string prefix) => prefix.ToUpperInvariant() switch
-    {
-        "DT03" => ("DT03", ".mp4", 0),
-        "AI00" => ("AI00", ".flac", 0),
-        "Q003" => ("Q003", ".ogg", 0),
-        "Q001" => ("Q001", ".flac", 0),
-        "Q000" => ("Q000", ".flac", 0),
-        "D004" => ("D004", ".mp4", 0),
-        "RS01" => ("RS01", ".flac", 0),
-        "TL01" => ("TL01", ".nac", 0),
-        "F000" => ("F000", ".flac", 999000),
-        "O801" => ("O801", ".ogg", 640000),
-        "O800" => ("O800", ".ogg", 320000),
-        "M800" => ("M800", ".mp3", 320000),
-        "C600" => ("C600", ".m4a", 192000),
-        "O600" => ("O600", ".ogg", 192000),
-        "C400" => ("C400", ".m4a", 96000),
-        "O400" => ("O400", ".ogg", 96000),
-        "C200" => ("C200", ".m4a", 48000),
-        _ => ("M500", ".mp3", 128000),
-    };
-
-    /// <summary>补一次完整详情并写回 Song；以后重播直接复用元数据。</summary>
-    private async Task<string> ResolveAutomaticQualityAsync(Song song, CancellationToken ct)
-    {
-        if (!song.AudioQualityInfoComplete)
-        {
-            try
-            {
-                if (await GetSongDetailAsync(song.Id, ct).ConfigureAwait(false) is { } detail)
-                {
-                    song.AvailableAudioQualities = detail.AvailableAudioQualities;
-                    song.AudioQualityInfoComplete = detail.AudioQualityInfoComplete;
-                }
-            }
-            catch (ApiException)
-            {
-                // 详情失败时保持单次 URL 请求，回到所有 QQ 曲目共同支持的 M500。
-            }
-        }
-
-        if (IsLoggedIn && !IsVipLoaded)
-            await EnsureVipStatusAsync(ct).ConfigureAwait(false);
-
-        if (IsVip)
-            return song.AvailableAudioQualities.FirstOrDefault() ?? "M500";
-
-        // 非会员不把“曲库存在”误判为“账号可播”；从免费档里选择最高项。
-        foreach (var prefix in song.AvailableAudioQualities)
-        {
-            if (prefix is "M500" or "C400" or "O400" or "C200") return prefix;
-        }
-        return "M500";
-    }
 
     private async Task<string> TryVkeyAsync(string mid, string prefix, string ext, CancellationToken ct)
     {
@@ -1443,11 +1813,6 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         try
         {
             var detail = await GetSongDetailAsync(song.Id, ct).ConfigureAwait(false);
-            if (detail is not null)
-            {
-                song.AvailableAudioQualities = detail.AvailableAudioQualities;
-                song.AudioQualityInfoComplete = detail.AudioQualityInfoComplete;
-            }
             return detail?.Mid ?? "";
         }
         catch (ApiException)
@@ -1481,6 +1846,22 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// 服务端在同一响应里按相同键回包。</summary>
     private async Task<JsonDocument> PostMusicuMultiAsync(IReadOnlyList<Action<Utf8JsonWriter>> reqs, CancellationToken ct)
     {
+        if (IsLoggedIn)
+            await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
+
+        var doc = await SendMusicuMultiAsync(reqs, ct).ConfigureAwait(false);
+        if (!IsLoggedIn || !IsCredentialExpiredResponse(doc.RootElement)) return doc;
+
+        // 长会话中 key 失效：丢弃这次响应，服务端复检后至多刷新一次并只重发一次业务请求。
+        doc.Dispose();
+        _credentialValidated = false;
+        await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
+        return await SendMusicuMultiAsync(reqs, ct).ConfigureAwait(false);
+    }
+
+    private async Task<JsonDocument> SendMusicuMultiAsync(
+        IReadOnlyList<Action<Utf8JsonWriter>> reqs, CancellationToken ct)
+    {
         string json;
         using (var ms = new MemoryStream())
         {
@@ -1497,6 +1878,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 w.WriteNumber("cv", 4747474);
                 w.WriteNumber("g_tk", ComputeGtk());
                 w.WriteNumber("g_tk_new_20200303", ComputeGtk());
+                if (IsLoggedIn)
+                {
+                    w.WriteString("qq", _uin);
+                    w.WriteString("authst", _authst);
+                    var loginType = ParseCookieLong("tmeLoginType");
+                    if (loginType > 0) w.WriteNumber("tmeLoginType", loginType);
+                }
                 w.WriteEndObject();
                 w.WriteEndObject();
             }
@@ -1520,6 +1908,57 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
         var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         return ParseJson(body);
+    }
+
+    /// <summary>凭证验证/刷新专用请求。与网页登录 Cookie 一致使用 Web comm；不经过自动验证包装，
+    /// 避免 EnsureCredentialValidAsync 递归。QQ 登录类型通过 tmeLoginType 显式传递。</summary>
+    private async Task<JsonDocument> PostCredentialRequestAsync(
+        string module,
+        string method,
+        Action<Utf8JsonWriter> writeParam,
+        int loginType,
+        CancellationToken ct)
+    {
+        string json;
+        using (var ms = new MemoryStream())
+        {
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                WriteModuleReq(w, module, method, writeParam);
+                w.WriteStartObject("comm");
+                w.WriteNumber("ct", 24);
+                w.WriteNumber("cv", 4747474);
+                w.WriteString("platform", "yqq.json");
+                w.WriteString("chid", "0");
+                w.WriteString("uin", _uin);
+                w.WriteString("qq", _uin);
+                w.WriteString("authst", _authst);
+                w.WriteNumber("g_tk", ComputeGtk());
+                w.WriteNumber("g_tk_new_20200303", ComputeGtk());
+                w.WriteString("format", "json");
+                w.WriteString("inCharset", "utf-8");
+                w.WriteString("outCharset", "utf-8");
+                w.WriteNumber("notice", 0);
+                w.WriteNumber("needNewCode", 1);
+                if (loginType > 0) w.WriteNumber("tmeLoginType", loginType);
+                w.WriteEndObject();
+                w.WriteEndObject();
+            }
+            json = Encoding.UTF8.GetString(ms.ToArray());
+        }
+
+        var url = MusicuUrl + "?uin=" + Uri.EscapeDataString(_uin)
+                  + "&qm_keyst=" + Uri.EscapeDataString(_authst)
+                  + "&g_tk=" + ComputeGtk();
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
+        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
+        return ParseJson(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
     }
 
     /// <summary>写一个默认键(req_0)的模块子请求:"req_0":{ module, method, param:{...} }。</summary>
@@ -1635,7 +2074,6 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
         if (id != 0 && mid.Length > 0) RememberMid(id, mid);
 
-        var availableQualities = GetAvailableAudioQualities(t);
         return new Song
         {
             Id = id,
@@ -1651,53 +2089,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             AlbumId = albumId,
             AlbumMid = albumMid,
             Source = MusicSource.QQ,
-            AvailableAudioQualities = availableQualities,
-            AudioQualityInfoComplete = t.File is not null,
         };
-    }
-
-    /// <summary>把 track_info.file 的文件大小映射成普通 VKey 可请求的前缀，顺序与平台音质一致。</summary>
-    private static IReadOnlyList<string> GetAvailableAudioQualities(QQTrackDto track)
-    {
-        if (track.File is not { } file)
-        {
-            var basic = new List<string>(4);
-            if (track.SizeFlacFlat > 0) basic.Add("F000");
-            if (track.Size320Mp3Flat > 0) basic.Add("M800");
-            if (track.Size128Mp3Flat > 0) basic.Add("M500");
-            if (track.SizeOggFlat > 0) basic.Add("O600");
-            return basic;
-        }
-
-        var result = new List<string>(18);
-        AddIfPositive(result, "DT03", file.SizeDts);
-        AddIfPositive(result, "AI00", NewSize(file, 0));
-        // 新版 size_new 在旧的 0..5 槽位后追加 7.1/NAC/杜比等格式。
-        AddIfPositive(result, "Q003", NewSize(file, 6));
-        AddIfPositive(result, "Q001", NewSize(file, 2));
-        AddIfPositive(result, "Q000", NewSize(file, 1));
-        AddIfPositive(result, "D004", file.SizeDolby > 0 ? file.SizeDolby : NewSize(file, 8));
-        AddIfPositive(result, "RS01", file.SizeHiRes);
-        AddIfPositive(result, "TL01", NewSize(file, 7));
-        AddIfPositive(result, "F000", file.SizeFlac);
-        AddIfPositive(result, "O801", NewSize(file, 5));
-        AddIfPositive(result, "O800", NewSize(file, 3));
-        AddIfPositive(result, "M800", file.Size320Mp3);
-        AddIfPositive(result, "C600", file.Size192Aac);
-        AddIfPositive(result, "O600", file.Size192Ogg);
-        AddIfPositive(result, "M500", file.Size128Mp3);
-        AddIfPositive(result, "C400", file.Size96Aac);
-        AddIfPositive(result, "O400", file.Size96Ogg);
-        AddIfPositive(result, "C200", file.Size48Aac);
-        return result;
-    }
-
-    private static long NewSize(QQTrackFileDto file, int index)
-        => file.SizeNew is { } sizes && index >= 0 && index < sizes.Count ? sizes[index] : 0;
-
-    private static void AddIfPositive(List<string> target, string prefix, long size)
-    {
-        if (size > 0) target.Add(prefix);
     }
 
     private static string FirstNonEmpty(params string?[] values)

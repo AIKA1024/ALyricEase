@@ -9,11 +9,19 @@ using ALyricEase.Services.Auth;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
+
+public enum QqLoginMethod
+{
+    Qr,
+    Phone,
+    Cookie,
+}
 
 /// <summary>歌单 VM:MUSIC_U 粘贴登录 → 用户歌单 → 点开歌单看曲目(双击播放)。
 /// 未登录显示登录卡片;已登录显示用户信息 + 歌单列表 + 选中歌单的曲目。
@@ -57,6 +65,57 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 账号接口依赖完整字段,精简两项过不了服务端校验)。</summary>
     [ObservableProperty] private string _qqCookieInput = "";
 
+    /// <summary>QQ 登录方式。默认使用原生扫码，手机号验证码与浏览器 Cookie 作为并列入口。</summary>
+    [ObservableProperty] private QqLoginMethod _qqLoginMethod;
+
+    [ObservableProperty] private string _qqPhoneCountryCode = "86";
+    [ObservableProperty] private string _qqPhoneNumber = "";
+    [ObservableProperty] private string _qqPhoneCode = "";
+    [ObservableProperty] private string _qqPhoneStatus = "验证码将发送到你的手机";
+    [ObservableProperty] private int _qqPhoneCountdown;
+    [ObservableProperty] private bool _isQqPhoneCodeSent;
+    private CancellationTokenSource? _qqPhoneOperationCancellation;
+    private CancellationTokenSource? _qqPhoneCountdownCancellation;
+
+    /// <summary>QQ 音乐客户端原生登录二维码与当前扫码状态。</summary>
+    [ObservableProperty] private IImage? _qqQrImage;
+    [ObservableProperty] private bool _isQqQrLoginActive;
+    [ObservableProperty] private string _qqQrStatus = "使用手机 QQ 音乐扫描二维码";
+    private CancellationTokenSource? _qqQrLoginCancellation;
+
+    public bool HasQqQrImage => QqQrImage is not null;
+    public bool IsQqQrLoginMethod => QqLoginMethod == QqLoginMethod.Qr;
+    public bool IsQqPhoneLoginMethod => QqLoginMethod == QqLoginMethod.Phone;
+    public bool IsQqCookieLoginMethod => QqLoginMethod == QqLoginMethod.Cookie;
+    public string QqPhoneSendButtonText => QqPhoneCountdown > 0 ? $"{QqPhoneCountdown} 秒后重试" : "发送验证码";
+    public bool CanSendQqPhoneCode => !IsBusy && QqPhoneCountdown == 0;
+
+    partial void OnQqQrImageChanged(IImage? value) => OnPropertyChanged(nameof(HasQqQrImage));
+
+    partial void OnQqLoginMethodChanged(QqLoginMethod value)
+    {
+        OnPropertyChanged(nameof(IsQqQrLoginMethod));
+        OnPropertyChanged(nameof(IsQqPhoneLoginMethod));
+        OnPropertyChanged(nameof(IsQqCookieLoginMethod));
+        Message = null;
+        if (value != QqLoginMethod.Qr) CancelQqQrLogin();
+        if (value != QqLoginMethod.Phone)
+        {
+            var operation = _qqPhoneOperationCancellation;
+            _qqPhoneOperationCancellation = null;
+            operation?.Cancel();
+            IsBusy = false;
+        }
+    }
+
+    partial void OnQqPhoneCountdownChanged(int value)
+    {
+        OnPropertyChanged(nameof(QqPhoneSendButtonText));
+        OnPropertyChanged(nameof(CanSendQqPhoneCode));
+    }
+
+    partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanSendQqPhoneCode));
+
     /// <summary>QQ音乐已登录(本地 cookie 有效;解锁 VIP/320k 播放)。</summary>
     [ObservableProperty] private bool _isQqLoggedIn;
 
@@ -67,12 +126,21 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [ObservableProperty] private string _creatorName = "";
 
     public bool IsNetEaseLoginTab => !IsQQLoginTab;
-
-    partial void OnIsQQLoginTabChanged(bool value) => OnPropertyChanged(nameof(IsNetEaseLoginTab));
+    partial void OnIsQQLoginTabChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsNetEaseLoginTab));
+        if (!value) CancelLoginActivities();
+    }
 
     [RelayCommand] private void SelectNetEaseLoginTab() => IsQQLoginTab = false;
 
     [RelayCommand] private void SelectQQLoginTab() => IsQQLoginTab = true;
+
+    [RelayCommand] private void SelectQqQrLoginMethod() => QqLoginMethod = QqLoginMethod.Qr;
+
+    [RelayCommand] private void SelectQqPhoneLoginMethod() => QqLoginMethod = QqLoginMethod.Phone;
+
+    [RelayCommand] private void SelectQqCookieLoginMethod() => QqLoginMethod = QqLoginMethod.Cookie;
 
     public bool ShowLogin => !IsLoggedIn;
 
@@ -120,11 +188,29 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             await LoadProfileAndPlaylistsAsync();
     }
 
-    /// <summary>恢复 QQ 登录态(cookie 纯本地解析)并按需拉取 QQ 用户歌单(失败静默,下次进入重试)。</summary>
+    /// <summary>恢复 QQ 登录态时先让服务端验证凭证；过期则由客户端最多刷新一次并持久化，
+    /// 验证通过后才呈现已登录并拉取用户歌单。</summary>
     public async Task EnsureQqLoadedAsync()
     {
         if (!IsQqLoggedIn && _cookie.QQCookieRaw is { Length: > 0 })
-            IsQqLoggedIn = _qqApi.IsLoggedIn;
+        {
+            try
+            {
+                await _qqApi.EnsureCredentialValidAsync();
+                IsQqLoggedIn = true;
+            }
+            catch (ApiException ex) when (QQMusicApiClient.RequiresFreshLogin(ex.Code))
+            {
+                _qqApi.ClearCookie();
+                IsQqLoggedIn = false;
+                return;
+            }
+            catch (ApiException)
+            {
+                // 网络/服务端瞬时异常保留本地 Cookie，下次进入再验证，不展示假登录态。
+                return;
+            }
+        }
         if (!IsQqLoggedIn || _qqPlaylistsLoaded) return;
         await LoadQqPlaylistsAsync();
     }
@@ -191,6 +277,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         try
         {
             _qqApi.SetCookie(raw);
+            await _qqApi.EnsureCredentialValidAsync();
             var profile = await _qqApi.GetUserProfileAsync();
             IsQqLoggedIn = true;
             QqUserName = profile.Nickname;
@@ -210,27 +297,314 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    /// <summary>清除本地 Cookie 并重置登录态(账号页"删除本地Cookie"按钮调用);网易云与 QQ 一并清除。</summary>
+    private async Task SendQqPhoneCodeAsync()
+    {
+        if (!CanSendQqPhoneCode) return;
+        var countryCode = NormalizeCountryCode(QqPhoneCountryCode);
+        var phone = NormalizePhoneNumber(QqPhoneNumber);
+        QqPhoneCountryCode = countryCode;
+        QqPhoneNumber = phone;
+
+        var cancellation = ReplaceQqPhoneOperation();
+        IsBusy = true;
+        Message = null;
+        QqPhoneStatus = "正在安全发送验证码…";
+        try
+        {
+            var result = await _qqApi.SendPhoneCodeAsync(phone, countryCode, cancellation.Token);
+            if (!ReferenceEquals(_qqPhoneOperationCancellation, cancellation)) return;
+            switch (result.Stage)
+            {
+                case QQMusicPhoneCodeStage.Sent:
+                    IsQqPhoneCodeSent = true;
+                    QqPhoneStatus = $"验证码已发送至 +{countryCode} {MaskPhone(phone)}";
+                    StartQqPhoneCountdown();
+                    break;
+                case QQMusicPhoneCodeStage.CaptchaRequired:
+                    IsQqPhoneCodeSent = false;
+                    QqPhoneStatus = "当前号码触发了安全验证，请改用扫码登录";
+                    Message = "QQ 音乐要求额外安全验证，手机客户端扫码登录更稳妥。";
+                    break;
+                case QQMusicPhoneCodeStage.FrequencyLimited:
+                    IsQqPhoneCodeSent = false;
+                    QqPhoneStatus = "请求过于频繁，请稍后再试";
+                    Message = "验证码发送次数受限，请稍后重试或改用扫码登录。";
+                    break;
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (ApiException ex)
+        {
+            QqPhoneStatus = "验证码发送失败";
+            Message = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            QqPhoneStatus = "验证码发送失败";
+            Message = $"网络连接失败：{ex.Message}";
+        }
+        finally
+        {
+            if (ReferenceEquals(_qqPhoneOperationCancellation, cancellation))
+            {
+                _qqPhoneOperationCancellation = null;
+                IsBusy = false;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    [RelayCommand]
+    private async Task LoginQqPhoneAsync()
+    {
+        var countryCode = NormalizeCountryCode(QqPhoneCountryCode);
+        var phone = NormalizePhoneNumber(QqPhoneNumber);
+        var code = QqPhoneCode.Trim();
+        QqPhoneCountryCode = countryCode;
+        QqPhoneNumber = phone;
+        QqPhoneCode = code;
+        if (code.Length != 6 || !code.All(char.IsDigit))
+        {
+            Message = "请输入短信中的 6 位验证码";
+            return;
+        }
+
+        var cancellation = ReplaceQqPhoneOperation();
+        IsBusy = true;
+        Message = null;
+        QqPhoneStatus = "正在验证并登录…";
+        try
+        {
+            var credential = await _qqApi.LoginWithPhoneCodeAsync(phone, countryCode, code, cancellation.Token);
+            if (!ReferenceEquals(_qqPhoneOperationCancellation, cancellation)) return;
+            QqUserName = credential.Nickname.Length > 0 ? credential.Nickname : $"QQ {credential.MusicId}";
+            IsQqLoggedIn = true;
+            _qqPlaylistsLoaded = false;
+            RefreshPlayability();
+            QqPhoneNumber = "";
+            QqPhoneCode = "";
+            QqPhoneStatus = "登录成功";
+            _ = LoadQqPlaylistsAsync();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (ApiException ex)
+        {
+            QqPhoneStatus = "登录未完成";
+            Message = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            QqPhoneStatus = "登录未完成";
+            Message = $"网络连接失败：{ex.Message}";
+        }
+        finally
+        {
+            if (ReferenceEquals(_qqPhoneOperationCancellation, cancellation))
+            {
+                _qqPhoneOperationCancellation = null;
+                IsBusy = false;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private CancellationTokenSource ReplaceQqPhoneOperation()
+    {
+        _qqPhoneOperationCancellation?.Cancel();
+        var next = new CancellationTokenSource();
+        _qqPhoneOperationCancellation = next;
+        return next;
+    }
+
+    private void StartQqPhoneCountdown() => _ = RunQqPhoneCountdownAsync();
+
+    private async Task RunQqPhoneCountdownAsync()
+    {
+        _qqPhoneCountdownCancellation?.Cancel();
+        _qqPhoneCountdownCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        _qqPhoneCountdownCancellation = cancellation;
+        try
+        {
+            for (QqPhoneCountdown = 60; QqPhoneCountdown > 0; QqPhoneCountdown--)
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_qqPhoneCountdownCancellation, cancellation))
+            {
+                _qqPhoneCountdownCancellation = null;
+                QqPhoneCountdown = 0;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private static string NormalizeCountryCode(string value) => value.Trim().TrimStart('+');
+
+    private static string NormalizePhoneNumber(string value)
+        => new(value.Where(char.IsDigit).ToArray());
+
+    private static string MaskPhone(string phone)
+        => phone.Length >= 7 ? $"{phone[..3]}****{phone[^4..]}" : phone;
+
+    /// <summary>创建 QQ 音乐客户端二维码，持续监听扫码/确认事件，成功后落入现有登录态。</summary>
+    [RelayCommand]
+    private async Task StartQqQrLoginAsync()
+    {
+        CancelQqQrLogin();
+        var cancellation = new CancellationTokenSource();
+        _qqQrLoginCancellation = cancellation;
+        IsQqQrLoginActive = true;
+        IsBusy = true;
+        Message = null;
+        QqQrStatus = "正在准备安全登录环境…";
+        try
+        {
+            var progress = new Progress<QQMusicQrLoginUpdate>(update =>
+            {
+                if (!ReferenceEquals(_qqQrLoginCancellation, cancellation)) return;
+                if (update.QrPng is { Length: > 0 }) SetQqQrImage(update.QrPng);
+                QqQrStatus = update.Stage switch
+                {
+                    QQMusicQrLoginStage.Preparing => "正在准备安全登录环境…",
+                    QQMusicQrLoginStage.Waiting => "请使用手机 QQ 音乐扫码并确认",
+                    QQMusicQrLoginStage.Scanned => "已扫码，请在手机上确认登录",
+                    QQMusicQrLoginStage.Exchanging => "已确认，正在获取账号凭证…",
+                    _ => QqQrStatus,
+                };
+            });
+            var credential = await _qqApi.LoginWithQrAsync(progress, cancellation.Token);
+            if (!ReferenceEquals(_qqQrLoginCancellation, cancellation)) return;
+            QqUserName = credential.Nickname.Length > 0 ? credential.Nickname : $"QQ {credential.MusicId}";
+            IsQqLoggedIn = true;
+            _qqPlaylistsLoaded = false;
+            RefreshPlayability();
+            _ = LoadQqPlaylistsAsync();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // 用户关闭弹窗或切换页签，属于正常取消。
+        }
+        catch (ApiException ex)
+        {
+            if (ReferenceEquals(_qqQrLoginCancellation, cancellation))
+            {
+                Message = $"扫码登录失败:{ex.Message}";
+                QqQrStatus = "二维码不可用，请点击重新获取";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_qqQrLoginCancellation, cancellation))
+            {
+                Message = $"扫码登录失败:{ex.Message}";
+                QqQrStatus = "连接失败，请点击重新获取";
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_qqQrLoginCancellation, cancellation))
+            {
+                _qqQrLoginCancellation = null;
+                IsQqQrLoginActive = false;
+                IsBusy = false;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private void SetQqQrImage(byte[] png)
+    {
+        using var stream = new MemoryStream(png, writable: false);
+        var next = new Bitmap(stream);
+        var previous = QqQrImage as IDisposable;
+        QqQrImage = next;
+        previous?.Dispose();
+    }
+
+    /// <summary>关闭登录弹层/离开 QQ 页签时释放 MQTT 连接；再次打开会生成新二维码。</summary>
+    public void CancelQqQrLogin()
+    {
+        var cancellation = _qqQrLoginCancellation;
+        _qqQrLoginCancellation = null;
+        cancellation?.Cancel();
+        IsQqQrLoginActive = false;
+        IsBusy = false;
+        (QqQrImage as IDisposable)?.Dispose();
+        QqQrImage = null;
+        QqQrStatus = "使用手机 QQ 音乐扫描二维码";
+    }
+
+    public void CancelLoginActivities()
+    {
+        CancelQqQrLogin();
+        var operation = _qqPhoneOperationCancellation;
+        _qqPhoneOperationCancellation = null;
+        operation?.Cancel();
+        _qqPhoneCountdownCancellation?.Cancel();
+        QqPhoneNumber = "";
+        QqPhoneCode = "";
+        IsQqPhoneCodeSent = false;
+        QqPhoneStatus = "验证码将发送到你的手机";
+        IsBusy = false;
+    }
+
+    [RelayCommand]
+    public void LogoutNetEase()
+    {
+        _api.ClearCookie();
+        IsLoggedIn = false;
+        UserName = "";
+        AvatarUrl = "";
+        (AvatarImage as IDisposable)?.Dispose();
+        AvatarImage = null;
+        Playlists.Clear();
+        if (SelectedPlaylist?.Playlist.Source == MusicSource.NetEase)
+            ClearCurrentPlaylistContent();
+    }
+
+    [RelayCommand]
+    public void LogoutQq()
+    {
+        _qqApi.ClearCookie();
+        IsQqLoggedIn = false;
+        QqUserName = "";
+        QqPlaylists.Clear();
+        _qqPlaylistsLoaded = false;
+        if (SelectedPlaylist?.Playlist.Source == MusicSource.QQ)
+            ClearCurrentPlaylistContent();
+    }
+
+    /// <summary>兼容旧入口：同时退出两个平台。</summary>
+    [RelayCommand]
     public void Logout()
     {
+        CancelLoginActivities();
         _loadGeneration++;
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
         _loadCancellation = null;
         IsLoadingMore = false;
-        _cookie.MusicU = null;
-        _cookie.Save();
-        _qqApi.ClearCookie();
-        IsQqLoggedIn = false;
-        IsLoggedIn = false;
-        UserName = "";
-        AvatarUrl = "";
+        LogoutNetEase();
+        LogoutQq();
         PlaylistTitle = "";
-        Playlists.Clear();
-        QqPlaylists.Clear();
-        QqUserName = "";
         CreatorName = "";
-        _qqPlaylistsLoaded = false;
+        ClearCurrentPlaylistContent();
+    }
+
+    private void ClearCurrentPlaylistContent()
+    {
+        PlaylistTitle = "";
+        CreatorName = "";
+        SelectedPlaylist = null;
         Tracks.Clear();
         _trackIds = new List<long>();
         _known.Clear();
@@ -779,7 +1153,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             zeroBasedIndex + 1, api);
     }
 
-    /// <summary>头部「播放全部」:从第一首开始播放；懒歌单只物化首屏，播放器按需解析完整逻辑队列。</summary>
+    /// <summary>头部「播放全部」:从首个可播行开始；懒歌单只物化首屏，播放器按需解析完整逻辑队列。</summary>
     [RelayCommand]
     private async Task PlayAllAsync()
     {
@@ -789,7 +1163,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         if (_playbackQueue is null && cancellation is { IsCancellationRequested: false })
             _ = LoadMoreAsync(fillTo: Math.Min(_trackIds.Count, _materialized + 300),
                 generation: _loadGeneration, cancellation.Token);
-        await Tracks[0].PlayCommand.ExecuteAsync(null);
+        var firstPlayable = Tracks.FirstOrDefault(track => track.IsPlayable);
+        if (firstPlayable is not null)
+            await firstPlayable.PlayCommand.ExecuteAsync(null);
     }
 
     /// <summary>创建歌单(侧栏分组头"+"按钮):按音源路由到对应客户端。

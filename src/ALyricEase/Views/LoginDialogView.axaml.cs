@@ -9,13 +9,13 @@ using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
-/// <summary>登录对话框视图:打开(IsVisible=true)时先置 0 下一帧再置 1 触发淡入,
- /// 并聚焦当前音源页签的 Cookie 输入框(IsVisible 翻转本身不跑过渡)。</summary>
+/// <summary>登录对话框视图：打开时淡入，并把焦点放到当前登录方式的首要控件。</summary>
 public partial class LoginDialogView : UserControl
 {
     public LoginDialogView()
     {
         InitializeComponent();
+        SizeChanged += (_, e) => ApplyResponsiveLayout(e.NewSize);
         PropertyChanged += (_, e) =>
         {
             if (e.Property == IsVisibleProperty && IsVisible)
@@ -26,11 +26,30 @@ public partial class LoginDialogView : UserControl
         };
     }
 
+    private void ApplyResponsiveLayout(Size size)
+    {
+        var compact = size.Width < 760;
+        Root.Classes.Set("compact", compact);
+        DialogCard.Width = Math.Max(320, Math.Min(760, size.Width - 32));
+        DialogCard.MaxHeight = Math.Max(440, Math.Min(680, size.Height - 32));
+        QqLayout.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "178,*");
+        QqLayout.RowDefinitions = new RowDefinitions(compact ? "Auto,*" : "*");
+        NetEaseFields.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "1.15*,0.85*");
+        NetEaseFields.RowDefinitions = new RowDefinitions(compact ? "Auto,Auto" : "*");
+    }
+
     private void FocusActiveInput()
     {
         Root.Opacity = 1;
         var vm = DataContext as MainViewModel;
-        var target = (vm?.Playlist.IsQQLoginTab ?? false) ? QQBox : MusicUBox;
+        var playlist = vm?.Playlist;
+        var target = playlist switch
+        {
+            { IsQQLoginTab: false } => (Control)MusicUBox,
+            { IsQqPhoneLoginMethod: true } => QqPhoneBox,
+            { IsQqCookieLoginMethod: true } => QQBox,
+            _ => QqQrButton,
+        };
         target.Focus();
     }
 

@@ -21,6 +21,7 @@ namespace ALyricEase.Models.Dtos;
 [JsonSerializable(typeof(DailySongsResponse))]
 [JsonSerializable(typeof(ArtistDetailResponse))]
 [JsonSerializable(typeof(ArtistTopSongsResponse))]
+[JsonSerializable(typeof(ArtistSongsPageResponse))]
 [JsonSerializable(typeof(ArtistAlbumsResponse))]
 [JsonSerializable(typeof(AlbumDetailResponse))]
 [JsonSerializable(typeof(CloudListResponse))]

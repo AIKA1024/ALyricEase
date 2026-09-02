@@ -86,6 +86,8 @@ class Program
     services.AddSingleton<RecommendViewModel>();
     services.AddSingleton<ArtistViewModel>();
     services.AddSingleton<AlbumViewModel>();
+    services.AddSingleton<ArtistSongsPageViewModel>();
+    services.AddSingleton<ArtistAlbumsPageViewModel>();
     services.AddSingleton<SettingsViewModel>();
     services.AddSingleton<AccountViewModel>();
     services.AddSingleton<MainViewModel>();

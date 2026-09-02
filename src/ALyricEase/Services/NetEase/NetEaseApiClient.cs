@@ -1077,6 +1077,32 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return resp.Songs.Select(MapSearchSong).ToList();
     }
 
+    /// <summary>歌手全量歌曲分页(/api/v1/artist/songs,limit/offset)。"查看更多"歌曲页流式加载用;
+    /// songs 结构与搜索同构。more=false 或空页即无下一页。</summary>
+    public async Task<(IReadOnlyList<Song> Songs, int Total, bool More)> GetArtistSongPageAsync(
+        long id, int limit, int offset, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync(
+            $"{BaseUrl}/api/v1/artist/songs?id={id}&limit={limit}&offset={offset}",
+            NetEaseJsonContext.Default.ArtistSongsPageResponse, ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.Songs is null)
+            return (Array.Empty<Song>(), 0, false);
+        var songs = resp.Songs.Select(MapSearchSong).ToList();
+        return (songs, resp.Total, resp.More && songs.Count > 0);
+    }
+
+    /// <summary>歌手专辑单页(/api/artist/albums/{id},offset/limit)。more=true 时可继续翻页。</summary>
+    public async Task<(IReadOnlyList<ArtistAlbumItem> Albums, bool More)> GetArtistAlbumPageAsync(
+        long id, int limit, int offset, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync(
+            $"{BaseUrl}/api/artist/albums/{id}?offset={offset}&limit={limit}",
+            NetEaseJsonContext.Default.ArtistAlbumsResponse, ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.HotAlbums is null)
+            return (Array.Empty<ArtistAlbumItem>(), false);
+        return (resp.HotAlbums, resp.More && resp.HotAlbums.Count > 0);
+    }
+
     /// <summary>歌手专辑列表(专辑/单曲/EP,按 Type 字符串区分)。明文 GET /api/artist/albums/{id},
     /// 单页约 30 条,响应 more=true 时按 offset 翻页拉全。老路径 /api/artist/album?id= 已废弃(恒返回 400)。</summary>
     public async Task<List<ArtistAlbumItem>> GetArtistAlbumsAsync(long id, int limit = 50, CancellationToken ct = default)
@@ -1087,13 +1113,10 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         while (all.Count < limit)
         {
             var take = Math.Min(pageSize, limit - all.Count);
-            var resp = await GetJsonAsync(
-                $"{BaseUrl}/api/artist/albums/{id}?offset={offset}&limit={take}",
-                NetEaseJsonContext.Default.ArtistAlbumsResponse, ct).ConfigureAwait(false);
-            if (resp is null || resp.Code != 200 || resp.HotAlbums is null) break;
-            all.AddRange(resp.HotAlbums);
-            if (!resp.More || resp.HotAlbums.Count == 0) break; // 无更多或返回空,停止翻页
-            offset += resp.HotAlbums.Count;
+            var (page, more) = await GetArtistAlbumPageAsync(id, take, offset, ct).ConfigureAwait(false);
+            all.AddRange(page);
+            if (!more || page.Count == 0) break; // 无更多或返回空,停止翻页
+            offset += page.Count;
         }
         return all;
     }

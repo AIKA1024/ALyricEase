@@ -1637,8 +1637,30 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return MapSongEntries(resp?.Req0?.Code, resp?.Req0?.Data?.SongList);
     }
 
-    /// <summary>歌手专辑列表:music.musichallAlbum.AlbumListServer/GetAlbumList(封面按 albummid 拼模板)。</summary>
-    public async Task<List<ArtistAlbumItem>> GetArtistAlbumsAsync(string singerMid, int limit = 50, CancellationToken ct = default)
+    /// <summary>歌手歌曲分页(GetSingerSongList begin/number):歌手页"查看更多"歌曲页流式加载用。
+    /// TotalNum 为歌手歌曲总数(服务端不给/为 0 时由调用方按页长判断是否还有下一页)。</summary>
+    public async Task<(IReadOnlyList<Song> Songs, int Total)> GetArtistSongPageAsync(
+        string singerMid, int begin, int pageSize, CancellationToken ct = default)
+    {
+        using var doc = await PostMusicuAsync(w =>
+        {
+            WriteModuleReq(w, "musichall.song_list_server", "GetSingerSongList", p =>
+            {
+                p.WriteString("singerMid", singerMid);
+                p.WriteNumber("order", 1);
+                p.WriteNumber("number", pageSize);
+                p.WriteNumber("begin", begin);
+            });
+        }, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQSongEntriesResponse);
+        var songs = MapSongEntries(resp?.Req0?.Code, resp?.Req0?.Data?.SongList);
+        return (songs, resp?.Req0?.Data?.TotalNum ?? 0);
+    }
+
+    /// <summary>歌手专辑分页(GetAlbumList begin/number):"查看更多"专辑页流式加载用。
+    /// 总数服务端不下发,由调用方按页长判断是否还有下一页。</summary>
+    public async Task<IReadOnlyList<ArtistAlbumItem>> GetArtistAlbumPageAsync(
+        string singerMid, int begin, int pageSize, CancellationToken ct = default)
     {
         using var doc = await PostMusicuAsync(w =>
         {
@@ -1646,8 +1668,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             {
                 p.WriteString("singerMid", singerMid);
                 p.WriteNumber("order", 1);
-                p.WriteNumber("number", limit);
-                p.WriteNumber("begin", 0);
+                p.WriteNumber("number", pageSize);
+                p.WriteNumber("begin", begin);
             });
         }, ct).ConfigureAwait(false);
         var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQAlbumListResponse);
@@ -1666,6 +1688,23 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 Type = a.AlbumType ?? "",
             })
             .ToList();
+    }
+
+    /// <summary>歌手专辑列表:music.musichallAlbum.AlbumListServer/GetAlbumList(封面按 albummid 拼模板)。
+    /// 总数服务端不下发,满页(== limit)才继续翻。</summary>
+    public async Task<List<ArtistAlbumItem>> GetArtistAlbumsAsync(string singerMid, int limit = 50, CancellationToken ct = default)
+    {
+        var all = new List<ArtistAlbumItem>();
+        var offset = 0;
+        while (all.Count < limit)
+        {
+            var take = Math.Min(50, limit - all.Count);
+            var page = await GetArtistAlbumPageAsync(singerMid, offset, take, ct).ConfigureAwait(false);
+            all.AddRange(page);
+            if (page.Count < take) break;
+            offset += page.Count;
+        }
+        return all;
     }
 
     /// <summary>专辑全量曲目:music.musichallAlbum.AlbumSongList/GetAlbumSongList(单专辑一次拉全,通常 ≤ 100 首)。</summary>

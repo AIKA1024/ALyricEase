@@ -181,6 +181,19 @@ public sealed record ArtistTopSongsResponse
     public List<SearchSong>? Songs { get; init; }
 }
 
+/// <summary>/api/v1/artist/songs 歌手全量歌曲(limit/offset 服务端分页,more 标记还有下一页)。</summary>
+public sealed record ArtistSongsPageResponse
+{
+    public int Code { get; init; }
+
+    public List<SearchSong>? Songs { get; init; }
+
+    /// <summary>是否还有下一页。</summary>
+    public bool More { get; init; }
+
+    public int Total { get; init; }
+}
+
 /// <summary>/api/artist/albums/{id} 歌手专辑列表。</summary>
 public sealed record ArtistAlbumsResponse
 {

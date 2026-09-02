@@ -44,12 +44,19 @@ public partial class HeadlessApp : Application
         services.AddSingleton<AppStateStore>();
         services.AddSingleton<CnIpPool>();
         services.AddSingleton<CryptoService>();
+        // 离线探针假音源(Source=99):LyricSwitchProbe 等用不触网的歌曲驱动生产播放/歌词链路
+        services.AddSingleton<IMusicApi>(new OfflineProbeApi());
         services.AddSingleton<NetEaseApiClient>();
         services.AddSingleton<QQMusicApiClient>();
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<NetEaseApiClient>());
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
+        // 歌词 VM 用独立临时目录缓存,避免探针歌曲写进真实用户缓存
+        services.AddSingleton<LyricViewModel>(sp => new LyricViewModel(
+            new MusicApiProvider(new IMusicApi[] { new OfflineProbeApi() }),
+            sp.GetRequiredService<DispatcherService>(),
+            new MusicCacheService(64, Path.Combine(Path.GetTempPath(), "aly-probe-lyrics"), new HttpClient())));
         services.AddSingleton<IAudioPlayer, StubAudioPlayer>();
         services.AddSingleton<ISmtcService, SmtcServiceStub>();
         services.AddSingleton<LyricViewModel>();

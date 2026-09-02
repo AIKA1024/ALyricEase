@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
@@ -10,6 +11,13 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
+/// <summary>歌手"查看更多"页(全部歌曲/全部专辑)的定位参数:
+/// 网易云按数字 id、QQ 按 singer mid,两音源统一由此记录描述。</summary>
+public sealed record ArtistPageRef(MusicSource Source, long NetEaseId, string QqMid, string Name)
+{
+    public bool IsQq => Source == MusicSource.QQ;
+}
+
 /// <summary>歌手页:头部(圆形头像 + 名字)+ 热门歌曲横向网格 + 专辑/单曲卡片网格。从歌单行/专辑行歌手入口进入。
 /// 网易云按数字 id、QQ 按 singer mid 取数(两套 Load)。</summary>
 public sealed partial class ArtistViewModel : ViewModelBase
@@ -17,6 +25,8 @@ public sealed partial class ArtistViewModel : ViewModelBase
     private readonly NetEaseApiClient _api;
     private readonly QQMusicApiClient _qqApi;
     private readonly PlayerViewModel _player;
+    private long _artistId;
+    private string _singerMid = "";
 
     public ArtistViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player)
     {
@@ -45,6 +55,8 @@ public sealed partial class ArtistViewModel : ViewModelBase
     public async Task LoadAsync(long artistId)
     {
         ClearContent();
+        _artistId = artistId;
+        _singerMid = "";
         try
         {
             var info = await _api.GetArtistAsync(artistId);
@@ -83,11 +95,39 @@ public sealed partial class ArtistViewModel : ViewModelBase
             await firstPlayable.PlayCommand.ExecuteAsync(null);
     }
 
+    /// <summary>"热门歌曲"区查看更多 → 全部歌曲页(流式分页)。</summary>
+    [RelayCommand]
+    private async Task OpenAllSongsAsync()
+        => await OpenMoreAsync(isSongsPage: true).ConfigureAwait(true);
+
+    /// <summary>"专辑"区查看更多 → 全部专辑页(流式分页)。</summary>
+    [RelayCommand]
+    private async Task OpenAllAlbumsAsync()
+        => await OpenMoreAsync(isSongsPage: false).ConfigureAwait(true);
+
+    /// <summary>两音源统一跳转;未加载过歌手(无 id/mid)时不响应。</summary>
+    private async Task OpenMoreAsync(bool isSongsPage)
+    {
+        if (_singerMid.Length == 0 && _artistId == 0) return;
+        var artistRef = _singerMid.Length > 0
+            ? new ArtistPageRef(Services.MusicSource.QQ, 0, _singerMid, Name)
+            : new ArtistPageRef(Services.MusicSource.NetEase, _artistId, "", Name);
+        try
+        {
+            var main = ServiceLocator.Get<MainViewModel>();
+            if (isSongsPage) await main.OpenArtistSongsPageCommand.ExecuteAsync(artistRef);
+            else await main.OpenArtistAlbumsPageCommand.ExecuteAsync(artistRef);
+        }
+        catch { /* SelfTest/Headless 等无宿主环境 */ }
+    }
+
     /// <summary>QQ 音乐歌手页(按 singer mid):头像用 T001 图床模板;名字从命中 mid 的曲目取;
     /// 专辑/单曲按 albumType 粗分(EP/单曲 → 单曲与EP,其余 → 专辑)。失败静默。</summary>
     public async Task LoadQqAsync(string singerMid)
     {
         ClearContent();
+        _artistId = 0;
+        _singerMid = singerMid;
         try
         {
             Avatar = await CoverLoader.LoadAsync(

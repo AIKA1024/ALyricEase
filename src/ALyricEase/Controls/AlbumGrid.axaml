@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:controls="using:ALyricEase.Controls"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ALyricEase.Controls.AlbumGrid">
+  <UserControl.DataTemplates>
+    <!-- 专辑卡片:200 宽,封面黑遮罩悬停,点击跳专辑页(歌手页横滑卡片同款视觉) -->
+    <DataTemplate DataType="vm:AlbumCardViewModel">
+      <Button Theme="{StaticResource RowButtonTheme}" Classes="album-card" Command="{Binding OpenCommand}">
+        <Grid Width="200">
+          <Border Width="200" Height="200" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
+            <Grid>
+              <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+              <Border Classes="album-card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+            </Grid>
+          </Border>
+          <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                     MaxLines="1" Margin="4,206,4,0" />
+        </Grid>
+      </Button>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <UserControl.Styles>
+    <!-- 行内卡片间距:横向 StackPanel 无 Spacing,由容器右边距提供(歌手页同款做法) -->
+    <Style Selector="ItemsControl.row > ContentPresenter">
+      <Setter Property="Margin" Value="0,0,12,16" />
+    </Style>
+    <Style Selector="Button.album-card">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Border.album-card-mask">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.album-card:pointerover Border.album-card-mask">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 仿 SongGridView 的分块虚拟化:卡片按 ColumnsPerRow 切成行,纵向 VirtualizingStackPanel
+       只实例化视口附近的行;列数随控件宽度自适应(窄窗 1 列,宽屏 6 列) -->
+  <ItemsControl x:Name="Rows">
+    <ItemsControl.ItemsPanel>
+      <ItemsPanelTemplate>
+        <VirtualizingStackPanel />
+      </ItemsPanelTemplate>
+    </ItemsControl.ItemsPanel>
+    <ItemsControl.ItemTemplate>
+      <DataTemplate x:DataType="controls:AlbumRow">
+        <ItemsControl Classes="row" ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

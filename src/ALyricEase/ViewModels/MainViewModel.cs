@@ -23,7 +23,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -32,6 +32,8 @@ public sealed partial class MainViewModel : ViewModelBase
         Recommend = recommend;
         Artist = artist;
         Album = album;
+        ArtistSongsPage = artistSongsPage;
+        ArtistAlbumsPage = artistAlbumsPage;
         Settings = settings;
         Account = account;
         _playlist = playlist;
@@ -63,6 +65,8 @@ public sealed partial class MainViewModel : ViewModelBase
     public RecommendViewModel Recommend { get; }
     public ArtistViewModel Artist { get; }
     public AlbumViewModel Album { get; }
+    public ArtistSongsPageViewModel ArtistSongsPage { get; }
+    public ArtistAlbumsPageViewModel ArtistAlbumsPage { get; }
     public SettingsViewModel Settings { get; }
     public AccountViewModel Account { get; }
 
@@ -225,6 +229,8 @@ public sealed partial class MainViewModel : ViewModelBase
         "PersonalStation" => Player,
         "Artist" => Artist,
         "Album" => Album,
+        "ArtistSongs" => ArtistSongsPage,
+        "ArtistAlbums" => ArtistAlbumsPage,
         "Settings" => Settings,
         "Account" => Account,
         "Debug" => Debug,
@@ -664,6 +670,26 @@ public sealed partial class MainViewModel : ViewModelBase
         ActivePage = "Album";
         try { await Album.LoadQqAsync(albumMid); }
         catch { /* 网络失败:停留在专辑页空内容 */ }
+    }
+
+    /// <summary>歌手页"热门歌曲·查看更多" → 全部歌曲页(流式分页)。</summary>
+    [RelayCommand]
+    private async Task OpenArtistSongsPageAsync(ArtistPageRef? artistRef)
+    {
+        if (artistRef is null) return;
+        ActivePage = "ArtistSongs";
+        try { await ArtistSongsPage.LoadAsync(artistRef); }
+        catch { /* 网络失败:停留在页面空内容 */ }
+    }
+
+    /// <summary>歌手页"专辑·查看更多" → 全部专辑页(流式分页)。</summary>
+    [RelayCommand]
+    private async Task OpenArtistAlbumsPageAsync(ArtistPageRef? artistRef)
+    {
+        if (artistRef is null) return;
+        ActivePage = "ArtistAlbums";
+        try { await ArtistAlbumsPage.LoadAsync(artistRef); }
+        catch { /* 网络失败:停留在页面空内容 */ }
     }
 
     [RelayCommand] private void ToggleNavigationExpanded() => IsNavigationExpanded = !IsNavigationExpanded;

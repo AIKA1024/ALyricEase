@@ -31,6 +31,26 @@
     <Style Selector="ItemsControl.hcards > ContentPresenter">
       <Setter Property="Margin" Value="0,0,12,0" />
     </Style>
+    <!-- 区块头"查看更多":Fluent 2 次级文本按钮,透明底,悬停浮起微底色 + teal 前景 -->
+    <Style Selector="Button.see-all-button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.see-all-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+    </Style>
+    <Style Selector="Button.see-all-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+    </Style>
   </UserControl.Styles>
 
   <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -59,13 +79,31 @@
       <!-- 热门歌曲:横向滚动换行网格(6 行),仿原版 HotSongsGridView;
            容器与个性推荐"每日歌曲推荐"共用 Controls/SongGridView -->
       <StackPanel Spacing="12">
-        <TextBlock Text="热门歌曲" FontSize="28" FontWeight="Bold" Margin="10" />
+        <Grid ColumnDefinitions="*,Auto" Margin="10">
+          <TextBlock Text="热门歌曲" FontSize="28" FontWeight="Bold" />
+          <Button Grid.Column="1" Classes="see-all-button" Command="{Binding OpenAllSongsCommand}"
+                  VerticalAlignment="Center" AutomationProperties.Name="查看歌手全部歌曲">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Text="查看更多" />
+              <TextBlock Text="›" FontSize="16" Margin="0,-2,0,0" />
+            </StackPanel>
+          </Button>
+        </Grid>
         <controls:SongGridView ItemsSource="{Binding Songs}" />
       </StackPanel>
 
       <!-- 专辑:横向卡片网格 -->
       <StackPanel Spacing="12" IsVisible="{Binding HasAlbums}">
-        <TextBlock Text="专辑" FontSize="28" FontWeight="Bold" Margin="10" />
+        <Grid ColumnDefinitions="*,Auto" Margin="10">
+          <TextBlock Text="专辑" FontSize="28" FontWeight="Bold" />
+          <Button Grid.Column="1" Classes="see-all-button" Command="{Binding OpenAllAlbumsCommand}"
+                  VerticalAlignment="Center" AutomationProperties.Name="查看歌手全部专辑">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Text="查看更多" />
+              <TextBlock Text="›" FontSize="16" Margin="0,-2,0,0" />
+            </StackPanel>
+          </Button>
+        </Grid>
         <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="0,0,0,14">
           <i:Interaction.Behaviors>
             <b:CtrlHorizontalWheelBehavior />

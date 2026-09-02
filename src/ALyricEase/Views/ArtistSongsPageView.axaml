@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:ArtistSongsPageViewModel"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.ArtistSongsPageView">
+  <Grid RowDefinitions="96,Auto,*">
+    <!-- 页头:歌手名(与专辑页 page-title 同级视觉) -->
+    <Grid Grid.Row="0" Margin="48,0,32,0">
+      <TextBlock Text="{Binding Name}" Classes="page-title" VerticalAlignment="Center" />
+    </Grid>
+
+    <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="48,0,32,116">
+      <!-- 区块头:热门歌曲 + 加载进度 + 播放全部 -->
+      <Grid Grid.Row="0" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <TextBlock Text="热门歌曲" FontSize="22" FontWeight="Bold" />
+          <TextBlock Text="{Binding Subtitle}" FontSize="14" Foreground="{DynamicResource TextTertiary}"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+        <Button Grid.Column="1" Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
+                CornerRadius="18" Height="36" Padding="14,0" Command="{Binding PlayAllCommand}"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                IsVisible="{Binding HasSongs}"
+                AutomationProperties.Name="播放歌手全部热门歌曲">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="▶" FontSize="13" />
+            <TextBlock Text="播放全部" FontSize="14" />
+          </StackPanel>
+        </Button>
+      </Grid>
+
+      <!-- 曲目列表卡(仿专辑页 ListView 卡);滚动近底部由 code-behind 增量补页 -->
+      <Border Grid.Row="1" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
+              BorderThickness="1" CornerRadius="8" Padding="8,6">
+        <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ItemsControl ItemsSource="{Binding Songs}" ContainerPrepared="OnTrackContainerPreparing">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <VirtualizingStackPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SongItemViewModel">
+                <views:TrackRow Theme="{StaticResource TrackRowPlaylistWideTheme}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

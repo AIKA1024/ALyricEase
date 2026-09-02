@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:ALyricEase.Controls"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:ArtistAlbumsPageViewModel"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.ArtistAlbumsPageView">
+  <Grid RowDefinitions="96,Auto,*">
+    <!-- 页头:歌手名 -->
+    <Grid Grid.Row="0" Margin="48,0,32,0">
+      <TextBlock Text="{Binding Name}" Classes="page-title" VerticalAlignment="Center" />
+    </Grid>
+
+    <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="48,0,32,116">
+      <!-- 区块头:全部专辑 + 加载进度 -->
+      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="10,0,0,12">
+        <TextBlock Text="全部专辑" FontSize="22" FontWeight="Bold" />
+        <TextBlock Text="{Binding Subtitle}" FontSize="14" Foreground="{DynamicResource TextTertiary}"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+
+      <!-- 专辑网格:纵向虚拟化(AlbumGrid 分块),滚动近底部增量补页;尾部加载指示 -->
+      <ScrollViewer Grid.Row="1" x:Name="PageScroller" VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="4">
+          <controls:AlbumGrid ItemsSource="{Binding Albums}" />
+          <TextBlock Text="加载中…" FontSize="13" Foreground="{DynamicResource TextTertiary}"
+                     HorizontalAlignment="Center" Margin="0,8,0,16"
+                     IsVisible="{Binding IsLoadingMore}" />
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

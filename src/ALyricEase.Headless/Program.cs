@@ -176,6 +176,13 @@ public static class Program
             return;
         }
 
+        // TEMP-DIAG:切歌后歌词容器残留旧词复现(A→B 时序/连切变体)
+        if (args.Length > 0 && args[0] == "--lyricswitch")
+        {
+            LyricSwitchProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:正在播放覆盖层是否盖住标题栏
         if (args.Length > 0 && args[0] == "--npcover")
         {

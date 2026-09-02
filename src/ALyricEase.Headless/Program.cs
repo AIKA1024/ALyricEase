@@ -24,6 +24,22 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // TEMP-DIAG:真窗口+真合成器变体(--lyricswitch-real):GDI 抓屏 vs 重渲染对比
+        if (args.Length > 0 && args[0] == "--lyricswitch-real")
+        {
+            var realBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect()
+                .SetupWithoutStarting();
+            HeadlessApp.ConfigureServices();
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await LyricSwitchProbe.RunRealAsync(); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            realBuilder.StartWithClassicDesktopLifetime(Array.Empty<string>(), ShutdownMode.OnExplicitShutdown);
+            return;
+        }
+
         AppBuilder.Configure<HeadlessApp>()
             .UseSkia()
             // 关闭 headless 假绘制:走 Skia 真渲染,RenderTargetBitmap 截图才有像素(默认 true 时 Save 出 0 字节 PNG)

@@ -11,6 +11,9 @@ public sealed class CookieStore
 {
     private readonly string _path;
 
+    /// <summary>与 Cookie 同级的私有配置目录，供账号协议保存非敏感设备上下文。</summary>
+    internal string ConfigDirectory => Path.GetDirectoryName(_path)!;
+
     /// <summary>登录用户的 MUSIC_U 值(仅值,不含 cookie 名)。</summary>
     public string? MusicU { get; set; }
 

@@ -5,6 +5,7 @@ using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -97,16 +98,12 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private bool _isPlayable = true;
 
     /// <summary>按当前登录/会员状态重算可播性(数据驱动,播放前即可确定的部分):
-    /// 免费歌恒可点(能否播由播放实测);VIP 歌曲在未登录、或会员状态已确认且非会员时禁用。
-    /// 会员状态未加载(IsVipLoaded=false)时不下结论保持可点,由播放实测兜底。
+    /// 免费歌恒可点；VIP 歌曲在未登录、或会员状态已确认且非会员时禁用。
+    /// 会员状态未加载(IsVipLoaded=false)时不下结论保持可点，由播放实测兜底。
     /// 登录态变化后可重调(行集合重建时 ctor 已自动跑一次)。</summary>
     public void RefreshPlayability()
     {
-        if (Song.Fee == 0) { IsPlayable = true; return; }
-        var api = GetLikeApi();
-        if (api is null) { IsPlayable = true; return; } // 无宿主环境保持可点
-        if (!api.IsLoggedIn) { IsPlayable = false; return; } // 未登录 + VIP:必然不可播
-        IsPlayable = !api.IsVipLoaded || api.IsVip; // 已登录:仅确认非会员才禁用
+        IsPlayable = PlaybackAvailability.CanAttempt(Song, GetLikeApi());
     }
 
     /// <summary>歌手子菜单项(多歌手时用)。</summary>
@@ -201,8 +198,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
         if (api is null) return;
         if (!api.CanToggleLike)
         {
-            try { ServiceLocator.Get<MainViewModel>().OpenLoginDialogCommand.Execute(null); }
-            catch { /* SelfTest/Headless 等无宿主环境 */ }
+            TryOpenLoginDialog(null);
             return;
         }
 
@@ -212,10 +208,27 @@ public sealed partial class SongItemViewModel : ViewModelBase
         {
             IsInLikelist = await api.LikeToggleAsync(Song.Id);
         }
+        catch (ApiException ex) when (ShouldPromptRelogin(api, ex))
+        {
+            IsInLikelist = prev; // 服务端拒绝(凭证失效或写权限被拒):回滚并弹登录窗引导重登
+            TryOpenLoginDialog(QQMusicApiClient.ReloginHintText);
+        }
         catch
         {
             IsInLikelist = prev; // 请求失败回滚
         }
+    }
+
+    /// <summary>红心写被拒时的重登判定:QQ 按服务端错误码(常规失效码 + 写通道 80105 归并);
+    /// 网易云暂无等价失效码契约,维持静默回滚。</summary>
+    private static bool ShouldPromptRelogin(IUserMusicApi api, ApiException ex)
+        => api is QQMusicApiClient qq && QQMusicApiClient.ShouldPromptRelogin(ex.Code);
+
+    /// <summary>弹登录窗并定位到本曲音源标签;无宿主环境(SelfTest/Headless)静默忽略。</summary>
+    private void TryOpenLoginDialog(string? hint)
+    {
+        try { ServiceLocator.Get<MainViewModel>().OpenLoginDialogFor(Song.Source, hint); }
+        catch { /* 无宿主环境 */ }
     }
 
     private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(Song.CoverUrl, 100);

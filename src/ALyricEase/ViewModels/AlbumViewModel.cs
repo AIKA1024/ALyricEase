@@ -72,7 +72,9 @@ public sealed partial class AlbumViewModel : ViewModelBase
     private async Task PlayAllAsync()
     {
         if (Songs.Count == 0) return;
-        await Songs[0].PlayCommand.ExecuteAsync(null);
+        var firstPlayable = Songs.FirstOrDefault(song => song.IsPlayable);
+        if (firstPlayable is not null)
+            await firstPlayable.PlayCommand.ExecuteAsync(null);
     }
 
     /// <summary>QQ 音乐专辑页(按 album mid):信息 + 曲目并行拉;发行日期为 "yyyy-MM-dd" 文本。

@@ -209,9 +209,11 @@ public sealed class RecommendViewModel : ViewModelBase
         var daily = await dailyTask.ConfigureAwait(false);
         if (daily.Count > 0)
         {
-            var dailySongs = daily.OfType<SongItemViewModel>().Select(s => s.Song).ToList();
-            Func<Task>? playAll = dailySongs.Count > 0
-                ? () => _player.PlayFromList(dailySongs[0], dailySongs, "每日歌曲推荐")
+            var dailyRows = daily.OfType<SongItemViewModel>().ToList();
+            var dailySongs = dailyRows.Select(row => row.Song).ToList();
+            var firstPlayable = dailyRows.FirstOrDefault(row => row.IsPlayable)?.Song;
+            Func<Task>? playAll = firstPlayable is not null
+                ? () => _player.PlayFromList(firstPlayable, dailySongs, "每日歌曲推荐")
                 : null;
             await AddAsync("每日歌曲推荐", daily, isBordered: true, playAll).ConfigureAwait(false);
         }

@@ -78,7 +78,9 @@ public sealed partial class ArtistViewModel : ViewModelBase
     private async Task PlayAllAsync()
     {
         if (Songs.Count == 0) return;
-        await Songs[0].PlayCommand.ExecuteAsync(null);
+        var firstPlayable = Songs.FirstOrDefault(song => song.IsPlayable);
+        if (firstPlayable is not null)
+            await firstPlayable.PlayCommand.ExecuteAsync(null);
     }
 
     /// <summary>QQ 音乐歌手页(按 singer mid):头像用 T001 图床模板;名字从命中 mid 的曲目取;

@@ -45,6 +45,34 @@ public sealed record LegacyProfile
     [JsonPropertyName("vipType")] public int VipType { get; init; }
 }
 
+public sealed record LegacyUserDetailResponse
+{
+    public int Code { get; init; }
+    public int Level { get; init; }
+    public LegacyProfile? Profile { get; init; }
+}
+
+public sealed record NetEaseVipInfoResponse
+{
+    public int Code { get; init; }
+    public NetEaseVipInfoData? Data { get; init; }
+}
+
+public sealed record NetEaseVipInfoData
+{
+    [JsonPropertyName("redVipLevel")] public int RedVipLevel { get; init; }
+    public NetEaseVipProduct? Associator { get; init; }
+    [JsonPropertyName("musicPackage")] public NetEaseVipProduct? MusicPackage { get; init; }
+    public NetEaseVipProduct? Redplus { get; init; }
+}
+
+public sealed record NetEaseVipProduct
+{
+    [JsonPropertyName("vipCode")] public int VipCode { get; init; }
+    [JsonPropertyName("vipLevel")] public int VipLevel { get; init; }
+    [JsonPropertyName("expireTime")] public long ExpireTime { get; init; }
+}
+
 public sealed record LegacyUserPlaylistResponse
 {
     public int Code { get; init; }

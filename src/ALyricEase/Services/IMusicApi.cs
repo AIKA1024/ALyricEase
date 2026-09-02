@@ -38,7 +38,7 @@ public interface IMusicApi
         => Task.FromResult<SearchAllResult?>(null);
 
     /// <summary>获取播放地址;VIP/版权受限返回 null 或 Url 为空。
-    /// 固定目标档位不可用时由实现自动降级；auto 从歌曲元数据选最高档并只请求一次。失败抛 ApiException。</summary>
+    /// 目标档位不可用时由实现自动降级。失败抛 ApiException。</summary>
     Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default);
 
     /// <summary>获取歌词(未解析的 LRC 原文 + 可选翻译)。失败抛 ApiException。</summary>

@@ -79,14 +79,9 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     public string DisplayName => "网易云";
 
-    /// <summary>接口入口(按 Song 路由)。自动音质先从曲目元数据选出最高档，再只请求一次播放地址。</summary>
+    /// <summary>接口入口(按 Song 路由)；目标档不可用时逐档降级。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
-    {
-        var automatic = string.Equals(level, "auto", StringComparison.OrdinalIgnoreCase);
-        if (automatic)
-            level = await ResolveAutomaticQualityAsync(song, ct).ConfigureAwait(false);
-        return await GetPlayUrlCoreAsync(song.Id, level, allowFallback: !automatic, ct).ConfigureAwait(false);
-    }
+        => await GetPlayUrlCoreAsync(song.Id, level, ct).ConfigureAwait(false);
 
     public Task<LyricResult?> GetLyricAsync(Song song, CancellationToken ct = default)
         => GetLyricAsync(song.Id, ct);
@@ -136,6 +131,36 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         AddCookie("MUSIC_U", musicU);
         _vipLoaded = false;
         IsVip = false; // 换号后会员状态作废,待资料接口重载
+    }
+
+    /// <summary>仅退出网易云账号，不影响匿名凭证或其他音源。</summary>
+    public void ClearCookie()
+    {
+        _cookie.MusicU = null;
+        _cookie.Csrf = null;
+        _cookie.Save();
+        _csrf = null;
+        _currentUserId = 0;
+        _likedPlaylistId = 0;
+        _likedIds = null;
+        _vipLoaded = false;
+        IsVip = false;
+        foreach (var name in new[] { "MUSIC_U", "__csrf" })
+        {
+            try
+            {
+                _cookieContainer.Add(new Uri(BaseUrl), new Cookie(name, "deleted")
+                {
+                    Path = "/",
+                    Expires = DateTime.UtcNow.AddDays(-1),
+                    Expired = true,
+                });
+            }
+            catch (CookieException)
+            {
+                // 持久化登录态已经清除；容器删除失败不阻断退出。
+            }
+        }
     }
 
     /// <summary>确保拿到 __csrf(写操作前置条件):内存缓存 → 持久化 → 带登录态暖场获取。
@@ -215,20 +240,15 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return await SearchLegacyAsync(keyword, limit, offset, ct).ConfigureAwait(false);
     }
 
-    /// <summary>按纯 id 获取播放地址；auto 会先补歌曲详情，选出最高元数据档位。</summary>
+    /// <summary>按纯 id 获取播放地址；目标档不可用时逐档降级。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(long id, string level = "higher", CancellationToken ct = default)
-    {
-        var automatic = string.Equals(level, "auto", StringComparison.OrdinalIgnoreCase);
-        if (automatic)
-            level = await ResolveAutomaticQualityAsync(new Song { Id = id }, ct).ConfigureAwait(false);
-        return await GetPlayUrlCoreAsync(id, level, allowFallback: !automatic, ct).ConfigureAwait(false);
-    }
+        => await GetPlayUrlCoreAsync(id, level, ct).ConfigureAwait(false);
 
-    /// <summary>固定档位保留自动降级；自动最高已经解析为具体档位，因此只发一次 URL 请求。</summary>
+    /// <summary>按目标档位的降级链获取播放地址。</summary>
     private async Task<PlayUrlItem?> GetPlayUrlCoreAsync(
-        long id, string level, bool allowFallback, CancellationToken ct)
+        long id, string level, CancellationToken ct)
     {
-        var candidates = allowFallback ? QualityFallbacks(level) : [level];
+        var candidates = QualityFallbacks(level);
         if (!_wafBlocked)
         {
             try
@@ -307,27 +327,6 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (resp is null || resp.Code != 200 || resp.Data is null)
             return null;
         return resp.Data.FirstOrDefault(i => i.Id == id) ?? resp.Data.FirstOrDefault();
-    }
-
-    /// <summary>补全并缓存曲目音质元数据，返回平台所有文件档位中的最高档。</summary>
-    private async Task<string> ResolveAutomaticQualityAsync(Song song, CancellationToken ct)
-    {
-        if (!song.AudioQualityInfoComplete)
-        {
-            try
-            {
-                if (await GetSongDetailAsync(song.Id, ct).ConfigureAwait(false) is { } detail)
-                {
-                    song.AvailableAudioQualities = detail.AvailableAudioQualities;
-                    song.AudioQualityInfoComplete = detail.AudioQualityInfoComplete;
-                }
-            }
-            catch (ApiException)
-            {
-                // 详情被风控时仍只做一次播放地址请求；standard 是所有曲目共同的安全兜底。
-            }
-        }
-        return song.AvailableAudioQualities.FirstOrDefault() ?? "standard";
     }
 
     // ---------- weapi 主路径 ----------
@@ -586,6 +585,93 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
             AvatarUrl = resp.Profile.AvatarUrl,
         };
     }
+
+    public async Task<MusicAccountSummary> GetAccountSummaryAsync(CancellationToken ct = default)
+    {
+        var profile = await GetUserProfileAsync(ct).ConfigureAwait(false);
+        LegacyUserDetailResponse? detail = null;
+        try
+        {
+            detail = await GetJsonAsync(
+                $"{BaseUrl}/api/v1/user/detail/{profile.UserId}",
+                NetEaseJsonContext.Default.LegacyUserDetailResponse, ct).ConfigureAwait(false);
+        }
+        catch (ApiException)
+        {
+            // 基础资料仍可展示；等级接口失败不把整张账号卡降为空。
+        }
+
+        NetEaseVipInfoResponse? vipInfo = null;
+        try
+        {
+            using var req = CreateWeapiRequest("weapi/music-vip-membership/front/vip/info",
+                new Dictionary<string, object?> { ["userId"] = profile.UserId.ToString() }, includeRealIp: false);
+            using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+            vipInfo = doc.RootElement.Deserialize(NetEaseJsonContext.Default.NetEaseVipInfoResponse);
+        }
+        catch (ApiException)
+        {
+            // VIP 详细等级属于增强信息，保留 vipType 的可靠结果。
+        }
+
+        var rawProfile = detail?.Profile;
+        var vipType = rawProfile?.VipType ?? (IsVip ? 1 : 0);
+        var vipData = vipInfo?.Code == 200 ? vipInfo.Data : null;
+        var membershipLevel = new[]
+        {
+            vipData?.RedVipLevel ?? 0,
+            vipData?.Associator?.VipLevel ?? 0,
+            vipData?.MusicPackage?.VipLevel ?? 0,
+            vipData?.Redplus?.VipLevel ?? 0,
+        }.Max();
+        var expire = new[]
+        {
+            vipData?.Associator?.ExpireTime ?? 0,
+            vipData?.MusicPackage?.ExpireTime ?? 0,
+            vipData?.Redplus?.ExpireTime ?? 0,
+        }.Max();
+        var isVip = vipType != 0 || membershipLevel > 0;
+        IsVip = isVip;
+        _vipLoaded = true;
+
+        return new MusicAccountSummary
+        {
+            UserId = profile.UserId,
+            Nickname = FirstNonEmpty(rawProfile?.Nickname, profile.Nickname),
+            AvatarUrl = FirstNonEmpty(rawProfile?.AvatarUrl, profile.AvatarUrl),
+            IsVip = isVip,
+            MembershipName = ResolveNetEaseMembershipName(vipType, vipData),
+            MembershipLevel = membershipLevel,
+            AccountLevel = detail?.Code == 200 ? detail.Level : 0,
+            MembershipExpiresAt = ToTimestamp(expire),
+        };
+    }
+
+    private static string ResolveNetEaseMembershipName(int vipType, NetEaseVipInfoData? data)
+    {
+        if ((data?.Redplus?.VipCode ?? 0) != 0 || vipType == 111) return "黑胶 VIP";
+        if ((data?.Associator?.VipCode ?? 0) != 0) return "黑胶 VIP";
+        if ((data?.MusicPackage?.VipCode ?? 0) != 0 || vipType is 10 or 11) return "音乐包";
+        return vipType != 0 ? "网易云会员" : "普通用户";
+    }
+
+    private static DateTimeOffset? ToTimestamp(long value)
+    {
+        if (value <= 0) return null;
+        try
+        {
+            return value > 10_000_000_000
+                ? DateTimeOffset.FromUnixTimeMilliseconds(value)
+                : DateTimeOffset.FromUnixTimeSeconds(value);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "";
 
     /// <summary>确保会员状态已加载:网易云会员随资料接口返回,未加载时补一次资料请求(幂等)。</summary>
     public async Task EnsureVipStatusAsync(CancellationToken ct = default)
@@ -1303,9 +1389,6 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
         ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
         AlbumId = s.Album?.Id ?? 0,
-        AvailableAudioQualities = GetAvailableAudioQualities(s),
-        // 搜索接口常只返回基础 h/m/l；不能据此认定 je/sky/jm 等高阶档不存在。
-        AudioQualityInfoComplete = false,
     };
 
     private static Song MapDetailSong(SongDetailItem s) => new()
@@ -1320,27 +1403,5 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
         ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
         AlbumId = s.Album?.Id ?? 0,
-        AvailableAudioQualities = GetAvailableAudioQualities(s),
-        AudioQualityInfoComplete = true,
     };
-
-    /// <summary>网易云详情字段 jm/sky/je/hr/sq/h/m/l 映射为 URL API 的 level，保持从高到低。</summary>
-    private static IReadOnlyList<string> GetAvailableAudioQualities(NetEaseTrackAudioDto s)
-    {
-        var result = new List<string>(8);
-        AddIfAvailable(result, "jymaster", s.Master);
-        AddIfAvailable(result, "sky", s.Surround);
-        AddIfAvailable(result, "jyeffect", s.Spatial);
-        AddIfAvailable(result, "hires", s.HiRes);
-        AddIfAvailable(result, "lossless", s.Lossless);
-        AddIfAvailable(result, "exhigh", s.High);
-        AddIfAvailable(result, "higher", s.Medium);
-        AddIfAvailable(result, "standard", s.Low);
-        return result;
-    }
-
-    private static void AddIfAvailable(List<string> target, string level, NetEaseAudioFileDto? file)
-    {
-        if (file is { IsAvailable: true }) target.Add(level);
-    }
 }

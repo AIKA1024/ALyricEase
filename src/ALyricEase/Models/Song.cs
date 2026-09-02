@@ -42,14 +42,8 @@ public sealed class Song
     public string AlbumMid { get; init; } = "";
 
     /// <summary>
-    /// 音源返回的全部可用音频档位，按该音源从高到低排列。
-    /// 值为音源内部协议名（网易云 level、QQ 文件名前缀），只供播放选流使用。
+    /// 本次运行中已经通过播放地址接口确认不可播放。列表行与播放队列共享此状态，
+    /// 避免失败歌曲仍被上一曲/下一曲再次选中。
     /// </summary>
-    public IReadOnlyList<string> AvailableAudioQualities { get; internal set; } = Array.Empty<string>();
-
-    /// <summary>
-    /// AvailableAudioQualities 是否来自完整歌曲详情。false 时“最高可用音质”会先补一次详情，
-    /// 补全结果直接写回当前 Song，后续重播不再重复查询。
-    /// </summary>
-    public bool AudioQualityInfoComplete { get; internal set; }
+    public bool IsPlaybackUnavailable { get; internal set; }
 }

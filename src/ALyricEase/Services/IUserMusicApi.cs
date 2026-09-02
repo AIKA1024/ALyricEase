@@ -10,6 +10,9 @@ public interface IUserMusicApi : IMusicApi
     /// <summary>当前登录用户资料(昵称/头像/userId)。未登录抛异常。</summary>
     Task<UserProfile> GetUserProfileAsync(CancellationToken ct = default);
 
+    /// <summary>账号页摘要（昵称、头像、会员类型/VIP 等级、平台账号等级）。</summary>
+    Task<MusicAccountSummary> GetAccountSummaryAsync(CancellationToken ct = default);
+
     /// <summary>用户创建/收藏的歌单列表。未登录抛异常。</summary>
     Task<List<Playlist>> GetUserPlaylistsAsync(CancellationToken ct = default);
 

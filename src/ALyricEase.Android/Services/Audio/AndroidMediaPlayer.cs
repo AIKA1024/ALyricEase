@@ -167,6 +167,32 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
     Log($"PlayUrl: {url}");
     StopInternal();
 
+    if (Path.IsPathRooted(url) && File.Exists(url))
+    {
+      lock (_lock)
+      {
+        _generation++;
+        _currentUrl = url;
+        _downloading = false;
+      }
+
+      RaiseState(PlaybackState.Loading);
+      try
+      {
+        _mp.Reset();
+        _mp.SetDataSource(url);
+        Log("SetDataSource(cached local) OK");
+        _mp.PrepareAsync();
+      }
+      catch (Exception ex)
+      {
+        Log($"Cached local play exception: {ex.Message}");
+        ErrorOccurred?.Invoke(this, $"播放出错({ex.Message})");
+        RaiseState(PlaybackState.Idle);
+      }
+      return;
+    }
+
     // http 明文 URL 换 https,规避 native 网络栈不遵循 usesCleartextTraffic 的问题
     var streamUrl = url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
         ? "https://" + url["http://".Length..]

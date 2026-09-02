@@ -1,5 +1,6 @@
 #if WINDOWS
 using System;
+using System.IO;
 using System.Threading;
 using ALyricEase.Infrastructure;
 using Windows.Media.Core;
@@ -97,7 +98,10 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
     try
     {
       _mediaSource?.Dispose();
-      _mediaSource = MediaSource.CreateFromUri(new Uri(url));
+      var sourceUri = Path.IsPathRooted(url)
+          ? new Uri(Path.GetFullPath(url))
+          : new Uri(url);
+      _mediaSource = MediaSource.CreateFromUri(sourceUri);
       _mp.Source = _mediaSource;
       _hadContent = true;
       _lastPosMs = -1;

@@ -63,6 +63,14 @@ public static class Program
             return;
         }
 
+        // TEMP-DIAG:歌单接口"最后修改"时间字段实测(网易云/QQ 匿名公开歌单)
+        if (args.Length > 0 && args[0] == "--pltime")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(PlaylistTimeProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 聚合歌单流式加载回归：来源稳定排序、100/300 批尺寸、范围集合单通知。
         if (args.Length > 0 && args[0] == "--aggregate-load")
         {

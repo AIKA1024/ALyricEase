@@ -28,7 +28,10 @@ public sealed partial class LyricViewModel : ViewModelBase
         _cache = cache;
     }
 
-    public ObservableCollection<LyricLine> Lines { get; } = new();
+    /// <summary>当前歌词行。切歌时整集合替换而非原地 Clear/Add:ItemsSource 变更会让
+    /// ListBox 丢弃上一首的全部容器并全量重建,任何时序下都不会出现旧歌词残留叠加。</summary>
+    [ObservableProperty]
+    private ObservableCollection<LyricLine> _lines = new();
 
     [ObservableProperty] private int _currentIndex = -1;
     [ObservableProperty] private bool _hasLyric;
@@ -86,8 +89,7 @@ public sealed partial class LyricViewModel : ViewModelBase
                 return;
             }
             _doc = doc;
-            Lines.Clear();
-            foreach (var line in doc.Lines) Lines.Add(line);
+            Lines = new ObservableCollection<LyricLine>(doc.Lines);
             HasLyric = true;
             CurrentIndex = -1;
         });
@@ -111,7 +113,7 @@ public sealed partial class LyricViewModel : ViewModelBase
     private void Reset()
     {
         _doc = null;
-        Lines.Clear();
+        Lines = new ObservableCollection<LyricLine>();
         HasLyric = false;
         CurrentIndex = -1;
     }

@@ -296,7 +296,7 @@ public static class LyricSwitchProbe
             }
 
             await Task.Delay(1400); // 动画与滚动全部稳定
-            var diff = CaptureDiff(window, $"real-cycle{cycle}-song{song.Id}");
+            var diff = await CaptureDiff(window, $"real-cycle{cycle}-song{song.Id}");
             if (diff > worst) { worst = diff; worstName = $"cycle{cycle}-song{song.Id}"; }
             Console.WriteLine($"[real] 轮{cycle} → 歌{song.Id}: 稳定帧vs强制重渲染 差异像素={diff}");
         }

@@ -181,12 +181,13 @@ public sealed record ArtistTopSongsResponse
     public List<SearchSong>? Songs { get; init; }
 }
 
-/// <summary>/api/v1/artist/songs 歌手全量歌曲(limit/offset 服务端分页,more 标记还有下一页)。</summary>
+/// <summary>/api/v1/artist/songs 歌手全量歌曲(limit/offset 服务端分页,more 标记还有下一页)。
+/// 注意:该接口回 legacy 曲目结构(artists/album/duration),不是搜索的 ar/al。</summary>
 public sealed record ArtistSongsPageResponse
 {
     public int Code { get; init; }
 
-    public List<SearchSong>? Songs { get; init; }
+    public List<LegacySearchSong>? Songs { get; init; }
 
     /// <summary>是否还有下一页。</summary>
     public bool More { get; init; }

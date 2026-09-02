@@ -1078,7 +1078,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>歌手全量歌曲分页(/api/v1/artist/songs,limit/offset)。"查看更多"歌曲页流式加载用;
-    /// songs 结构与搜索同构。more=false 或空页即无下一页。</summary>
+    /// 该接口回 legacy 结构(artists/album/duration),用 MapLegacySong 映射。more=false 或空页即无下一页。</summary>
     public async Task<(IReadOnlyList<Song> Songs, int Total, bool More)> GetArtistSongPageAsync(
         long id, int limit, int offset, CancellationToken ct = default)
     {
@@ -1087,7 +1087,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
             NetEaseJsonContext.Default.ArtistSongsPageResponse, ct).ConfigureAwait(false);
         if (resp is null || resp.Code != 200 || resp.Songs is null)
             return (Array.Empty<Song>(), 0, false);
-        var songs = resp.Songs.Select(MapSearchSong).ToList();
+        var songs = resp.Songs.Select(MapLegacySong).ToList();
         return (songs, resp.Total, resp.More && songs.Count > 0);
     }
 

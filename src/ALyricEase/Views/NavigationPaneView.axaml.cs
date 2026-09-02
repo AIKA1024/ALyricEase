@@ -26,7 +26,7 @@ public partial class NavigationPaneView : UserControl
     private void OnAccountClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel vm) return;
-        if (!ServiceLocator.Get<PlaylistViewModel>().IsLoggedIn)
+        if (!ServiceLocator.Get<PlaylistViewModel>().HasAnyLogin)
         {
             // 中/小屏抽屉内点账号且未登录:先收起抽屉再弹登录(登录框是整窗弹层,抽屉留开没意义)
             vm.CloseNavigationDrawerCommand.Execute(null);

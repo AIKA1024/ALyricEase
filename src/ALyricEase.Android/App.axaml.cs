@@ -76,6 +76,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<NetEaseApiClient>());
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
+        services.AddSingleton<MusicCacheService>();
         services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
         services.AddSingleton<ISmtcService, SmtcService>();
         services.AddSingleton<LyricViewModel>();
@@ -86,6 +87,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<ArtistViewModel>();
         services.AddSingleton<AlbumViewModel>();
         services.AddSingleton<SettingsViewModel>();
+        services.AddSingleton<AccountViewModel>();
         services.AddSingleton<MainViewModel>();
         ServiceLocator.Provider = services.BuildServiceProvider();
     }

@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Transformation;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
@@ -100,10 +101,10 @@ public partial class AppShell : UserControl
             vm.NavigateCompactCommand.Execute(item);
     }
 
-    /// <summary>侧边栏"账号":未登录 → 弹登录对话框;已登录 → 进账号占位页。</summary>
+    /// <summary>侧边栏“账号”：未登录时打开登录对话框，任一平台已登录时进入账号页。</summary>
     private void OnAccountClick(object? sender, RoutedEventArgs e)
     {
-        if (!ServiceLocator.Get<PlaylistViewModel>().IsLoggedIn)
+        if (!ServiceLocator.Get<PlaylistViewModel>().HasAnyLogin)
         {
             (DataContext as MainViewModel)?.OpenLoginDialogCommand.Execute(null);
             return;
@@ -132,8 +133,8 @@ public partial class AppShell : UserControl
             _vm.IsLoginDialogOpen = false;
     }
 
-    private void OnPlayerLoginRequired()
-        => _vm?.OpenLoginDialogCommand.Execute(null);
+    private void OnPlayerLoginRequired(MusicSource? source, string? expiredHint)
+        => _vm?.OpenLoginDialogFor(source, expiredHint);
 
     private static TransformOperations TranslateX(double x)
     {

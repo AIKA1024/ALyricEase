@@ -71,6 +71,7 @@ class Program
     services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<NetEaseApiClient>());
     services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
     services.AddSingleton<MusicApiProvider>();
+    services.AddSingleton<MusicCacheService>();
 #if ANDROID
     services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
     services.AddSingleton<ISmtcService, SmtcServiceStub>();
@@ -86,6 +87,7 @@ class Program
     services.AddSingleton<ArtistViewModel>();
     services.AddSingleton<AlbumViewModel>();
     services.AddSingleton<SettingsViewModel>();
+    services.AddSingleton<AccountViewModel>();
     services.AddSingleton<MainViewModel>();
     ServiceLocator.Provider = services.BuildServiceProvider();
 

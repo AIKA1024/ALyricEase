@@ -23,7 +23,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, SettingsViewModel settings, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -33,6 +33,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Artist = artist;
         Album = album;
         Settings = settings;
+        Account = account;
         _playlist = playlist;
         AppState = appState;
         AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed,
@@ -63,6 +64,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public ArtistViewModel Artist { get; }
     public AlbumViewModel Album { get; }
     public SettingsViewModel Settings { get; }
+    public AccountViewModel Account { get; }
 
     /// <summary>界面状态存储(折叠状态;主窗口大小/位置由 MainWindow 读写同一实例)。</summary>
     public Services.AppStateStore AppState { get; }
@@ -224,6 +226,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "Artist" => Artist,
         "Album" => Album,
         "Settings" => Settings,
+        "Account" => Account,
         "Debug" => Debug,
         _ => Placeholder,
     };
@@ -247,20 +250,22 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentContent));
 
         // 未完成页面使用明确占位，不伪装为可用功能。
-        if (value is "Browse" or "Recents" or "Account")
+        if (value is "Browse" or "Recents")
         {
-            Placeholder.ShowLogout = value == "Account";
             (Placeholder.Title, Placeholder.Description) = value switch
             {
                 "Browse" => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
                 "Recents" => ("最近播放", "本地播放历史将在下一阶段接入"),
                 "Favorites" => ("我喜欢的音乐", "喜欢列表与收藏操作将在队列阶段接入"),
-                _ => ("账号", "登录与账户信息"),
+                _ => ("最近播放", "本地播放历史将在下一阶段接入"),
             };
         }
 
         if (value == "Recommend")
             _ = Recommend.EnsureLoadedAsync();
+
+        if (value == "Account")
+            _ = Account.RefreshAsync();
 
         // 经导航菜单/搜索图标重新进入搜索页时回到登录页(单例 VM 的结果状态不跨导航保留,
         // 对齐原版 Frame:菜单导航到 Search 落的是 SearchView 登录页);
@@ -298,6 +303,11 @@ public sealed partial class MainViewModel : ViewModelBase
             Search.RefreshPlayability();
             Playlist.RefreshPlayability();
             Recommend.RefreshPlayability();
+            Account.SyncLoginState();
+            if (ActivePage == "Account" &&
+                ((e.PropertyName == nameof(PlaylistViewModel.IsLoggedIn) && Playlist.IsLoggedIn) ||
+                 (e.PropertyName == nameof(PlaylistViewModel.IsQqLoggedIn) && Playlist.IsQqLoggedIn)))
+                _ = Account.RefreshAsync();
             RebuildShellNavigation();
         }
     }
@@ -672,8 +682,6 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         IsNavigationDrawerOpen = false;
         ActivePage = "Account";
-        Placeholder.Title = "账号";
-        Placeholder.Description = "登录与账户信息";
     }
 
     [RelayCommand] private void GoSettings()
@@ -689,12 +697,29 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void OpenLoginDialog()
     {
+        Playlist.CancelLoginActivities();
         Playlist.Message = null;
         IsLoginDialogOpen = true;
     }
 
+    /// <summary>红心等账号操作发现未登录/凭证失效时打开登录弹层:定位到指定音源的标签
+    /// (null=保持默认网易云标签);hint 非空(凭证失效)时在弹层底部显示提示 ——
+    /// OpenLoginDialog 统一清空提示,此处随后补上。</summary>
+    public void OpenLoginDialogFor(MusicSource? source, string? hint = null)
+    {
+        OpenLoginDialogCommand.Execute(null);
+        if (source == MusicSource.QQ) Playlist.IsQQLoginTab = true;
+        else if (source == MusicSource.NetEase) Playlist.IsQQLoginTab = false;
+        if (hint is { Length: > 0 }) Playlist.Message = hint;
+    }
+
     /// <summary>关闭登录对话框(取消/Esc;登录成功由 MainWindow 监听 IsLoggedIn 自动关闭)。</summary>
-    [RelayCommand] private void CloseLoginDialog() => IsLoginDialogOpen = false;
+    [RelayCommand]
+    private void CloseLoginDialog()
+    {
+        Playlist.CancelLoginActivities();
+        IsLoginDialogOpen = false;
+    }
 
     // ---- 添加聚合歌单对话框 ----
 

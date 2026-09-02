@@ -11,9 +11,5 @@
                    HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
         <TextBlock Text="{Binding Description}" FontSize="14"
                    HorizontalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
-        <!-- 临时调试按钮:删除本地 Cookie 回到未登录状态(仅账号页显示)。 -->
-        <Button Classes="primary" Content="删除本地 Cookie 并退出登录" Command="{Binding LogoutCommand}"
-                Height="36" Padding="20,0" Margin="0,16,0,0" HorizontalAlignment="Center"
-                IsVisible="{Binding ShowLogout}" />
     </StackPanel>
 </UserControl>

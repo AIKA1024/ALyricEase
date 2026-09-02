@@ -36,6 +36,9 @@
     <DataTemplate DataType="vm:SettingsViewModel">
       <views:SettingsView />
     </DataTemplate>
+    <DataTemplate DataType="vm:AccountViewModel">
+      <views:AccountView />
+    </DataTemplate>
     <DataTemplate DataType="vm:PlaceholderViewModel">
       <views:PlaceholderView />
     </DataTemplate>

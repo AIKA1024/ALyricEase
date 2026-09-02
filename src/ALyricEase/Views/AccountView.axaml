@@ -1,0 +1,239 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:AccountViewModel"
+             mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="720"
+             x:Class="ALyricEase.Views.AccountView">
+    <UserControl.Styles>
+        <Style Selector="Border.account-card">
+            <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="24" />
+        </Style>
+        <Style Selector="Border.metric">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14,12" />
+        </Style>
+        <Style Selector="TextBlock.metric-label">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+        <Style Selector="TextBlock.metric-value">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.account-primary">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.account-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+        </Style>
+        <Style Selector="Button.logout">
+            <Setter Property="Foreground" Value="{DynamicResource DangerActionForeground}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.logout:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource DangerActionForegroundHover}" />
+        </Style>
+        <Style Selector="Button.logout:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource DangerActionBackgroundHover}" />
+            <Setter Property="Foreground" Value="{DynamicResource DangerActionForegroundHover}" />
+        </Style>
+        <Style Selector="Button.logout:pressed">
+            <Setter Property="Foreground" Value="{DynamicResource DangerActionForegroundHover}" />
+        </Style>
+        <Style Selector="Button.logout:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource DangerActionBackgroundPressed}" />
+            <Setter Property="Foreground" Value="{DynamicResource DangerActionForegroundHover}" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Grid MaxWidth="920" HorizontalAlignment="Center" Margin="32,28,32,48"
+              RowDefinitions="Auto,Auto,*" RowSpacing="20">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <StackPanel Spacing="5">
+                    <TextBlock Text="账号" FontSize="28" FontWeight="SemiBold" />
+                    <TextBlock Text="查看各音乐平台的登录状态、会员权益与账号等级"
+                               FontSize="13" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="刷新账号信息" Command="{Binding RefreshCommand}"
+                        Height="36" Padding="16,0" IsEnabled="{Binding !IsRefreshing}"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        AutomationProperties.Name="刷新全部账号信息" />
+            </Grid>
+
+            <ProgressBar Grid.Row="1" IsIndeterminate="True" Height="3"
+                         IsVisible="{Binding IsRefreshing}" />
+
+            <StackPanel Grid.Row="2" Spacing="16">
+                <Border Classes="account-card" IsVisible="{Binding NetEase.IsLoggedIn}">
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="18">
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+                            <Border Width="72" Height="72" CornerRadius="36" ClipToBounds="True"
+                                    Background="{DynamicResource ArtFallback}">
+                                <Grid>
+                                    <TextBlock Text="{Binding NetEase.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondary}" />
+                                    <Image Source="{Binding NetEase.Avatar}" Stretch="UniformToFill" />
+                                </Grid>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="5">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource LyricEaseRed}"
+                                            VerticalAlignment="Center" />
+                                    <TextBlock Text="网易云音乐" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding NetEase.Username}" FontSize="20" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding NetEase.UserIdText, StringFormat='账号 ID  {0}'}"
+                                           FontSize="12" Foreground="{DynamicResource TextTertiary}" />
+                            </StackPanel>
+                            <Border Grid.Column="2" Background="#18EC4141" CornerRadius="12" Padding="10,4"
+                                    VerticalAlignment="Top">
+                                <TextBlock Text="网易云" FontSize="11.5" Foreground="{DynamicResource LyricEaseRed}" />
+                            </Border>
+                        </Grid>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                            <Border Classes="metric">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="metric-label" Text="会员状态" />
+                                    <TextBlock Classes="metric-value" Text="{Binding NetEase.MembershipName}" />
+                                    <TextBlock Text="{Binding NetEase.MembershipDetail}" FontSize="10.5"
+                                               Foreground="{DynamicResource TextTertiary}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Classes="metric">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="metric-label" Text="VIP 等级" />
+                                    <TextBlock Classes="metric-value" Text="{Binding NetEase.MembershipLevelText}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Classes="metric">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="metric-label" Text="账号等级" />
+                                    <TextBlock Classes="metric-value" Text="{Binding NetEase.AccountLevelText}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <TextBlock Grid.Row="2" Text="{Binding NetEase.ErrorMessage}" FontSize="12"
+                                   Foreground="{DynamicResource LyricEaseRed}" TextWrapping="Wrap"
+                                   IsVisible="{Binding NetEase.HasError}" />
+
+                        <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
+                            <TextBlock Text="退出只会清除此设备上的网易云登录凭证。" FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="logout" Content="退出网易云音乐"
+                                    Command="{Binding LogoutNetEaseCommand}" Height="36" Padding="14,0"
+                                    AutomationProperties.Name="退出网易云音乐账号" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border Classes="account-card" IsVisible="{Binding Qq.IsLoggedIn}">
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="18">
+                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+                            <Border Width="72" Height="72" CornerRadius="36" ClipToBounds="True"
+                                    Background="{DynamicResource ArtFallback}">
+                                <Grid>
+                                    <TextBlock Text="{Binding Qq.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondary}" />
+                                    <Image Source="{Binding Qq.Avatar}" Stretch="UniformToFill" />
+                                </Grid>
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="5">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="8" Height="8" CornerRadius="4" Background="#31C27C"
+                                            VerticalAlignment="Center" />
+                                    <TextBlock Text="QQ 音乐" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding Qq.Username}" FontSize="20" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Qq.UserIdText, StringFormat='账号 ID  {0}'}"
+                                           FontSize="12" Foreground="{DynamicResource TextTertiary}" />
+                            </StackPanel>
+                            <Border Grid.Column="2" Background="#1831C27C" CornerRadius="12" Padding="10,4"
+                                    VerticalAlignment="Top">
+                                <TextBlock Text="QQ 音乐" FontSize="11.5" Foreground="#249563" />
+                            </Border>
+                        </Grid>
+
+                        <Grid Grid.Row="1" ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                            <Border Classes="metric">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="metric-label" Text="会员状态" />
+                                    <TextBlock Classes="metric-value" Text="{Binding Qq.MembershipName}" />
+                                    <TextBlock Text="{Binding Qq.MembershipDetail}" FontSize="10.5"
+                                               Foreground="{DynamicResource TextTertiary}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Classes="metric">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="metric-label" Text="VIP 等级" />
+                                    <TextBlock Classes="metric-value" Text="{Binding Qq.MembershipLevelText}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Classes="metric">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="metric-label" Text="音乐等级" />
+                                    <TextBlock Classes="metric-value" Text="{Binding Qq.AccountLevelText}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <TextBlock Grid.Row="2" Text="{Binding Qq.ErrorMessage}" FontSize="12"
+                                   Foreground="{DynamicResource LyricEaseRed}" TextWrapping="Wrap"
+                                   IsVisible="{Binding Qq.HasError}" />
+
+                        <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
+                            <TextBlock Text="退出只会清除此设备上的 QQ 音乐登录凭证。" FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="logout" Content="退出 QQ 音乐"
+                                    Command="{Binding LogoutQqCommand}" Height="36" Padding="14,0"
+                                    AutomationProperties.Name="退出 QQ 音乐账号" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border Classes="account-card" IsVisible="{Binding ShowEmptyState}" Padding="32">
+                    <StackPanel HorizontalAlignment="Center" Spacing="10" MaxWidth="420">
+                        <Border Width="56" Height="56" CornerRadius="28"
+                                Background="{DynamicResource AppSurfaceElevated}">
+                            <TextBlock Text="{DynamicResource IconPerson}"
+                                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="22"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                        </Border>
+                        <TextBlock Text="尚未登录音乐账号" FontSize="18" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="登录网易云音乐或 QQ 音乐后，可在这里查看账号与会员信息。"
+                                   FontSize="12.5" Foreground="{DynamicResource TextSecondary}"
+                                   TextWrapping="Wrap" TextAlignment="Center" />
+                        <Button Classes="account-primary" Content="连接音乐账号" Command="{Binding OpenLoginCommand}"
+                                Height="38" Padding="18,0" Margin="0,6,0,0"
+                                AutomationProperties.Name="打开音乐账号登录窗口" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

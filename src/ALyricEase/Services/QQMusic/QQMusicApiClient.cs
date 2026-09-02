@@ -1476,8 +1476,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         {
             return await GetDaily30FromFeedAsync(ct).ConfigureAwait(false);
         }
-        catch (ApiException)
+        catch (Exception ex) when (ex is ApiException or JsonException)
         {
+            // 响应字段漂移(JsonException)与业务码失败同样走雷达流回落
             return await GetDailyFromRadarAsync(ct).ConfigureAwait(false);
         }
     }

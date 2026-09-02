@@ -142,6 +142,21 @@ public static class QqCredentialDiagProbe
                 Console.WriteLine($"[qqdiag] 3c) 续期后 LikeToggleAsync: FAIL code={ex.Code}(续期无法恢复写权限)");
             }
         }
+        // 4) 每日推荐(RecommendFeed → 每日30首 → CgiGetDiss,失败回落雷达流)
+        try
+        {
+            var songs = await api.GetDailyRecommendSongsAsync(default);
+            Console.WriteLine($"[qqdiag] 4) 每日推荐: {songs.Count} 首" +
+                              (songs.Count > 0 ? $",首曲 [{songs[0].Name} - {songs[0].Artist}]" : "(空列表)"));
+        }
+        catch (ApiException ex)
+        {
+            Console.WriteLine($"[qqdiag] 4) 每日推荐: FAIL code={ex.Code} msg={ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[qqdiag] 4) 每日推荐: FAIL {ex.GetType().Name}: {ex.Message}");
+        }
         return 0;
     }
 

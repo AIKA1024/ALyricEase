@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ALyricEase.Models.Dtos;
@@ -283,8 +284,26 @@ public sealed record QQFeedCardDto
     /// <summary>入口名("每日30首"等);部分卡片无标题。</summary>
     public string? Title { get; init; }
 
-    /// <summary>卡片目标 id("每日30首" → 当日动态 disstid,每日轮换)。</summary>
+    /// <summary>卡片目标 id("每日30首" → 当日动态 disstid,每日轮换)。
+    /// 字段类型随版本漂移(实测 2026-09 同一响应里数字与字符串混发),必须双形态兼容。</summary>
+    [JsonConverter(typeof(FlexibleLongJsonConverter))]
     public long Id { get; init; }
+}
+
+/// <summary>long 字段双形态兼容:QQ 服务端部分 id 字段在数字与字符串间漂移,
+/// 严格按 long 解析会让整个响应反序列化崩溃(JsonException)。</summary>
+public sealed class FlexibleLongJsonConverter : JsonConverter<long>
+{
+    public override long Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.TokenType switch
+        {
+            JsonTokenType.Number => reader.GetInt64(),
+            JsonTokenType.String => long.TryParse(reader.GetString(), out var value) ? value : 0,
+            _ => 0,
+        };
+
+    public override void Write(Utf8JsonWriter writer, long value, JsonSerializerOptions options)
+        => writer.WriteNumberValue(value);
 }
 
 // ---------- 雷达每日推荐(music.recommend.TrackRelationServer/GetRadarSong;官方路径回落)----------

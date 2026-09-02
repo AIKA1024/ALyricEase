@@ -15,6 +15,10 @@ namespace ALyricEase.Services.NetEase;
 public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 {
     private const string BaseUrl = "https://music.163.com";
+
+    /// <summary>网易云批量详情接口的限速响应码(405"操作频繁",账号级);调用方可据此退避重试。</summary>
+    public const int ThrottledCode = 405;
+
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
@@ -1192,8 +1196,14 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
             using var weapiReq = CreateWeapiRequest("weapi/v3/song/detail", payload, includeRealIp: false);
             using var weapiDoc = await PostJsonAsync(weapiReq, ct).ConfigureAwait(false);
             var weapiResp = weapiDoc.RootElement.Deserialize(NetEaseJsonContext.Default.SongDetailResponse);
+            if (weapiResp is { Code: ThrottledCode })
+                throw new ApiException("网易云限速中(操作频繁)", ThrottledCode); // 同账号下明文通道同样被限,不再回落
             if (weapiResp is { Code: 200 } && weapiResp.Songs is not null)
                 return weapiResp.Songs.Select(MapDetailSong).ToList();
+        }
+        catch (ApiException ex) when (ex.Code == ThrottledCode)
+        {
+            throw; // 限速不回落明文:同账号下明文通道同样被限,直接交给调用方退避
         }
         catch (ApiException)
         {
@@ -1206,6 +1216,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         ApplyCommonHeaders(req, includeRealIp: false);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
         var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacySongDetailResponse);
+        if (resp is { Code: ThrottledCode })
+            throw new ApiException("网易云限速中(操作频繁)", ThrottledCode);
         return resp?.Songs?.Select(MapLegacySong).ToList() ?? new List<Song>();
     }
 

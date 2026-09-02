@@ -60,7 +60,16 @@ public static class NetEasePlaylistFillProbe
                     if (!known.ContainsKey(trackIds[i])) slice.Add(trackIds[i]);
                 if (slice.Count == 0) break;
                 var swBatch = Stopwatch.StartNew();
-                var songs = await api.GetSongsByIdsAsync(slice);
+                System.Collections.Generic.List<ALyricEase.Models.Song> songs;
+                try
+                {
+                    songs = await api.GetSongsByIdsAsync(slice);
+                }
+                catch (ApiException ex) when (ex.Code == NetEaseApiClient.ThrottledCode)
+                {
+                    Console.WriteLine($"[{tag}] 批#{batch}: 限速(405), 按空批退避");
+                    songs = [];
+                }
                 foreach (var s in songs.Where(s => s.Id != 0)) known[s.Id] = s;
                 while (materialized < trackIds.Count && known.ContainsKey(trackIds[materialized]))
                     materialized++;

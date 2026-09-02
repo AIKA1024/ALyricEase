@@ -627,6 +627,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private AggregateSongQueue? _aggregatePlaybackQueue;
     private int _materialized;          // 已物化进 Tracks 的曲目数(按 trackIds 顺序)
     [ObservableProperty] private bool _isLoadingMore;
+
+    /// <summary>补页指示条文案:正常"正在加载更多歌曲…",命中网易云账号限速(405)时改为退避提示。</summary>
+    [ObservableProperty] private string _loadingMoreText = "正在加载更多歌曲…";
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
     private CancellationTokenSource? _loadCancellation;
     private bool _isCloud;              // 当前展示的是音乐云盘(而非用户歌单)
@@ -1086,6 +1089,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         if (IsLoadingMore) return;
         IsLoadingMore = true;
+        LoadingMoreText = "正在加载更多歌曲…";
+        var retriedEmptyBatch = false;
         try
         {
             var target = fillTo ?? Math.Min(_trackIds.Count, _materialized + 100);
@@ -1098,7 +1103,19 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     if (!_known.ContainsKey(_trackIds[i])) slice.Add(_trackIds[i]);
                 if (slice.Count > 0)
                 {
-                    var songs = await _api.GetSongsByIdsAsync(slice, ct);
+                    List<Song> songs;
+                    try
+                    {
+                        songs = await _api.GetSongsByIdsAsync(slice, ct);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // 批量详情被限速(405"操作频繁")或网络失败:按空批走退避重试,不放弃整个补页
+                        songs = [];
+                        LoadingMoreText = ex is ApiException { Code: NetEaseApiClient.ThrottledCode }
+                            ? "网易云限速中，稍后自动重试…"
+                            : "加载受阻，稍后自动重试…";
+                    }
                     if (!IsCurrentLoad(generation, ct)) return;
                     foreach (var s in songs)
                         if (s.Id != 0) _known[s.Id] = s;
@@ -1107,8 +1124,19 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 var before = _materialized;
                 AppendKnownTracks();
                 if (!IsCurrentLoad(generation, ct)) return;
-                // 本批未推进(缺失 id 全部无法解析)则停止,避免死循环
-                if (_materialized == before) break;
+                if (_materialized == before)
+                {
+                    // 本批无推进(限速/缺失 id 全部失效):退避 2s 重试一次,仍无推进则停止,滚动时再续
+                    if (retriedEmptyBatch) break;
+                    retriedEmptyBatch = true;
+                    await Task.Delay(2000, ct);
+                    continue;
+                }
+                retriedEmptyBatch = false;
+                LoadingMoreText = "正在加载更多歌曲…";
+                // 批间小退避(带抖动):贴近真实客户端节奏,降低再次触发账号限速的概率
+                if (_materialized < target && _materialized < _trackIds.Count)
+                    await Task.Delay(250 + Random.Shared.Next(150), ct);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

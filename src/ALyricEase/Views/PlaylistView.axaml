@@ -183,7 +183,7 @@
               </ItemsControl>
               <StackPanel Grid.Row="1" Margin="12,10" Spacing="7" IsVisible="{Binding IsLoadingMore}">
                 <ProgressBar Height="3" IsIndeterminate="True" />
-                <TextBlock Text="正在加载更多歌曲…" HorizontalAlignment="Center" FontSize="12"
+                <TextBlock Text="{Binding LoadingMoreText}" HorizontalAlignment="Center" FontSize="12"
                            Foreground="{DynamicResource TextTertiary}" />
               </StackPanel>
             </Grid>

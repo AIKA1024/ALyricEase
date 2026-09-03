@@ -7,32 +7,34 @@
              x:DataType="vm:ArtistAlbumsPageViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.ArtistAlbumsPageView">
-  <!-- 行 1 必须 bounded(*):若为 Auto,ScrollViewer 会撑到全部内容高,viewport==extent,
-       滚动条消失且补页守卫失效(内容网格与 AlbumView 的 96,* 结构对齐) -->
-  <Grid RowDefinitions="96,*">
-    <!-- 页头:歌手名 -->
-    <Grid Grid.Row="0" Margin="48,0,32,0">
-      <TextBlock Text="{Binding Name}" Classes="page-title" VerticalAlignment="Center" />
-    </Grid>
+  <UserControl.Styles>
+    <!-- 滚动条底部留白:离底部 100(播放条高度),网格延伸到半透明播放条下方(歌单页 tracks-scroller 同款) -->
+    <Style Selector="ScrollViewer.tracks-scroller ScrollBar">
+      <Setter Property="Margin" Value="0,0,0,100" />
+    </Style>
+  </UserControl.Styles>
 
-    <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="48,0,32,116">
+  <!-- 整页滚动(歌单页同构):网格延伸到播放条下方, clearance 由内容底部 margin 提供 -->
+  <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="48,20,32,110" RowDefinitions="Auto,Auto,*">
+      <!-- 页头:歌手名(随内容滚动,同歌单页 hero) -->
+      <TextBlock Grid.Row="0" Text="{Binding Name}" Classes="page-title" Margin="0,0,0,12" />
+
       <!-- 区块头:全部专辑 + 加载进度 -->
-      <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="10,0,0,12">
+      <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="10,0,0,12">
         <TextBlock Text="全部专辑" FontSize="22" FontWeight="Bold" />
         <TextBlock Text="{Binding Subtitle}" FontSize="14" Foreground="{DynamicResource TextTertiary}"
                    VerticalAlignment="Center" />
       </StackPanel>
 
       <!-- 专辑网格:纵向虚拟化(AlbumGrid 分块),滚动近底部增量补页;尾部加载指示 -->
-      <ScrollViewer Grid.Row="1" x:Name="PageScroller" VerticalScrollBarVisibility="Auto"
-                    HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Spacing="4">
-          <controls:AlbumGrid ItemsSource="{Binding Albums}" />
-          <TextBlock Text="加载中…" FontSize="13" Foreground="{DynamicResource TextTertiary}"
-                     HorizontalAlignment="Center" Margin="0,8,0,16"
-                     IsVisible="{Binding IsLoadingMore}" />
-        </StackPanel>
-      </ScrollViewer>
+      <StackPanel Grid.Row="2" Spacing="4">
+        <controls:AlbumGrid ItemsSource="{Binding Albums}" />
+        <TextBlock Text="加载中…" FontSize="13" Foreground="{DynamicResource TextTertiary}"
+                   HorizontalAlignment="Center" Margin="0,8,0,16"
+                   IsVisible="{Binding IsLoadingMore}" />
+      </StackPanel>
     </Grid>
-  </Grid>
+  </ScrollViewer>
 </UserControl>

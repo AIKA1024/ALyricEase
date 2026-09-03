@@ -7,17 +7,22 @@
              x:DataType="vm:ArtistSongsPageViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.ArtistSongsPageView">
-  <!-- 行 1 必须 bounded(*):若为 Auto,ScrollViewer 会撑到全部内容高,viewport==extent,
-       滚动条消失且补页守卫失效(内容网格与 AlbumView 的 96,* 结构对齐) -->
-  <Grid RowDefinitions="96,*">
-    <!-- 页头:歌手名(与专辑页 page-title 同级视觉) -->
-    <Grid Grid.Row="0" Margin="48,0,32,0">
-      <TextBlock Text="{Binding Name}" Classes="page-title" VerticalAlignment="Center" />
-    </Grid>
+  <UserControl.Styles>
+    <!-- 滚动条底部留白:离底部 100(播放条高度),列表延伸到半透明播放条下方(歌单页 tracks-scroller 同款) -->
+    <Style Selector="ScrollViewer.tracks-scroller ScrollBar">
+      <Setter Property="Margin" Value="0,0,0,100" />
+    </Style>
+  </UserControl.Styles>
 
-    <Grid Grid.Row="1" RowDefinitions="Auto,*" Margin="48,0,32,116">
+  <!-- 整页滚动(歌单页同构):列表延伸到播放条下方, clearance 由内容底部 margin 提供 -->
+  <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="48,20,32,110" RowDefinitions="Auto,Auto,*">
+      <!-- 页头:歌手名(随内容滚动,同歌单页 hero) -->
+      <TextBlock Grid.Row="0" Text="{Binding Name}" Classes="page-title" Margin="0,0,0,12" />
+
       <!-- 区块头:热门歌曲 + 加载进度 + 播放全部 -->
-      <Grid Grid.Row="0" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
+      <Grid Grid.Row="1" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <TextBlock Text="热门歌曲" FontSize="22" FontWeight="Bold" />
           <TextBlock Text="{Binding Subtitle}" FontSize="14" Foreground="{DynamicResource TextTertiary}"
@@ -36,23 +41,21 @@
       </Grid>
 
       <!-- 曲目列表卡(仿专辑页 ListView 卡);滚动近底部由 code-behind 增量补页 -->
-      <Border Grid.Row="1" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
+      <Border Grid.Row="2" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
               BorderThickness="1" CornerRadius="8" Padding="8,6">
-        <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <ItemsControl ItemsSource="{Binding Songs}" ContainerPrepared="OnTrackContainerPreparing">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <VirtualizingStackPanel />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:SongItemViewModel">
-                <views:TrackRow Theme="{StaticResource TrackRowPlaylistWideTheme}" />
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
+        <ItemsControl ItemsSource="{Binding Songs}" ContainerPrepared="OnTrackContainerPreparing">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:SongItemViewModel">
+              <views:TrackRow Theme="{StaticResource TrackRowPlaylistWideTheme}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </Border>
     </Grid>
-  </Grid>
+  </ScrollViewer>
 </UserControl>

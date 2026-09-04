@@ -106,6 +106,13 @@ public static class Program
             return;
         }
 
+        // 专辑卡片几何探针:全部专辑页/歌手页卡片内封面与标题的实际矩形与间距
+        if (args.Length > 0 && args[0] == "--albumgrid")
+        {
+            AlbumGridProbe.Run();
+            return;
+        }
+
         // 歌手卡片/推荐横向区块虚拟化探针:真实 ArtistView/RecommendView 懒加载改造验证
         if (args.Length > 0 && args[0] == "--acards")
         {

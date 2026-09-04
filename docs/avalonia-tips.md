@@ -73,3 +73,37 @@ list.AddHandler(InputElement.PointerPressedEvent, OnPressed, RoutingStrategies.T
 
 本项目落地:`Styles/Controls/Scrolling.axaml` 末尾的全局 `ScrollViewer` 样式,
 三个宿主(Desktop/Android/Headless)都通过 `StyleInclude` 引入该文件。
+
+## 卡片布局:封面 + 文字不要用"单格 Grid + Margin 下移"
+
+**`Stretch` 且显式设了 `Width`/`Height` 时,Avalonia 按 Center 处理** —— 这在"封面 + 标题"
+的卡片模板里会咬人。错误写法:
+
+```xml
+<Grid Width="200">                        <!-- 单格 -->
+  <Border Width="200" Height="200" .../>   <!-- Stretch + 固定高 → 被垂直居中! -->
+  <TextBlock Margin="4,206,4,0" ... />     <!-- 以为在封面下方 6px -->
+</Grid>
+```
+
+卡片实测 225 高,封面落在 **y=12**(不是 0),底边 212,而标题固定在 206 → **重叠 6px**。
+歌手页同款写法把 Margin 放到 220,表现为封面下沉 20、标题贴住封面底边(间距 0)。
+更坑的是:卡片越高错位越大,改 Margin 只能"看起来碰巧对",一旦字号/行数变了又歪。
+
+正确写法 —— **分行**,封面顶对齐,间距由文字那行的 Margin 决定:
+
+```xml
+<Grid Width="200" RowDefinitions="200,Auto">
+  <Border Grid.Row="0" Width="200" Height="200" .../>
+  <TextBlock Grid.Row="1" Margin="4,6,4,0" ... />
+</Grid>
+```
+
+个性推荐卡片(`RecommendView`)就是这么写的(`RowDefinitions="Auto,50"` + 文字
+`Margin="4,6,4,0"`,实测间距 6),现在 `AlbumGrid`(全部专辑页)与 `ArtistView`
+(专辑/单曲与EP 两处)也统一到同一结构、同一 6px 间隔。
+
+排查手法:几何问题别靠肉眼,用无头探针打印卡片内元素的相对矩形
+(`src/ALyricEase.Headless/AlbumGridProbe.cs`,入口 `--albumgrid`),
+直接看"封面底边 → 标题顶边"的数值,负值即重叠。注意选元素别选错
+(个性推荐卡片里播放量角标的数字也是 SemiBold,得再加字号条件才选到标题)。

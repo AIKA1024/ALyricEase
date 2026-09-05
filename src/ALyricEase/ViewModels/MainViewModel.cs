@@ -42,6 +42,7 @@ public sealed partial class MainViewModel : ViewModelBase
             OnAggregateEditConfirmed);
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
         CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
+        AddSongToPlaylistDialog = new AddSongToPlaylistDialogViewModel(playlist, OnSongAddedToPlaylist);
         RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed,
             RenameAggregateAsync, OnAggregateRenamed);
         DeletePlaylistDialog = new DeletePlaylistDialogViewModel(playlist, OnDeletePlaylistConfirmed,
@@ -81,6 +82,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>创建歌单对话框 VM(宿主绑定 CreatePlaylistDialogView;打开前按音源 Refresh)。</summary>
     public CreatePlaylistDialogViewModel CreatePlaylistDialog { get; }
+
+    /// <summary>添加当前歌曲到歌单的选择对话框 VM。</summary>
+    public AddSongToPlaylistDialogViewModel AddSongToPlaylistDialog { get; }
 
     /// <summary>重命名歌单对话框 VM(宿主绑定 RenamePlaylistDialogView;打开前按目标歌单 Refresh)。</summary>
     public RenamePlaylistDialogViewModel RenamePlaylistDialog { get; }
@@ -469,6 +473,12 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
     public bool TryHandleBack()
     {
+        if (IsAddSongToPlaylistDialogOpen)
+        {
+            CloseAddSongToPlaylistDialogCommand.Execute(null);
+            return true;
+        }
+
         if (IsAggregateSettingsDialogOpen)
         {
             CloseAggregateSettingsDialogCommand.Execute(null);
@@ -782,6 +792,24 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand] private void CloseCreatePlaylistDialog() => IsCreatePlaylistDialogOpen = false;
+
+    // ---- 添加歌曲到歌单对话框 ----
+
+    /// <summary>播放条“添加到歌单”的窗口内模态层状态。</summary>
+    [ObservableProperty] private bool _isAddSongToPlaylistDialogOpen;
+
+    [RelayCommand]
+    private void OpenAddSongToPlaylistDialog(Models.Song? song)
+    {
+        if (song is null) return;
+        AddSongToPlaylistDialog.Refresh(song);
+        IsAddSongToPlaylistDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseAddSongToPlaylistDialog() => IsAddSongToPlaylistDialogOpen = false;
+
+    private void OnSongAddedToPlaylist() => IsAddSongToPlaylistDialogOpen = false;
 
     // ---- 重命名歌单对话框 ----
 

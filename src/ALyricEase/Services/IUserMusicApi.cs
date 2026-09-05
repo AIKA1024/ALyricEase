@@ -3,7 +3,7 @@ using ALyricEase.Models.Dtos;
 
 namespace ALyricEase.Services;
 
-/// <summary>账号能力扩展(需登录):用户资料、用户歌单、歌单曲目、每日推荐、红心。
+/// <summary>账号能力扩展(需登录):用户资料、用户歌单、歌单曲目、每日推荐、红心与歌单写入。
 /// 网易云与 QQ 音乐均实现;未登录/凭据失效抛 ApiException,由调用方决定 UI 呈现。</summary>
 public interface IUserMusicApi : IMusicApi
 {
@@ -35,6 +35,9 @@ public interface IUserMusicApi : IMusicApi
     /// QQ 走 ag-1 加密通道 PlaylistBaseWrite/DelPlaylist(用 playlist.DirId 资产目录 id)。
     /// 红心集合不可删(UI 层隐藏入口);收藏的非本人歌单由服务端拒绝。失败抛 ApiException。</summary>
     Task DeletePlaylistAsync(Playlist playlist, CancellationToken ct = default);
+
+    /// <summary>把同音源歌曲追加到当前账号拥有的歌单。重复歌曲、无写权限或登录失效时抛 ApiException。</summary>
+    Task AddSongToPlaylistAsync(Playlist playlist, Song song, CancellationToken ct = default);
 
     /// <summary>当前登录态能否执行红心操作(未登录/无法定位喜欢集合时为 false,UI 应引导登录)。</summary>
     bool CanToggleLike { get; }

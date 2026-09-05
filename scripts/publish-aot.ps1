@@ -91,7 +91,7 @@ function Get-ApkNativeAbis {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$project = Join-Path $repoRoot "src\ALyricEase.Desktop\ALyricEase.Desktop.csproj"
+$project = Join-Path $repoRoot "src\ALyricEase.Windows\ALyricEase.Windows.csproj"
 if (-not $Output) { $Output = Join-Path $repoRoot "artifacts\aot-$Runtime" }
 
 # NativeAOT's findvcvarsall.bat CALLs vcvarsall.bat, which probes vswhere.exe by
@@ -117,7 +117,7 @@ dotnet publish $project `
 
 if ($LASTEXITCODE -ne 0) { throw "AOT publish failed (exit code $LASTEXITCODE)" }
 
-$exe = Join-Path $Output "ALyricEase.Desktop.exe"
+$exe = Join-Path $Output "ALyricEase.Windows.exe"
 if (Test-Path $exe) {
     Write-Host "== OK: $exe" -ForegroundColor Green
 }

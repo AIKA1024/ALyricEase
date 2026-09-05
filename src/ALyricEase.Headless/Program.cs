@@ -206,6 +206,13 @@ public static class Program
             return;
         }
 
+        // 播放条歌曲菜单结构自查(不触网):菜单分组、多歌手子菜单、来源与公开链接
+        if (args.Length > 0 && args[0] == "--playerbarmenu")
+        {
+            PlayerBarMenuProbe.Run();
+            return;
+        }
+
         // 菜单滑入动画自查(不触网):仿 WinUI3 打开动画,采样一级/子菜单 Transform 起点/终点与重放
         if (args.Length > 0 && args[0] == "--menuanim")
         {

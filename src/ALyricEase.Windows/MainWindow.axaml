@@ -210,6 +210,10 @@
       <!-- 聚合歌单设置对话框(齿轮;同层最末 → 同时可见时盖在最上) -->
       <views:AggregateSettingsDialogView IsVisible="{Binding IsAggregateSettingsDialogOpen}"
                                          Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+      <!-- 播放条“添加到歌单”:单击菜单项打开，位于所有页面与播放详情之上。 -->
+      <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
+                                         Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
     </Grid>
   </ExperimentalAcrylicBorder>
 </Window>

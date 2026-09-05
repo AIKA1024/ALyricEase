@@ -152,6 +152,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>QQ 登录用户的歌单(侧边栏"QQ音乐"分组;一次全量拉取,失败静默可重试)。</summary>
     public ObservableCollection<PlaylistItemViewModel> QqPlaylists { get; } = new();
 
+    /// <summary>把歌曲追加到选定歌单，按歌单音源路由至对应账号客户端。</summary>
+    public Task AddSongToPlaylistAsync(Playlist playlist, Song song)
+        => playlist.Source == MusicSource.QQ
+            ? _qqApi.AddSongToPlaylistAsync(playlist, song)
+            : _api.AddSongToPlaylistAsync(playlist, song);
+
     private bool _qqPlaylistsLoaded;
 
     public RangeObservableCollection<SongItemViewModel> Tracks { get; } = new();

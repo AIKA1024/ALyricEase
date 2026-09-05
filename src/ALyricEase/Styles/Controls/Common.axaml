@@ -89,6 +89,10 @@
         <Setter Property="CornerRadius" Value="12" />
         <Setter Property="ctrl:FlyoutOpenAnimation.IsEnabled" Value="True" />
     </Style>
+    <!-- 播放条歌曲菜单按原版保持约 240px 宽，短标题/来源不会让菜单忽宽忽窄。 -->
+    <Style Selector="MenuFlyoutPresenter.player-song-menu">
+        <Setter Property="MinWidth" Value="240" />
+    </Style>
     <Style Selector="MenuFlyoutPresenter /template/ Border">
         <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
         <Setter Property="Margin" Value="4 0 4 14" />

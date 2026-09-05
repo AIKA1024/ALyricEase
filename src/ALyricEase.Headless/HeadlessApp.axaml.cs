@@ -52,6 +52,7 @@ public partial class HeadlessApp : Application
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
+        services.AddSingleton<IPlatformShareService, PlatformShareServiceStub>();
         // 歌词 VM 用独立临时目录缓存,避免探针歌曲写进真实用户缓存
         services.AddSingleton<LyricViewModel>(sp => new LyricViewModel(
             new MusicApiProvider(new IMusicApi[] { new OfflineProbeApi() }),

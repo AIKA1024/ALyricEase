@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.AddSongToPlaylistDialogView">
+    <!-- 原版 AddToPlaylistDialogContent 的搜索框 + 单击歌单行，套入项目统一的窗口内 ContentDialog 骨架。 -->
+    <Grid x:Name="Root">
+        <Grid.Styles>
+            <Style Selector="Grid#Root">
+                <Setter Property="Transitions">
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                    </Transitions>
+                </Setter>
+            </Style>
+            <Style Selector="Button.playlist-choice">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Padding" Value="5" />
+                <Setter Property="MinHeight" Value="50" />
+            </Style>
+        </Grid.Styles>
+
+        <Panel Background="#99000000" />
+        <Grid DataContext="{Binding AddSongToPlaylistDialog}"
+              x:DataType="vm:AddSongToPlaylistDialogViewModel"
+              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16">
+            <Border x:Name="DialogCard" Width="440" MaxHeight="600"
+                    Padding="24" CornerRadius="8"
+                    Background="{DynamicResource AppSurface}"
+                    BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                    BoxShadow="0 32 64 #66000000">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="12">
+                    <TextBlock Grid.Row="0" Text="添加到歌单"
+                               FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Grid.Row="1" Text="{Binding SongText}" FontSize="13"
+                               Foreground="{DynamicResource TextSecondary}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBox x:Name="SearchBox" Grid.Row="2"
+                             PlaceholderText="搜索歌单"
+                             Text="{Binding SearchText, Mode=TwoWay}" />
+
+                    <Grid Grid.Row="3" MinHeight="120" MaxHeight="340">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      IsVisible="{Binding HasItems}">
+                            <ItemsControl ItemsSource="{Binding Items}" Margin="0,0,12,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+                                        <Button Classes="playlist-choice"
+                                                Command="{Binding $parent[views:AddSongToPlaylistDialogView].((vm:MainViewModel)DataContext).AddSongToPlaylistDialog.AddCommand}"
+                                                CommandParameter="{Binding}">
+                                            <Grid ColumnDefinitions="40,*,Auto" ColumnSpacing="8">
+                                                <Border Width="40" Height="40" CornerRadius="4"
+                                                        ClipToBounds="True">
+                                                    <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                                                           Stretch="UniformToFill" />
+                                                </Border>
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Text="{Binding TrackCountText}"
+                                                           VerticalAlignment="Center" FontSize="12"
+                                                           Foreground="{DynamicResource TextTertiary}" />
+                                            </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock Text="{Binding EmptyText}" IsVisible="{Binding HasNoItems}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   FontSize="13" TextWrapping="Wrap" />
+                    </Grid>
+
+                    <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <TextBlock Text="{Binding Message}" FontSize="13" TextWrapping="Wrap"
+                                   VerticalAlignment="Center" Foreground="#FFE74C3C"
+                                   IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        <Button Grid.Column="1" Content="取消" MinWidth="96" Height="32"
+                                Command="{Binding $parent[views:AddSongToPlaylistDialogView].((vm:MainViewModel)DataContext).CloseAddSongToPlaylistDialogCommand}"
+                                HotKeyManager.HotKey="Escape" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

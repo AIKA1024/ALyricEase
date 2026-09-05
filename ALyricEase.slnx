@@ -2,7 +2,7 @@
 
   <Project Path="src/ALyricEase/ALyricEase.csproj" />
 
-  <Project Path="src/ALyricEase.Desktop/ALyricEase.Desktop.csproj" />
+  <Project Path="src/ALyricEase.Windows/ALyricEase.Windows.csproj" />
 
   <Project Path="src/ALyricEase.Android/ALyricEase.Android.csproj" />
 

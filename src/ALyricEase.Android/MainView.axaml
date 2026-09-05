@@ -57,5 +57,9 @@
         <!-- 删除歌单确认对话框(侧栏歌单子项右键/长按;同层,声明在重命名弹层之后) -->
         <views:DeletePlaylistDialogView IsVisible="{Binding IsDeletePlaylistDialogOpen}"
                                         Grid.Row="1" ZIndex="200" />
+
+        <!-- 播放条长按菜单中的“添加到歌单”。 -->
+        <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
+                                           Grid.Row="1" ZIndex="200" />
     </Grid>
 </UserControl>

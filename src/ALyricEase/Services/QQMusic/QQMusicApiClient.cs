@@ -834,7 +834,34 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             DirId = PickLong(result, "dirId"),
             Source = MusicSource.QQ,
             Name = name,
+            CanAddTracks = true,
         };
+    }
+
+    /// <summary>向当前账号拥有的 QQ 音乐资产歌单追加单曲。写目标使用资产目录 dirId，
+    /// 与红心 AddSonglist 相同走 ag-1 加密通道；收藏的他人歌单没有 dirId，不提供入口。</summary>
+    public Task AddSongToPlaylistAsync(Playlist playlist, Song song, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("QQ音乐未登录,无法添加歌曲", -1);
+        if (playlist.Source != MusicSource.QQ || song.Source != MusicSource.QQ || song.Id == 0)
+            throw new ApiException("歌曲与歌单音源不匹配", -1);
+        if (!playlist.CanAddTracks || playlist.DirId == 0)
+            throw new ApiException("不能向收藏的他人歌单添加歌曲", -1);
+
+        return SecureAssetWriteAsync("music.musicasset.PlaylistDetailWrite", "AddSonglist", p =>
+        {
+            p.WriteNumber("dirId", playlist.DirId);
+            p.WriteNumber("tid", 0);
+            p.WriteBoolean("bFmtUtf8", true);
+            p.WriteStartArray("v_songInfo");
+            p.WriteStartObject();
+            p.WriteNumber("songType", 0);
+            p.WriteNumber("songId", song.Id);
+            if (song.Mid.Length > 0) p.WriteString("songMid", song.Mid);
+            p.WriteEndObject();
+            p.WriteEndArray();
+        }, "添加到歌单", ct);
     }
 
     /// <summary>删除歌单(IUserMusicApi):QQ 用资产目录 dirId(列表侧值,新建歌单为小序号;
@@ -1364,6 +1391,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                     TrackCount = d.SongNum,
                     CoverUrl = FirstNonEmpty(d.PicUrl),
                     Description = d.Desc ?? "",
+                    CanAddTracks = d.DirId != 0,
                 });
             }
             foreach (var d in fav.Data?.VList ?? [])

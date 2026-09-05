@@ -8,6 +8,7 @@ using ALyricEase.Services.Auth;
 using ALyricEase.Services.Crypto;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
+using ALyricEase.Services.Sharing;
 using ALyricEase.Services.Smtc;
 using ALyricEase.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,6 +78,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
+        services.AddSingleton<IPlatformShareService, AndroidShareService>();
         services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
         services.AddSingleton<ISmtcService, SmtcService>();
         services.AddSingleton<LyricViewModel>();

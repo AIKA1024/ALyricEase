@@ -92,6 +92,9 @@ public sealed record LegacyPlaylistItem
 
     /// <summary>歌单特殊类型:5 = "我喜欢的音乐"(红心喜欢集合)。</summary>
     [JsonPropertyName("specialType")] public int SpecialType { get; init; }
+
+    /// <summary>true 表示收藏的他人歌单，不能向其中写入歌曲。</summary>
+    [JsonPropertyName("subscribed")] public bool Subscribed { get; init; }
 }
 
 public sealed record LegacyPlaylistDetailResponse

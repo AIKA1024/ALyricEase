@@ -709,6 +709,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
                 Name = p.Name,
                 TrackCount = p.TrackCount,
                 CoverUrl = p.CoverUrl,
+                CanAddTracks = !p.Subscribed,
             })
             .ToList();
     }
@@ -946,7 +947,85 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
                 id = pv;
             if (id == 0)
                 throw new ApiException("创建歌单失败(响应缺少歌单 id)", -2);
-            return new Playlist { Id = id, Name = name, Source = MusicSource.NetEase };
+            return new Playlist
+            {
+                Id = id,
+                Name = name,
+                Source = MusicSource.NetEase,
+                CanAddTracks = true,
+            };
+        }
+    }
+
+    /// <summary>向当前账号拥有的网易云歌单追加单曲。参数同时带 tracks 与 trackIds，
+    /// 与网易云 Web 客户端的 manipulate/tracks 契约兼容；加密通道被本机 WAF 丢弃时回落明文。</summary>
+    public async Task AddSongToPlaylistAsync(Playlist playlist, Song song, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("网易云未登录,无法添加歌曲", -1);
+        if (playlist.Source != MusicSource.NetEase || song.Source != MusicSource.NetEase ||
+            playlist.Id == 0 || song.Id == 0)
+            throw new ApiException("歌曲与歌单音源不匹配", -1);
+        if (!playlist.CanAddTracks)
+            throw new ApiException("不能向收藏的他人歌单添加歌曲", -1);
+
+        var trackIds = $"[{song.Id}]";
+        JsonDocument doc;
+        if (_wafBlocked)
+        {
+            doc = await PostPlainWriteAsync("/api/playlist/manipulate/tracks",
+                new Dictionary<string, string>
+                {
+                    ["op"] = "add",
+                    ["pid"] = playlist.Id.ToString(),
+                    ["id"] = song.Id.ToString(),
+                    ["tracks"] = song.Id.ToString(),
+                    ["trackIds"] = trackIds,
+                    ["imme"] = "true",
+                }, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            try
+            {
+                var csrf = await EnsureCsrfAsync(ct).ConfigureAwait(false);
+                var payload = new Dictionary<string, object?>
+                {
+                    ["op"] = "add",
+                    ["pid"] = playlist.Id,
+                    ["id"] = song.Id,
+                    ["tracks"] = song.Id.ToString(),
+                    ["trackIds"] = trackIds,
+                    ["imme"] = "true",
+                    ["csrf_token"] = csrf,
+                };
+                using var req = CreateWeapiRequest("weapi/playlist/manipulate/tracks", payload, includeRealIp: true);
+                doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+            }
+            catch (ApiException ex) when (ex.Code == BlockedCode)
+            {
+                _wafBlocked = true;
+                doc = await PostPlainWriteAsync("/api/playlist/manipulate/tracks",
+                    new Dictionary<string, string>
+                    {
+                        ["op"] = "add",
+                        ["pid"] = playlist.Id.ToString(),
+                        ["id"] = song.Id.ToString(),
+                        ["tracks"] = song.Id.ToString(),
+                        ["trackIds"] = trackIds,
+                        ["imme"] = "true",
+                    }, ct).ConfigureAwait(false);
+            }
+        }
+
+        using (doc)
+        {
+            var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+            if (code == 502)
+                throw new ApiException("歌曲已在该歌单中", code);
+            if (code != 200)
+                throw new ApiException(
+                    TryMessage(doc.RootElement) is { } msg ? $"添加到歌单失败:{msg}" : $"添加到歌单失败(code={code})", code);
         }
     }
 

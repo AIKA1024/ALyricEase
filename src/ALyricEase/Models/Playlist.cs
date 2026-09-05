@@ -20,4 +20,8 @@ public sealed class Playlist
     public int TrackCount { get; init; }
 
     public string CoverUrl { get; init; } = "";
+
+    /// <summary>当前账号是否拥有该歌单的写权限。用户收藏的他人歌单为 false；
+    /// 播放条“添加到歌单”只展示可写歌单，避免点选后才由服务端拒绝。</summary>
+    public bool CanAddTracks { get; init; }
 }

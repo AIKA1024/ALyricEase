@@ -69,7 +69,8 @@
 
   <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}" ClipToBounds="False">
     <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}" ClipToBounds="False">
-      <Grid x:Name="PlayerRoot" ClipToBounds="False" Background="Transparent">
+      <Grid x:Name="PlayerRoot" ClipToBounds="False" Background="Transparent"
+            ContextRequested="OnPlayerContextRequested">
         <!-- hover 背景 -->
         <Border x:Name="HoverBg" Margin="-12,0" />
         <!-- 进度条 -->

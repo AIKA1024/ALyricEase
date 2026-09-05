@@ -206,6 +206,9 @@
            播放详情页里点红心也能弹登录。 -->
       <views:LoginDialogView IsVisible="{Binding IsLoginDialogOpen}"
                              Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+      <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
+                                         Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
     </Grid>
   </ExperimentalAcrylicBorder>
 </Window>

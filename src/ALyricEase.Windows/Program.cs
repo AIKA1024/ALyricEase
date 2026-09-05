@@ -8,6 +8,7 @@ using ALyricEase.Services.Auth;
 using ALyricEase.Services.Crypto;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
+using ALyricEase.Services.Sharing;
 using ALyricEase.Services.Smtc;
 using ALyricEase.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,6 +73,7 @@ class Program
     services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
     services.AddSingleton<MusicApiProvider>();
     services.AddSingleton<MusicCacheService>();
+    services.AddSingleton<IPlatformShareService, WindowsShareService>();
 #if ANDROID
     services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
     services.AddSingleton<ISmtcService, SmtcServiceStub>();

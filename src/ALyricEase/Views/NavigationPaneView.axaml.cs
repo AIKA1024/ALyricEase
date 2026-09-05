@@ -23,16 +23,11 @@ public partial class NavigationPaneView : UserControl
         InitializeComponent();
     }
 
+    /// <summary>点"账号"一律进账号页:未登录的平台在页内以占位卡片呈现,卡片上就有该平台的登录按钮。
+    /// (此前未登录时直接弹登录框,结果一个平台登录后进账号页反而没有第二个平台的入口。)</summary>
     private void OnAccountClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainViewModel vm) return;
-        if (!ServiceLocator.Get<PlaylistViewModel>().HasAnyLogin)
-        {
-            // 中/小屏抽屉内点账号且未登录:先收起抽屉再弹登录(登录框是整窗弹层,抽屉留开没意义)
-            vm.CloseNavigationDrawerCommand.Execute(null);
-            vm.OpenLoginDialogCommand.Execute(null);
-            return;
-        }
         vm.GoAccountCommand.Execute(null);
     }
 

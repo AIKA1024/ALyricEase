@@ -106,6 +106,13 @@ public static class Program
             return;
         }
 
+        // 账号页登录态矩阵:未登录平台应有占位卡片 + 该平台登录按钮(不触网)
+        if (args.Length > 0 && args[0] == "--accountstates")
+        {
+            AccountStatesProbe.Run();
+            return;
+        }
+
         // 专辑卡片几何探针:全部专辑页/歌手页卡片内封面与标题的实际矩形与间距
         if (args.Length > 0 && args[0] == "--albumgrid")
         {

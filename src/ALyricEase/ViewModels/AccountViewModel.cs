@@ -1,5 +1,6 @@
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
 using Avalonia.Media;
@@ -115,7 +116,6 @@ public sealed partial class AccountViewModel : ViewModelBase
     public AccountPlatformViewModel Qq { get; }
 
     public bool HasAnyLogin => NetEase.IsLoggedIn || Qq.IsLoggedIn;
-    public bool ShowEmptyState => !HasAnyLogin;
     public bool IsRefreshing => NetEase.IsLoading || Qq.IsLoading;
 
     public void SyncLoginState()
@@ -164,14 +164,21 @@ public sealed partial class AccountViewModel : ViewModelBase
         SyncLoginState();
     }
 
+    /// <summary>未登录平台的占位卡片"登录"按钮:打开登录弹层并定位到该平台标签
+    /// (与红心等账号操作发现未登录时的定位走同一条 OpenLoginDialogFor)。
+    /// 登录成功后 MainViewModel.OnPlaylistLoginChanged 会 SyncLoginState + RefreshAsync,
+    /// 占位卡片自动换成真实账号卡片。</summary>
     [RelayCommand]
-    private void OpenLogin()
-        => ServiceLocator.Get<MainViewModel>().OpenLoginDialogCommand.Execute(null);
+    private void LoginNetEase()
+        => ServiceLocator.Get<MainViewModel>().OpenLoginDialogFor(MusicSource.NetEase);
+
+    [RelayCommand]
+    private void LoginQq()
+        => ServiceLocator.Get<MainViewModel>().OpenLoginDialogFor(MusicSource.QQ);
 
     private void NotifyPageState()
     {
         OnPropertyChanged(nameof(HasAnyLogin));
-        OnPropertyChanged(nameof(ShowEmptyState));
         OnPropertyChanged(nameof(IsRefreshing));
     }
 

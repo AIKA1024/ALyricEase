@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Data;
 using Avalonia.Logging;
 using Avalonia.LogicalTree;
 using Avalonia.Rendering.Composition;
@@ -30,7 +31,8 @@ namespace ALyricEase.Controls;
 ///
 /// 原版的"从锚边揭示"由独立弹窗窗口的裁剪天然实现:初始偏移让表面超出锚边一侧,
 /// 越界部分被窗口裁掉,随滑动逐渐露出。PopupRoot.PositionChanged 只记录最终位置;
-/// 动画等 Popup.Opened 后再启动,避免在未显示的合成树上提前播放。
+/// 动画等 Popup.Opened 后再启动,避免在未显示的合成树上提前播放。Android 使用内联 overlay,
+/// 布局前先同步把合成层预置为透明,避免最终态在动画启动前闪现一帧。
 ///
 /// 用法:样式对弹层表面(FlyoutPresenter / MenuFlyoutPresenter / 子菜单 Popup#PART_Popup Border)设 IsEnabled=True;
 /// 弹窗关闭即销毁宿主,样式随 attach 重新应用,故每次打开都会重放。
@@ -57,11 +59,17 @@ public class FlyoutOpenAnimation
     /// <summary>每次打开只启动一次的去重标记(attach 时清空)。</summary>
     private static readonly ConditionalWeakTable<Visual, StrongBox<bool>> StartFlags = new();
 
+    /// <summary>布局完成前施加在 Opacity 上的临时动画优先级值；Dispose 后恢复原值源。</summary>
+    private static readonly ConditionalWeakTable<Visual, IDisposable> PrimedOpacities = new();
+
     /// <summary>弹窗窗口最终位置(PositionChanged 事件携带,WindowBase 无公开 Position 属性)。</summary>
     private static readonly ConditionalWeakTable<Visual, StrongBox<PixelPoint>> PopupPositions = new();
 
     /// <summary>探针诊断:每次动画实际启动时回报表面与起始偏移。</summary>
     internal static event Action<Visual, double, double>? Started;
+
+    /// <summary>探针诊断:表面在首次合成前已进入透明预备态。</summary>
+    internal static event Action<Visual>? Primed;
 
     static FlyoutOpenAnimation()
     {
@@ -69,8 +77,15 @@ public class FlyoutOpenAnimation
         {
             if (e.NewValue is not true)
             {
+                RestorePrimedOpacity(surface);
+                surface.AttachedToVisualTree -= OnSurfaceAttached;
+                surface.DetachedFromVisualTree -= OnSurfaceDetached;
                 return;
             }
+
+            // 必须早于 attach：Android 会在 AttachedToVisualTree 后建立并同步合成视觉，
+            // 此时才直接写 CompositionVisual 会被首次同步的 Opacity=1 覆盖。
+            PrimeSurface(surface);
 
             // 样式应用可能早于或晚于 attach,两种顺序都要覆盖;-=+= 保证订阅幂等
             surface.AttachedToVisualTree -= OnSurfaceAttached;
@@ -101,12 +116,17 @@ public class FlyoutOpenAnimation
     {
         if (sender is Visual surface)
         {
+            RestorePrimedOpacity(surface);
             StartFlags.Remove(surface);
         }
     }
 
     private static void Hook(Visual surface)
     {
+        // Android 的 overlay 弹窗要等布局后才有高度和方向，但不能等到那时才设置起始视觉：
+        // 否则 Popup 会先以最终态完成一次合成，再从 0 播放动画，形成明显闪现。
+        PrimeSurface(surface);
+
         switch (TopLevel.GetTopLevel(surface))
         {
             case PopupRoot popupRoot:
@@ -149,6 +169,12 @@ public class FlyoutOpenAnimation
 
     private static void TryStart(Visual surface)
     {
+        // Android overlay 使用 Loaded 队列；若弹层在回调前已关闭，不得给已脱树表面留下 started 状态。
+        if (TopLevel.GetTopLevel(surface) is null)
+        {
+            return;
+        }
+
         var box = StartFlags.GetOrCreateValue(surface);
         if (box.Value)
         {
@@ -252,6 +278,7 @@ public class FlyoutOpenAnimation
         var visual = ElementComposition.GetElementVisual(surface);
         if (visual is null)
         {
+            RestorePrimedOpacity(surface);
             Logger.TryGet(LogEventLevel.Warning, LogArea.Control)?.Log(surface,
                 "FlyoutOpenAnimation: 合成视觉不可用,跳过打开动画");
             return;
@@ -259,6 +286,7 @@ public class FlyoutOpenAnimation
 
         var compositor = visual.Compositor;
         var baseOffset = visual.Offset;
+        var baseOpacity = RestorePrimedOpacity(surface, visual);
 
         // 结束帧 = 基值:动画播完自动移出时钟并回落基值,无缝交接,无需手动 Stop
         var slide = compositor.CreateVector3KeyFrameAnimation();
@@ -270,8 +298,54 @@ public class FlyoutOpenAnimation
         var fade = compositor.CreateScalarKeyFrameAnimation();
         fade.Duration = FadeDuration;
         fade.InsertKeyFrame(0f, 0f);
-        fade.InsertKeyFrame(1f, 1f);
+        fade.InsertKeyFrame(1f, baseOpacity);
         visual.StartAnimation("Opacity", fade);
+    }
+
+    /// <summary>在表面 attach 前用可撤销的动画优先级值预隐藏；不会替换原有样式或绑定。</summary>
+    private static void PrimeSurface(Visual surface)
+    {
+        if (PrimedOpacities.TryGetValue(surface, out _) ||
+            StartFlags.TryGetValue(surface, out var start) && start.Value)
+        {
+            return;
+        }
+
+        var token = surface.SetValue(Visual.OpacityProperty, 0d, BindingPriority.Animation);
+        if (token is null)
+        {
+            return;
+        }
+
+        PrimedOpacities.Add(surface, token);
+
+        // 已 attach 时同时更新现有合成视觉；未 attach 时属性系统会在创建视觉时带入 0。
+        if (ElementComposition.GetElementVisual(surface) is { } visual)
+        {
+            visual.Opacity = 0f;
+        }
+
+        Primed?.Invoke(surface);
+    }
+
+    /// <summary>动画启动或提前关闭时恢复原始合成透明度。</summary>
+    private static float RestorePrimedOpacity(Visual surface, CompositionVisual? visual = null)
+    {
+        if (!PrimedOpacities.TryGetValue(surface, out var token))
+        {
+            return visual?.Opacity ?? (float)surface.Opacity;
+        }
+
+        PrimedOpacities.Remove(surface);
+        token.Dispose();
+        var baseOpacity = (float)surface.Opacity;
+        visual ??= ElementComposition.GetElementVisual(surface);
+        if (visual is not null)
+        {
+            visual.Opacity = baseOpacity;
+        }
+
+        return baseOpacity;
     }
 
     private static Popup? FindPopup(Visual surface) =>

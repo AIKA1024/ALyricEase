@@ -71,18 +71,27 @@ public static class MenuAnimProbe
         flyout.Items.Add(sub);
 
         var button = new Button { Content = "更多操作" };
+        var panel = new StackPanel { Margin = new Thickness(40), Children = { button } };
         var win = new Window
         {
             Width = 320,
             Height = 220,
-            Content = new StackPanel { Margin = new Thickness(40), Children = { button } },
+            Content = panel,
         };
         win.Show();
         Dispatcher.UIThread.RunJobs();
 
         var starts = new List<(Control Surface, double Dx, double Dy)>();
+        var primes = new List<(Control Surface, double Opacity)>();
+        var startBaseOpacities = new List<(Control Surface, double Opacity)>();
+        FlyoutOpenAnimation.Primed += OnPrimed;
         FlyoutOpenAnimation.Started += OnStarted;
-        void OnStarted(Visual surface, double dx, double dy) => starts.Add(((Control)surface, dx, dy));
+        void OnPrimed(Visual surface) => primes.Add(((Control)surface, surface.Opacity));
+        void OnStarted(Visual surface, double dx, double dy)
+        {
+            starts.Add(((Control)surface, dx, dy));
+            startBaseOpacities.Add(((Control)surface, surface.Opacity));
+        }
 
         // 普通 Flyout(音量/歌词字号同类):全局 FlyoutPresenter 样式必须启动同款淡入+滑入。
         var slider = new Slider
@@ -227,7 +236,53 @@ public static class MenuAnimProbe
         Dispatcher.UIThread.RunJobs();
         ReportStart("一级(Placement=Top 上方打开)", starts.Skip(topCountBefore).LastOrDefault(), flyout.Presenter, resolvedExpected: true);
 
+        // 强制走内联 OverlayPopupHost，覆盖 Android 没有独立 PopupRoot 的打开路径。
+        var overlaySurface = new Border
+        {
+            Width = 160,
+            Height = 96,
+            Background = Avalonia.Media.Brushes.DarkGray,
+            Child = new TextBlock { Text = "Android overlay" },
+        };
+        FlyoutOpenAnimation.SetIsEnabled(overlaySurface, true);
+        var overlayPopup = new Popup
+        {
+            Child = overlaySurface,
+            PlacementTarget = button,
+            Placement = PlacementMode.Bottom,
+            ShouldUseOverlayLayer = true,
+        };
+        panel.Children.Add(overlayPopup);
+        var overlayStartCount = starts.Count;
+        overlayPopup.IsOpen = true;
+        Dispatcher.UIThread.RunJobs();
+        Dispatcher.UIThread.RunJobs();
+        var overlayStarted = starts.Skip(overlayStartCount).Any(x => ReferenceEquals(x.Surface, overlaySurface));
+        var usesOverlayHost = overlaySurface.GetVisualAncestors().OfType<OverlayPopupHost>().Any();
+        var overlayPrimed = primes.Any(x => ReferenceEquals(x.Surface, overlaySurface) && Math.Abs(x.Opacity) < 0.001);
+        Console.WriteLine($"[menuanim] Android overlay: 宿主={usesOverlayHost} 首帧透明={overlayPrimed} " +
+                          $"动画启动={overlayStarted}");
+        if (!usesOverlayHost || !overlayPrimed || !overlayStarted)
+        {
+            _failCount++;
+        }
+        overlayPopup.IsOpen = false;
+        Dispatcher.UIThread.RunJobs();
+
+        FlyoutOpenAnimation.Primed -= OnPrimed;
         FlyoutOpenAnimation.Started -= OnStarted;
+
+        // Android overlay 的关键时序：表面必须在 attach 前以 Opacity=0 预备，启动动画时基值已恢复。
+        var allPrimed = starts.All(start => primes.Any(prime =>
+            ReferenceEquals(prime.Surface, start.Surface) && Math.Abs(prime.Opacity) < 0.001));
+        var allRestored = startBaseOpacities.All(start =>
+            Math.Abs(start.Opacity - 1f) < 0.001);
+        Console.WriteLine($"[menuanim] 首帧透明预备={allPrimed} 动画启动时基值恢复={allRestored} " +
+                          $"(预备 {primes.Count} 次/启动 {starts.Count} 次)");
+        if (!allPrimed || !allRestored)
+        {
+            _failCount++;
+        }
 
         // 合成视觉可用性(headless 下也应非空)
         var hasVisual = flyout.Presenter is not null && ElementComposition.GetElementVisual(flyout.Presenter) is not null;

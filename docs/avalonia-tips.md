@@ -74,6 +74,29 @@ list.AddHandler(InputElement.PointerPressedEvent, OnPressed, RoutingStrategies.T
 本项目落地:`Styles/Controls/Scrolling.axaml` 末尾的全局 `ScrollViewer` 样式,
 三个宿主(Desktop/Android/Headless)都通过 `StyleInclude` 引入该文件。
 
+## Flyout 打开动画:从裁剪区外揭示,并在 Popup.Opened 后起播
+
+**机制**(`Controls/FlyoutOpenAnimation.cs`):合成动画把弹层表面整体偏移一段距离,越界部分被
+**弹窗窗口**裁掉,随滑动逐渐露出 —— 这就是 WinUI 菜单"从锚边展开"的观感。桌面端弹层是独立
+`PopupRoot` 窗口,窗口按内容尺寸创建,所以**裁剪边界就是弹层自身矩形**。
+
+**坑**:偏移如果是固定值(原版 `g_entranceThemeOffset = 50`),开局遮掉的比例 = 偏移 / 弹层高度,
+**随弹层变高而衰减**。实测(`--menuheight` 探针):
+
+| 弹层 | 高度 | 固定 50px 遮掉 | 50% 高度遮掉 |
+|---|---|---|---|
+| 每日推荐 歌手/专辑菜单(2 项) | 96 | 52%(像"从 0 滑出") | 50 |
+| 侧栏歌单右键菜单(3 项 + 分隔线) | 141 | 35% | 70 |
+| 播放条歌曲菜单(10 项) | 330 | **15%(观感"几乎全出来了")** | 165 |
+
+**第二个坑**:`偏移 = 高度 × 0.5` 仍会让半个菜单在首帧出现。对播放条长菜单,
+这依然很像直接弹出。新规则使用 `偏移 = 弹层完整高度`,使首帧整个表面都在裁剪区外。
+
+**取值与时机都很关键**:`PopupRoot.PositionChanged` 发生时表面可能还没 Arrange,
+所以高度要取 `PopupRoot.ClientSize`(DIP) / overlay 时取 `OverlayPopupHost.Bounds`。但定位事件只用来记录方向,
+不能在未 Show 的合成树上直接起播;真正的 `StartAnimation` 放到 `Popup.Opened` 之后。
+`--menuanim` 探针同时核对真实弹层高度和完整高偏移。
+
 ## 卡片布局:封面 + 文字不要用"单格 Grid + Margin 下移"
 
 **`Stretch` 且显式设了 `Width`/`Height` 时,Avalonia 按 Center 处理** —— 这在"封面 + 标题"

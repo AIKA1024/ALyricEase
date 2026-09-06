@@ -213,6 +213,13 @@ public static class Program
             return;
         }
 
+        // 菜单高度探针(不触网):实测各处菜单高度,核对入场偏移的"遮掉比例"
+        if (args.Length > 0 && args[0] == "--menuheight")
+        {
+            MenuHeightProbe.Run();
+            return;
+        }
+
         // 菜单滑入动画自查(不触网):仿 WinUI3 打开动画,采样一级/子菜单 Transform 起点/终点与重放
         if (args.Length > 0 && args[0] == "--menuanim")
         {

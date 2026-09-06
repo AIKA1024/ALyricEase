@@ -38,7 +38,7 @@ public static class PlayerBarMenuProbe
         Assert(items[3] is MenuItem { Header: "专辑： 空想少女", IsEnabled: true }, "专辑项不正确");
         Assert(items[4] is Separator && items[8] is Separator, "操作组分隔线不正确");
         Assert(items[5] is MenuItem { Header: "分享", IsEnabled: true }, "分享项不正确");
-        Assert(items[6] is MenuItem { Header: "打开浏览器", IsEnabled: true }, "打开浏览器项不正确");
+        Assert(items[6] is MenuItem { Header: "在浏览器中打开", IsEnabled: true }, "打开浏览器项不正确");
         Assert(items[7] is MenuItem { Header: "复制链接", IsEnabled: true }, "复制链接项不正确");
         Assert(items[9] is MenuItem { Header: "来源： 咸咸的鱼王喜欢的音乐" }, "来源项不正确");
         Assert(menu.FlyoutPresenterClasses.Contains("player-song-menu"), "未应用播放条菜单宽度样式");

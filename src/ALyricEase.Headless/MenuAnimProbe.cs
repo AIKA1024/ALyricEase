@@ -46,14 +46,22 @@ public static class MenuAnimProbe
 
     public static void Run()
     {
+        // ---- 0. 入场偏移:整个弹层从裁剪区外滑入,首帧不再直接露出一半 ----
+        AssertOffset("极短弹层(比 50 还矮,整体滑入)", 40, 40);
+        AssertOffset("每日推荐 歌手/专辑(2 项 ~90px)", 90, 90);
+        AssertOffset("侧栏歌单右键(3 项 ~130px)", 130, 130);
+        AssertOffset("播放条歌曲菜单(10 项 ~300px)", 300, 300);
+        AssertOffset("超长弹层", 900, 900);
+        AssertOffset("高度不可用时的兜底", 0, 50);
+
         // ---- 1. 方向规则纯函数断言(仅纵向,与原版 MenuPopupThemeTransition 的 Top/Bottom 一致) ----
-        AssertDir("下方打开", new PixelRect(100, 200, 200, 100), new PixelRect(90, 90, 220, 100), 0, -50);
-        AssertDir("上方打开(下方空间不足翻转)", new PixelRect(100, 0, 200, 100), new PixelRect(90, 150, 220, 100), 0, 50);
-        AssertDir("右侧子菜单(顶部与父项对齐)向下滑", new PixelRect(320, 50, 200, 200), new PixelRect(100, 50, 200, 200), 0, -50);
-        AssertDir("左侧翻转子菜单(顶部对齐)向下滑", new PixelRect(0, 50, 200, 200), new PixelRect(210, 50, 200, 200), 0, -50);
-        AssertDir("子菜单被屏幕底部顶起(下端点在目标内)向上滑", new PixelRect(320, -50, 200, 140), new PixelRect(100, 50, 200, 150), 0, 50);
-        AssertDir("指针放置下开(上端点在目标内)", new PixelRect(50, 100, 200, 300), new PixelRect(40, 90, 320, 40), 0, -50);
-        AssertDir("指针放置上开(下端点在目标内)", new PixelRect(50, 0, 200, 120), new PixelRect(40, 100, 320, 40), 0, 50);
+        AssertDir("下方打开", new PixelRect(100, 200, 200, 100), new PixelRect(90, 90, 220, 100), 0, -100);
+        AssertDir("上方打开(下方空间不足翻转)", new PixelRect(100, 0, 200, 100), new PixelRect(90, 150, 220, 100), 0, 100);
+        AssertDir("右侧子菜单(顶部与父项对齐)向下滑", new PixelRect(320, 50, 200, 200), new PixelRect(100, 50, 200, 200), 0, -200);
+        AssertDir("左侧翻转子菜单(顶部对齐)向下滑", new PixelRect(0, 50, 200, 200), new PixelRect(210, 50, 200, 200), 0, -200);
+        AssertDir("子菜单被屏幕底部顶起(下端点在目标内)向上滑", new PixelRect(320, -50, 200, 140), new PixelRect(100, 50, 200, 150), 0, 140);
+        AssertDir("指针放置下开(上端点在目标内)", new PixelRect(50, 100, 200, 300), new PixelRect(40, 90, 320, 40), 0, -300);
+        AssertDir("指针放置上开(下端点在目标内)", new PixelRect(50, 0, 200, 120), new PixelRect(40, 100, 320, 40), 0, 120);
 
         // ---- 2. 真实打开诊断 ----
         var flyout = new CapturingMenuFlyout { Placement = PlacementMode.Bottom };
@@ -156,6 +164,36 @@ public static class MenuAnimProbe
         Dispatcher.UIThread.RunJobs();
         ReportStart("一级(下方打开)", starts.LastOrDefault(), flyout.Presenter, resolvedExpected: true);
 
+        // 长菜单(播放条歌曲菜单同类):起始偏移必须按真实弹窗高度放大,而不是退回兜底 50。
+        // 弹窗定位时表面可能还没 Arrange(Bounds=0),因此高度必须取自宿主窗口;
+        // 真正起播则要等 Popup.Opened。下面同时守住完整高偏移与可见宿主两个条件。
+        var tallCountBefore = starts.Count;
+        var tall = new CapturingMenuFlyout { Placement = PlacementMode.Bottom };
+        for (var i = 0; i < 10; i++)
+        {
+            tall.Items.Add(new MenuItem { Header = $"菜单项 {i + 1}" });
+        }
+
+        tall.ShowAt(button);
+        Dispatcher.UIThread.RunJobs();
+        Dispatcher.UIThread.RunJobs();
+        var tallStart = starts.Skip(tallCountBefore).LastOrDefault();
+        var tallExpected = ALyricEase.Controls.FlyoutOpenAnimation.ComputeEntranceOffset(
+            tall.Presenter?.Bounds.Height ?? 0);
+        var tallHostVisible = TopLevel.GetTopLevel(tallStart.Surface)?.IsVisible == true;
+        var tallOk = ReferenceEquals(tallStart.Surface, tall.Presenter)
+                     && Math.Abs(Math.Abs(tallStart.Dy) - tallExpected) < 0.5
+                     && tallHostVisible;
+        Console.WriteLine($"[menuanim] 长菜单实际偏移: |dy|={Math.Abs(tallStart.Dy):F0} 期望 {tallExpected:F0} " +
+            $"(表面高 {tall.Presenter?.Bounds.Height:F0},宿主已可见={tallHostVisible}) {(tallOk ? "OK" : "FAIL")}");
+        if (!tallOk)
+        {
+            _failCount++;
+        }
+
+        tall.Hide();
+        Dispatcher.UIThread.RunJobs();
+
         // 子菜单:纵向滑入(方向绝对值由纯函数断言覆盖,此处仅验证启动与解析)
         var subCountBefore = starts.Count;
         sub.IsSubMenuOpen = true;
@@ -217,10 +255,12 @@ public static class MenuAnimProbe
         // headless 无弹窗定位器,弹窗矩形为 (0,0) 系(方向绝对值仅桌面有效),故只断言:
         // 1) 目标表面的动画确实启动 2) 弹窗矩形与放置目标解析成功
         var resolved = FlyoutOpenAnimation.LastResolved;
+        var hostVisibleAtStart = TopLevel.GetTopLevel(actual.Surface)?.IsVisible == true;
         var ok = expectedSurface is not null && ReferenceEquals(actual.Surface, expectedSurface)
-                 && resolved == (resolvedExpected, resolvedExpected);
+                 && resolved == (resolvedExpected, resolvedExpected) && hostVisibleAtStart;
         Console.WriteLine($"[menuanim] {label}: 启动偏移=({actual.Dx:F0},{actual.Dy:F0}) " +
-            $"矩形/目标解析={resolved} (期望 {resolvedExpected}) 表面正确={ReferenceEquals(actual.Surface, expectedSurface)} {(ok ? "OK" : "FAIL")}");
+            $"矩形/目标解析={resolved} (期望 {resolvedExpected}) " +
+            $"宿主已可见={hostVisibleAtStart} 表面正确={ReferenceEquals(actual.Surface, expectedSurface)} {(ok ? "OK" : "FAIL")}");
         if (!ok)
         {
             _failCount++;
@@ -303,9 +343,21 @@ public static class MenuAnimProbe
 
     private static void AssertDir(string label, PixelRect popup, PixelRect target, double expectedDx, double expectedDy)
     {
-        var (dx, dy) = FlyoutOpenAnimation.ComputeStartOffset(popup, target);
+        // 探针里的矩形是物理像素,scale=1 时与 DIP 数值相同,直接把弹窗高度当表面高度传入
+        var (dx, dy) = FlyoutOpenAnimation.ComputeStartOffset(popup, target, popup.Height);
         var ok = Math.Abs(dx - expectedDx) < 0.5 && Math.Abs(dy - expectedDy) < 0.5;
         Console.WriteLine($"[menuanim] 规则[{label}]: ({dx:F0},{dy:F0}) 期望 ({expectedDx:F0},{expectedDy:F0}) {(ok ? "OK" : "FAIL")}");
+        if (!ok)
+        {
+            _failCount++;
+        }
+    }
+
+    private static void AssertOffset(string label, double surfaceHeight, double expected)
+    {
+        var actual = FlyoutOpenAnimation.ComputeEntranceOffset(surfaceHeight);
+        var ok = Math.Abs(actual - expected) < 0.5;
+        Console.WriteLine($"[menuanim] 偏移[{label}]: {actual:F0} 期望 {expected:F0} {(ok ? "OK" : "FAIL")}");
         if (!ok)
         {
             _failCount++;

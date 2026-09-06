@@ -35,7 +35,13 @@ public partial class LyricView : UserControl
         InitializeComponent();
         // 虚拟化回收容器后类会丢,每次 realized 按当前距离重设
         LyricList.ContainerPrepared += OnContainerPrepared;
-        // ListBoxItem 会把首次点击标记为已处理（用于选中），仍需在同一次 Tap 中执行跳转。
+        // 鼠标按下时 ListBoxItem 会先改选中项并触发居中滚动，导致松开时目标已移位、Tap 被取消。
+        // 与侧栏列表保持一致：鼠标选择交给 Tap 完成；触摸/笔仍保留原生按压以支持滚动手势。
+        LyricList.AddHandler(
+            InputElement.PointerPressedEvent,
+            OnLyricListPointerPressed,
+            RoutingStrategies.Tunnel);
+        // ListBoxItem 会把 Tap 标记为已处理，仍需在同一次 Tap 中执行跳转。
         LyricList.AddHandler(
             InputElement.TappedEvent,
             OnLyricListTapped,
@@ -97,6 +103,18 @@ public partial class LyricView : UserControl
     {
         if (e.Container is Control container)
             ApplyProgressClasses(container, e.Index, LyricList.SelectedIndex);
+    }
+
+    private void OnLyricListPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Pointer.Type != PointerType.Mouse ||
+            !e.GetCurrentPoint(LyricList).Properties.IsLeftButtonPressed ||
+            e.Source is not Visual source)
+            return;
+
+        var container = source as ListBoxItem ?? source.FindAncestorOfType<ListBoxItem>();
+        if (container?.DataContext is LyricLine)
+            e.Handled = true;
     }
 
     private void OnLyricListTapped(object? sender, TappedEventArgs e)

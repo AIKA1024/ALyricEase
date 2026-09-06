@@ -47,6 +47,13 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
+        // 歌词点击回归：鼠标按下不得先触发 ListBox 选中滚动，单次点击必须直接请求跳转。
+        if (args.Length > 0 && args[0] == "--lyric-click")
+        {
+            Environment.ExitCode = LyricClickProbe.Run();
+            return;
+        }
+
         // 封面 single-flight/LRU 回归：32 个同 URL 请求应只下载一次并共享同一解码实例。
         if (args.Length > 0 && args[0] == "--cover-cache")
         {

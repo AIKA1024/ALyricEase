@@ -6,6 +6,8 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
+using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
 
@@ -43,6 +45,8 @@ public static class AccountStatesProbe
         State(win, vm, playlist, "仅 QQ 登录", ne: false, qq: true);
         State(win, vm, playlist, "两者均登录", ne: true, qq: true);
 
+        VerifyAnonymousPublicPlaylistVisibility(playlist);
+
         // 单平台登录态下点未登录那张卡片的登录按钮:应打开登录弹层并定位到对应标签
         State(win, vm, playlist, "点击验证(仅网易云登录)", ne: true, qq: false);
         ClickLogin(win, main, playlist, "登录 QQ 音乐", expectQqTab: true);
@@ -54,6 +58,50 @@ public static class AccountStatesProbe
         vm.Qq.SetLoginState(false);
         if (main.IsLoginDialogOpen) main.CloseLoginDialogCommand.Execute(null);
         win.Close();
+    }
+
+    /// <summary>未登录时公共歌单详情仍应显示；未选择歌单时维持原空白入口。</summary>
+    private static void VerifyAnonymousPublicPlaylistVisibility(PlaylistViewModel playlist)
+    {
+        playlist.IsLoggedIn = false;
+        playlist.IsQqLoggedIn = false;
+        playlist.SelectedPlaylist = null;
+        var view = new PlaylistView { DataContext = playlist };
+        var win = new Window { Width = 900, Height = 700, Content = view };
+        win.Show();
+        Drain();
+
+        try
+        {
+            var detail = view.FindControl<Grid>("DetailShell")
+                         ?? throw new InvalidOperationException("找不到歌单详情根容器。");
+            if (detail.IsVisible)
+                throw new InvalidOperationException("未登录且未打开歌单时不应显示详情根容器。");
+
+            playlist.SelectedPlaylist = new PlaylistItemViewModel(new Playlist
+            {
+                Id = 1,
+                Name = "匿名公共歌单",
+                Source = MusicSource.NetEase,
+            });
+            Drain();
+            if (!detail.IsVisible)
+                throw new InvalidOperationException("未登录打开公共歌单后详情根容器仍不可见。");
+
+            playlist.SelectedPlaylist = null;
+            playlist.IsLoggedIn = true;
+            Drain();
+            if (!detail.IsVisible)
+                throw new InvalidOperationException("登录后未选择歌单时原有详情入口不可见。");
+
+            Console.WriteLine("[acct:playlist] PASS 匿名公共歌单可见，登录态空入口保留");
+        }
+        finally
+        {
+            playlist.SelectedPlaylist = null;
+            playlist.IsLoggedIn = false;
+            win.Close();
+        }
     }
 
     private static void State(Window win, AccountViewModel vm, PlaylistViewModel playlist,

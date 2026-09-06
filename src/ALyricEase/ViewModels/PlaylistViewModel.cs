@@ -147,6 +147,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>歌单详情页内容可见性:任一音源登录即可(只登 QQ 时网易云未登录也要能看 QQ 歌单)。</summary>
     public bool HasAnyLogin => IsLoggedIn || IsQqLoggedIn;
 
+    /// <summary>登录后保留歌单页的“请选择”空态；未登录时只要从推荐/搜索打开了公共歌单也应显示详情。</summary>
+    public bool ShowPlaylistContent => HasAnyLogin || SelectedPlaylist is not null;
+
     public ObservableCollection<PlaylistItemViewModel> Playlists { get; } = new();
 
     /// <summary>QQ 登录用户的歌单(侧边栏"QQ音乐"分组;一次全量拉取,失败静默可重试)。</summary>
@@ -172,9 +175,17 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(ShowLogin));
         OnPropertyChanged(nameof(HasAnyLogin));
+        OnPropertyChanged(nameof(ShowPlaylistContent));
     }
 
-    partial void OnIsQqLoggedInChanged(bool value) => OnPropertyChanged(nameof(HasAnyLogin));
+    partial void OnIsQqLoggedInChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HasAnyLogin));
+        OnPropertyChanged(nameof(ShowPlaylistContent));
+    }
+
+    partial void OnSelectedPlaylistChanged(PlaylistItemViewModel? value) =>
+        OnPropertyChanged(nameof(ShowPlaylistContent));
 
     /// <summary>进入页面时调用:恢复本地登录态(网易云拉资料,不阻塞 UI,失败静默),QQ 侧由 EnsureQqLoadedAsync 处理。</summary>
     public async Task EnsureLoadedAsync()

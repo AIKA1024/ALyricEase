@@ -80,7 +80,8 @@
   <Grid>
     <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
-      <Grid Classes="detail-shell" RowDefinitions="Auto,*" IsVisible="{Binding HasAnyLogin}">
+      <Grid x:Name="DetailShell" Classes="detail-shell" RowDefinitions="Auto,*"
+            IsVisible="{Binding ShowPlaylistContent}">
         <!-- 未选中歌单(QQ 单独登录首次进入)时整卡隐藏,只留居中提示文案 -->
         <Border x:Name="HeroCard" Classes="playlist-hero" Grid.Row="0"
                 IsVisible="{Binding SelectedPlaylist, Converter={x:Static ObjectConverters.IsNotNull}}">

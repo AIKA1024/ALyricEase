@@ -90,6 +90,7 @@ public partial class App : Avalonia.Application
         services.AddSingleton<AlbumViewModel>();
         services.AddSingleton<ArtistSongsPageViewModel>();
         services.AddSingleton<ArtistAlbumsPageViewModel>();
+        services.AddSingleton<RecentPlaybackViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<AccountViewModel>();
         services.AddSingleton<MainViewModel>();

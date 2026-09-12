@@ -46,6 +46,7 @@ public static class AccountStatesProbe
         State(win, vm, playlist, "两者均登录", ne: true, qq: true);
 
         VerifyAnonymousPublicPlaylistVisibility(playlist);
+        VerifyOfflineLibraryNavigation(main, playlist);
 
         // 单平台登录态下点未登录那张卡片的登录按钮:应打开登录弹层并定位到对应标签
         State(win, vm, playlist, "点击验证(仅网易云登录)", ne: true, qq: false);
@@ -58,6 +59,37 @@ public static class AccountStatesProbe
         vm.Qq.SetLoginState(false);
         if (main.IsLoginDialogOpen) main.CloseLoginDialogCommand.Execute(null);
         win.Close();
+    }
+
+    /// <summary>认证状态为 false 时，只要本地歌单快照存在，侧栏分组和子项仍必须可见。</summary>
+    private static void VerifyOfflineLibraryNavigation(MainViewModel main, PlaylistViewModel playlist)
+    {
+        playlist.IsLoggedIn = false;
+        playlist.IsQqLoggedIn = false;
+        playlist.Playlists.Clear();
+        playlist.QqPlaylists.Clear();
+        playlist.Playlists.Add(new PlaylistItemViewModel(new Playlist
+        {
+            Id = 701,
+            Name = "离线网易云歌单",
+            Source = MusicSource.NetEase,
+        }));
+        playlist.QqPlaylists.Add(new PlaylistItemViewModel(new Playlist
+        {
+            Id = 702,
+            Name = "离线 QQ 歌单",
+            Source = MusicSource.QQ,
+        }));
+        Drain();
+
+        var hasNetEase = main.ShellNavItems.Any(item => item.Key == "Playlist:701");
+        var hasQq = main.ShellNavItems.Any(item => item.Key == "QQPlaylist:702");
+        if (!hasNetEase || !hasQq)
+            throw new InvalidOperationException("未登录时离线歌单快照没有进入侧栏导航。");
+
+        Console.WriteLine("[acct:offline-nav] PASS 离线歌单导航不依赖在线登录状态");
+        playlist.Playlists.Clear();
+        playlist.QqPlaylists.Clear();
     }
 
     /// <summary>未登录时公共歌单详情仍应显示；未选择歌单时维持原空白入口。</summary>

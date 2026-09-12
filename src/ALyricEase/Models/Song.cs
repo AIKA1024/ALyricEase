@@ -46,4 +46,7 @@ public sealed class Song
     /// 避免失败歌曲仍被上一曲/下一曲再次选中。
     /// </summary>
     public bool IsPlaybackUnavailable { get; internal set; }
+
+    /// <summary>该实例来自离线歌单快照且已确认有本地音频；播放时跳过在线音质升级请求。</summary>
+    internal bool PreferCachedPlayback { get; set; }
 }

@@ -38,6 +38,10 @@ internal static class MusicCacheProbe
                 if (shouldMiss is not null)
                     return Fail("低音质缓存错误满足了高音质请求");
 
+            using (var offlineFallback = cache.TryAcquireBestAvailable(song))
+                if (offlineFallback is null || offlineFallback.QualityRank != 2)
+                    return Fail("断网时没有回退到本地最高可用音质");
+
             await cache.CacheAsync(song, "lossless", "https://example.test/42-high.flac");
             var highLease = cache.TryAcquire(song, "higher");
             if (highLease is null || highLease.QualityRank != 4 || handler.RequestCount != 2)
@@ -65,19 +69,64 @@ internal static class MusicCacheProbe
             if (cachedLyric?.Original != lyric.Original || cachedLyric.Translation != lyric.Translation)
                 return Fail("原文歌词或翻译缓存读写失败");
 
+            var playlist = new Playlist
+            {
+                Id = 7,
+                Source = MusicSource.NetEase,
+                Name = "离线歌单",
+                TrackCount = 1,
+                CoverUrl = coverUrl,
+            };
+            var secondPlaylist = new Playlist
+            {
+                Id = 9,
+                Source = MusicSource.NetEase,
+                Name = "第二歌单",
+            };
+            await cache.CachePlaylistListAsync(
+                MusicSource.NetEase, "离线用户", [playlist, secondPlaylist]);
+            await cache.CachePlaylistTracksAsync(playlist, [song]);
+
+            // 新实例模拟应用重启，确保不是只在本次运行的内存里可见。
+            var restoredCache = new MusicCacheService(128, root, http);
+            var library = restoredCache.TryGetPlaylistLibrary(MusicSource.NetEase);
+            var restoredTracks = restoredCache.TryGetPlaylistTracks(playlist);
+            if (library?.UserName != "离线用户"
+                || library.Playlists.Count != 2
+                || library.Playlists[0].Name != playlist.Name
+                || library.Playlists[1].Name != secondPlaylist.Name
+                || restoredTracks.Count != 1
+                || restoredTracks[0].Name != song.Name)
+                return Fail("歌单顺序或曲目离线索引未能跨重启恢复");
+
+            var uncachedSong = new Song { Id = 404, Source = MusicSource.NetEase, Name = "未缓存" };
+            if (!cache.IsAudioCached(song) || cache.IsAudioCached(uncachedSong))
+                return Fail("离线歌曲缓存状态判断错误");
+
+            var publicPlaylist = new Playlist
+            {
+                Id = 8,
+                Source = MusicSource.QQ,
+                Name = "公共歌单",
+            };
+            await cache.CachePlaylistTracksAsync(publicPlaylist, [song]);
+            if (cache.TryGetPlaylistLibrary(MusicSource.QQ) is not null)
+                return Fail("仅打开公共歌单时错误伪造了账号歌单列表");
+
             await cache.ClearAsync();
             if (!File.Exists(highLease.FilePath))
                 return Fail("清理删除了正在播放的高音质文件");
             if (await cache.TryGetCoverAsync(coverUrl) is not null
-                || await cache.TryGetLyricAsync(song) is not null)
-                return Fail("清理后封面或歌词仍存在");
+                || await cache.TryGetLyricAsync(song) is not null
+                || cache.TryGetPlaylistLibrary(MusicSource.NetEase) is not null)
+                return Fail("清理后封面、歌词或离线歌单索引仍存在");
 
             var highPath = highLease.FilePath;
             highLease.Dispose();
             if (File.Exists(highPath) || cache.GetCurrentSizeBytes() != 0)
                 return Fail("租约释放后未删除待清理文件");
 
-            Console.WriteLine("[media-cache] PASS: 音质升级/复用、封面、歌词翻译与统一清理均正常");
+            Console.WriteLine("[media-cache] PASS: 音质升级/断网降级、封面、歌词、离线歌单索引与统一清理均正常");
             return 0;
         }
         finally

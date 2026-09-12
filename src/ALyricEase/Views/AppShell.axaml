@@ -35,6 +35,9 @@
     <DataTemplate DataType="vm:ArtistAlbumsPageViewModel">
       <views:ArtistAlbumsPageView />
     </DataTemplate>
+    <DataTemplate DataType="vm:RecentPlaybackViewModel">
+      <views:RecentPlaybackView />
+    </DataTemplate>
     <!-- 私人FM:页面直接绑定播放器 VM(FM 无限流在播放器内) -->
     <DataTemplate DataType="vm:PlayerViewModel">
       <views:PersonalFmView />

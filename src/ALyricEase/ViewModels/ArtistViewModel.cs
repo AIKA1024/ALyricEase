@@ -36,7 +36,6 @@ public sealed partial class ArtistViewModel : ViewModelBase
     }
 
     [ObservableProperty] private string _name = "";
-    [ObservableProperty] private string _subtitle = "";
     [ObservableProperty] private bool _hasAlbums;
     [ObservableProperty] private bool _hasSingles;
     [ObservableProperty] private IImage? _avatar;
@@ -64,7 +63,6 @@ public sealed partial class ArtistViewModel : ViewModelBase
             if (info.Avatar is { Length: > 0 } pic) Avatar = await CoverLoader.LoadAsync(pic, 240);
 
             var songs = await _api.GetArtistSongsAsync(artistId, 30);
-            Subtitle = $"{songs.Count} 首单曲";
             var queue = songs;
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, api: _api, queue: queue, source: info.Name));
@@ -135,7 +133,6 @@ public sealed partial class ArtistViewModel : ViewModelBase
 
             var songs = await _qqApi.GetArtistSongsAsync(singerMid, 30);
             Name = ResolveSingerName(songs, singerMid);
-            Subtitle = $"{songs.Count} 首单曲";
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, queue: songs, source: Name));
 
@@ -163,7 +160,6 @@ public sealed partial class ArtistViewModel : ViewModelBase
     private void ClearContent()
     {
         Name = "";
-        Subtitle = "";
         Avatar = null;
         Songs.Clear();
         Albums.Clear();

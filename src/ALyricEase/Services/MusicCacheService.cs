@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ALyricEase.Models;
+using ALyricEase.Models.Dtos;
 
 namespace ALyricEase.Services;
 
@@ -19,6 +21,7 @@ public sealed class MusicCacheService
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    private const string OfflineIndexFileName = "offline-index.json";
 
     private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromMinutes(10) };
 
@@ -32,6 +35,7 @@ public sealed class MusicCacheService
     private readonly ConcurrentDictionary<string, Lazy<Task>> _downloads = new(StringComparer.Ordinal);
     private int _maximumSizeMb;
     private int _clearGeneration;
+    private MusicCacheIndexFile _offlineIndex;
 
     public MusicCacheService(AppStateStore state)
         : this(state.MusicCacheMaximumSizeMb, GetDefaultCacheDirectory(), SharedHttp)
@@ -45,6 +49,7 @@ public sealed class MusicCacheService
         _http = http;
         Directory.CreateDirectory(_cacheDirectory);
         DeleteStaleTemporaryFiles();
+        _offlineIndex = LoadOfflineIndex();
         _ = TrimToLimitAsync();
     }
 
@@ -55,14 +60,49 @@ public sealed class MusicCacheService
 
     /// <summary>取得满足请求音质的本地音乐；更高音质也可直接满足较低音质请求。</summary>
     public MusicCacheLease? TryAcquire(Song song, string requestedQuality)
+        => TryAcquire(song, GetQualityRank(song.Source, requestedQuality));
+
+    /// <summary>取得本地最高可用音质，不要求满足当前在线音质偏好；供断网回退使用。</summary>
+    public MusicCacheLease? TryAcquireBestAvailable(Song song) => TryAcquire(song, minimumRank: 0);
+
+    /// <summary>只检查歌曲是否存在任意完整音频缓存，不创建播放租约。</summary>
+    public bool IsAudioCached(Song song) => GetAudioCacheAvailability([song])[0];
+
+    /// <summary>一次目录扫描返回整批歌曲的缓存状态，避免离线大歌单逐行枚举目录。</summary>
+    public IReadOnlyList<bool> GetAudioCacheAvailability(IReadOnlyList<Song> songs)
+    {
+        _mutationGate.Wait();
+        try
+        {
+            var cachedKeys = new HashSet<string>(StringComparer.Ordinal);
+            if (Directory.Exists(_cacheDirectory))
+            {
+                foreach (var path in Directory.EnumerateFiles(_cacheDirectory, "a-*"))
+                {
+                    if (path.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
+                    var name = Path.GetFileName(path);
+                    // a- + 64 位 SHA256 + - + 2 位音质等级 + 扩展名
+                    if (name.Length >= 69 && name[66] == '-')
+                        cachedKeys.Add(name.Substring(2, 64));
+                }
+            }
+            return songs.Select(song => cachedKeys.Contains(BuildSongKey(song))).ToArray();
+        }
+        catch
+        {
+            return new bool[songs.Count];
+        }
+        finally { _mutationGate.Release(); }
+    }
+
+    private MusicCacheLease? TryAcquire(Song song, int minimumRank)
     {
         var songKey = BuildSongKey(song);
-        var requestedRank = GetQualityRank(song.Source, requestedQuality);
         _mutationGate.Wait();
         try
         {
             var candidate = GetAudioFiles(songKey)
-                .Where(file => file.Rank >= requestedRank)
+                .Where(file => file.Rank >= minimumRank)
                 .OrderByDescending(file => file.Rank)
                 .FirstOrDefault();
             if (candidate is null) return null;
@@ -150,6 +190,59 @@ public sealed class MusicCacheService
         return StoreBytesAsync(BuildLyricFileName(song), stream.ToArray());
     }
 
+    /// <summary>保存账号歌单列表快照；已有详情曲目会在列表刷新时保留。</summary>
+    public Task CachePlaylistListAsync(
+        MusicSource source,
+        string userName,
+        IReadOnlyList<Playlist> playlists)
+    {
+        var snapshot = playlists.Select(ToCachedPlaylist).ToList();
+        return CachePlaylistListCoreAsync(source, userName, snapshot);
+    }
+
+    /// <summary>保存已成功解析的歌单曲目，供断网时打开详情并播放本地音频。</summary>
+    public Task CachePlaylistTracksAsync(Playlist playlist, IReadOnlyList<Song> songs)
+    {
+        var playlistSnapshot = ToCachedPlaylist(playlist);
+        var trackSnapshot = songs.Select(ToCachedSong).ToList();
+        return CachePlaylistTracksCoreAsync(playlistSnapshot, trackSnapshot);
+    }
+
+    /// <summary>读取账号歌单快照。返回 null 表示该音源从未成功同步过。</summary>
+    public CachedPlaylistLibrary? TryGetPlaylistLibrary(MusicSource source)
+    {
+        _mutationGate.Wait();
+        try
+        {
+            var account = _offlineIndex.Accounts.FirstOrDefault(item => item.Source == (int)source);
+            if (account is not { HasPlaylistList: true }) return null;
+            return new CachedPlaylistLibrary(
+                account.UserName,
+                account.Playlists.Where(item => item.Listed).Select(ToPlaylist).ToList());
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    /// <summary>读取歌单最近一次成功解析的曲目快照。</summary>
+    public IReadOnlyList<Song> TryGetPlaylistTracks(Playlist playlist)
+    {
+        _mutationGate.Wait();
+        try
+        {
+            var account = _offlineIndex.Accounts.FirstOrDefault(
+                item => item.Source == (int)playlist.Source);
+            var cached = account?.Playlists.FirstOrDefault(item => item.Id == playlist.Id);
+            return cached?.Tracks.Select(ToSong).ToList() ?? [];
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
     public Task SetMaximumSizeMbAsync(int value)
     {
         Volatile.Write(ref _maximumSizeMb, NormalizeMaximumSizeMb(value));
@@ -172,6 +265,7 @@ public sealed class MusicCacheService
                 }
                 TryDelete(path);
             }
+            _offlineIndex = new MusicCacheIndexFile();
         }
         finally
         {
@@ -300,6 +394,112 @@ public sealed class MusicCacheService
         }
     }
 
+    private async Task CachePlaylistListCoreAsync(
+        MusicSource source,
+        string userName,
+        List<CachedPlaylistFile> playlists)
+    {
+        await _mutationGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var account = GetOrCreateCachedAccount(source);
+            account.UserName = userName ?? "";
+            account.HasPlaylistList = true;
+            var previous = account.Playlists.ToDictionary(item => item.Id);
+            foreach (var playlist in playlists)
+            {
+                playlist.Listed = true;
+                if (previous.TryGetValue(playlist.Id, out var old))
+                    playlist.Tracks = old.Tracks;
+            }
+
+            // 保留从推荐/搜索打开过的公共歌单详情，但它们不进入账号侧栏。
+            playlists.AddRange(account.Playlists.Where(item => !item.Listed
+                && playlists.All(candidate => candidate.Id != item.Id)));
+            account.Playlists = playlists;
+            SaveOfflineIndexLocked();
+        }
+        catch
+        {
+            // 离线索引写入失败不影响在线页面。
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    private async Task CachePlaylistTracksCoreAsync(
+        CachedPlaylistFile playlist,
+        List<CachedSongFile> tracks)
+    {
+        await _mutationGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var account = GetOrCreateCachedAccount((MusicSource)playlist.Source);
+            var existingIndex = account.Playlists.FindIndex(item => item.Id == playlist.Id);
+            if (existingIndex >= 0)
+            {
+                var existing = account.Playlists[existingIndex];
+                playlist.Listed = existing.Listed;
+            }
+            playlist.TrackCount = Math.Max(playlist.TrackCount, tracks.Count);
+            playlist.Tracks = tracks;
+            // 必须原位替换：删除后 Add 会把每个打开过的歌单挪到末尾，离线重启后侧栏顺序随之改变。
+            if (existingIndex >= 0)
+                account.Playlists[existingIndex] = playlist;
+            else
+                account.Playlists.Add(playlist);
+            SaveOfflineIndexLocked();
+        }
+        catch
+        {
+            // 离线索引写入失败不影响在线页面。
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    private CachedAccountFile GetOrCreateCachedAccount(MusicSource source)
+    {
+        var account = _offlineIndex.Accounts.FirstOrDefault(item => item.Source == (int)source);
+        if (account is not null) return account;
+        account = new CachedAccountFile { Source = (int)source };
+        _offlineIndex.Accounts.Add(account);
+        return account;
+    }
+
+    private MusicCacheIndexFile LoadOfflineIndex()
+    {
+        try
+        {
+            var path = Path.Combine(_cacheDirectory, OfflineIndexFileName);
+            if (!File.Exists(path)) return new MusicCacheIndexFile();
+            return JsonSerializer.Deserialize(
+                       File.ReadAllText(path),
+                       MusicCacheJsonContext.Default.MusicCacheIndexFile)
+                   ?? new MusicCacheIndexFile();
+        }
+        catch
+        {
+            return new MusicCacheIndexFile();
+        }
+    }
+
+    private void SaveOfflineIndexLocked()
+    {
+        Directory.CreateDirectory(_cacheDirectory);
+        var path = Path.Combine(_cacheDirectory, OfflineIndexFileName);
+        var temporaryPath = path + ".part";
+        File.WriteAllText(
+            temporaryPath,
+            JsonSerializer.Serialize(_offlineIndex, MusicCacheJsonContext.Default.MusicCacheIndexFile));
+        File.Move(temporaryPath, path, overwrite: true);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+    }
+
     private async Task<byte[]?> TryReadBytesAsync(string fileName)
     {
         await _mutationGate.WaitAsync().ConfigureAwait(false);
@@ -416,6 +616,9 @@ public sealed class MusicCacheService
         var result = new List<FileInfo>();
         foreach (var path in EnumerateCacheFiles())
         {
+            if (string.Equals(Path.GetFileName(path), OfflineIndexFileName,
+                    StringComparison.OrdinalIgnoreCase))
+                continue;
             try { result.Add(new FileInfo(path)); }
             catch { }
         }
@@ -532,6 +735,66 @@ public sealed class MusicCacheService
         return ".audio";
     }
 
+    private static CachedPlaylistFile ToCachedPlaylist(Playlist playlist) => new()
+    {
+        Id = playlist.Id,
+        DirId = playlist.DirId,
+        Source = (int)playlist.Source,
+        Name = playlist.Name,
+        Description = playlist.Description,
+        TrackCount = playlist.TrackCount,
+        CoverUrl = playlist.CoverUrl,
+        CanAddTracks = playlist.CanAddTracks,
+    };
+
+    private static Playlist ToPlaylist(CachedPlaylistFile playlist) => new()
+    {
+        Id = playlist.Id,
+        DirId = playlist.DirId,
+        Source = (MusicSource)playlist.Source,
+        Name = playlist.Name,
+        Description = playlist.Description,
+        TrackCount = playlist.TrackCount,
+        CoverUrl = playlist.CoverUrl,
+        CanAddTracks = playlist.CanAddTracks,
+    };
+
+    private static CachedSongFile ToCachedSong(Song song) => new()
+    {
+        Id = song.Id,
+        Source = (int)song.Source,
+        Mid = song.Mid,
+        Name = song.Name,
+        Artist = song.Artist,
+        Album = song.Album,
+        CoverUrl = song.CoverUrl,
+        DurationMs = song.DurationMs,
+        Fee = song.Fee,
+        ArtistIds = song.ArtistIds.ToArray(),
+        ArtistNames = song.ArtistNames.ToArray(),
+        ArtistMids = song.ArtistMids.ToArray(),
+        AlbumId = song.AlbumId,
+        AlbumMid = song.AlbumMid,
+    };
+
+    private static Song ToSong(CachedSongFile song) => new()
+    {
+        Id = song.Id,
+        Source = (MusicSource)song.Source,
+        Mid = song.Mid,
+        Name = song.Name,
+        Artist = song.Artist,
+        Album = song.Album,
+        CoverUrl = song.CoverUrl,
+        DurationMs = song.DurationMs,
+        Fee = song.Fee,
+        ArtistIds = song.ArtistIds,
+        ArtistNames = song.ArtistNames,
+        ArtistMids = song.ArtistMids,
+        AlbumId = song.AlbumId,
+        AlbumMid = song.AlbumMid,
+    };
+
     private static long TryGetLength(string path)
     {
         try { return new FileInfo(path).Length; }
@@ -577,6 +840,9 @@ public sealed class MusicCacheService
 
     private sealed record AudioCacheFile(string Path, int Rank);
 }
+
+/// <summary>某音源最近一次成功同步的侧栏歌单。</summary>
+public sealed record CachedPlaylistLibrary(string UserName, IReadOnlyList<Playlist> Playlists);
 
 /// <summary>固定正在播放的缓存音乐，防止清理时中断播放。</summary>
 public sealed class MusicCacheLease : IDisposable

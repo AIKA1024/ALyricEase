@@ -29,8 +29,18 @@ internal static class CoverLoaderProbe
             var shared = first is not null && images.All(image => ReferenceEquals(first, image));
 
             var cached = await CoverLoader.LoadAsync(url);
-            var passed = requestCount == 1 && shared && ReferenceEquals(first, cached);
-            Console.WriteLine($"[cover-cache] requests={requestCount}, shared={shared}, cached={ReferenceEquals(first, cached)}");
+            var playerSizedUrl = CoverLoader.BuildSizedUrl(url, 640);
+            var variant = CoverLoader.TryGetLoadedVariant(playerSizedUrl);
+            var netEaseFamily = CoverLoader.GetCoverFamilyKey(url)
+                                == CoverLoader.GetCoverFamilyKey(playerSizedUrl);
+            const string qqSmall = "https://y.gtimg.cn/music/photo_new/T002R150x150M000abc.jpg";
+            var qqLarge = CoverLoader.BuildSizedUrl(qqSmall, 640);
+            var qqFamily = CoverLoader.GetCoverFamilyKey(qqSmall)
+                           == CoverLoader.GetCoverFamilyKey(qqLarge);
+            var passed = requestCount == 1 && shared && ReferenceEquals(first, cached)
+                         && ReferenceEquals(first, variant) && netEaseFamily && qqFamily;
+            Console.WriteLine($"[cover-cache] requests={requestCount}, shared={shared}, " +
+                              $"cached={ReferenceEquals(first, cached)}, variant={ReferenceEquals(first, variant)}");
             return passed ? 0 : 1;
         }
         finally

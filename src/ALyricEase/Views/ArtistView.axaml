@@ -63,7 +63,6 @@
         </Border>
         <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,12,0,0" VerticalAlignment="Center" HorizontalAlignment="Left">
           <TextBlock Text="{Binding Name}" FontSize="30" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="{Binding Subtitle}" FontSize="20" Foreground="{DynamicResource TextTertiary}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="5"
                     HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0">

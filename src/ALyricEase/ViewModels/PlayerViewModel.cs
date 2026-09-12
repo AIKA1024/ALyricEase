@@ -668,6 +668,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _advancing++; // 到 finally 才减:PlayUrl 内部 Stop() 会瞬时置 Idle,别把它当"播完"触发自动切歌
         Message = null;
         IsLoading = true;
+        MusicCacheLease? offlineFallback = null;
 
         try
         {
@@ -680,10 +681,32 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 return PlayAttemptResult.Started;
             }
 
+            // 当前偏好可能高于磁盘已有音质。在线时仍优先尝试取目标音质，断网/取址失败才降级播放本地版本。
+            offlineFallback = _musicCache.TryAcquireBestAvailable(song);
+            if (song.PreferCachedPlayback && offlineFallback is not null)
+            {
+                song.IsPlaybackUnavailable = false;
+                PrepareSongPlayback(song);
+                StartPlayer(offlineFallback.FilePath, offlineFallback);
+                offlineFallback = null;
+                Message = "正在播放本地缓存";
+                return PlayAttemptResult.Started;
+            }
+
             var api = _sources.Resolve(song);
             var item = await api.GetPlayUrlAsync(song, qualityLevel);
             if (item is null || string.IsNullOrEmpty(item.Url))
             {
+                if (offlineFallback is not null)
+                {
+                    song.IsPlaybackUnavailable = false;
+                    PrepareSongPlayback(song);
+                    StartPlayer(offlineFallback.FilePath, offlineFallback);
+                    offlineFallback = null;
+                    Message = "正在播放本地缓存";
+                    return PlayAttemptResult.Started;
+                }
+
                 song.IsPlaybackUnavailable = true;
                 // 区分"未登录/非会员"与"版权限制":VIP 歌曲失败先确保会员状态已加载再给文案
                 if (song.Fee != 0 && api.IsLoggedIn)
@@ -696,6 +719,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             PrepareSongPlayback(song);
             if (item.IsTrial == true)
                 Message = "VIP 歌曲仅试听 30 秒";
+            offlineFallback?.Dispose();
+            offlineFallback = null;
             StartPlayer(item.Url, cacheLease: null);
             if (item.IsTrial != true)
                 _ = _musicCache.CacheAsync(
@@ -704,13 +729,23 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                     item.Url);
             return PlayAttemptResult.Started;
         }
-        catch (ApiException ex)
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
         {
+            if (offlineFallback is not null)
+            {
+                song.IsPlaybackUnavailable = false;
+                PrepareSongPlayback(song);
+                StartPlayer(offlineFallback.FilePath, offlineFallback);
+                offlineFallback = null;
+                Message = "当前网络不可用，正在播放本地缓存";
+                return PlayAttemptResult.Started;
+            }
             Message = $"播放失败:{ex.Message}";
             return PlayAttemptResult.TransientFailure; // 瞬时异常:不判"不可播放"
         }
         finally
         {
+            offlineFallback?.Dispose();
             _advancing--;
             IsLoading = false;
         }
@@ -851,7 +886,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         PositionMs = 0;
         ScrubPositionMs = 0; // 时间文本跟 ScrubPositionMs 走,切歌时一并清零(显示 00:00)
         DurationMs = 0;
-        _ = LoadCoverAsync(song.CoverUrl);
+        _ = LoadCoverAsync(song);
         _ = _lyric.LoadAsync(song); // 并发加载歌词(按音源路由),失败不阻塞播放
     }
 
@@ -862,6 +897,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         {
             _player.PlayUrl(source);
             _musicCacheLease = cacheLease;
+            if (CurrentSong is { } song)
+            {
+                try { _appState.RecordRecentSong(song); }
+                catch { /* 历史记录故障不能中断已经成功开始的播放 */ }
+            }
         }
         catch
         {
@@ -1200,7 +1240,16 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnError(object? sender, string message) => Message = message;
 
-    private async Task LoadCoverAsync(string url) => Cover = await CoverLoader.LoadAsync(url, 640);
+    private async Task LoadCoverAsync(Song song)
+    {
+        // 歌单行通常已加载 100px 封面：先立即复用，随后在线请求 640px 成功时再无缝替换。
+        // 以 Song 引用校验异步结果，防止快速切歌后迟到封面覆盖当前歌曲。
+        var fallback = CoverLoader.TryGetLoadedVariant(song.CoverUrl);
+        if (ReferenceEquals(CurrentSong, song)) Cover = fallback;
+        var large = await CoverLoader.LoadAsync(song.CoverUrl, 640);
+        if (ReferenceEquals(CurrentSong, song) && large is not null)
+            Cover = large;
+    }
 
     private static string FormatTime(long ms)
     {

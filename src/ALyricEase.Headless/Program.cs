@@ -70,6 +70,13 @@ public static class Program
             return;
         }
 
+        // 最近播放回归：去重置顶、容量上限、元数据持久化与清空。
+        if (args.Length > 0 && args[0] == "--recent-history")
+        {
+            Environment.ExitCode = RecentPlaybackProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:歌单接口"最后修改"时间字段实测(网易云/QQ 匿名公开歌单)
         if (args.Length > 0 && args[0] == "--pltime")
         {

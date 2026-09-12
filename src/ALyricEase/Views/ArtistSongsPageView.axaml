@@ -21,16 +21,14 @@
       <!-- 页头:歌手名(随内容滚动,同歌单页 hero) -->
       <TextBlock Grid.Row="0" Text="{Binding Name}" Classes="page-title" Margin="0,0,0,12" />
 
-      <!-- 区块头:热门歌曲 + 加载进度 + 播放全部 -->
+      <!-- 区块头:热门歌曲 + 歌曲总数 + 播放全部 -->
       <Grid Grid.Row="1" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
           <TextBlock Text="热门歌曲" FontSize="22" FontWeight="Bold" />
           <TextBlock Text="{Binding Subtitle}" FontSize="14" Foreground="{DynamicResource TextTertiary}"
                      VerticalAlignment="Center" />
         </StackPanel>
-        <Button Grid.Column="1" Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
-                CornerRadius="18" Height="36" Padding="14,0" Command="{Binding PlayAllCommand}"
-                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+        <Button Grid.Column="1" Classes="play-all" Command="{Binding PlayAllCommand}"
                 IsVisible="{Binding HasSongs}"
                 AutomationProperties.Name="播放歌手全部热门歌曲">
           <StackPanel Orientation="Horizontal" Spacing="6">

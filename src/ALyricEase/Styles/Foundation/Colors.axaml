@@ -114,10 +114,16 @@
     <Color x:Key="LyricEaseRedHoverColor">#CF3131</Color>
     <Color x:Key="LyricEaseRedPressedColor">#B22222</Color>
     <Color x:Key="LyricEaseTealColor">#64A8A1</Color>
+    <Color x:Key="PlayAllButtonColor">#5EA9A2</Color>
+    <Color x:Key="PlayAllButtonHoverColor">#6BB8B1</Color>
+    <Color x:Key="PlayAllButtonPressedColor">#4E8B85</Color>
     <SolidColorBrush x:Key="LyricEaseRed" Color="{StaticResource LyricEaseRedColor}" />
     <SolidColorBrush x:Key="LyricEaseRedHover" Color="{StaticResource LyricEaseRedHoverColor}" />
     <SolidColorBrush x:Key="LyricEaseRedPressed" Color="{StaticResource LyricEaseRedPressedColor}" />
     <SolidColorBrush x:Key="LyricEaseTeal" Color="{StaticResource LyricEaseTealColor}" />
     <SolidColorBrush x:Key="LyricEaseTealDim" Color="#8064A8A1" />
+    <SolidColorBrush x:Key="PlayAllButtonBackground" Color="{StaticResource PlayAllButtonColor}" />
+    <SolidColorBrush x:Key="PlayAllButtonBackgroundHover" Color="{StaticResource PlayAllButtonHoverColor}" />
+    <SolidColorBrush x:Key="PlayAllButtonBackgroundPressed" Color="{StaticResource PlayAllButtonPressedColor}" />
     <SolidColorBrush x:Key="PlaybackOverlay" Color="#CC000000" />
 </ResourceDictionary>

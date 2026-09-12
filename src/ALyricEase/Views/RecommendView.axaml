@@ -107,20 +107,6 @@
       <Setter Property="Width" Value="156" /><Setter Property="Height" Value="156" />
     </Style>
 
-    <!-- 播放全部按钮:原版 AccentFluentButton(红胶囊 + 播放图标) -->
-    <Style Selector="Button.play-all">
-      <Setter Property="Background" Value="{DynamicResource LyricEaseRed}" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="18" />
-      <Setter Property="Height" Value="36" />
-      <Setter Property="Padding" Value="14,0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.play-all:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource LyricEaseRedHover}" />
-    </Style>
     <!-- 横向虚拟化面板(VirtualizingStackPanel)无 Spacing:卡片间距改由容器右边距提供(SongGridView 同款做法) -->
     <Style Selector="ItemsControl.hcards > ContentPresenter">
       <Setter Property="Margin" Value="0,0,12,0" />

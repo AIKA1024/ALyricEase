@@ -40,7 +40,7 @@ public sealed partial class ArtistSongsPageViewModel : ViewModelBase
 
     [ObservableProperty] private string _name = "";
 
-    /// <summary>加载进度(已知总数时"共 N 首,已加载 M 首";未知时"已加载 M 首")。</summary>
+    /// <summary>热门歌曲总数；服务端未返回总数时显示当前已获取数量。</summary>
     [ObservableProperty] private string _subtitle = "";
 
     [ObservableProperty] private bool _hasSongs;
@@ -102,14 +102,14 @@ public sealed partial class ArtistSongsPageViewModel : ViewModelBase
             {
                 _loaded.AddRange(page);
                 _offset += page.Count;
-                foreach (var s in page)
-                    Songs.Add(new SongItemViewModel(s, _player.PlayFromList, queue: _loaded,
+                var firstIndex = Songs.Count + 1;
+                for (var i = 0; i < page.Count; i++)
+                    Songs.Add(new SongItemViewModel(
+                        page[i], _player.PlayFromList, index: firstIndex + i, queue: _loaded,
                         api: _ref.IsQq ? null : _api, source: _ref.Name));
                 HasSongs = true;
             }
-            Subtitle = _total > 0
-                ? $"共 {_total} 首,已加载 {Songs.Count} 首"
-                : $"已加载 {Songs.Count} 首";
+            Subtitle = $"共 {(_total > 0 ? _total : Songs.Count)} 首";
         }
         catch
         {

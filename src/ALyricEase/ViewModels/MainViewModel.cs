@@ -23,7 +23,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -34,6 +34,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Album = album;
         ArtistSongsPage = artistSongsPage;
         ArtistAlbumsPage = artistAlbumsPage;
+        RecentPlayback = recentPlayback;
         Settings = settings;
         Account = account;
         _playlist = playlist;
@@ -68,6 +69,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public AlbumViewModel Album { get; }
     public ArtistSongsPageViewModel ArtistSongsPage { get; }
     public ArtistAlbumsPageViewModel ArtistAlbumsPage { get; }
+    public RecentPlaybackViewModel RecentPlayback { get; }
     public SettingsViewModel Settings { get; }
     public AccountViewModel Account { get; }
 
@@ -118,7 +120,7 @@ public sealed partial class MainViewModel : ViewModelBase
         new("Recents", "最近播放", ""),
     ];
 
-    /// <summary>网易云/QQ 歌单分组标题:均登录后才显示,故不进静态 NavItems,由 RebuildShellNavigation 按登录态插入。
+    /// <summary>网易云/QQ 歌单分组标题:在线登录或存在离线快照时显示，由 RebuildShellNavigation 插入。
     /// 头部是静态共享实例,展开/收起状态随实例保留,跨导航重建与登录变化不丢。
     /// 聚合歌单在两者之上:任一音源登录即出现(占位,展开空;"+"后续接入选择两源歌单加入聚合)。</summary>
     private static readonly NavItemViewModel NetEasePlaylistsHeader = new("PlaylistsHeader", "网易云音乐", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "创建新歌单");
@@ -235,6 +237,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "Album" => Album,
         "ArtistSongs" => ArtistSongsPage,
         "ArtistAlbums" => ArtistAlbumsPage,
+        "Recents" => RecentPlayback,
         "Settings" => Settings,
         "Account" => Account,
         "Debug" => Debug,
@@ -260,14 +263,13 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentContent));
 
         // 未完成页面使用明确占位，不伪装为可用功能。
-        if (value is "Browse" or "Recents")
+        if (value == "Browse")
         {
             (Placeholder.Title, Placeholder.Description) = value switch
             {
                 "Browse" => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
-                "Recents" => ("最近播放", "本地播放历史将在下一阶段接入"),
                 "Favorites" => ("我喜欢的音乐", "喜欢列表与收藏操作将在队列阶段接入"),
-                _ => ("最近播放", "本地播放历史将在下一阶段接入"),
+                _ => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
             };
         }
 
@@ -304,7 +306,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void OnPlaylistsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildShellNavigation();
 
-    /// <summary>网易云/QQ 登录态变化 → 重建导航:登录后出现对应歌单分组,退出后消失。</summary>
+    /// <summary>网易云/QQ 登录态变化 → 重建导航；认证失败时已有离线快照仍保持可见。</summary>
     private void OnPlaylistLoginChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(PlaylistViewModel.IsLoggedIn) or nameof(PlaylistViewModel.IsQqLoggedIn))
@@ -313,6 +315,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Search.RefreshPlayability();
             Playlist.RefreshPlayability();
             Recommend.RefreshPlayability();
+            RecentPlayback.RefreshPlayability();
             Account.SyncLoginState();
             if (ActivePage == "Account" &&
                 ((e.PropertyName == nameof(PlaylistViewModel.IsLoggedIn) && Playlist.IsLoggedIn) ||
@@ -322,7 +325,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>静态导航 + 登录音源各自的歌单分组(网易云/QQ 均登录后才显示;QQ 键加前缀防与网易云 id 撞键)。
+    /// <summary>静态导航 + 在线账号或离线快照的歌单分组(QQ 键加前缀防与网易云 id 撞键)。
     /// 聚合歌单(任一音源登录即显示)置于两个分组之上。歌单子项经 OwnerKey 挂到所属分组头,
     /// 并继承其当前开合态。</summary>
     private void RebuildShellNavigation()
@@ -331,8 +334,11 @@ public sealed partial class MainViewModel : ViewModelBase
         foreach (var item in NavItems)
             ShellNavItems.Add(item);
 
-        // 聚合歌单:两源任一登录即出现(子项 = 用户创建的聚合歌单,占位期可空)
-        if (Playlist.IsLoggedIn || Playlist.IsQqLoggedIn)
+        var hasNetEaseLibrary = Playlist.IsLoggedIn || Playlist.Playlists.Count > 0;
+        var hasQqLibrary = Playlist.IsQqLoggedIn || Playlist.QqPlaylists.Count > 0;
+
+        // 聚合歌单:在线账号或任一来源的离线快照可用时出现。
+        if (hasNetEaseLibrary || hasQqLibrary)
         {
             ShellNavItems.Add(AggregatePlaylistsHeader);
             foreach (var agg in AppState.AggregatePlaylists)
@@ -343,7 +349,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 });
         }
 
-        if (Playlist.IsLoggedIn)
+        if (hasNetEaseLibrary)
         {
             ShellNavItems.Add(NetEasePlaylistsHeader);
             foreach (var playlist in Playlist.Playlists)
@@ -354,7 +360,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 });
         }
 
-        if (Playlist.IsQqLoggedIn)
+        if (hasQqLibrary)
         {
             ShellNavItems.Add(QqPlaylistsHeader);
             foreach (var playlist in Playlist.QqPlaylists)

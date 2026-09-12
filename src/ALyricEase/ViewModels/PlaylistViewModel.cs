@@ -36,13 +36,23 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private readonly QQMusicApiClient _qqApi;
     private readonly CookieStore _cookie;
     private readonly PlayerViewModel _player;
+    private readonly MusicCacheService _musicCache;
+    private bool _netEaseRestoredFromCache;
+    private bool _qqRestoredFromCache;
 
-    public PlaylistViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, CookieStore cookie, PlayerViewModel player)
+    public PlaylistViewModel(
+        NetEaseApiClient api,
+        QQMusicApiClient qqApi,
+        CookieStore cookie,
+        PlayerViewModel player,
+        MusicCacheService musicCache)
     {
         _api = api;
         _qqApi = qqApi;
         _cookie = cookie;
         _player = player;
+        _musicCache = musicCache;
+        RestoreCachedLibraries();
     }
 
     [ObservableProperty] private string _musicUInput = "";
@@ -201,7 +211,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             if (liked is not null)
                 await OpenQqPlaylistAsync(liked);
         }
-        if (!IsLoggedIn && _cookie.MusicU is not null)
+        if ((!IsLoggedIn || _netEaseRestoredFromCache) && _cookie.MusicU is not null)
             await LoadProfileAndPlaylistsAsync();
     }
 
@@ -209,12 +219,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 验证通过后才呈现已登录并拉取用户歌单。</summary>
     public async Task EnsureQqLoadedAsync()
     {
-        if (!IsQqLoggedIn && _cookie.QQCookieRaw is { Length: > 0 })
+        if ((!IsQqLoggedIn || _qqRestoredFromCache) && _cookie.QQCookieRaw is { Length: > 0 })
         {
             try
             {
                 await _qqApi.EnsureCredentialValidAsync();
                 IsQqLoggedIn = true;
+                _qqRestoredFromCache = false;
             }
             catch (ApiException ex) when (QQMusicApiClient.RequiresFreshLogin(ex.Code))
             {
@@ -224,7 +235,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             }
             catch (ApiException)
             {
-                // 网络/服务端瞬时异常保留本地 Cookie，下次进入再验证，不展示假登录态。
+                // 网络/服务端瞬时异常保留本地 Cookie 与离线快照，下次进入再验证。
+                return;
+            }
+            catch (Exception ex) when (IsConnectivityFailure(ex))
+            {
+                // HttpClient 在完全断网时不会包装成 ApiException；保留已恢复的离线账号。
                 return;
             }
         }
@@ -244,8 +260,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             foreach (var p in playlists)
                 QqPlaylists.Add(new PlaylistItemViewModel(p));
             _qqPlaylistsLoaded = true;
+            _qqRestoredFromCache = false;
+            await _musicCache.CachePlaylistListAsync(MusicSource.QQ, QqUserName, playlists);
         }
-        catch (ApiException)
+        catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
             // Cookie 失效/网络失败:分组保持空,下次进入或重启重试
         }
@@ -803,12 +821,16 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _playbackQueue = null;
         _aggregatePlaybackQueue = null;
         _materialized = 0;
+        var hasCachedTracks = RestoreCachedTracks(playlist);
         IsBusy = true;
-        Message = null;
+        Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
         try
         {
             var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
+            Tracks.Clear();
+            _queueSongs.Clear();
+            _materialized = 0;
             playlist.RefreshCover(overview.CoverUrl); // 封面随曲目变化(如"我喜欢的音乐"),URL 变了才重载
             _trackIds = overview.TrackIds.ToList();
             foreach (var s in overview.PrefixTracks)
@@ -825,9 +847,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
         }
-        catch (ApiException ex)
+        catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
-            if (generation == _loadGeneration) Message = $"加载歌单失败:{ex.Message}";
+            if (generation == _loadGeneration)
+                Message = hasCachedTracks
+                    ? "当前网络不可用，正在使用离线缓存"
+                    : $"加载歌单失败:{ex.Message}";
         }
         finally
         {
@@ -858,24 +883,31 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _playbackQueue = null;
         _aggregatePlaybackQueue = null;
         _materialized = 0;
+        var hasCachedTracks = RestoreCachedTracks(playlist);
         IsBusy = true;
-        Message = null;
+        Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
         try
         {
             var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
+            Tracks.Clear();
+            _queueSongs.Clear();
             foreach (var s in songs)
             {
                 Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs, null, playlist.Name));
                 _queueSongs.Add(s);
             }
+            await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, songs);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
         }
-        catch (ApiException ex)
+        catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
-            if (generation == _loadGeneration) Message = $"加载歌单失败:{ex.Message}";
+            if (generation == _loadGeneration)
+                Message = hasCachedTracks
+                    ? "当前网络不可用，正在使用离线缓存"
+                    : $"加载歌单失败:{ex.Message}";
         }
         finally
         {
@@ -1165,8 +1197,41 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
         finally
         {
-            if (generation == _loadGeneration) IsLoadingMore = false;
+            if (generation == _loadGeneration)
+            {
+                IsLoadingMore = false;
+                if (SelectedPlaylist is { } playlist && _queueSongs.Count > 0)
+                    await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, _queueSongs);
+            }
         }
+    }
+
+    /// <summary>把最近一次成功打开的曲目先恢复到详情页；网络刷新成功后会被新数据替换。</summary>
+    private bool RestoreCachedTracks(PlaylistItemViewModel playlist)
+    {
+        var songs = _musicCache.TryGetPlaylistTracks(playlist.Playlist);
+        if (songs.Count == 0) return false;
+
+        var cachedAudio = _musicCache.GetAudioCacheAvailability(songs);
+        // 离线队列也只保留有音频文件的歌曲，防止上一首/下一首或自动连播绕过行禁用状态。
+        _queueSongs.AddRange(songs.Where((_, index) => cachedAudio[index]));
+        for (var index = 0; index < songs.Count; index++)
+        {
+            var song = songs[index];
+            song.PreferCachedPlayback = cachedAudio[index];
+            var row = new SongItemViewModel(
+                song,
+                _player.PlayFromList,
+                Tracks.Count + 1,
+                _queueSongs,
+                song.Source == MusicSource.NetEase ? _api : null,
+                playlist.Name);
+            // 离线快照包含上次已解析的完整曲目元数据，但只有确实存在音频文件的歌曲才能点击。
+            row.IsPlayable = cachedAudio[index];
+            Tracks.Add(row);
+        }
+        _materialized = songs.Count;
+        return true;
     }
 
     /// <summary>把 trackIds 里连续已解析的曲目物化成列表项。
@@ -1331,8 +1396,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Playlists.Clear();
             foreach (var p in playlists)
                 Playlists.Add(new PlaylistItemViewModel(p));
+            _netEaseRestoredFromCache = false;
+            await _musicCache.CachePlaylistListAsync(MusicSource.NetEase, UserName, playlists);
         }
-        catch (ApiException)
+        catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
             // 刷新失败保持现列表(侧栏旧数据仍可用)
         }
@@ -1353,6 +1420,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         {
             var profile = await _api.GetUserProfileAsync();
             IsLoggedIn = true;
+            _netEaseRestoredFromCache = false;
             UserName = profile.Nickname;
             CreatorName = profile.Nickname;
             AvatarUrl = profile.AvatarUrl;
@@ -1362,14 +1430,17 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Playlists.Clear();
             foreach (var p in playlists)
                 Playlists.Add(new PlaylistItemViewModel(p));
+            await _musicCache.CachePlaylistListAsync(MusicSource.NetEase, UserName, playlists);
 
             // 网易云通常把“我喜欢的音乐”放在首位；自动打开它，使该入口直接呈现可用的歌单详情。
             if (Playlists.Count > 0)
                 await OpenPlaylistAsync(Playlists[0]);
         }
-        catch (ApiException ex)
+        catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
-            Message = $"登录失败:{ex.Message}";
+            Message = _netEaseRestoredFromCache
+                ? "当前网络不可用，已恢复离线歌单"
+                : $"登录失败:{ex.Message}";
         }
         finally
         {
@@ -1379,4 +1450,37 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     // 头像缩到 128px:profile avatarUrl 是 1000px 原图,直接加载解码 ~4MB 纯浪费(当前头像尚未在 UI 显示)
     private async Task LoadAvatarAsync() => AvatarImage = await CoverLoader.LoadAsync(AvatarUrl, 128);
+
+    private static bool IsConnectivityFailure(Exception ex) =>
+        ex is HttpRequestException or TaskCanceledException;
+
+    /// <summary>构造时同步恢复轻量索引，使主导航第一次构建就能看到离线歌单。</summary>
+    private void RestoreCachedLibraries()
+    {
+        if (_musicCache.TryGetPlaylistLibrary(MusicSource.NetEase) is { } netEase)
+        {
+            UserName = netEase.UserName;
+            CreatorName = netEase.UserName;
+            foreach (var playlist in netEase.Playlists)
+                Playlists.Add(new PlaylistItemViewModel(playlist));
+            // 离线资料的可见性不依赖 Cookie；有本地凭证时才恢复账号登录外观并尝试联网验证。
+            if (_cookie.MusicU is { Length: > 0 })
+            {
+                IsLoggedIn = true;
+                _netEaseRestoredFromCache = true;
+            }
+        }
+
+        if (_musicCache.TryGetPlaylistLibrary(MusicSource.QQ) is { } qq)
+        {
+            QqUserName = qq.UserName;
+            foreach (var playlist in qq.Playlists)
+                QqPlaylists.Add(new PlaylistItemViewModel(playlist));
+            if (_cookie.QQCookieRaw is { Length: > 0 })
+            {
+                IsQqLoggedIn = true;
+                _qqRestoredFromCache = true;
+            }
+        }
+    }
 }

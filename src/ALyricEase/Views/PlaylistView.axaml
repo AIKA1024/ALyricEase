@@ -104,8 +104,8 @@
                            Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" MaxLines="3"
                            IsVisible="{Binding SelectedPlaylist.HasDescription}" />
                 <StackPanel x:Name="HeroActions" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                  <Button Classes="primary" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" Height="40"
-                          Padding="18,0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                  <Button Classes="play-all" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" Height="40"
+                          CornerRadius="4" Padding="18,0" />
                   <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
                           CornerRadius="4" Height="40" Padding="14,0" IsEnabled="False" ToolTip.Tip="心动模式将在播放队列阶段接入"
                           HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
@@ -143,8 +143,8 @@
                          HorizontalAlignment="Center" TextAlignment="Center"
                          IsVisible="{Binding SelectedPlaylist.HasDescription}" />
               <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" HorizontalAlignment="Center">
-                <Button Classes="primary" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" Height="40"
-                        Padding="18,0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                <Button Classes="play-all" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" Height="40"
+                        CornerRadius="4" Padding="18,0" />
                 <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
                         CornerRadius="4" Height="40" Padding="14,0" IsEnabled="False" ToolTip.Tip="心动模式将在播放队列阶段接入"
                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center">

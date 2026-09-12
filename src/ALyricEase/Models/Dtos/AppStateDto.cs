@@ -23,6 +23,9 @@ public sealed class AppStateFile
     /// <summary>搜索历史(最新在前;null = 从未搜过)。</summary>
     public List<string>? SearchHistory { get; set; }
 
+    /// <summary>最近成功开始播放的歌曲(最新在前;null = 旧版本尚未记录)。</summary>
+    public List<RecentSongFile>? RecentSongs { get; set; }
+
     public double? WindowWidth { get; set; }
 
     public double? WindowHeight { get; set; }
@@ -93,4 +96,25 @@ public sealed class AggregateMemberFile
     public long? PlaylistId { get; set; }
 
     public string? PlaylistName { get; set; }
+}
+
+/// <summary>最近播放歌曲的稳定落盘形态；不保存运行期可播性与缓存偏好。</summary>
+public sealed class RecentSongFile
+{
+    /// <summary>内部排序用的累计播放次数；旧数据缺失或为 0 时按 1 次迁移。</summary>
+    public long PlayCount { get; set; }
+    public long Id { get; set; }
+    public int Source { get; set; }
+    public string? Mid { get; set; }
+    public string? Name { get; set; }
+    public string? Artist { get; set; }
+    public string? Album { get; set; }
+    public string? CoverUrl { get; set; }
+    public int DurationMs { get; set; }
+    public int Fee { get; set; }
+    public List<long>? ArtistIds { get; set; }
+    public List<string>? ArtistNames { get; set; }
+    public List<string>? ArtistMids { get; set; }
+    public long AlbumId { get; set; }
+    public string? AlbumMid { get; set; }
 }

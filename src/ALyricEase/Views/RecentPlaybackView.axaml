@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:RecentPlaybackViewModel"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.RecentPlaybackView">
+  <UserControl.Styles>
+    <Style Selector="ScrollViewer.tracks-scroller ScrollBar">
+      <Setter Property="Margin" Value="0,0,0,100" />
+    </Style>
+    <Style Selector="UserControl.narrow Grid#PageLayout">
+      <Setter Property="Margin" Value="16,16,12,104" />
+    </Style>
+    <Style Selector="UserControl.narrow Grid#PageHeader">
+      <Setter Property="Margin" Value="4,0,4,12" />
+    </Style>
+    <!-- 与歌单页一致：小屏切到推荐页同款紧凑行，歌手与专辑合并显示在歌名下方。 -->
+    <Style Selector=".narrow ItemsControl.tracks views|TrackRow">
+      <Setter Property="Theme" Value="{StaticResource TrackRowSearchTheme}" />
+      <Setter Property="Width" Value="NaN" />
+    </Style>
+    <Style Selector="ItemsControl.tracks > ContentPresenter">
+      <Setter Property="Margin" Value="0,1" />
+    </Style>
+    <!-- Fluent 次要命令：沿用默认 Button 视觉状态，只约束尺寸与内容对齐。 -->
+    <Style Selector="Button.clear-history">
+      <Setter Property="Width" Value="104" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.clear-history /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="UserControl.narrow TextBlock#PlayAllText">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled">
+    <Grid x:Name="PageLayout" Margin="48,20,32,110" RowDefinitions="Auto,*">
+      <Grid x:Name="PageHeader" Grid.Row="0" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
+        <StackPanel VerticalAlignment="Center" Spacing="2">
+          <TextBlock Text="最近播放" Classes="page-title" />
+          <TextBlock Text="{Binding Subtitle}" FontSize="13"
+                     Foreground="{DynamicResource TextTertiary}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Classes="play-all" Command="{Binding PlayAllCommand}"
+                  IsVisible="{Binding HasSongs}"
+                  AutomationProperties.Name="播放全部最近播放歌曲">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="▶" FontSize="13" />
+              <TextBlock x:Name="PlayAllText" Text="播放全部" FontSize="14" />
+            </StackPanel>
+          </Button>
+          <Button Classes="clear-history" Command="{Binding ClearCommand}"
+                  IsVisible="{Binding HasSongs}" ToolTip.Tip="清空最近播放记录"
+                  AutomationProperties.Name="清空全部最近播放记录"
+                  Content="清空记录" FontSize="14" />
+        </StackPanel>
+      </Grid>
+
+      <Grid Grid.Row="1">
+        <Border Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
+                BorderThickness="1" CornerRadius="8" Padding="8,6" IsVisible="{Binding HasSongs}">
+          <ItemsControl Classes="tracks" ItemsSource="{Binding Songs}" ContainerPrepared="OnTrackContainerPreparing">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <VirtualizingStackPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SongItemViewModel">
+                <!-- 默认样式为歌单宽行；不要在此写本地 Theme，否则小屏样式无法覆盖。 -->
+                <views:TrackRow />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Border>
+
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10"
+                    IsVisible="{Binding ShowEmpty}">
+          <TextBlock Text="{DynamicResource IconRecents}" FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                     FontSize="42" HorizontalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+          <TextBlock Text="还没有最近播放" FontSize="17" FontWeight="SemiBold"
+                     HorizontalAlignment="Center" />
+          <TextBlock Text="成功播放过的歌曲会显示在这里" FontSize="13"
+                     Foreground="{DynamicResource TextTertiary}" HorizontalAlignment="Center" />
+        </StackPanel>
+      </Grid>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

@@ -282,7 +282,7 @@
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
           <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
             <TextBlock Classes="setting-title" Text="缓存上限" />
-            <TextBlock Text="音乐、封面、原文歌词和翻译共用此容量;每首歌优先保留最高已缓存音质,超出上限后自动清理最久未使用的内容。"
+            <TextBlock Text="音乐、封面、歌词和离线歌单索引共用此容量;每首歌优先保留最高已缓存音质,超出上限后自动清理最久未使用的内容。"
                        FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"
                        Margin="0,2,0,0" />
           </StackPanel>
@@ -302,7 +302,7 @@
           <StackPanel Grid.Column="1" VerticalAlignment="Center">
             <TextBlock Classes="setting-title" Text="管理缓存" />
             <TextBlock Classes="about-link" Text="关于该选项"
-                       ToolTip.Tip="清除音乐、封面、原文歌词和翻译缓存,不会删除您的歌单与登录信息。" />
+                       ToolTip.Tip="清除音乐、封面、歌词和离线歌单索引,不会删除云端歌单与登录信息。" />
           </StackPanel>
           <Button Grid.Column="2" Classes="setting-action" Command="{CompiledBinding ClearCacheCommand}">
             <StackPanel Orientation="Horizontal" Spacing="6">

@@ -70,6 +70,7 @@ public partial class HeadlessApp : Application
         // 二级页 VM:MainViewModel 构造注入,单独探针(专辑卡片几何等)也会直接取用
         services.AddSingleton<ArtistSongsPageViewModel>();
         services.AddSingleton<ArtistAlbumsPageViewModel>();
+        services.AddSingleton<RecentPlaybackViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<AccountViewModel>();
         services.AddSingleton<MainViewModel>();

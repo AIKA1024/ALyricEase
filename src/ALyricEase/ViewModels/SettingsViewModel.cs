@@ -222,7 +222,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>清除音乐、封面、原文歌词和翻译缓存。</summary>
+    /// <summary>清除音乐、封面、歌词和离线歌单索引。</summary>
     [RelayCommand]
     private async Task ClearCacheAsync()
     {

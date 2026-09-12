@@ -60,6 +60,24 @@
         <Setter Property="Opacity" Value="0.9" />
     </Style>
 
+    <!-- 全局“播放全部”主操作：所有页面复用同一语义色和 Fluent 交互状态。 -->
+    <Style Selector="Button.play-all">
+        <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackground}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="18" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="14,0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.play-all:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackgroundHover}" />
+    </Style>
+    <Style Selector="Button.play-all:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackgroundPressed}" />
+    </Style>
+
     <!-- 歌手页关注按钮:teal #5EA9A2 轮廓,悬停填充 teal,按下加深(原版 FluentFollowButton 无自定义样式,按此实现) -->
     <Style Selector="Button.follow-button">
         <Setter Property="Foreground" Value="#FF5EA9A2" />

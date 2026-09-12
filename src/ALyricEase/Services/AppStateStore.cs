@@ -7,12 +7,13 @@ using Avalonia.Threading;
 
 namespace ALyricEase.Services;
 
-/// <summary>应用界面状态持久化:侧栏歌单分组折叠状态 + 聚合歌单 + 主窗口大小/位置/最大化。
+/// <summary>应用状态持久化:侧栏状态、聚合歌单、搜索/播放历史、设置与主窗口几何。
 /// Windows 存 %LocalAppData%\ALyricEase\config\state.json,Android 存应用私有
 /// FilesDir\ALyricEase\config\state.json(折叠状态同样有意义;窗口字段仅桌面端读写)。
 /// 写入走 tmp+Move 原子替换;文件损坏按全部默认值处理。</summary>
 public sealed class AppStateStore
 {
+    public const int MaximumRecentSongCount = 100;
     private static readonly TimeSpan DeferredSaveDelay = TimeSpan.FromMilliseconds(400);
     private readonly string _path;
     private DispatcherTimer? _deferredSaveTimer;
@@ -29,6 +30,14 @@ public sealed class AppStateStore
 
     /// <summary>搜索历史(最新在前,SearchViewModel 维护与落盘)。</summary>
     public List<string> SearchHistory { get; } = new();
+
+    private readonly List<RecentPlaybackEntry> _recentSongs = new();
+
+    /// <summary>最近成功开始播放的歌曲，播放次数优先、同次数时最近播放优先。</summary>
+    public IReadOnlyList<Song> RecentSongs => _recentSongs.Select(static entry => entry.Song).ToArray();
+
+    /// <summary>最近播放列表发生变化；播放器和页面均在 UI 线程使用。</summary>
+    public event Action? RecentSongsChanged;
 
     /// <summary>主窗口常规态宽度(DIP);null = 从未记录过。</summary>
     public double? WindowWidth { get; set; }
@@ -84,6 +93,19 @@ public sealed class AppStateStore
     public int MusicCacheMaximumSizeMb { get; set; } = MusicCacheService.DefaultMaximumSizeMb;
 
     public AppStateStore()
+        : this(GetDefaultPath())
+    {
+    }
+
+    /// <summary>显式路径构造仅供无头回归测试隔离真实用户状态。</summary>
+    internal AppStateStore(string path)
+    {
+        _path = path;
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        Load();
+    }
+
+    private static string GetDefaultPath()
     {
 #if ANDROID
         var root = Path.Combine(
@@ -93,9 +115,7 @@ public sealed class AppStateStore
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ALyricEase");
 #endif
-        Directory.CreateDirectory(Path.Combine(root, "config"));
-        _path = Path.Combine(root, "config", "state.json");
-        Load();
+        return Path.Combine(root, "config", "state.json");
     }
 
     private void Load()
@@ -152,6 +172,19 @@ public sealed class AppStateStore
             foreach (var w in dto.SearchHistory ?? new List<string>())
                 if (!string.IsNullOrWhiteSpace(w))
                     SearchHistory.Add(w.Trim());
+
+            _recentSongs.Clear();
+            foreach (var file in dto.RecentSongs ?? new List<RecentSongFile>())
+            {
+                var song = FromRecentFile(file);
+                if (song is null || _recentSongs.Any(existing => SameSong(existing.Song, song))) continue;
+                _recentSongs.Add(new RecentPlaybackEntry(song, Math.Max(1, file.PlayCount)));
+                if (_recentSongs.Count == MaximumRecentSongCount) break;
+            }
+            // OrderByDescending 是稳定排序：同次数继续沿用文件中的最近播放顺序。
+            var rankedRecentSongs = _recentSongs.OrderByDescending(static entry => entry.PlayCount).ToArray();
+            _recentSongs.Clear();
+            _recentSongs.AddRange(rankedRecentSongs);
         }
         catch
         {
@@ -187,6 +220,7 @@ public sealed class AppStateStore
                     })
                     .ToList(),
                 SearchHistory = SearchHistory.ToList(),
+                RecentSongs = _recentSongs.Select(ToRecentFile).ToList(),
                 WindowWidth = WindowWidth,
                 WindowHeight = WindowHeight,
                 WindowX = WindowX,
@@ -245,4 +279,111 @@ public sealed class AppStateStore
     }
 
     private void StopDeferredSaveTimer() => _deferredSaveTimer?.Stop();
+
+    /// <summary>记录一次真正开始的播放，并按累计次数降序、同次数最近优先排列。</summary>
+    public void RecordRecentSong(Song song)
+    {
+        var stored = CloneSong(song);
+        var existingIndex = _recentSongs.FindIndex(candidate => SameSong(candidate.Song, stored));
+        var playCount = 1L;
+        if (existingIndex >= 0)
+        {
+            var existingCount = _recentSongs[existingIndex].PlayCount;
+            playCount = existingCount == long.MaxValue ? long.MaxValue : existingCount + 1;
+            _recentSongs.RemoveAt(existingIndex);
+        }
+
+        // 插在第一个“次数小于或等于当前值”的项之前，同次数下刚播放的优先。
+        var insertIndex = _recentSongs.FindIndex(candidate => candidate.PlayCount <= playCount);
+        var entry = new RecentPlaybackEntry(stored, playCount);
+        if (insertIndex < 0) _recentSongs.Add(entry);
+        else _recentSongs.Insert(insertIndex, entry);
+        if (_recentSongs.Count > MaximumRecentSongCount)
+            _recentSongs.RemoveRange(MaximumRecentSongCount, _recentSongs.Count - MaximumRecentSongCount);
+        ScheduleSave();
+        RecentSongsChanged?.Invoke();
+    }
+
+    /// <summary>清空最近播放并立即落盘。</summary>
+    public void ClearRecentSongs()
+    {
+        if (_recentSongs.Count == 0) return;
+        _recentSongs.Clear();
+        Save();
+        RecentSongsChanged?.Invoke();
+    }
+
+    private static bool SameSong(Song left, Song right)
+    {
+        if (left.Source != right.Source) return false;
+        if (left.Source == MusicSource.QQ
+            && !string.IsNullOrEmpty(left.Mid)
+            && !string.IsNullOrEmpty(right.Mid))
+            return left.Mid == right.Mid;
+        return left.Id != 0 && left.Id == right.Id;
+    }
+
+    private static Song CloneSong(Song song) => new()
+    {
+        Id = song.Id,
+        Source = song.Source,
+        Mid = song.Mid,
+        Name = song.Name,
+        Artist = song.Artist,
+        Album = song.Album,
+        CoverUrl = song.CoverUrl,
+        DurationMs = song.DurationMs,
+        Fee = song.Fee,
+        ArtistIds = song.ArtistIds.ToArray(),
+        ArtistNames = song.ArtistNames.ToArray(),
+        ArtistMids = song.ArtistMids.ToArray(),
+        AlbumId = song.AlbumId,
+        AlbumMid = song.AlbumMid,
+    };
+
+    private static RecentSongFile ToRecentFile(RecentPlaybackEntry entry) => new()
+    {
+        PlayCount = entry.PlayCount,
+        Id = entry.Song.Id,
+        Source = (int)entry.Song.Source,
+        Mid = entry.Song.Mid,
+        Name = entry.Song.Name,
+        Artist = entry.Song.Artist,
+        Album = entry.Song.Album,
+        CoverUrl = entry.Song.CoverUrl,
+        DurationMs = entry.Song.DurationMs,
+        Fee = entry.Song.Fee,
+        ArtistIds = entry.Song.ArtistIds.ToList(),
+        ArtistNames = entry.Song.ArtistNames.ToList(),
+        ArtistMids = entry.Song.ArtistMids.ToList(),
+        AlbumId = entry.Song.AlbumId,
+        AlbumMid = entry.Song.AlbumMid,
+    };
+
+    private sealed record RecentPlaybackEntry(Song Song, long PlayCount);
+
+    private static Song? FromRecentFile(RecentSongFile file)
+    {
+        if (!Enum.IsDefined(typeof(MusicSource), file.Source)) return null;
+        var source = (MusicSource)file.Source;
+        if (string.IsNullOrWhiteSpace(file.Name)) return null;
+        if (file.Id == 0 && string.IsNullOrWhiteSpace(file.Mid)) return null;
+        return new Song
+        {
+            Id = file.Id,
+            Source = source,
+            Mid = file.Mid ?? "",
+            Name = file.Name,
+            Artist = file.Artist ?? "",
+            Album = file.Album ?? "",
+            CoverUrl = file.CoverUrl ?? "",
+            DurationMs = Math.Max(0, file.DurationMs),
+            Fee = file.Fee,
+            ArtistIds = file.ArtistIds?.ToArray() ?? Array.Empty<long>(),
+            ArtistNames = file.ArtistNames?.ToArray() ?? Array.Empty<string>(),
+            ArtistMids = file.ArtistMids?.ToArray() ?? Array.Empty<string>(),
+            AlbumId = file.AlbumId,
+            AlbumMid = file.AlbumMid ?? "",
+        };
+    }
 }

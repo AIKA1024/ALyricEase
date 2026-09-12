@@ -51,6 +51,8 @@ public partial class MainWindow : Window
         PropertyChanged += OnWindowPropertyChanged;
         PositionChanged += OnWindowPositionChanged;
         Closing += OnMainWindowClosing;
+        // 在窗口隧道路由阶段保留鼠标“后退”侧键，确保指针位于列表或弹层上时也能返回。
+        AddHandler(InputElement.PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel);
     }
 
     private void OnOpened(object? sender, EventArgs e)
@@ -206,6 +208,18 @@ public partial class MainWindow : Window
         if (e.Source is Visual v && v.FindAncestorOfType<Button>() is not null) return;
 
         BeginMoveDrag(e);
+    }
+
+    /// <summary>鼠标 XButton1（常见的“后退”侧键）复用应用统一返回语义。</summary>
+    private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Pointer.Type != PointerType.Mouse
+            || !e.GetCurrentPoint(this).Properties.IsXButton1Pressed)
+            return;
+
+        // 即使当前没有可返回内容也消费该专用按键，避免它落到列表项等普通控件上触发交互。
+        e.Handled = true;
+        _vm?.TryHandleBack();
     }
 
     private void OnMinimizeClick(object? sender, RoutedEventArgs e)

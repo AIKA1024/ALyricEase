@@ -245,7 +245,7 @@
           <Grid Background="{TemplateBinding Background}" Classes="track-root" IsEnabled="{Binding IsPlayable}">
             <!-- 悬停高亮 -->
             <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
-            <Grid ColumnDefinitions="64,3*,32,2*,3*,32" Margin="8,0" ColumnSpacing="8">
+            <Grid Classes="album-row-grid" ColumnDefinitions="64,3*,32,2*,32" Margin="8,0" ColumnSpacing="8">
               <!-- 序号 + 红心(无封面,红心悬停时覆盖在序号上) -->
               <Grid Grid.Column="0" VerticalAlignment="Center" Margin="24,0">
                 <TextBlock Text="{Binding DisplayIndex}" FontSize="12" HorizontalAlignment="Center"
@@ -295,15 +295,8 @@
                   </MenuFlyout>
                 </Button.Resources>
               </Button>
-              <!-- 专辑:有名即显示,无 id 时禁用点击(专辑页内恒有 id,防御性一致) -->
-              <Button Grid.Column="4" Theme="{StaticResource RowButtonTheme}" Classes="row-link"
-                      Command="{Binding OpenAlbumCommand}" VerticalAlignment="Center" ToolTip.Tip="打开专辑页"
-                      IsVisible="{Binding HasAlbumName}" IsEnabled="{Binding HasAlbum}">
-                <TextBlock Text="{Binding Album}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
-                           TextTrimming="CharacterEllipsis" />
-              </Button>
               <!-- 时长 + 更多 -->
-              <Grid Grid.Column="5" VerticalAlignment="Center">
+              <Grid Grid.Column="4" VerticalAlignment="Center">
                 <TextBlock Classes="row-duration" Text="{Binding DurationText}" FontSize="12"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />

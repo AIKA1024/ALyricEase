@@ -127,6 +127,13 @@ public static class Program
             return;
         }
 
+        // 专辑详情页响应式探针:窄屏头部切换、标题宽度与按钮边界
+        if (args.Length > 0 && args[0] == "--albumpage")
+        {
+            Environment.ExitCode = AlbumPageProbe.Run();
+            return;
+        }
+
         // 歌手卡片/推荐横向区块虚拟化探针:真实 ArtistView/RecommendView 懒加载改造验证
         if (args.Length > 0 && args[0] == "--acards")
         {

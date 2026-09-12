@@ -7,34 +7,177 @@
              x:DataType="vm:AlbumViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.AlbumView">
+  <UserControl.Styles>
+    <!-- 原版窗口最小宽度为 800，头部使用 240 封面 + 16 间距；本移植允许缩至 360，
+         因此在原比例之外补一档窄屏上下布局。 -->
+    <Style Selector="Grid.album-hero-horizontal">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="StackPanel.album-hero-vertical">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow Grid.album-hero-horizontal">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow StackPanel.album-hero-vertical">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+
+    <Style Selector="Grid.album-page-title">
+      <Setter Property="Margin" Value="48,0,32,0" />
+    </Style>
+    <Style Selector="StackPanel.album-content">
+      <Setter Property="Margin" Value="48,0,32,116" />
+    </Style>
+    <Style Selector=".compact Grid.album-page-title">
+      <Setter Property="Margin" Value="24,0" />
+    </Style>
+    <Style Selector=".compact StackPanel.album-content">
+      <Setter Property="Margin" Value="24,0,24,116" />
+    </Style>
+    <Style Selector=".narrow Grid.album-page-title">
+      <Setter Property="Margin" Value="16,0" />
+    </Style>
+    <Style Selector=".narrow StackPanel.album-content">
+      <Setter Property="Margin" Value="16,0,16,116" />
+    </Style>
+
+    <Style Selector="Border.album-hero">
+      <!-- 原版 ViewHeader：240px 封面 + 上下各 16px 内边距。 -->
+      <Setter Property="Height" Value="272" />
+      <Setter Property="Padding" Value="16" />
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector=".narrow Border.album-hero">
+      <!-- 原版小屏头部直接落在页面背景上，不再保留卡片表面和描边。 -->
+      <Setter Property="Height" Value="NaN" />
+      <Setter Property="Padding" Value="0,14" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Fluent 2 超链接按钮：强调色 + 常驻下划线，hover/pressed 使用轻量容器色反馈，
+         并保留 FluentTheme 的键盘焦点环。 -->
+    <Style Selector="Button.artist-link">
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.artist-link TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+      <Setter Property="TextDecorations">
+        <TextDecorationCollection>
+          <TextDecoration Location="Underline" StrokeOffset="2" StrokeOffsetUnit="Pixel" />
+        </TextDecorationCollection>
+      </Setter>
+    </Style>
+    <Style Selector="Button.artist-link /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.artist-link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.artist-link:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+    </Style>
+    <Style Selector="Button.artist-link:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+    <Style Selector="Button.artist-link:disabled TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+    <Style Selector="Button.artist-link:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+  </UserControl.Styles>
+
   <Grid RowDefinitions="96,*">
-    <Grid Grid.Row="0" Margin="48,0,32,0">
+    <Grid Grid.Row="0" Classes="album-page-title">
       <TextBlock Text="专辑" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Margin="48,0,32,116" Spacing="0">
-        <!-- 头部卡片(仿原版 AlbumDetailViewHeaderCard):300 高 + 260 封面 + 右下信息/按钮 -->
-        <Border BorderBrush="{DynamicResource ListCardBorder}" BorderThickness="1"
-                Background="{DynamicResource AppSurfaceElevated}" Height="300" CornerRadius="8" Padding="20"
-                Margin="0,0,0,12">
-          <Grid ColumnDefinitions="260,*" ColumnSpacing="20">
-            <Border CornerRadius="4" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
-              <Image Source="{Binding Cover}" Stretch="UniformToFill" />
-            </Border>
-            <Grid Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                  RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
-              <TextBlock Grid.Row="0" Text="{Binding Name}" FontSize="32" FontWeight="Bold"
-                         TextTrimming="CharacterEllipsis" MaxLines="1" HorizontalAlignment="Left" />
-              <TextBlock Grid.Row="1" Text="{Binding ArtistName}" FontSize="24" FontWeight="Bold"
-                         Foreground="{DynamicResource LyricEaseTeal}" TextTrimming="CharacterEllipsis" MaxLines="1"
-                         HorizontalAlignment="Left" />
-              <TextBlock Grid.Row="2" Text="{Binding PublishDateText}" FontSize="16" FontWeight="Bold"
-                         Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Left" />
-              <TextBlock Grid.Row="3" Text="{Binding Description}" FontSize="16" Foreground="{DynamicResource TextTertiary}"
+      <StackPanel Classes="album-content" Spacing="0">
+        <!-- 宽/中屏：按原版 AlbumDetailView 的 240 + * 横向头部布局。 -->
+        <Border x:Name="HeroCard" Classes="album-hero"
+                CornerRadius="8" Margin="0,0,0,12">
+          <Grid>
+            <Grid x:Name="HeroHorizontal" Classes="album-hero-horizontal"
+                  ColumnDefinitions="240,*" ColumnSpacing="16">
+              <Border Width="240" Height="240" CornerRadius="8" ClipToBounds="True"
+                      Background="{DynamicResource ArtFallback}">
+                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Spacing="4">
+                <TextBlock Text="{Binding Name}" FontSize="24" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" MaxLines="1" />
+                <Button x:Name="HeroHorizontalArtistButton" Classes="artist-link"
+                        Command="{Binding OpenArtistCommand}" IsEnabled="{Binding HasArtist}"
+                        HorizontalAlignment="Left" Margin="-4,4,-4,0"
+                        AutomationProperties.Name="{Binding ArtistName}">
+                  <TextBlock Text="{Binding ArtistName}" FontSize="20"
+                             TextTrimming="CharacterEllipsis" MaxLines="1" />
+                </Button>
+                <TextBlock Text="{Binding PublishDateText}" FontSize="16" FontWeight="Medium"
+                           Foreground="{DynamicResource TextSecondary}" />
+                <TextBlock x:Name="HeroHorizontalDescription" Text="{Binding Description}" FontSize="12"
+                           Foreground="{DynamicResource TextTertiary}"
+                           MaxLines="3" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                           IsVisible="{Binding HasDescription}" />
+                <StackPanel x:Name="HeroHorizontalActions" Orientation="Horizontal" Spacing="6" Margin="0,4,0,0"
+                            HorizontalAlignment="Left" VerticalAlignment="Center">
+                  <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
+                          CornerRadius="18" Height="36" Padding="14,0" Command="{Binding PlayAllCommand}"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Text="▶" FontSize="13" />
+                      <TextBlock Text="播放全部" FontSize="14" />
+                    </StackPanel>
+                  </Button>
+                  <Button Width="36" Height="36" Padding="0" Background="{DynamicResource AppSurface}"
+                          BorderThickness="1" BorderBrush="{DynamicResource AppBorder}" CornerRadius="18"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                          ToolTip.Tip="更多操作(后续接入)">
+                    <TextBlock Text="•••" LetterSpacing="1" />
+                  </Button>
+                </StackPanel>
+              </StackPanel>
+            </Grid>
+
+            <!-- 小屏：封面置顶，专辑名改为独占整行的两行标题。 -->
+            <StackPanel x:Name="HeroVertical" Classes="album-hero-vertical"
+                        HorizontalAlignment="Stretch" Spacing="6">
+              <Border x:Name="HeroVerticalArt" Width="240" Height="240" CornerRadius="8" ClipToBounds="True"
+                      Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center">
+                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+              </Border>
+              <TextBlock x:Name="HeroVerticalTitle" Text="{Binding Name}" FontSize="24" FontWeight="SemiBold"
+                         TextAlignment="Center" TextWrapping="Wrap"
+                         TextTrimming="CharacterEllipsis" MaxLines="2" />
+              <Button x:Name="HeroVerticalArtistButton" Classes="artist-link"
+                      Command="{Binding OpenArtistCommand}" IsEnabled="{Binding HasArtist}"
+                      HorizontalAlignment="Center"
+                      AutomationProperties.Name="{Binding ArtistName}">
+                <TextBlock Text="{Binding ArtistName}" FontSize="18" TextAlignment="Center"
+                           TextTrimming="CharacterEllipsis" MaxLines="1" />
+              </Button>
+              <TextBlock Text="{Binding PublishDateText}" FontSize="14" FontWeight="Medium"
+                         Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center" />
+              <TextBlock x:Name="HeroVerticalDescription" Text="{Binding Description}" FontSize="13"
+                         Foreground="{DynamicResource TextTertiary}" TextAlignment="Center"
                          MaxLines="3" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
-                         IsVisible="{Binding HasDescription}" HorizontalAlignment="Left" />
-              <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Left"
-                          VerticalAlignment="Center">
+                         IsVisible="{Binding HasDescription}" />
+              <StackPanel x:Name="HeroVerticalActions" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0"
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
                         CornerRadius="18" Height="36" Padding="14,0" Command="{Binding PlayAllCommand}"
                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
@@ -50,7 +193,7 @@
                   <TextBlock Text="•••" LetterSpacing="1" />
                 </Button>
               </StackPanel>
-            </Grid>
+            </StackPanel>
           </Grid>
         </Border>
         <!-- 曲目列表卡(仿原版 ListView 卡) -->

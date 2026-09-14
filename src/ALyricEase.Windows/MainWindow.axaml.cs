@@ -57,7 +57,6 @@ public partial class MainWindow : Window
 
     private void OnOpened(object? sender, EventArgs e)
     {
-        RestorePersistedWindowBounds();
         ResponsiveClasses.Apply(this, ClientSize.Width);
         UpdateTitleBarHamburgerVisibility();
         UpdateFullScreenChrome();
@@ -66,9 +65,9 @@ public partial class MainWindow : Window
         _nowPlayingController?.UpdateClosedPosition();
     }
 
-    /// <summary>恢复上次会话的窗口大小/位置/最大化。Screens 需要平台句柄,故在 Opened 里做;
-    /// 位置仅当左上角落在任一显示器内才采用,否则保持默认居中(防止换显示器后窗口丢失)。</summary>
-    private void RestorePersistedWindowBounds()
+    /// <summary>在窗口首次显示前恢复上次会话的大小/位置/最大化，避免默认窗口首帧闪现。
+    /// 位置仅当左上角落在任一显示器内才采用，否则交给系统选择初始位置。</summary>
+    internal void RestorePersistedWindowBounds()
     {
         var st = _vm?.AppState;
         if (st is null) return;
@@ -80,12 +79,14 @@ public partial class MainWindow : Window
             foreach (var s in Screens.All)
             {
                 if (!s.Bounds.Contains(pos)) continue;
+                WindowStartupLocation = WindowStartupLocation.Manual;
                 Position = pos;
                 break;
             }
         }
+        // 最大化前保留已恢复的常规态几何，关闭时仍可正确落盘。
+        TrackNormalBounds();
         if (st.WindowMaximized) WindowState = WindowState.Maximized;
-        TrackNormalBounds(); // 初始化快照,首次未动过的关闭也能落盘
     }
 
     /// <summary>仅在常规态记录当前几何(最大化/全屏/最小化跳过,快照保留上一个常规态)。</summary>

@@ -28,10 +28,14 @@ public partial class App : Application
       // 窗口关闭通常已经保存几何；Exit 再刷新一次尚未触发的音量/时长延迟保存。
       desktop.Exit += (_, _) => ServiceLocator.Get<AppStateStore>().Flush();
 
-      desktop.MainWindow = new MainWindow
+      var mainWindow = new MainWindow
       {
         DataContext = ServiceLocator.Get<MainViewModel>(),
       };
+      // ClassicDesktop lifetime 会在初始化完成后显示 MainWindow；在赋值前恢复几何，
+      // 确保 Win32 窗口的第一个可见帧就是上次关闭时的大小、位置和状态。
+      mainWindow.RestorePersistedWindowBounds();
+      desktop.MainWindow = mainWindow;
 
 #if WINDOWS
       // SMTC 需要前台窗口 HWND,须在窗口创建后于 UI 线程初始化

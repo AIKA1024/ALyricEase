@@ -25,6 +25,8 @@
     <x:String x:Key="IconPerson">&#xE910;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconSettings">&#xE917;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconAdd">&#xE92B;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconShare">&#xE918;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconCopyLink">&#xE902;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconCode">&#xE940;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconPin">&#xF36B;</x:String> <!-- 实为细线字形,须配 LyricEaseIconsOutline -->
     <x:String x:Key="IconChevronDown">&#xE901;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->

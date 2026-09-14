@@ -1,6 +1,9 @@
+using System;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
@@ -49,5 +52,38 @@ public partial class PlaylistView : UserControl
             item.EnsureLikedLoaded();
         }
         _pendingCovers.Clear();
+    }
+
+    /// <summary>原版“更多”菜单的系统分享入口。原生分享面板需要当前 TopLevel 句柄，因此留在视图层。</summary>
+    private async void OnSharePlaylistClick(object? sender, RoutedEventArgs e)
+    {
+        if (GetShareablePlaylist() is not { } playlist) return;
+        try
+        {
+            var link = PlaylistShareLinks.For(playlist);
+            var ownerHandle = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? 0;
+            var description = string.IsNullOrWhiteSpace(playlist.Description)
+                ? playlist.Name
+                : playlist.Description;
+            await ServiceLocator.Get<IPlatformShareService>().ShareUriAsync(
+                ownerHandle, $"分享歌单：{playlist.Name}", description, new Uri(link));
+        }
+        catch
+        {
+            // 无头测试或当前宿主不支持系统分享时保持页面状态。
+        }
+    }
+
+    private async void OnCopyPlaylistLinkClick(object? sender, RoutedEventArgs e)
+    {
+        if (GetShareablePlaylist() is not { } playlist) return;
+        await ClipboardService.TryCopyTextAsync(PlaylistShareLinks.For(playlist));
+    }
+
+    private Models.Playlist? GetShareablePlaylist()
+    {
+        if (DataContext is not PlaylistViewModel { SelectedPlaylist.Playlist: { Id: > 0 } playlist })
+            return null;
+        return playlist;
     }
 }

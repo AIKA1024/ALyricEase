@@ -94,6 +94,7 @@ public static class CollectionFilterProbe
         var vm = ServiceLocator.Get<PlaylistViewModel>();
         vm.SelectedPlaylist = new PlaylistItemViewModel(new Playlist
         {
+            Id = 123456,
             Name = "筛选布局测试歌单",
             TrackCount = 120,
             Description = "用于确认展开控件保持在头部容器内部。",
@@ -113,6 +114,31 @@ public static class CollectionFilterProbe
             ?? throw new InvalidOperationException("歌单头部缺少排序筛选控件");
         var toggle = hero.GetVisualDescendants().OfType<ToggleButton>()
             .Single(button => button.Classes.Contains("filter-expander") && button.IsEffectivelyVisible);
+        var play = hero.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.Classes.Contains("play-all") && button.IsEffectivelyVisible);
+        var heart = hero.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.IsEffectivelyVisible
+                              && button.GetVisualDescendants().OfType<TextBlock>()
+                                  .Any(text => text.Text == "心动模式"));
+        var more = hero.GetVisualDescendants().OfType<Button>()
+            .Single(button => button.Classes.Contains("hero-action-more") && button.IsEffectivelyVisible);
+        Assert(play.Bounds.Height == 36 && heart.Bounds.Height == 36
+               && more.Bounds.Height == 36 && toggle.Bounds.Height == 36,
+            $"头部按钮高度不统一：播放={play.Bounds.Height}, 心动={heart.Bounds.Height}, 更多={more.Bounds.Height}, 展开={toggle.Bounds.Height}");
+        var morePosition = more.TranslatePoint(new Point(0, 0), hero)!.Value;
+        var togglePosition = toggle.TranslatePoint(new Point(0, 0), hero)!.Value;
+        Assert(togglePosition.X > morePosition.X + more.Bounds.Width,
+            "展开按钮没有保持在操作行最右侧");
+        var menu = more.Flyout as MenuFlyout
+                   ?? throw new InvalidOperationException("更多按钮没有 MenuFlyout");
+        Assert(menu.Items.OfType<MenuItem>().Select(item => item.Header?.ToString())
+                   .SequenceEqual(new[] { "分享", "复制链接" }),
+            "更多按钮的菜单结构与原版不一致");
+        menu.ShowAt(more);
+        Drain();
+        Assert(menu.IsOpen, "更多按钮的 Flyout 没有正常打开");
+        menu.Hide();
+        Drain();
         var collapsedPosition = toggle.TranslatePoint(new Point(0, 0), window)
                                 ?? throw new InvalidOperationException("无法读取收起按钮坐标");
         var collapsedLocalPosition = toggle.TranslatePoint(new Point(0, 0), hero)

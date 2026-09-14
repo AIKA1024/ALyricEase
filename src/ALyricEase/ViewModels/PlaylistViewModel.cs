@@ -201,8 +201,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowPlaylistContent));
     }
 
-    partial void OnSelectedPlaylistChanged(PlaylistItemViewModel? value) =>
+    public bool CanShareCurrentPlaylist => SelectedPlaylist?.Id > 0;
+
+    partial void OnSelectedPlaylistChanged(PlaylistItemViewModel? value)
+    {
         OnPropertyChanged(nameof(ShowPlaylistContent));
+        OnPropertyChanged(nameof(CanShareCurrentPlaylist));
+    }
 
     /// <summary>进入页面时调用:恢复本地登录态(网易云拉资料,不阻塞 UI,失败静默),QQ 侧由 EnsureQqLoadedAsync 处理。</summary>
     public async Task EnsureLoadedAsync()

@@ -60,25 +60,31 @@
         <Setter Property="Opacity" Value="0.9" />
     </Style>
 
-    <!-- 原版 ExpanderToggleButtonStyle：36px 浅底上下箭头，用于展开/收起排序筛选栏。 -->
+    <!-- 原版 ExpanderToggleButtonStyle：36px 深色上下箭头按钮，用于展开/收起排序筛选栏。 -->
     <Style Selector="ToggleButton.filter-expander">
         <Setter Property="Width" Value="36" />
         <Setter Property="Height" Value="36" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="CornerRadius" Value="4" />
-        <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+        <Setter Property="Background" Value="#292929" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
+        <Setter Property="Background" Value="#3B3B3B" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:pressed /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SystemBaseMedium}" />
+        <Setter Property="Background" Value="#4E4E4E" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:checked /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+        <Setter Property="Background" Value="#292929" />
+    </Style>
+    <Style Selector="ToggleButton.filter-expander:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="#3B3B3B" />
+    </Style>
+    <Style Selector="ToggleButton.filter-expander:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="#4E4E4E" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:checked TextBlock.filter-chevron">
         <Setter Property="RenderTransform">

@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:ALyricEase.Controls"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:ArtistSongsPageViewModel"
@@ -17,7 +18,7 @@
   <!-- 整页滚动(歌单页同构):列表延伸到播放条下方, clearance 由内容底部 margin 提供 -->
   <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled">
-    <Grid Margin="48,20,32,110" RowDefinitions="Auto,Auto,*">
+    <Grid Margin="48,20,32,110" RowDefinitions="Auto,Auto,Auto,*">
       <!-- 页头:歌手名(随内容滚动,同歌单页 hero) -->
       <TextBlock Grid.Row="0" Text="{Binding Name}" Classes="page-title" Margin="0,0,0,12" />
 
@@ -28,18 +29,31 @@
           <TextBlock Text="{Binding Subtitle}" FontSize="14" Foreground="{DynamicResource TextTertiary}"
                      VerticalAlignment="Center" />
         </StackPanel>
-        <Button Grid.Column="1" Classes="play-all" Command="{Binding PlayAllCommand}"
-                IsVisible="{Binding HasSongs}"
-                AutomationProperties.Name="播放歌手全部热门歌曲">
-          <StackPanel Orientation="Horizontal" Spacing="6">
-            <TextBlock Text="▶" FontSize="13" />
-            <TextBlock Text="播放全部" FontSize="14" />
-          </StackPanel>
-        </Button>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+          <Button Classes="play-all" Command="{Binding PlayAllCommand}"
+                  IsVisible="{Binding HasSongs}"
+                  AutomationProperties.Name="播放歌手全部热门歌曲">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="▶" FontSize="13" />
+              <TextBlock Text="播放全部" FontSize="14" />
+            </StackPanel>
+          </Button>
+          <ToggleButton Classes="filter-expander" IsChecked="{Binding Filters.IsExpanded, Mode=TwoWay}"
+                        ToolTip.Tip="展开或收起排序和筛选"
+                        AutomationProperties.Name="展开或收起歌曲排序和筛选">
+            <TextBlock Classes="filter-chevron" Text="{DynamicResource IconChevronDown}"
+                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="11"
+                       RenderTransformOrigin="50%,50%" />
+          </ToggleButton>
+        </StackPanel>
       </Grid>
 
+      <controls:TrackCollectionSortAndFilterControl Grid.Row="2" Margin="10,0,0,12"
+                                                     DataContext="{Binding Filters}"
+                                                     IsVisible="{Binding IsExpanded}" />
+
       <!-- 曲目列表卡(仿专辑页 ListView 卡);滚动近底部由 code-behind 增量补页 -->
-      <Border Grid.Row="2" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
+      <Border Grid.Row="3" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
               BorderThickness="1" CornerRadius="8" Padding="8,6">
         <ItemsControl ItemsSource="{Binding Songs}" ContainerPrepared="OnTrackContainerPreparing">
           <ItemsControl.ItemsPanel>

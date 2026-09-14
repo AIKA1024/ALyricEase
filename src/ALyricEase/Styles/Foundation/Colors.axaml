@@ -8,9 +8,10 @@
             <SolidColorBrush x:Key="AppSurfaceHover" Color="#0D000000" />
             <SolidColorBrush x:Key="AppSurfacePressed" Color="#18000000" />
             <SolidColorBrush x:Key="AppSurfaceSelected" Color="#15000000" />
-            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow(曲目行悬停/按下,20%/40%) -->
+            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow/SystemBaseMedium(20%/40%/60%) -->
             <SolidColorBrush x:Key="SystemBaseLow" Color="#33000000" />
             <SolidColorBrush x:Key="SystemBaseMediumLow" Color="#66000000" />
+            <SolidColorBrush x:Key="SystemBaseMedium" Color="#99000000" />
             <!-- 行内播放/更多按钮:浅色态半透明(叠行背景),悬停变浅,按下更深 -->
             <SolidColorBrush x:Key="RowButton" Color="#33000000" />
             <SolidColorBrush x:Key="RowButtonHover" Color="#1A000000" />
@@ -63,9 +64,10 @@
             <SolidColorBrush x:Key="AppSurfaceHover" Color="#12FFFFFF" />
             <SolidColorBrush x:Key="AppSurfacePressed" Color="#1FFFFFFF" />
             <SolidColorBrush x:Key="AppSurfaceSelected" Color="#18FFFFFF" />
-            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow(曲目行悬停/按下,20%/40%) -->
+            <!-- 对齐 UWP SystemBaseLow/SystemBaseMediumLow/SystemBaseMedium(20%/40%/60%) -->
             <SolidColorBrush x:Key="SystemBaseLow" Color="#33FFFFFF" />
             <SolidColorBrush x:Key="SystemBaseMediumLow" Color="#66FFFFFF" />
+            <SolidColorBrush x:Key="SystemBaseMedium" Color="#99FFFFFF" />
             <!-- 行内播放/更多按钮:深色态实色(原版 #404040/#454545/#3A3A3A) -->
             <SolidColorBrush x:Key="RowButton" Color="#FF404040" />
             <SolidColorBrush x:Key="RowButtonHover" Color="#FF454545" />

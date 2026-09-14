@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
@@ -26,17 +26,23 @@ public sealed partial class ArtistSongsPageViewModel : ViewModelBase
     private int _offset;
     private int _total = -1; // 服务端总数;-1 = 未知(按页长判断是否还有下一页)
     private readonly List<Song> _loaded = new();
+    private readonly List<SongItemViewModel> _allSongRows = new();
     private bool _loading;
     private Task? _loadTask;
+    private Task? _loadAllForFilterTask;
 
     public ArtistSongsPageViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player)
     {
         _api = api;
         _qqApi = qqApi;
         _player = player;
+        Filters = CollectionSortAndFilterViewModel.ForTracks("在歌曲中搜索");
+        Filters.FilterChanged += OnFiltersChanged;
     }
 
-    public ObservableCollection<SongItemViewModel> Songs { get; } = new();
+    public RangeObservableCollection<SongItemViewModel> Songs { get; } = new();
+
+    public CollectionSortAndFilterViewModel Filters { get; }
 
     [ObservableProperty] private string _name = "";
 
@@ -57,7 +63,9 @@ public sealed partial class ArtistSongsPageViewModel : ViewModelBase
         _ref = artistRef;
         Name = artistRef.Name;
         Songs.Clear();
+        _allSongRows.Clear();
         _loaded.Clear();
+        Filters.Reset();
         _offset = 0;
         _total = -1;
         HasSongs = false;
@@ -102,14 +110,15 @@ public sealed partial class ArtistSongsPageViewModel : ViewModelBase
             {
                 _loaded.AddRange(page);
                 _offset += page.Count;
-                var firstIndex = Songs.Count + 1;
+                var firstIndex = _allSongRows.Count + 1;
                 for (var i = 0; i < page.Count; i++)
-                    Songs.Add(new SongItemViewModel(
+                    _allSongRows.Add(new SongItemViewModel(
                         page[i], _player.PlayFromList, index: firstIndex + i, queue: _loaded,
                         api: _ref.IsQq ? null : _api, source: _ref.Name));
+                RefreshVisibleSongs();
                 HasSongs = true;
             }
-            Subtitle = $"共 {(_total > 0 ? _total : Songs.Count)} 首";
+            Subtitle = $"共 {(_total > 0 ? _total : _allSongRows.Count)} 首";
         }
         catch
         {
@@ -121,6 +130,48 @@ public sealed partial class ArtistSongsPageViewModel : ViewModelBase
             _loading = false;
             IsLoadingMore = false;
             _loadTask = null;
+        }
+    }
+
+    private void OnFiltersChanged()
+    {
+        RefreshVisibleSongs();
+        if (Filters.IsActive)
+            _ = EnsureAllLoadedForFilterAsync();
+    }
+
+    private void RefreshVisibleSongs()
+    {
+        var projection = Filters.ApplyToTracks(_allSongRows);
+        if (Songs.Count <= projection.Count
+            && Songs.SequenceEqual(projection.Take(Songs.Count)))
+        {
+            Songs.AddRange(projection.Skip(Songs.Count).ToList());
+            return;
+        }
+
+        Songs.ReplaceAll(projection);
+    }
+
+    /// <summary>排序和搜索对完整歌手曲库生效，而不是只处理当前已经滚动加载的页面。</summary>
+    private Task EnsureAllLoadedForFilterAsync() =>
+        _loadAllForFilterTask ??= LoadAllForFilterCoreAsync();
+
+    private async Task LoadAllForFilterCoreAsync()
+    {
+        await Task.Yield();
+        try
+        {
+            while (Filters.IsActive && HasMore)
+            {
+                var before = _offset;
+                await LoadMoreAsync();
+                if (_offset == before) break;
+            }
+        }
+        finally
+        {
+            _loadAllForFilterTask = null;
         }
     }
 

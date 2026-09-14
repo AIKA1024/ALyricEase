@@ -22,4 +22,16 @@ public sealed class RangeObservableCollection<T> : ObservableCollection<T>
         OnCollectionChanged(new NotifyCollectionChangedEventArgs(
             NotifyCollectionChangedAction.Add, changedItems, startIndex));
     }
+
+    /// <summary>用一次 Reset 通知替换集合内容，适合排序或筛选后的完整投影。</summary>
+    public void ReplaceAll(IReadOnlyList<T> items)
+    {
+        Items.Clear();
+        foreach (var item in items)
+            Items.Add(item);
+
+        OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));
+        OnPropertyChanged(new PropertyChangedEventArgs("Item[]"));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+    }
 }

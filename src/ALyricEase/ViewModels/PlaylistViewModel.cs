@@ -52,6 +52,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _cookie = cookie;
         _player = player;
         _musicCache = musicCache;
+        Filters = CollectionSortAndFilterViewModel.ForTracks("在歌单中搜索");
+        Filters.FilterChanged += OnTrackFiltersChanged;
         RestoreCachedLibraries();
     }
 
@@ -175,10 +177,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     public RangeObservableCollection<SongItemViewModel> Tracks { get; } = new();
 
+    private readonly List<SongItemViewModel> _allTrackRows = new();
+    private Task? _loadAllForFilterTask;
+
+    public CollectionSortAndFilterViewModel Filters { get; }
+
     /// <summary>登录态变化后重算各曲目行可播性(登录成会员后 VIP 歌曲行恢复可点)。</summary>
     public void RefreshPlayability()
     {
-        foreach (var t in Tracks) t.RefreshPlayability();
+        foreach (var t in _allTrackRows) t.RefreshPlayability();
     }
 
     partial void OnIsLoggedInChanged(bool value)
@@ -640,7 +647,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         PlaylistTitle = "";
         CreatorName = "";
         SelectedPlaylist = null;
-        Tracks.Clear();
+        ClearTrackRows();
+        Filters.Reset();
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
@@ -750,7 +758,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘" });
-        Tracks.Clear();
+        ClearTrackRows();
+        Filters.Reset();
         PlaylistTitle = "音乐云盘";
         _trackIds = new List<long>();
         _known.Clear();
@@ -778,9 +787,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 }
                 foreach (var s in songs)
                 {
-                    Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs, _api, "音乐云盘"));
+                    _allTrackRows.Add(new SongItemViewModel(
+                        s, _player.PlayFromList, _allTrackRows.Count + 1, _queueSongs, _api, "音乐云盘"));
                     _queueSongs.Add(s);
                 }
+                RefreshVisibleTracks();
                 offset += songs.Count;
                 hasMore = more && songs.Count > 0 && offset < 3000; // 3000 首兜底,防接口异常时死循环
             }
@@ -812,7 +823,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded(); // 头部大封面
         _ = playlist.EnsureLargeCoverLoadedAsync(); // 600px 大图,保证头部 200px 显示清晰
-        Tracks.Clear();
+        ClearTrackRows();
+        Filters.Reset();
         PlaylistTitle = playlist.Name;
         CreatorName = UserName;
         _trackIds = new List<long>();
@@ -828,7 +840,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         {
             var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
-            Tracks.Clear();
+            ClearTrackRows();
             _queueSongs.Clear();
             _materialized = 0;
             playlist.RefreshCover(overview.CoverUrl); // 封面随曲目变化(如"我喜欢的音乐"),URL 变了才重载
@@ -874,7 +886,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         SelectedPlaylist = playlist;
         playlist.EnsureCoverLoaded();
         _ = playlist.EnsureLargeCoverLoadedAsync();
-        Tracks.Clear();
+        ClearTrackRows();
+        Filters.Reset();
         PlaylistTitle = playlist.Name;
         CreatorName = QqUserName;
         _trackIds = new List<long>();
@@ -890,13 +903,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         {
             var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
-            Tracks.Clear();
+            ClearTrackRows();
             _queueSongs.Clear();
             foreach (var s in songs)
             {
-                Tracks.Add(new SongItemViewModel(s, _player.PlayFromList, Tracks.Count + 1, _queueSongs, null, playlist.Name));
+                _allTrackRows.Add(new SongItemViewModel(
+                    s, _player.PlayFromList, _allTrackRows.Count + 1, _queueSongs, null, playlist.Name));
                 _queueSongs.Add(s);
             }
+            RefreshVisibleTracks();
             await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, songs);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -933,7 +948,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Name = aggregate.Name,
             Description = string.Join(" · ", members.Select(m => m.PlaylistName)),
         });
-        Tracks.Clear();
+        ClearTrackRows();
+        Filters.Reset();
         PlaylistTitle = aggregate.Name;
         CreatorName = $"聚合歌单 · {aggregate.Members.Count} 个歌单";
         _trackIds = new List<long>();
@@ -951,11 +967,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             await LoadMoreAggregateAsync(generation, ct);
             if (!IsCurrentLoad(generation, ct)) return;
             IsBusy = false;
-            while (Tracks.Count < 200 && _aggregateLoad is { HasMore: true })
+            while (_allTrackRows.Count < 200 && _aggregateLoad is { HasMore: true })
             {
-                var before = Tracks.Count;
+                var before = _allTrackRows.Count;
                 await LoadMoreAggregateAsync(generation, ct);
-                if (!IsCurrentLoad(generation, ct) || Tracks.Count == before) break;
+                if (!IsCurrentLoad(generation, ct) || _allTrackRows.Count == before) break;
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1083,13 +1099,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             {
                 if (!IsCurrentLoad(generation, ct)) return;
 
-                var rowStart = Tracks.Count;
+                var rowStart = _allTrackRows.Count;
                 _queueSongs.AddRange(songs);
                 var rows = songs.Select((song, index) =>
                     CreateTrackRow(song, rowStart + index,
                         batch.Source == MusicSource.QQ ? null : _api)).ToList();
-                Tracks.AddRange(rows);
-                SelectedPlaylist?.UpdateTrackCount(Tracks.Count);
+                _allTrackRows.AddRange(rows);
+                RefreshVisibleTracks();
+                SelectedPlaylist?.UpdateTrackCount(_allTrackRows.Count);
 
                 if (!state.CoverSet)
                 {
@@ -1132,6 +1149,79 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         return IsAggregate
             ? LoadMoreAggregateAsync(_loadGeneration, cancellation.Token)
             : LoadMoreAsync(fillTo: null, generation: _loadGeneration, cancellation.Token);
+    }
+
+    private void OnTrackFiltersChanged()
+    {
+        RefreshVisibleTracks();
+        if (Filters.IsActive)
+            _ = EnsureAllTracksLoadedForFilterAsync();
+    }
+
+    private void ClearTrackRows()
+    {
+        _allTrackRows.Clear();
+        Tracks.Clear();
+    }
+
+    private void RefreshVisibleTracks()
+    {
+        var projection = Filters.ApplyToTracks(_allTrackRows);
+        // 新投影只是向末尾增长时保持 Add 通知，避免 Reset 让虚拟列表丢失当前滚动位置。
+        if (Tracks.Count <= projection.Count
+            && Tracks.SequenceEqual(projection.Take(Tracks.Count)))
+        {
+            Tracks.AddRange(projection.Skip(Tracks.Count).ToList());
+            return;
+        }
+
+        Tracks.ReplaceAll(projection);
+    }
+
+    /// <summary>展开后的排序和筛选覆盖完整歌单；大歌单仍按原有小批次节奏补齐，避免阻塞界面。</summary>
+    private Task EnsureAllTracksLoadedForFilterAsync() =>
+        _loadAllForFilterTask ??= LoadAllTracksForFilterCoreAsync();
+
+    private async Task LoadAllTracksForFilterCoreAsync()
+    {
+        await Task.Yield();
+        try
+        {
+            var cancellation = _loadCancellation;
+            if (cancellation is null || cancellation.IsCancellationRequested) return;
+            var generation = _loadGeneration;
+            var ct = cancellation.Token;
+
+            while (Filters.IsActive && IsCurrentLoad(generation, ct))
+            {
+                while (IsLoadingMore && Filters.IsActive && IsCurrentLoad(generation, ct))
+                    await Task.Delay(50, ct);
+
+                if (!Filters.IsActive || !IsCurrentLoad(generation, ct)) break;
+                var before = _allTrackRows.Count;
+
+                if (IsAggregate)
+                {
+                    if (_aggregateLoad is not { HasMore: true }) break;
+                    await LoadMoreAggregateAsync(generation, ct);
+                }
+                else
+                {
+                    if (_materialized >= _trackIds.Count) break;
+                    var target = Math.Min(_trackIds.Count, _materialized + 100);
+                    await LoadMoreAsync(target, generation, ct);
+                }
+
+                if (_allTrackRows.Count == before) break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _loadAllForFilterTask = null;
+        }
     }
 
     private async Task LoadMoreAsync(int? fillTo, int generation, CancellationToken ct)
@@ -1222,14 +1312,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var row = new SongItemViewModel(
                 song,
                 _player.PlayFromList,
-                Tracks.Count + 1,
+                _allTrackRows.Count + 1,
                 _queueSongs,
                 song.Source == MusicSource.NetEase ? _api : null,
                 playlist.Name);
             // 离线快照包含上次已解析的完整曲目元数据，但只有确实存在音频文件的歌曲才能点击。
             row.IsPlayable = cachedAudio[index];
-            Tracks.Add(row);
+            _allTrackRows.Add(row);
         }
+        RefreshVisibleTracks();
         _materialized = songs.Count;
         return true;
     }
@@ -1238,14 +1329,17 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// UI 行与 _queueSongs 仍同步增长，但播放使用 _playbackQueue 的完整逻辑范围。</summary>
     private void AppendKnownTracks()
     {
+        var changed = false;
         while (_materialized < _trackIds.Count)
         {
             var id = _trackIds[_materialized];
             if (!_known.TryGetValue(id, out var song)) break;
-            Tracks.Add(CreateTrackRow(song, _materialized, _api));
+            _allTrackRows.Add(CreateTrackRow(song, _materialized, _api));
             _queueSongs.Add(song);
             _materialized++;
+            changed = true;
         }
+        if (changed) RefreshVisibleTracks();
     }
 
     private SongItemViewModel CreateTrackRow(Song song, int zeroBasedIndex, NetEaseApiClient? api)
@@ -1372,7 +1466,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         SelectedPlaylist = null;
         PlaylistTitle = "";
         CreatorName = "";
-        Tracks.Clear();
+        ClearTrackRows();
+        Filters.Reset();
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();

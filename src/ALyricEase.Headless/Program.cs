@@ -77,6 +77,13 @@ public static class Program
             return;
         }
 
+        // 集合排序/筛选回归：歌曲/专辑匹配、稳定排序、重置与响应式控件布局。
+        if (args.Length > 0 && args[0] == "--collection-filter")
+        {
+            Environment.ExitCode = CollectionFilterProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:歌单接口"最后修改"时间字段实测(网易云/QQ 匿名公开歌单)
         if (args.Length > 0 && args[0] == "--pltime")
         {

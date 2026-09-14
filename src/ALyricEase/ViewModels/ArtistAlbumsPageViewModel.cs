@@ -1,5 +1,7 @@
-using System.Collections.ObjectModel;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using ALyricEase.Infrastructure;
 using ALyricEase.Models.Dtos;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
@@ -18,16 +20,22 @@ public sealed partial class ArtistAlbumsPageViewModel : ViewModelBase
 
     private ArtistPageRef? _ref;
     private int _offset;
+    private readonly List<AlbumCardViewModel> _allAlbums = new();
     private bool _loading;
     private Task? _loadTask;
+    private Task? _loadAllForFilterTask;
 
     public ArtistAlbumsPageViewModel(NetEaseApiClient api, QQMusicApiClient qqApi)
     {
         _api = api;
         _qqApi = qqApi;
+        Filters = CollectionSortAndFilterViewModel.ForAlbums("在专辑中搜索");
+        Filters.FilterChanged += OnFiltersChanged;
     }
 
-    public ObservableCollection<AlbumCardViewModel> Albums { get; } = new();
+    public RangeObservableCollection<AlbumCardViewModel> Albums { get; } = new();
+
+    public CollectionSortAndFilterViewModel Filters { get; }
 
     [ObservableProperty] private string _name = "";
 
@@ -48,6 +56,8 @@ public sealed partial class ArtistAlbumsPageViewModel : ViewModelBase
         _ref = artistRef;
         Name = artistRef.Name;
         Albums.Clear();
+        _allAlbums.Clear();
+        Filters.Reset();
         _offset = 0;
         HasAlbums = false;
         IsLoadingMore = false;
@@ -88,12 +98,13 @@ public sealed partial class ArtistAlbumsPageViewModel : ViewModelBase
             {
                 _offset += page.Count;
                 foreach (var a in page)
-                    Albums.Add(_ref.IsQq
+                    _allAlbums.Add(_ref.IsQq
                         ? new AlbumCardViewModel(a.Id, a.Name, a.PicUrl, a.Mid)
                         : new AlbumCardViewModel(a.Id, a.Name, a.PicUrl));
+                RefreshVisibleAlbums();
                 HasAlbums = true;
             }
-            Subtitle = $"已加载 {Albums.Count} 张专辑";
+            Subtitle = $"已加载 {_allAlbums.Count} 张专辑";
         }
         catch
         {
@@ -105,6 +116,48 @@ public sealed partial class ArtistAlbumsPageViewModel : ViewModelBase
             _loading = false;
             IsLoadingMore = false;
             _loadTask = null;
+        }
+    }
+
+    private void OnFiltersChanged()
+    {
+        RefreshVisibleAlbums();
+        if (Filters.IsActive)
+            _ = EnsureAllLoadedForFilterAsync();
+    }
+
+    private void RefreshVisibleAlbums()
+    {
+        var projection = Filters.ApplyToAlbums(_allAlbums);
+        if (Albums.Count <= projection.Count
+            && Albums.SequenceEqual(projection.Take(Albums.Count)))
+        {
+            Albums.AddRange(projection.Skip(Albums.Count).ToList());
+            return;
+        }
+
+        Albums.ReplaceAll(projection);
+    }
+
+    /// <summary>启用排序或搜索后补齐剩余分页，避免筛选结果只覆盖当前视口已加载内容。</summary>
+    private Task EnsureAllLoadedForFilterAsync() =>
+        _loadAllForFilterTask ??= LoadAllForFilterCoreAsync();
+
+    private async Task LoadAllForFilterCoreAsync()
+    {
+        await Task.Yield();
+        try
+        {
+            while (Filters.IsActive && HasMore)
+            {
+                var before = _offset;
+                await LoadMoreAsync();
+                if (_offset == before) break;
+            }
+        }
+        finally
+        {
+            _loadAllForFilterTask = null;
         }
     }
 }

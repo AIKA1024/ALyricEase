@@ -60,6 +60,32 @@
         <Setter Property="Opacity" Value="0.9" />
     </Style>
 
+    <!-- 原版 ExpanderToggleButtonStyle：36px 浅底上下箭头，用于展开/收起排序筛选栏。 -->
+    <Style Selector="ToggleButton.filter-expander">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.filter-expander:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
+    </Style>
+    <Style Selector="ToggleButton.filter-expander:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemBaseMedium}" />
+    </Style>
+    <Style Selector="ToggleButton.filter-expander:checked /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
+    </Style>
+    <Style Selector="ToggleButton.filter-expander:checked TextBlock.filter-chevron">
+        <Setter Property="RenderTransform">
+            <RotateTransform Angle="180" />
+        </Setter>
+    </Style>
+
     <!-- 全局“播放全部”主操作：所有页面复用同一语义色和 Fluent 交互状态。 -->
     <Style Selector="Button.play-all">
         <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackground}" />

@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:CollectionSortAndFilterViewModel"
+             mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="82"
+             x:Class="ALyricEase.Controls.TrackCollectionSortAndFilterControl">
+  <UserControl.Styles>
+    <Style Selector="Grid#RootGrid">
+      <Setter Property="RowSpacing" Value="10" />
+    </Style>
+    <Style Selector="Grid#SortingGrid">
+      <Setter Property="Grid.ColumnSpan" Value="2" />
+    </Style>
+    <Style Selector="Grid#FilteringGrid">
+      <Setter Property="Grid.Row" Value="1" />
+      <Setter Property="Grid.ColumnSpan" Value="2" />
+    </Style>
+    <Style Selector="Button#ResetButton">
+      <Setter Property="Grid.Row" Value="1" />
+    </Style>
+    <Style Selector="UserControl.wide Grid#RootGrid">
+      <Setter Property="RowSpacing" Value="4" />
+    </Style>
+    <Style Selector="UserControl.wide Grid#SortingGrid">
+      <Setter Property="Grid.ColumnSpan" Value="1" />
+    </Style>
+    <Style Selector="UserControl.wide Grid#FilteringGrid">
+      <Setter Property="Grid.Row" Value="0" />
+      <Setter Property="Grid.Column" Value="1" />
+      <Setter Property="Grid.ColumnSpan" Value="1" />
+    </Style>
+    <Style Selector="UserControl.wide Button#ResetButton">
+      <Setter Property="Grid.Row" Value="0" />
+    </Style>
+    <Style Selector="TextBlock.filter-label">
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ComboBox.filter-input">
+      <Setter Property="Height" Value="36" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox.filter-input">
+      <Setter Property="Height" Value="36" />
+      <Setter Property="Padding" Value="10,0,36,0" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 对齐原版：窄屏为排序/筛选两行，宽屏为两列，重置始终位于末端。 -->
+  <Grid x:Name="RootGrid" ColumnDefinitions="*,*,Auto" RowDefinitions="Auto,Auto"
+        ColumnSpacing="12">
+    <Grid x:Name="SortingGrid" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+      <TextBlock Classes="filter-label" Text="排序" />
+      <ComboBox x:Name="SortCombo" Grid.Column="1" Classes="filter-input"
+                ItemsSource="{Binding SortOptions}"
+                SelectedIndex="{Binding SelectedSortIndex, Mode=TwoWay}" />
+    </Grid>
+
+    <Grid x:Name="FilteringGrid" ColumnDefinitions="Auto,*" ColumnSpacing="8">
+      <TextBlock Classes="filter-label" Text="筛选" />
+      <Grid Grid.Column="1">
+        <TextBox x:Name="SearchBox" Classes="filter-input" PlaceholderText="{Binding SearchWatermark}"
+                 Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Text="{DynamicResource IconSearch}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                   FontSize="15" Foreground="{DynamicResource TextSecondary}"
+                   HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0"
+                   IsHitTestVisible="False" />
+      </Grid>
+    </Grid>
+
+    <Button x:Name="ResetButton" Grid.Column="2" Content="重置" Height="36" Padding="14,0"
+            Command="{Binding ResetFiltersCommand}" IsEnabled="{Binding CanReset}"
+            VerticalContentAlignment="Center" AutomationProperties.Name="重置排序和筛选" />
+  </Grid>
+</UserControl>

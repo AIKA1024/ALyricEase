@@ -30,17 +30,25 @@ internal static class CoverLoaderProbe
 
             var cached = await CoverLoader.LoadAsync(url);
             var playerSizedUrl = CoverLoader.BuildSizedUrl(url, 640);
+            var netEaseRow = CoverLoader.BuildSizedUrl("https://p1.music.126.net/probe.jpg", 50);
             var variant = CoverLoader.TryGetLoadedVariant(playerSizedUrl);
             var netEaseFamily = CoverLoader.GetCoverFamilyKey(url)
                                 == CoverLoader.GetCoverFamilyKey(playerSizedUrl);
             const string qqSmall = "https://y.gtimg.cn/music/photo_new/T002R150x150M000abc.jpg";
+            var qqRow = CoverLoader.BuildSizedUrl(qqSmall, 50);
+            var qqDefault = CoverLoader.BuildSizedUrl(qqSmall, 100);
             var qqLarge = CoverLoader.BuildSizedUrl(qqSmall, 640);
             var qqFamily = CoverLoader.GetCoverFamilyKey(qqSmall)
                            == CoverLoader.GetCoverFamilyKey(qqLarge);
             var passed = requestCount == 1 && shared && ReferenceEquals(first, cached)
-                         && ReferenceEquals(first, variant) && netEaseFamily && qqFamily;
+                         && ReferenceEquals(first, variant) && netEaseFamily && qqFamily
+                         && netEaseRow.Contains("param=50y50", StringComparison.Ordinal)
+                         && qqRow.Contains("R90x90M000", StringComparison.Ordinal)
+                         && qqDefault.Contains("R120x120M000", StringComparison.Ordinal);
             Console.WriteLine($"[cover-cache] requests={requestCount}, shared={shared}, " +
-                              $"cached={ReferenceEquals(first, cached)}, variant={ReferenceEquals(first, variant)}");
+                              $"cached={ReferenceEquals(first, cached)}, variant={ReferenceEquals(first, variant)}, " +
+                              $"netEaseRow50={netEaseRow.Contains("param=50y50", StringComparison.Ordinal)}, " +
+                              $"qqRow90={qqRow.Contains("R90x90M000", StringComparison.Ordinal)}");
             return passed ? 0 : 1;
         }
         finally

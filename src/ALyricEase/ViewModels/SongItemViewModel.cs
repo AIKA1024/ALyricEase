@@ -231,7 +231,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
         catch { /* 无宿主环境 */ }
     }
 
-    private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(Song.CoverUrl, 100);
+    private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(Song.CoverUrl, 50);
 
     /// <summary>点击歌手 → 歌手页(经服务定位器避免把导航回调穿遍所有创建处)。QQ 按 mid 路由。</summary>
     [RelayCommand]

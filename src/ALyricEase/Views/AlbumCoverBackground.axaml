@@ -27,16 +27,18 @@
              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
       <Grid Width="1000" Height="1000" ClipToBounds="True">
         <Canvas x:Name="PaletteLayerA" Classes="palette-layer" Width="1000" Height="1000" Opacity="1">
-          <Ellipse x:Name="A0" Width="900" Height="900" Canvas.Left="-310" Canvas.Top="-330" />
-          <Ellipse x:Name="A1" Width="780" Height="780" Canvas.Left="520" Canvas.Top="-170" />
-          <Ellipse x:Name="A2" Width="930" Height="930" Canvas.Left="390" Canvas.Top="480" />
-          <Ellipse x:Name="A3" Width="820" Height="820" Canvas.Left="-300" Canvas.Top="520" />
+          <Ellipse x:Name="A0" Width="1180" Height="920" Canvas.Left="-340" Canvas.Top="-210" />
+          <Ellipse x:Name="A1" Width="880" Height="1180" Canvas.Left="510" Canvas.Top="-280" />
+          <Ellipse x:Name="A2" Width="1240" Height="980" Canvas.Left="-30" Canvas.Top="480" />
+          <Ellipse x:Name="A3" Width="780" Height="1100" Canvas.Left="-260" Canvas.Top="140" />
+          <Ellipse x:Name="A4" Width="920" Height="820" Canvas.Left="180" Canvas.Top="100" />
         </Canvas>
         <Canvas x:Name="PaletteLayerB" Classes="palette-layer" Width="1000" Height="1000" Opacity="0">
-          <Ellipse x:Name="B0" Width="900" Height="900" Canvas.Left="-310" Canvas.Top="-330" />
-          <Ellipse x:Name="B1" Width="780" Height="780" Canvas.Left="520" Canvas.Top="-170" />
-          <Ellipse x:Name="B2" Width="930" Height="930" Canvas.Left="390" Canvas.Top="480" />
-          <Ellipse x:Name="B3" Width="820" Height="820" Canvas.Left="-300" Canvas.Top="520" />
+          <Ellipse x:Name="B0" Width="1180" Height="920" Canvas.Left="-340" Canvas.Top="-210" />
+          <Ellipse x:Name="B1" Width="880" Height="1180" Canvas.Left="510" Canvas.Top="-280" />
+          <Ellipse x:Name="B2" Width="1240" Height="980" Canvas.Left="-30" Canvas.Top="480" />
+          <Ellipse x:Name="B3" Width="780" Height="1100" Canvas.Left="-260" Canvas.Top="140" />
+          <Ellipse x:Name="B4" Width="920" Height="820" Canvas.Left="180" Canvas.Top="100" />
         </Canvas>
       </Grid>
     </Viewbox>

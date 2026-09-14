@@ -33,10 +33,14 @@ public partial class AlbumCoverBackground : UserControl
         Color.FromRgb(106, 53, 91),
     ];
 
-    private static readonly SplineEasing s_driftEasing = new(0.45, 0.05, 0.55, 0.95);
+    private static readonly SplineEasing s_slowEasing = new(0.62, 0.03, 0.38, 0.97);
+    private static readonly SplineEasing s_burstEasing = new(0.2, 0.72, 0.28, 1);
 
     private bool _showingLayerA = true;
     private bool _motionStarted;
+    private bool _motionStartQueued;
+    private int _motionStartAttempts;
+    private int _motionGeneration;
     private int _paletteVersion;
 
     public IImage? Cover
@@ -64,14 +68,22 @@ public partial class AlbumCoverBackground : UserControl
 
     private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        StartMotion();
+        _motionStartAttempts = 0;
+        QueueMotionStart();
         QueuePaletteRefresh();
     }
 
     private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        _motionGeneration++;
+        _motionStartQueued = false;
+        _motionStartAttempts = 0;
         foreach (var ellipse in GetLayer(true).Concat(GetLayer(false)))
-            ElementComposition.GetElementVisual(ellipse)?.StopAnimation("Translation");
+        {
+            var visual = ElementComposition.GetElementVisual(ellipse);
+            visual?.StopAnimation("Translation");
+            visual?.StopAnimation("Scale");
+        }
         _motionStarted = false;
     }
 
@@ -98,13 +110,15 @@ public partial class AlbumCoverBackground : UserControl
         _showingLayerA = targetIsA;
     }
 
-    private Ellipse[] GetLayer(bool layerA) => layerA ? [A0, A1, A2, A3] : [B0, B1, B2, B3];
+    private Ellipse[] GetLayer(bool layerA) => layerA ? [A0, A1, A2, A3, A4] : [B0, B1, B2, B3, B4];
 
     private static void ApplyPalette(Ellipse[] ellipses, IReadOnlyList<Color> palette)
     {
         for (var i = 0; i < ellipses.Length; i++)
         {
-            var color = palette[i % palette.Count];
+            var color = i < palette.Count
+                ? palette[i]
+                : Blend(palette[0], palette[Math.Min(2, palette.Count - 1)]);
             ellipses[i].Fill = new RadialGradientBrush
             {
                 Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
@@ -113,43 +127,104 @@ public partial class AlbumCoverBackground : UserControl
                 RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(238, color.R, color.G, color.B), 0),
-                    new GradientStop(Color.FromArgb(176, color.R, color.G, color.B), 0.55),
+                    new GradientStop(Color.FromArgb(218, color.R, color.G, color.B), 0),
+                    new GradientStop(Color.FromArgb(142, color.R, color.G, color.B), 0.52),
                     new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1),
                 },
             };
         }
     }
 
-    private void StartMotion()
+    /// <summary>
+    /// UserControl 的 Attached 早于子元素合成视觉就绪。延后到 Loaded 优先级启动；
+    /// 若渲染后端仍未建立子视觉，则在下一帧重试，避免把“没有启动任何动画”误记为已启动。
+    /// </summary>
+    private void QueueMotionStart()
     {
-        if (_motionStarted) return;
-        _motionStarted = true;
+        if (_motionStarted || _motionStartQueued || _motionStartAttempts >= 8
+            || !this.IsAttachedToVisualTree()) return;
+
+        var generation = ++_motionGeneration;
+        _motionStartQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _motionStartQueued = false;
+            if (generation != _motionGeneration || !this.IsAttachedToVisualTree()) return;
+            if (TryStartMotion()) return;
+            _motionStartAttempts++;
+
+            if (TopLevel.GetTopLevel(this) is not { } topLevel) return;
+            topLevel.RequestAnimationFrame(_ =>
+            {
+                if (generation == _motionGeneration && this.IsAttachedToVisualTree())
+                    QueueMotionStart();
+            });
+        }, DispatcherPriority.Loaded);
+    }
+
+    private bool TryStartMotion()
+    {
+        if (_motionStarted) return true;
 
         var all = GetLayer(true).Concat(GetLayer(false)).ToArray();
-        var waypoints = new (Vector3 A, Vector3 B)[]
+        var visuals = all.Select(ElementComposition.GetElementVisual).ToArray();
+        if (visuals.Any(visual => visual is null)) return false;
+
+        // 不等距关键帧形成“长缓移 → 短促滑动 → 回缓”的节奏；
+        // A/B 调色层使用同一轨迹，切歌交叉淡化时不会跳位。
+        var paths = new (Vector3 Hold, Vector3 Burst, Vector3 Drift, Vector3 Return)[]
         {
-            (new Vector3(95, 55, 0), new Vector3(35, 125, 0)),
-            (new Vector3(-80, 95, 0), new Vector3(-135, 20, 0)),
-            (new Vector3(-105, -65, 0), new Vector3(25, -120, 0)),
-            (new Vector3(90, -85, 0), new Vector3(135, 25, 0)),
+            (new Vector3(12, 5, 0), new Vector3(148, 58, 0), new Vector3(64, 142, 0), new Vector3(-52, 78, 0)),
+            (new Vector3(-7, 13, 0), new Vector3(-86, 146, 0), new Vector3(-154, 32, 0), new Vector3(-62, -72, 0)),
+            (new Vector3(-14, -6, 0), new Vector3(-152, -70, 0), new Vector3(22, -154, 0), new Vector3(126, -44, 0)),
+            (new Vector3(9, -12, 0), new Vector3(108, -128, 0), new Vector3(158, 28, 0), new Vector3(48, 128, 0)),
+            (new Vector3(-10, 8, 0), new Vector3(-104, 92, 0), new Vector3(82, 132, 0), new Vector3(132, -54, 0)),
         };
 
         for (var i = 0; i < all.Length; i++)
         {
-            var visual = ElementComposition.GetElementVisual(all[i]);
-            if (visual is null) continue;
-            var path = waypoints[i % waypoints.Length];
-            var animation = visual.Compositor.CreateVector3DKeyFrameAnimation();
-            animation.Target = "Translation";
-            animation.Duration = TimeSpan.FromSeconds(18 + i % 4 * 3);
-            animation.IterationBehavior = AnimationIterationBehavior.Forever;
-            animation.InsertKeyFrame(0, default);
-            animation.InsertKeyFrame(0.33f, path.A, s_driftEasing);
-            animation.InsertKeyFrame(0.66f, path.B, s_driftEasing);
-            animation.InsertKeyFrame(1, default, s_driftEasing);
-            visual.StartAnimation("Translation", animation);
+            var ellipse = all[i];
+            var visual = visuals[i]!;
+            var pathIndex = i % paths.Length;
+            var path = paths[pathIndex];
+            var duration = TimeSpan.FromSeconds(13 + pathIndex);
+
+            visual.StopAnimation("Translation");
+            visual.StopAnimation("Scale");
+            visual.Translation = default;
+            visual.Scale = Vector3.One;
+            visual.CenterPoint = new Vector3(
+                (float)(ellipse.Bounds.Width / 2),
+                (float)(ellipse.Bounds.Height / 2),
+                0);
+
+            var drift = visual.Compositor.CreateVector3DKeyFrameAnimation();
+            drift.Target = "Translation";
+            drift.Duration = duration;
+            drift.IterationBehavior = AnimationIterationBehavior.Forever;
+            drift.InsertKeyFrame(0, default);
+            drift.InsertKeyFrame(0.34f, path.Hold, s_slowEasing);
+            drift.InsertKeyFrame(0.47f, path.Burst, s_burstEasing);
+            drift.InsertKeyFrame(0.72f, path.Drift, s_slowEasing);
+            drift.InsertKeyFrame(0.84f, path.Return, s_burstEasing);
+            drift.InsertKeyFrame(1, default, s_slowEasing);
+            visual.StartAnimation("Translation", drift);
+
+            // 椭圆本身没有方向感，轻微呼吸比旋转更自然，也能让大面积同色封面看出动态。
+            var breath = visual.Compositor.CreateVector3DKeyFrameAnimation();
+            breath.Target = "Scale";
+            breath.Duration = duration;
+            breath.IterationBehavior = AnimationIterationBehavior.Forever;
+            breath.InsertKeyFrame(0, Vector3.One);
+            breath.InsertKeyFrame(0.34f, new Vector3(1.03f, 1.02f, 1), s_slowEasing);
+            breath.InsertKeyFrame(0.47f, new Vector3(1.08f + pathIndex * 0.006f, 1.05f, 1), s_burstEasing);
+            breath.InsertKeyFrame(0.76f, new Vector3(0.97f, 1.04f, 1), s_slowEasing);
+            breath.InsertKeyFrame(1, Vector3.One, s_slowEasing);
+            visual.StartAnimation("Scale", breath);
         }
+
+        _motionStarted = true;
+        return true;
     }
 
     private static Color[] ExtractPalette(IImage cover)
@@ -254,6 +329,11 @@ public partial class AlbumCoverBackground : UserControl
 
     private static Color Darken(Color color, double factor) => Color.FromRgb(
         (byte)(color.R * factor), (byte)(color.G * factor), (byte)(color.B * factor));
+
+    private static Color Blend(Color first, Color second) => Color.FromRgb(
+        (byte)((first.R + second.R) / 2),
+        (byte)((first.G + second.G) / 2),
+        (byte)((first.B + second.B) / 2));
 
     private static Color Shift(Color color, int index)
     {

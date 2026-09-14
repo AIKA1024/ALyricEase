@@ -30,8 +30,8 @@
               IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
             <Grid.Transitions>
                 <Transitions>
-                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.4"
-                                                   Easing="0.215,0.61,0.355,1" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.45"
+                                                   Easing="0.45,0.08,0.7,0.85" />
                 </Transitions>
             </Grid.Transitions>
             <views:NowPlayingView DataContext="{Binding}" />

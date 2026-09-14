@@ -21,13 +21,20 @@
     <Style Selector="ItemsControl.col > ContentPresenter">
       <Setter Property="Margin" Value="2" />
     </Style>
+    <!-- 只移动滚动条的最终绘制位置，不参与 Measure/Arrange，因此不改变内容或容器高度。 -->
+    <Style Selector="ScrollViewer.song-grid-scroller /template/ ScrollBar#PART_HorizontalScrollBar">
+      <Setter Property="RenderTransform">
+        <TranslateTransform Y="4" />
+      </Setter>
+    </Style>
   </UserControl.Styles>
 
-  <!-- 仿原版 HorizontalScrollableGridView:圆角8 + 1px 边框 + 列表背景 + 内边距6,
-       内部横向滚动条贴卡片底边内侧(底部内边距留出空间) -->
+  <!-- 仿原版 HorizontalScrollableGridView:圆角8 + 1px 边框 + 列表背景 + 内边距6；
+       12px 底部空间容纳滚动条，滚动条再通过 RenderTransform 独立下移。 -->
   <Border Background="{DynamicResource AppListBackground}" BorderBrush="{DynamicResource AppBorder}"
           BorderThickness="1" CornerRadius="8" Padding="6 6 6 12" ClipToBounds="True">
-    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+    <ScrollViewer Classes="song-grid-scroller"
+                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
       <i:Interaction.Behaviors>
         <b:CtrlHorizontalWheelBehavior />
       </i:Interaction.Behaviors>

@@ -195,8 +195,8 @@
             IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
         <Grid.Transitions>
           <Transitions>
-            <!-- 时长/缓动对齐原版 LyricEase:实际手感 0.4s 缓出;曲线取 Toolkit 默认缓出 cubic-bezier(0.215,0.61,0.355,1)。 -->
-            <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.4" Easing="0.215,0.61,0.355,1" />
+            <!-- 进入与收回均先慢后快；末段斜率收敛，避免标准 ease-in 在最后突然冲刺。 -->
+            <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.45" Easing="0.45,0.08,0.7,0.85" />
           </Transitions>
         </Grid.Transitions>
         <views:NowPlayingView DataContext="{Binding}" />

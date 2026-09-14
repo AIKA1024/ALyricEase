@@ -50,6 +50,10 @@
     <Style Selector="StackPanel#PageContent">
       <Setter Property="Margin" Value="48,0,32,116" />
     </Style>
+    <!-- 与歌单页一致：滚动条避开覆盖在内容区底部的 100px 播放条。 -->
+    <Style Selector="ScrollViewer.recommend-scroller /template/ ScrollBar#PART_VerticalScrollBar">
+      <Setter Property="Margin" Value="0,0,0,100" />
+    </Style>
     <!-- 卡片:固定尺寸(断点缩放由 compact/narrow 覆盖),整卡为透明按钮,悬停/按下用黑遮罩反馈 -->
     <Style Selector="Button.card">
       <Setter Property="Width" Value="200" /><Setter Property="Height" Value="250" />
@@ -89,7 +93,7 @@
     </Style>
     <!-- 每日歌曲行的悬停高亮/操作浮现/圆形按钮等样式已统一到共享 TrackRow 控件(Views/TrackRow.axaml) -->
     <Style Selector=".compact StackPanel#PageContent">
-      <Setter Property="Margin" Value="28,0,24,80" />
+      <Setter Property="Margin" Value="28,0,24,116" />
     </Style>
     <Style Selector=".compact Button.card">
       <Setter Property="Width" Value="168" /><Setter Property="Height" Value="218" />
@@ -98,7 +102,7 @@
       <Setter Property="Width" Value="168" /><Setter Property="Height" Value="168" />
     </Style>
     <Style Selector=".narrow StackPanel#PageContent">
-      <Setter Property="Margin" Value="16,0,12,20" />
+      <Setter Property="Margin" Value="16,0,12,116" />
     </Style>
     <Style Selector=".narrow Button.card">
       <Setter Property="Width" Value="156" /><Setter Property="Height" Value="206" />
@@ -116,7 +120,8 @@
     <Grid Grid.Row="0" Margin="48,0,32,0">
       <TextBlock Text="个性推荐" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer Grid.Row="1" Classes="recommend-scroller"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel x:Name="PageContent" Spacing="34">
         <ItemsControl ItemsSource="{Binding Sections}">
           <ItemsControl.ItemTemplate>

@@ -66,7 +66,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [ObservableProperty] private string _playlistTitle = "";
     [ObservableProperty] private PlaylistItemViewModel? _selectedPlaylist;
     [ObservableProperty] private SongItemViewModel? _selectedTrack;
-    [ObservableProperty] private IImage? _avatarImage;
 
     // ---- 登录对话框双音源 ----
 
@@ -611,8 +610,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         IsLoggedIn = false;
         UserName = "";
         AvatarUrl = "";
-        (AvatarImage as IDisposable)?.Dispose();
-        AvatarImage = null;
         Playlists.Clear();
         if (SelectedPlaylist?.Playlist.Source == MusicSource.NetEase)
             ClearCurrentPlaylistContent();
@@ -787,8 +784,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     // 首页拿到总数后重建头部(TrackCount/CoverUrl init-only);封面用第一首有封面的歌(仿歌单页)
                     var cover = songs.FirstOrDefault(s => !string.IsNullOrEmpty(s.CoverUrl))?.CoverUrl ?? "";
                     SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘", TrackCount = totalCount, CoverUrl = cover });
-                    SelectedPlaylist.EnsureCoverLoaded();
-                    _ = SelectedPlaylist.EnsureLargeCoverLoadedAsync(); // 头部 260px 大图
                 }
                 foreach (var s in songs)
                 {
@@ -826,8 +821,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = playlist;
-        playlist.EnsureCoverLoaded(); // 头部大封面
-        _ = playlist.EnsureLargeCoverLoadedAsync(); // 600px 大图,保证头部 200px 显示清晰
         ClearTrackRows();
         Filters.Reset();
         PlaylistTitle = playlist.Name;
@@ -889,8 +882,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = playlist;
-        playlist.EnsureCoverLoaded();
-        _ = playlist.EnsureLargeCoverLoadedAsync();
         ClearTrackRows();
         Filters.Reset();
         PlaylistTitle = playlist.Name;
@@ -1524,7 +1515,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             UserName = profile.Nickname;
             CreatorName = profile.Nickname;
             AvatarUrl = profile.AvatarUrl;
-            _ = LoadAvatarAsync();
 
             var playlists = await _api.GetUserPlaylistsAsync(profile.UserId);
             Playlists.Clear();
@@ -1547,9 +1537,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             IsBusy = false;
         }
     }
-
-    // 头像缩到 128px:profile avatarUrl 是 1000px 原图,直接加载解码 ~4MB 纯浪费(当前头像尚未在 UI 显示)
-    private async Task LoadAvatarAsync() => AvatarImage = await CoverLoader.LoadAsync(AvatarUrl, 128);
 
     private static bool IsConnectivityFailure(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException;

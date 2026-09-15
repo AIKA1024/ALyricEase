@@ -95,5 +95,6 @@ public partial class App : Avalonia.Application
         services.AddSingleton<AccountViewModel>();
         services.AddSingleton<MainViewModel>();
         ServiceLocator.Provider = services.BuildServiceProvider();
+        CoverImagePipeline.Configure(ServiceLocator.Get<MusicCacheService>());
     }
 }

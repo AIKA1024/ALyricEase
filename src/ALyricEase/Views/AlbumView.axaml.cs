@@ -13,13 +13,10 @@ public partial class AlbumView : UserControl
         AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
     }
 
-    /// <summary>容器 realized 时加载封面/红心(幂等)。</summary>
+    /// <summary>容器 realized 时加载红心状态；封面由 Image 按可见性加载。</summary>
     private void OnTrackContainerPreparing(object? sender, ContainerPreparedEventArgs e)
     {
         if (e.Container?.DataContext is SongItemViewModel song)
-        {
-            song.EnsureCoverLoaded();
             song.EnsureLikedLoaded();
-        }
     }
 }

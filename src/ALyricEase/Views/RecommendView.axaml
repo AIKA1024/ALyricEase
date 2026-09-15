@@ -7,22 +7,24 @@
              xmlns:i="using:Avalonia.Xaml.Interactivity"
               xmlns:vm="using:ALyricEase.ViewModels"
               xmlns:views="using:ALyricEase.Views"
-              xmlns:controls="using:ALyricEase.Controls"
+             xmlns:controls="using:ALyricEase.Controls"
              x:DataType="vm:RecommendViewModel"
+             x:CompileBindings="True"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecommendView">
   <UserControl.DataTemplates>
     <!-- 歌单/歌曲卡片(200x250):封面 + 右上播放量角标 + 标题/副标题 + 悬停黑遮罩(原版 ShadowMaskBorder)。
          整卡为按钮(RowButtonTheme,同歌手页专辑卡):歌单卡点击进歌单页,歌曲卡点击播放 -->
-    <DataTemplate DataType="vm:RecommendCardViewModel">
+    <DataTemplate x:DataType="vm:RecommendCardViewModel">
       <Button Classes="card" Theme="{StaticResource RowButtonTheme}" Command="{Binding OpenCommand}"
               CornerRadius="8" ClipToBounds="True">
         <Grid RowDefinitions="Auto,50">
           <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}"
                   ClipToBounds="True">
             <Grid>
-              <!-- DisplayCover:过渡期间为 null(共享占位图),过渡结束才亮出真实封面,避免首帧绘制 30 张位图卡死切页 -->
-              <Image Source="{Binding DisplayCover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+              <!-- 过渡结束才提交 URL；可见 Image 自己持有位图租约，离树即释放。 -->
+              <Image infra:ManagedCoverImage.DecodeSize="240"
+                     infra:ManagedCoverImage.Source="{Binding DisplayCoverUrl}"
                      Stretch="UniformToFill" />
               <Border Classes="play-count-badge" IsVisible="{Binding HasPlayCount}"
                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Padding="5,1" CornerRadius="4">

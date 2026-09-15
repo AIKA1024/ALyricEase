@@ -16,7 +16,7 @@ namespace ALyricEase.Headless;
 /// 1) 初始只实化视口及 CacheLength 缓冲内的卡片(远小于总数 → 封面懒加载生效,进页面不再一次性解码全部封面);
 /// 2) 滚到最右:在屏卡片数恒定(离屏回收),内容切到尾部;Extent 含 12px 间距(总宽 = N×212);
 /// 3) 卡片节距 212 = 200 卡片宽 + 12 容器右边距(hcards ContentPresenter 样式在虚拟化面板下生效)。
-/// 卡片封面 URL 传空串:EnsureCoverLoaded 幂等守卫直接返回,不触网。
+/// 卡片封面 URL 传空串：视图不会发起封面请求。
 /// </summary>
 public static class ArtistCardsProbe
 {

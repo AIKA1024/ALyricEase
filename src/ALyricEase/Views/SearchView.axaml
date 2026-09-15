@@ -434,7 +434,7 @@
                                                     <Border Width="48" Height="48" CornerRadius="4"
                                                             Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                             VerticalAlignment="Center">
-                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                        <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                                     </Border>
                                                     <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
                                                         <TextBlock Text="{Binding Name}" FontSize="16"
@@ -472,7 +472,7 @@
                                                     <Border Width="48" Height="48" CornerRadius="24"
                                                             Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                             VerticalAlignment="Center">
-                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                        <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                                     </Border>
                                                     <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding Name}" FontSize="16"
@@ -507,7 +507,7 @@
                                                     <Border Width="48" Height="48" CornerRadius="4"
                                                             Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                             VerticalAlignment="Center">
-                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                        <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                                     </Border>
                                                     <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
                                                         <TextBlock Text="{Binding Name}" FontSize="16"
@@ -543,7 +543,7 @@
                                                     <Border Width="48" Height="48" CornerRadius="24"
                                                             Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                             VerticalAlignment="Center">
-                                                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                        <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                                     </Border>
                                                     <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
                                                         <TextBlock Text="{Binding Name}" FontSize="16"
@@ -583,7 +583,7 @@
                                             <Border Width="48" Height="48" CornerRadius="4"
                                                     Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                     VerticalAlignment="Center">
-                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
                                                 <TextBlock Text="{Binding Name}" FontSize="16"
@@ -610,7 +610,7 @@
                                             <Border Width="48" Height="48" CornerRadius="4"
                                                     Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                     VerticalAlignment="Center">
-                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
                                                 <TextBlock Text="{Binding Name}" FontSize="16"
@@ -637,7 +637,7 @@
                                             <Border Width="48" Height="48" CornerRadius="24"
                                                     Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                     VerticalAlignment="Center">
-                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Name}" FontSize="16"
@@ -659,7 +659,7 @@
                                             <Border Width="48" Height="48" CornerRadius="24"
                                                     Background="{DynamicResource ArtFallback}" ClipToBounds="True"
                                                     VerticalAlignment="Center">
-                                                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                                                <Image infra:ManagedCoverImage.DecodeSize="100" infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Spacing="3">
                                                 <TextBlock Text="{Binding Name}" FontSize="16"

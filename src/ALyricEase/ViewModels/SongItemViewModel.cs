@@ -24,7 +24,6 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private readonly string? _source;
     private readonly NetEaseApiClient? _api;
 
-    private bool _coverRequested;
     private bool _likedRequested;
 
     /// <summary>红心按钮与跳转是按音源路由的账号能力;红心两音源均支持,歌手/专辑跳转仍仅网易云为纯本地判定。</summary>
@@ -90,7 +89,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
         Artists = artists;
         // 可播性预判:播放前即可确定的(未登录/已确认非会员的 VIP 歌曲)直接禁用整行
         RefreshPlayability();
-        // 封面懒加载:列表项可见(容器 realized)时才拉,配合虚拟化,避免上千首并发下载
+        // 封面由视图的租约式加载器按可见性拉取，VM 不再长期持有 Bitmap。
     }
 
     /// <summary>整行是否可播放(不可播时行禁用置灰)。预判 + 播放实测两路更新。</summary>
@@ -110,14 +109,6 @@ public sealed partial class SongItemViewModel : ViewModelBase
     public IReadOnlyList<ArtistNavItem> Artists { get; }
 
     public bool HasMultipleArtists => Artists.Count > 1;
-
-    /// <summary>容器 realized 时调用:首次才真正拉取封面(幂等)。</summary>
-    public void EnsureCoverLoaded()
-    {
-        if (_coverRequested || Cover is not null) return;
-        _coverRequested = true;
-        _ = LoadCoverAsync();
-    }
 
     /// <summary>容器 realized 时调用:首次才拉取红心状态(幂等)。未登录/服务未就绪则保持未喜欢。</summary>
     public void EnsureLikedLoaded()
@@ -174,9 +165,6 @@ public sealed partial class SongItemViewModel : ViewModelBase
     /// <summary>VIP/付费标记,UI 用。</summary>
     public bool IsVip => Song.Fee != 0;
 
-    [ObservableProperty]
-    private IImage? _cover;
-
     /// <summary>是否已红心(在"我喜欢的音乐"里)。</summary>
     [ObservableProperty]
     private bool _isInLikelist;
@@ -230,8 +218,6 @@ public sealed partial class SongItemViewModel : ViewModelBase
         try { ServiceLocator.Get<MainViewModel>().OpenLoginDialogFor(Song.Source, hint); }
         catch { /* 无宿主环境 */ }
     }
-
-    private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(Song.CoverUrl, 50);
 
     /// <summary>点击歌手 → 歌手页(经服务定位器避免把导航回调穿遍所有创建处)。QQ 按 mid 路由。</summary>
     [RelayCommand]

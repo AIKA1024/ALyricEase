@@ -95,6 +95,7 @@ class Program
     services.AddSingleton<AccountViewModel>();
     services.AddSingleton<MainViewModel>();
     ServiceLocator.Provider = services.BuildServiceProvider();
+    CoverImagePipeline.Configure(ServiceLocator.Get<MusicCacheService>());
 
     return AppBuilder.Configure<App>()
       .UsePlatformDetect()

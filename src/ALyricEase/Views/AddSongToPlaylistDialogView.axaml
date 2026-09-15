@@ -60,7 +60,8 @@
                                             <Grid ColumnDefinitions="40,*,Auto" ColumnSpacing="8">
                                                 <Border Width="40" Height="40" CornerRadius="4"
                                                         ClipToBounds="True">
-                                                    <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                                                    <Image infra:ManagedCoverImage.DecodeSize="100"
+                                                           infra:ManagedCoverImage.Source="{Binding CoverUrl}"
                                                            Stretch="UniformToFill" />
                                                 </Border>
                                                 <TextBlock Grid.Column="1" Text="{Binding Name}"

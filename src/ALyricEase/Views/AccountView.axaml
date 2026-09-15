@@ -3,7 +3,9 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              x:DataType="vm:AccountViewModel"
+             x:CompileBindings="True"
              mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="720"
              x:Class="ALyricEase.Views.AccountView">
     <UserControl.Styles>
@@ -91,7 +93,9 @@
                                     <TextBlock Text="{Binding NetEase.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondary}" />
-                                    <Image Source="{Binding NetEase.Avatar}" Stretch="UniformToFill" />
+                                    <Image infra:ManagedCoverImage.DecodeSize="144"
+                                           infra:ManagedCoverImage.Source="{Binding NetEase.AvatarUrl}"
+                                           Stretch="UniformToFill" />
                                 </Grid>
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="5">
@@ -184,7 +188,9 @@
                                     <TextBlock Text="{Binding Qq.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondary}" />
-                                    <Image Source="{Binding Qq.Avatar}" Stretch="UniformToFill" />
+                                    <Image infra:ManagedCoverImage.DecodeSize="144"
+                                           infra:ManagedCoverImage.Source="{Binding Qq.AvatarUrl}"
+                                           Stretch="UniformToFill" />
                                 </Grid>
                             </Border>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="5">

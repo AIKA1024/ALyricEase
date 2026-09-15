@@ -68,7 +68,6 @@ public sealed partial class AddSongToPlaylistDialogViewModel : ViewModelBase
             ? _playlist.QqPlaylists
             : _playlist.Playlists;
         _allItems.AddRange(sourceItems.Where(item => item.Playlist.CanAddTracks));
-        foreach (var item in _allItems) item.EnsureCoverLoaded();
         ApplyFilter();
         OnPropertyChanged(nameof(SongText));
         OnPropertyChanged(nameof(EmptyText));

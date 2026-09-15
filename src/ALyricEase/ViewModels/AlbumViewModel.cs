@@ -1,11 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Threading.Tasks;
-using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
-using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -41,7 +39,7 @@ public sealed partial class AlbumViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(HasArtist))]
     private ArtistNavItem? _primaryArtist;
 
-    [ObservableProperty] private IImage? _cover;
+    [ObservableProperty] private string _coverUrl = "";
 
     public bool HasDescription => !string.IsNullOrEmpty(Description);
 
@@ -74,7 +72,7 @@ public sealed partial class AlbumViewModel : ViewModelBase
             TrackCountText = $"{album.Songs.Count} 首";
             PublishTimeMs = album.Info.PublishTime;
             Description = album.Info.Description ?? "";
-            if (album.Info.PicUrl is { Length: > 0 } pic) Cover = await CoverLoader.LoadAsync(pic, 300);
+            if (album.Info.PicUrl is { Length: > 0 } pic) CoverUrl = pic;
 
             var queue = album.Songs;
             var i = 1;
@@ -130,8 +128,7 @@ public sealed partial class AlbumViewModel : ViewModelBase
             PublishTimeMs = DateTimeOffset.TryParse(info.PublishDate, CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var d) ? d.ToUnixTimeMilliseconds() : 0;
             Description = info.Description;
-            Cover = await CoverLoader.LoadAsync(
-                $"https://y.gtimg.cn/music/photo_new/T002R300x300M000{albumMid}.jpg", 300);
+            CoverUrl = $"https://y.gtimg.cn/music/photo_new/T002R300x300M000{albumMid}.jpg";
 
             var i = 1;
             foreach (var s in songs)
@@ -153,7 +150,7 @@ public sealed partial class AlbumViewModel : ViewModelBase
         PublishTimeMs = 0;
         Description = "";
         PrimaryArtist = null;
-        Cover = null;
+        CoverUrl = "";
         Songs.Clear();
     }
 }

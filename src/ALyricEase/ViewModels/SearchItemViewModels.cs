@@ -1,31 +1,13 @@
-using System.Threading.Tasks;
-using Avalonia.Media;
-using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
-using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>搜索结果页分区行 VM(歌单/表演者/专辑/用户)。封面懒加载沿用 CoverLoader(容器 realized 时调 EnsureCoverLoaded);
+/// <summary>搜索结果页分区行 VM(歌单/表演者/专辑/用户)。封面 URL 由视图租约式加载;
 /// 点击行为由视图绑定 MainViewModel 的 Open*Command 完成(与 SongItemViewModel 同一 ServiceLocator 模式)。</summary>
-public abstract partial class SearchItemViewModelBase : ViewModelBase
+public abstract class SearchItemViewModelBase : ViewModelBase
 {
-    private bool _coverRequested;
-
-    [ObservableProperty] private IImage? _cover;
-
     public string CoverUrl { get; protected init; } = "";
-
-    /// <summary>容器 realized 时调用:首次才拉封面(幂等;失败静默留占位底色)。</summary>
-    public void EnsureCoverLoaded()
-    {
-        if (_coverRequested || CoverUrl.Length == 0) return;
-        _coverRequested = true;
-        _ = LoadCoverAsync();
-    }
-
-    private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(CoverUrl, 100);
 }
 
 /// <summary>歌单分区行:点击经 MainViewModel.OpenShellPlaylist/OpenShellQqPlaylist 打开歌单详情。</summary>

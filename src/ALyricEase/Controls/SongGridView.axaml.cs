@@ -43,6 +43,13 @@ public partial class SongGridView : UserControl
 
     /// <summary>当前订阅的集合变更源(ItemsSource 实例),卸载时退订。</summary>
     private INotifyCollectionChanged? _observedSource;
+    private readonly object _rebuildGate = new();
+    private bool _rebuildScheduled;
+    private bool _isAttached;
+    private int _rebuildGeneration;
+
+    /// <summary>性能回归探针使用：实际发生的全量分块次数。</summary>
+    internal int RebuildCount { get; private set; }
 
     public SongGridView()
     {
@@ -54,7 +61,8 @@ public partial class SongGridView : UserControl
         base.OnPropertyChanged(e);
         if (e.Property == ItemsSourceProperty)
         {
-            ObserveItemsSource();
+            if (_isAttached) ObserveItemsSource();
+            else UnobserveItemsSource();
             RebuildColumns();
         }
         else if (e.Property == RowsPerColumnProperty)
@@ -66,6 +74,7 @@ public partial class SongGridView : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _isAttached = true;
         // 歌手页/专辑页每次进入都重建视图并立即绑定,重挂时按最新数据重建一次
         ObserveItemsSource();
         RebuildColumns();
@@ -73,6 +82,12 @@ public partial class SongGridView : UserControl
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        _isAttached = false;
+        lock (_rebuildGate)
+        {
+            _rebuildGeneration++;
+            _rebuildScheduled = false;
+        }
         UnobserveItemsSource();
         base.OnDetachedFromVisualTree(e);
     }
@@ -96,17 +111,42 @@ public partial class SongGridView : UserControl
         _observedSource = null;
     }
 
-    /// <summary>集合内容变化后重建列分块;可能在非 UI 线程触发,统一切回 UI 线程。</summary>
+    /// <summary>集合内容变化后按一个 Dispatcher 周期合并重建。
+    /// API 分页常在一次 UI 更新中逐项 Add；立即重建会把一次追加放大成 O(n²) 枚举与布局。</summary>
     private void OnItemsSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (Dispatcher.UIThread.CheckAccess()) RebuildColumns();
-        else Dispatcher.UIThread.Post(RebuildColumns);
+        ScheduleRebuild();
+    }
+
+    private void ScheduleRebuild()
+    {
+        int generation;
+        lock (_rebuildGate)
+        {
+            if (_rebuildScheduled) return;
+            _rebuildScheduled = true;
+            generation = _rebuildGeneration;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (_rebuildGate)
+            {
+                // 旧视觉树排队的工作不得在控件重挂后覆盖新数据。
+                if (generation != _rebuildGeneration) return;
+                _rebuildScheduled = false;
+            }
+
+            if (_isAttached)
+                RebuildColumns();
+        }, DispatcherPriority.Background);
     }
 
     /// <summary>ItemsSource/RowsPerColumn 变化后重建列分块(尾部不足一列的也成列)。</summary>
     private void RebuildColumns()
     {
         if (Columns is null) return; // 属性早于 InitializeComponent 设置时面板尚不存在
+        RebuildCount++;
         var rows = ItemsSource?.OfType<SongItemViewModel>().ToList() ?? [];
         var perColumn = Math.Max(1, RowsPerColumn);
         Columns.ItemsSource = rows.Count == 0
@@ -117,14 +157,10 @@ public partial class SongGridView : UserControl
                 .ToList();
     }
 
-    /// <summary>行容器 realized 时加载封面/红心(幂等),原先分散在两个页面的处理统一到这里。
-    /// 横向虚拟化下列会回收再 realize,重触发依赖 EnsureXxx 的幂等性。</summary>
+    /// <summary>行容器 realized 时加载红心状态；封面由 Image 按可见树生命周期管理。</summary>
     private void OnRowContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
         if (e.Container?.DataContext is SongItemViewModel song)
-        {
-            song.EnsureCoverLoaded();
             song.EnsureLikedLoaded();
-        }
     }
 }

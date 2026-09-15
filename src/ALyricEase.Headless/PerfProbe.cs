@@ -77,19 +77,10 @@ public static class PerfProbe
         realWin.Close();
         Drain();
 
-        // ── 修复3 验证:封面已缓存时,首帧应只画占位图;换封面成本移出首帧 ──
-        // 用全新卡片 VM(真实封面 URL),先把封面全部下载进缓存并设好 Cover
+        // ── 修复3 验证:封面已有磁盘缓存时,首帧仍只画占位图;请求 URL 移出首帧 ──
         var preCards = realVm.Sections.SelectMany(s => s.Items.OfType<RecommendCardViewModel>())
             .Select(c => new RecommendCardViewModel(c.Title, c.Subtitle, GetCoverUrl(c), c.PlayCount))
             .ToList();
-        foreach (var c in preCards) c.EnsureCoverLoaded();
-        var preSw = Stopwatch.StartNew();
-        while (preCards.Any(c => c.Cover is null) && preSw.Elapsed.TotalSeconds < 30)
-        {
-            Thread.Sleep(20);
-            Drain();
-        }
-        Console.WriteLine($"[fix3] 预加载封面: {preSw.Elapsed.TotalMilliseconds:F0} ms,已缓存 {preCards.Count(c => c.Cover is not null)}/{preCards.Count}");
 
         var preVm = new RecommendViewModel(
             ServiceLocator.Get<NetEaseApiClient>(),
@@ -115,7 +106,7 @@ public static class PerfProbe
         var swFirst = Stopwatch.StartNew();
         Dispatcher.UIThread.RunJobs(DispatcherPriority.Loaded); // 首帧:布局+渲染,不跑 Background 换封面任务
         swFirst.Stop();
-        var firstRevealed = preCards.Count(c => c.DisplayCover is not null);
+        var firstRevealed = preCards.Count(c => c.DisplayCoverUrl is not null);
         var cardBounds = fw.GetVisualDescendants().OfType<Border>()
             .FirstOrDefault(b => b.Classes.Contains("card"))?.Bounds.Width ?? 0;
         var dailyVisible = fw.GetVisualDescendants().OfType<Border>()
@@ -125,25 +116,25 @@ public static class PerfProbe
         var swFlip = Stopwatch.StartNew();
         Drain(); // 全部排空 → Background 换封面任务执行
         swFlip.Stop();
-        var afterRevealed = preCards.Count(c => c.DisplayCover is not null);
+        var afterRevealed = preCards.Count(c => c.DisplayCoverUrl is not null);
         Console.WriteLine($"[fix3] 换封面(过渡后): {swFlip.Elapsed.TotalMilliseconds:F1} ms," +
-            $"已亮出封面={afterRevealed}/{preCards.Count}(期望全部)");
+            $"已提交可见封面 URL={afterRevealed}/{preCards.Count}(其余卡片尚未实化)");
         fw.Close();
         Drain();
 
-        // 第二次挂树(模拟"切走再切回"):封面已在 VM 上,首帧应仍然只画占位图
+        // 第二次挂树(模拟"切走再切回"):首帧应仍然只画占位图
         var fv2 = new RecommendView { DataContext = preVm };
         var fw2 = new Window { Width = 1200, Height = 720, Content = fv2 };
         fw2.Show();
         var swFirst2 = Stopwatch.StartNew();
         Dispatcher.UIThread.RunJobs(DispatcherPriority.Loaded);
         swFirst2.Stop();
-        var first2Revealed = preCards.Count(c => c.DisplayCover is not null);
+        var first2Revealed = preCards.Count(c => c.DisplayCoverUrl is not null);
         Console.WriteLine($"[fix3] 第二次挂树首帧(期望仍延后): {swFirst2.Elapsed.TotalMilliseconds:F1} ms," +
             $"已亮出封面={first2Revealed}/{preCards.Count}(期望 0)");
         Drain();
-        var after2Revealed = preCards.Count(c => c.DisplayCover is not null);
-        Console.WriteLine($"[fix3] 第二次挂树换封面后: 已亮出={after2Revealed}/{preCards.Count}(期望全部)");
+        var after2Revealed = preCards.Count(c => c.DisplayCoverUrl is not null);
+        Console.WriteLine($"[fix3] 第二次挂树换封面后: 已提交可见 URL={after2Revealed}/{preCards.Count}");
         fw2.Close();
         Drain();
 
@@ -167,9 +158,7 @@ public static class PerfProbe
         MeasureSwitch("浏览(占位页)", "Browse");
     }
 
-    private static string GetCoverUrl(RecommendCardViewModel card)
-        => (string)typeof(RecommendCardViewModel).GetField("_coverUrl", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(card)!;
+    private static string GetCoverUrl(RecommendCardViewModel card) => card.CoverUrl;
 
     /// <summary>合成首页数据(不走网络,封面全空 → 共享占位图)。</summary>
     private static void PopulateSyntheticData()

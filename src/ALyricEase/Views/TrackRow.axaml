@@ -2,7 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:infra="using:ALyricEase.Infrastructure"
         xmlns:vm="using:ALyricEase.ViewModels"
-        xmlns:views="using:ALyricEase.Views">
+        xmlns:views="using:ALyricEase.Views"
+        x:CompileBindings="True">
   <Styles.Resources>
     <!-- 行内按钮专用模板:纯 Border + 内容,无内置 PointerOver 视觉状态。
          红心(黑圆)无悬停;播放/更多(透明圆)与歌手/专辑(文本链接)的悬停/按下由各自样式控制,背景/圆角/内边距经 TemplateBinding 透传 -->
@@ -43,7 +44,8 @@
               <Border Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
-                  <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                  <Image infra:ManagedCoverImage.DecodeSize="50"
+                         infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
                          Stretch="UniformToFill" />
                   <!-- 封面红心按钮:黑圆底 + 实心爱心(仿原版 LikeToggleButtonStyle),悬停浮现;未喜欢白,喜欢红 E74C3C -->
                   <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
@@ -162,7 +164,8 @@
               <Border Grid.Column="1" Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
-                  <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                  <Image infra:ManagedCoverImage.DecodeSize="50"
+                         infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
                          Stretch="UniformToFill" />
                   <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
                           HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">

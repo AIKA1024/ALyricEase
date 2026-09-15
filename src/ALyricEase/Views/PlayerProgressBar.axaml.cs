@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -24,6 +25,9 @@ public partial class PlayerProgressBar : UserControl
 
     private bool _scrubbing;
     private bool _hovered;
+    private bool _attached;
+    private PlayerViewModel? _observedVm;
+    private readonly ProgressRenderAnimator _progressVisual;
 
     public double ScrubPositionMs
     {
@@ -46,7 +50,14 @@ public partial class PlayerProgressBar : UserControl
     public PlayerProgressBar()
     {
         InitializeComponent();
-        Root.SizeChanged += (_, _) => UpdateProgress();
+        _progressVisual = new ProgressRenderAnimator(Root, Track, Fill, Thumb, Bubble);
+        AttachedToVisualTree += (_, _) => OnAttached();
+        DetachedFromVisualTree += (_, _) => OnDetached();
+        DataContextChanged += (_, _) =>
+        {
+            if (_attached) ObserveViewModel(Vm);
+            UpdateProgress();
+        };
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -54,6 +65,8 @@ public partial class PlayerProgressBar : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == ScrubPositionMsProperty || change.Property == DurationMsProperty)
             UpdateProgress();
+        else if (change.Property == IsVisibleProperty)
+            _progressVisual?.SetActive(IsVisible);
     }
 
     private PlayerViewModel? Vm => DataContext as PlayerViewModel;
@@ -63,6 +76,7 @@ public partial class PlayerProgressBar : UserControl
         if (Vm is null) return;
         if (!e.GetCurrentPoint(Root).Properties.IsLeftButtonPressed) return;
         _scrubbing = true;
+        _progressVisual.SetScrubbing(true);
         e.Pointer.Capture(Root); // 捕获指针:拖动期间移出轨道区仍持续收到 PointerMoved,防闪烁
         UpdateBubbleVisibility();
         Vm.BeginScrub();
@@ -78,11 +92,13 @@ public partial class PlayerProgressBar : UserControl
     private void OnRootPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!_scrubbing) return;
+        var pointerPosition = e.GetPosition(Root);
         _scrubbing = false;
         e.Pointer.Capture(null);
-        _hovered = Thumb.IsPointerOver; // 松开后鼠标若仍在球上,保持气泡(hover)
-        UpdateBubbleVisibility();
         Vm?.EndScrub();
+        _progressVisual.SetScrubbing(false);
+        _hovered = _progressVisual.IsPointOverThumb(pointerPosition);
+        UpdateBubbleVisibility();
         e.Handled = true;
     }
 
@@ -91,7 +107,7 @@ public partial class PlayerProgressBar : UserControl
     {
         _hovered = true;
         UpdateBubbleVisibility();
-        UpdateProgress(); // 立即把气泡摆到当前进度
+        _progressVisual.RefreshVisual(); // 立即把气泡摆到当前渲染进度
     }
 
     private void OnThumbPointerExited(object? sender, PointerEventArgs e)
@@ -101,7 +117,11 @@ public partial class PlayerProgressBar : UserControl
     }
 
     /// <summary>气泡显示状态唯一由 _scrubbing/_hovered 决定(hover 或拖动即显示)。</summary>
-    private void UpdateBubbleVisibility() => Bubble.IsVisible = ShowBubble && (_scrubbing || _hovered);
+    private void UpdateBubbleVisibility()
+    {
+        Bubble.IsVisible = ShowBubble && (_scrubbing || _hovered);
+        if (Bubble.IsVisible) _progressVisual.RefreshVisual();
+    }
 
     private void SetProgressFromPointer(PointerEventArgs e)
     {
@@ -109,39 +129,44 @@ public partial class PlayerProgressBar : UserControl
         var width = Track.Bounds.Width;
         if (width <= 0 || DurationMs <= 0) return;
         var ratio = Math.Clamp(e.GetPosition(Track).X / width, 0, 1);
-        Vm.ScrubPositionMs = DurationMs * ratio;
+        var positionMs = DurationMs * ratio;
+        Vm.ScrubPositionMs = positionMs;
+        _progressVisual.SetScrubPosition(positionMs, DurationMs);
     }
 
     /// <summary>按 ScrubPositionMs 摆已播放段/球/气泡。</summary>
     private void UpdateProgress()
     {
-        if (Track is null) return;
-        var width = Track.Bounds.Width;
-        if (width <= 0 || DurationMs <= 0)
-        {
-            // 无有效进度:已播放段清零,球归位到轨道左端,避免换曲时球停在旧位置
-            Fill.Width = 0;
-            Thumb.Margin = new Thickness(-Thumb.Width / 2, 0, 0, 0);
-            return;
-        }
-
-        var ratio = Math.Clamp(ScrubPositionMs / DurationMs, 0, 1);
-        Fill.Width = width * ratio;
-        Thumb.Margin = new Thickness(width * ratio - Thumb.Width / 2, 0, 0, 0);
-        UpdateBubblePosition();
+        _progressVisual?.SetPlaybackState(ScrubPositionMs, DurationMs, Vm?.IsPlaying == true);
     }
 
-    /// <summary>时间气泡:与球同属 Root(同一坐标系),按球的 Margin 对齐球心;
-    /// 气泡底边距球上缘 20px(球上缘 = 控件高度居中算出)。</summary>
-    private void UpdateBubblePosition()
+    private void OnAttached()
     {
-        if (!Bubble.IsVisible) return;
-        var centerX = Thumb.Margin.Left + Thumb.Width / 2;
-        var thumbTop = (Bounds.Height - Thumb.Height) / 2;
-        const double gap = 20;
-        Bubble.Margin = new Thickness(
-            centerX - Bubble.Width / 2,
-            thumbTop - gap - Bubble.Height,
-            0, 0);
+        _attached = true;
+        ObserveViewModel(Vm);
+        _progressVisual.Attach();
+        _progressVisual.SetActive(IsVisible);
+        UpdateProgress();
+    }
+
+    private void OnDetached()
+    {
+        _attached = false;
+        ObserveViewModel(null);
+        _progressVisual.Detach();
+    }
+
+    private void ObserveViewModel(PlayerViewModel? vm)
+    {
+        if (ReferenceEquals(_observedVm, vm)) return;
+        if (_observedVm is not null) _observedVm.PropertyChanged -= OnPlayerPropertyChanged;
+        _observedVm = vm;
+        if (_observedVm is not null) _observedVm.PropertyChanged += OnPlayerPropertyChanged;
+    }
+
+    private void OnPlayerPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlayerViewModel.IsPlaying))
+            UpdateProgress();
     }
 }

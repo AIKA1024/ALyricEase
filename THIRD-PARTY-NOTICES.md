@@ -1,5 +1,11 @@
 # Third-party notices
 
+## AsyncImageLoader.Avalonia
+
+This application uses
+[AvaloniaUtils/AsyncImageLoader.Avalonia](https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia),
+licensed under the MIT License.
+
 ## QQ Music native QR login protocol
 
 The QQ Music native QR login implementation in

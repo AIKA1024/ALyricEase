@@ -47,10 +47,31 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
+        // 歌曲/专辑网格批量追加回归：同一 UI 周期只允许一次全量分块。
+        if (args.Length > 0 && args[0] == "--grid-batching")
+        {
+            Environment.ExitCode = GridBatchingProbe.Run();
+            return;
+        }
+
+        // 图片租约/LRU/取消与 SearchView 事件退订回归。
+        if (args.Length > 0 && args[0] == "--image-lifetime")
+        {
+            Environment.ExitCode = ImageLifetimeProbe.Run();
+            return;
+        }
+
         // 歌词点击回归：鼠标按下不得先触发 ListBox 选中滚动，单次点击必须直接请求跳转。
         if (args.Length > 0 && args[0] == "--lyric-click")
         {
             Environment.ExitCode = LyricClickProbe.Run();
+            return;
+        }
+
+        // 播放进度条回归：60 FPS 渲染推进、拖动 seek 与 hover 气泡必须使用同一视觉坐标。
+        if (args.Length > 0 && args[0] == "--player-progress")
+        {
+            Environment.ExitCode = PlayerProgressProbe.Run();
             return;
         }
 

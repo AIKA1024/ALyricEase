@@ -2,11 +2,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+              xmlns:infra="using:ALyricEase.Infrastructure"
               xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
               xmlns:i="using:Avalonia.Xaml.Interactivity"
               xmlns:vm="using:ALyricEase.ViewModels"
-              xmlns:controls="using:ALyricEase.Controls"
+             xmlns:controls="using:ALyricEase.Controls"
              x:DataType="vm:ArtistViewModel"
+             x:CompileBindings="True"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.ArtistView">
   <UserControl.Styles>
@@ -59,7 +61,9 @@
       <Grid RowDefinitions="240,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="10">
         <Border Grid.ColumnSpan="2" Width="200" Height="200" CornerRadius="100" ClipToBounds="True"
                 Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center" VerticalAlignment="Center">
-          <Image Source="{Binding Avatar}" Stretch="UniformToFill" />
+          <Image infra:ManagedCoverImage.DecodeSize="240"
+                 infra:ManagedCoverImage.Source="{Binding AvatarUrl}"
+                 Stretch="UniformToFill" />
         </Border>
         <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,12,0,0" VerticalAlignment="Center" HorizontalAlignment="Left">
           <TextBlock Text="{Binding Name}" FontSize="30" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
@@ -107,7 +111,7 @@
           <i:Interaction.Behaviors>
             <b:CtrlHorizontalWheelBehavior />
           </i:Interaction.Behaviors>
-          <ItemsControl Classes="hcards" ItemsSource="{Binding Albums}" ContainerPrepared="OnAlbumContainerPreparing">
+          <ItemsControl Classes="hcards" ItemsSource="{Binding Albums}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <!-- 横向虚拟化:只实化视口及 CacheLength 缓冲内的卡片,封面经 ContainerPrepared 按需加载 -->
@@ -123,7 +127,9 @@
                   <Grid Width="200" RowDefinitions="200,Auto">
                     <Border Grid.Row="0" Width="200" Height="200" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
                       <Grid>
-                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                        <Image infra:ManagedCoverImage.DecodeSize="300"
+                               infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                               Stretch="UniformToFill" />
                         <Border Classes="album-card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
                       </Grid>
                     </Border>
@@ -144,7 +150,7 @@
           <i:Interaction.Behaviors>
             <b:CtrlHorizontalWheelBehavior />
           </i:Interaction.Behaviors>
-          <ItemsControl Classes="hcards" ItemsSource="{Binding Singles}" ContainerPrepared="OnAlbumContainerPreparing">
+          <ItemsControl Classes="hcards" ItemsSource="{Binding Singles}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <!-- 横向虚拟化:只实化视口及 CacheLength 缓冲内的卡片,封面经 ContainerPrepared 按需加载 -->
@@ -160,7 +166,9 @@
                   <Grid Width="200" RowDefinitions="200,Auto">
                     <Border Grid.Row="0" Width="200" Height="200" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
                       <Grid>
-                        <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                        <Image infra:ManagedCoverImage.DecodeSize="300"
+                               infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                               Stretch="UniformToFill" />
                         <Border Classes="album-card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
                       </Grid>
                     </Border>

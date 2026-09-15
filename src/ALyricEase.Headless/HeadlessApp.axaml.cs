@@ -75,5 +75,6 @@ public partial class HeadlessApp : Application
         services.AddSingleton<AccountViewModel>();
         services.AddSingleton<MainViewModel>();
         ServiceLocator.Provider = services.BuildServiceProvider();
+        CoverImagePipeline.Configure(ServiceLocator.Get<MusicCacheService>());
     }
 }

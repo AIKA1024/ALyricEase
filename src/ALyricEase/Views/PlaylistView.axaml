@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:controls="using:ALyricEase.Controls"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
@@ -113,7 +114,9 @@
             <Grid x:Name="HeroLayout" Classes="hero-horizontal" ColumnDefinitions="260,*">
               <Border x:Name="HeroArt" Grid.Column="0" Width="260" Height="260" CornerRadius="8" ClipToBounds="True"
                       Background="{DynamicResource ArtFallback}" HorizontalAlignment="Left" VerticalAlignment="Center">
-                <Image Source="{Binding SelectedPlaylist.LargeCover}" Stretch="UniformToFill" />
+                <Image infra:ManagedCoverImage.DecodeSize="400"
+                       infra:ManagedCoverImage.Source="{Binding SelectedPlaylist.CoverUrl}"
+                       Stretch="UniformToFill" />
               </Border>
               <StackPanel x:Name="HeroCopy" Grid.Column="1" Margin="20,0,10,0" VerticalAlignment="Center" Spacing="8">
                 <TextBlock x:Name="HeroTitle" Text="{Binding SelectedPlaylist.Name}" FontSize="28" FontWeight="Bold"
@@ -174,7 +177,9 @@
                         HorizontalAlignment="Stretch" VerticalAlignment="Center" Spacing="8">
               <Border Width="220" Height="220" CornerRadius="8" ClipToBounds="True"
                       Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center">
-                <Image Source="{Binding SelectedPlaylist.LargeCover}" Stretch="UniformToFill" />
+                <Image infra:ManagedCoverImage.DecodeSize="400"
+                       infra:ManagedCoverImage.Source="{Binding SelectedPlaylist.CoverUrl}"
+                       Stretch="UniformToFill" />
               </Border>
               <TextBlock Text="{Binding SelectedPlaylist.Name}" FontSize="24" FontWeight="Bold"
                          TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxLines="2" />

@@ -36,6 +36,7 @@ public partial class NowPlayingView : UserControl
   private MainViewModel? _vm;
   private bool _transitionsAttached;
   private bool _progressScrubbing;
+  private readonly ProgressRenderAnimator _progressVisual;
   private int _panelPresentationVersion;
   private readonly Dictionary<Control, Point> _positions = new();
   private readonly Dictionary<Control, float> _opacityTargets = new();
@@ -45,6 +46,7 @@ public partial class NowPlayingView : UserControl
   public NowPlayingView()
   {
     InitializeComponent();
+    _progressVisual = new ProgressRenderAnimator(ProgressRoot, ProgressTrack, ProgressFill, ProgressThumb);
     // 移动端(触屏 Head)隐藏全屏切换:窗口全屏是桌面概念,移动端整页本来就近乎全屏
     if (InteractionDefaults.IsTouchPrimary) FullScreenToggle.IsVisible = false;
     SizeChanged += OnSizeChanged;
@@ -78,8 +80,12 @@ public partial class NowPlayingView : UserControl
   private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
   {
     if (sender is not MainViewModel vm) return;
-    if (e.PropertyName is nameof(MainViewModel.ShowNowPlaying) && vm.ShowNowPlaying)
-      Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Background);
+    if (e.PropertyName is nameof(MainViewModel.ShowNowPlaying))
+    {
+      _progressVisual.SetActive(vm.ShowNowPlaying && vm.Player.HasProgress);
+      if (vm.ShowNowPlaying)
+        Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Background);
+    }
     else if (e.PropertyName is nameof(MainViewModel.NowPlayingPanel))
     {
       UpdateDesktopLayout(); // 面板开关 → 重算布局(控件漂移过去)
@@ -91,25 +97,17 @@ public partial class NowPlayingView : UserControl
   {
     if (e.PropertyName is nameof(PlayerViewModel.ScrubPositionMs)
         or nameof(PlayerViewModel.DurationMs)
+        or nameof(PlayerViewModel.IsPlaying)
         or nameof(PlayerViewModel.HasProgress))
       UpdateProgressBar();
   }
 
-  /// <summary>根据 ScrubPositionMs 更新进度条填充和滑块位置(与 PlayerBarView 一致)。</summary>
+  /// <summary>提交播放器权威进度样本；播放期间由渲染层以 60 FPS 预测推进。</summary>
   private void UpdateProgressBar()
   {
-    if (_vm?.Player is not { } player || ProgressTrack is null) return;
-    var width = ProgressTrack.Bounds.Width;
-    if (width <= 0 || player.DurationMs <= 0)
-    {
-      ProgressFill.Width = 0;
-      ProgressThumb.Margin = new Thickness(-ProgressThumb.Width / 2, 0, 0, 0);
-      return;
-    }
-
-    var ratio = Math.Clamp(player.ScrubPositionMs / player.DurationMs, 0, 1);
-    ProgressFill.Width = width * ratio;
-    ProgressThumb.Margin = new Thickness(width * ratio - ProgressThumb.Width / 2, 0, 0, 0);
+    if (_vm?.Player is not { } player) return;
+    _progressVisual.SetActive(_vm.ShowNowPlaying && player.HasProgress);
+    _progressVisual.SetPlaybackState(player.ScrubPositionMs, player.DurationMs, player.IsPlaying);
   }
 
   private void OnSizeChanged(object? sender, SizeChangedEventArgs e)
@@ -678,8 +676,10 @@ public partial class NowPlayingView : UserControl
 
   private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
   {
+    _progressVisual.Attach();
     ResponsiveClasses.ApplyByWindow(this);
     UpdateDesktopLayout();
+    UpdateProgressBar();
     _window = TopLevel.GetTopLevel(this) as Window;
     if (_window is not null)
     {
@@ -691,6 +691,7 @@ public partial class NowPlayingView : UserControl
 
   private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
   {
+    _progressVisual.Detach();
     if (_window is not null) _window.PropertyChanged -= OnWindowPropertyChanged;
     _window = null;
   }
@@ -715,13 +716,6 @@ public partial class NowPlayingView : UserControl
   }
 
   // ── 播放列表面板 ────────────────────────────────────────────────────────
-
-  /// <summary>队列行容器 realized 时才拉封面(懒加载,与 TrackRow 一致)。</summary>
-  private void OnQueueContainerPrepared(object? sender, ContainerPreparedEventArgs e)
-  {
-    if (e.Container?.DataContext is QueueItemViewModel item)
-      item.EnsureCoverLoaded();
-  }
 
   /// <summary>单击队列行播放该曲;排除行内移除按钮的来源。</summary>
   private void OnQueueItemTapped(object? sender, TappedEventArgs e)
@@ -752,6 +746,7 @@ public partial class NowPlayingView : UserControl
     if (!e.GetCurrentPoint(ProgressRoot).Properties.IsLeftButtonPressed) return;
 
     _progressScrubbing = true;
+    _progressVisual.SetScrubbing(true);
     e.Pointer.Capture(ProgressRoot);
     player.BeginScrub();
     SetProgressFromPointer(e);
@@ -769,6 +764,7 @@ public partial class NowPlayingView : UserControl
     _progressScrubbing = false;
     e.Pointer.Capture(null);
     if (_vm?.Player is { } player) player.EndScrub();
+    _progressVisual.SetScrubbing(false);
     e.Handled = true;
   }
 
@@ -779,7 +775,8 @@ public partial class NowPlayingView : UserControl
     if (width <= 0 || player.DurationMs <= 0) return;
 
     var ratio = Math.Clamp(e.GetPosition(ProgressTrack).X / width, 0, 1);
-    player.ScrubPositionMs = player.DurationMs * ratio;
-    UpdateProgressBar();
+    var positionMs = player.DurationMs * ratio;
+    player.ScrubPositionMs = positionMs;
+    _progressVisual.SetScrubPosition(positionMs, player.DurationMs);
   }
 }

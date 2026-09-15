@@ -47,8 +47,14 @@ public static class SongGridProbe
         scroll.Offset = new Vector(scroll.Extent.Width, 0);
         Drain();
         var rowsAtEnd = win.GetVisualDescendants().OfType<TrackRow>().ToList();
-        Console.WriteLine($"[sg] 滚到最右: realize 行={rowsAtEnd.Count}/30 末列首行: " +
-            $"{Describe(rowsAtEnd.FirstOrDefault())} (期望 测试歌曲25)");
+        // 虚拟化 CacheLength 会保留上一批列，VisualTree 的第一项不等于最右侧首项；
+        // 用当前已实化歌曲的最大 id 验证末尾列确实进入视口。
+        var lastRealized = rowsAtEnd
+            .Select(row => row.DataContext as SongItemViewModel)
+            .Where(vm => vm is not null)
+            .MaxBy(vm => vm!.Song.Id);
+        Console.WriteLine($"[sg] 滚到最右: realize 行={rowsAtEnd.Count}/30 末尾已实化: " +
+            $"{lastRealized?.Song.Name ?? "(无)"} (期望 测试歌曲30)");
         win.Close();
     }
 

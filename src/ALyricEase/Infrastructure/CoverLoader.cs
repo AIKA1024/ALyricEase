@@ -12,16 +12,16 @@ namespace ALyricEase.Infrastructure;
 
 /// <summary>封面图加载:优先读取统一媒体磁盘缓存，再走网络；解码后另有内存 LRU，失败返回 null(不抛异常)。
 /// 返回的 Bitmap 不可变,可跨线程使用。
-/// 预算按字节而非张数:播放条/正在播放页的大封面(640px≈1.6MB)也进同一缓存,
-/// 若按张数 300 上限会堆到 ~480MB;缓存自身按字节与条目数双重有界。
+/// 预算按字节而非张数:当前仅保留播放器等需要直接 IImage 的低频大图；
+/// 页面列表与头像统一由 ManagedCoverImage 的租约缓存管理。
 /// 同一规格 URL 的并发请求共享一个在途任务,避免列表同时实化时重复下载与解码。</summary>
 public static class CoverLoader
 {
-    /// <summary>缓存总解码字节预算(~48MB):歌曲行 100px≈40KB 能存上千张,640px 大封面只留 ~30 张。</summary>
-    private const long MaxCacheBytes = 48L * 1024 * 1024;
+    /// <summary>低频直接位图缓存预算(~16MB)：约可保留 10 张 640px 大封面。</summary>
+    private const long MaxCacheBytes = 16L * 1024 * 1024;
 
     /// <summary>条目数兜底:失败项不占像素预算,仍必须限制其 URL/字典节点数量。</summary>
-    private const int MaxCacheEntries = 1536;
+    private const int MaxCacheEntries = 128;
 
     /// <summary>失败结果只短暂缓存:防离线/瞬时失败时每行反复请求,同时允许网络恢复后自动重试。</summary>
     private static readonly TimeSpan FailedEntryLifetime = TimeSpan.FromMinutes(2);

@@ -229,6 +229,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         try
         {
             await _musicCache.ClearAsync();
+            CoverImagePipeline.ClearMemoryCache();
             CoverLoader.ClearMemoryCache();
             Status = "已清除缓存";
         }
@@ -253,6 +254,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         new("Binaryify/NeteaseCloudMusicApi", "https://github.com/Binaryify/NeteaseCloudMusicApi"),
         new("Fluent UI System Icons (MIT)", "https://github.com/microsoft/fluentui-system-icons"),
         new("Avalonia UI (MIT)", "https://github.com/AvaloniaUI/Avalonia"),
+        new("AsyncImageLoader.Avalonia (MIT)", "https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia"),
     ];
 
     /// <summary>在系统浏览器打开开源项目主页(桌面端;Android 端后续接 Intent)。</summary>

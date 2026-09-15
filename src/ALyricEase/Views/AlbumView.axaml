@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:AlbumViewModel"
@@ -115,7 +116,9 @@
                   ColumnDefinitions="240,*" ColumnSpacing="16">
               <Border Width="240" Height="240" CornerRadius="8" ClipToBounds="True"
                       Background="{DynamicResource ArtFallback}">
-                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                <Image infra:ManagedCoverImage.DecodeSize="300"
+                       infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                       Stretch="UniformToFill" />
               </Border>
               <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Spacing="4">
                 <TextBlock Text="{Binding Name}" FontSize="24" FontWeight="SemiBold"
@@ -156,7 +159,9 @@
                         HorizontalAlignment="Stretch" Spacing="6">
               <Border x:Name="HeroVerticalArt" Width="240" Height="240" CornerRadius="8" ClipToBounds="True"
                       Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center">
-                <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+                <Image infra:ManagedCoverImage.DecodeSize="300"
+                       infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                       Stretch="UniformToFill" />
               </Border>
               <TextBlock x:Name="HeroVerticalTitle" Text="{Binding Name}" FontSize="24" FontWeight="SemiBold"
                          TextAlignment="Center" TextWrapping="Wrap"

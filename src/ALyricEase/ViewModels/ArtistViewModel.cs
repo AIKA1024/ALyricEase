@@ -5,7 +5,6 @@ using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
-using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -38,7 +37,7 @@ public sealed partial class ArtistViewModel : ViewModelBase
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private bool _hasAlbums;
     [ObservableProperty] private bool _hasSingles;
-    [ObservableProperty] private IImage? _avatar;
+    [ObservableProperty] private string _avatarUrl = "";
 
     /// <summary>热门歌曲(横向换行网格,每行 400px TrackRow)。</summary>
     public ObservableCollection<SongItemViewModel> Songs { get; } = new();
@@ -60,7 +59,7 @@ public sealed partial class ArtistViewModel : ViewModelBase
         {
             var info = await _api.GetArtistAsync(artistId);
             Name = info.Name;
-            if (info.Avatar is { Length: > 0 } pic) Avatar = await CoverLoader.LoadAsync(pic, 240);
+            if (info.Avatar is { Length: > 0 } pic) AvatarUrl = pic;
 
             var songs = await _api.GetArtistSongsAsync(artistId, 30);
             var queue = songs;
@@ -128,8 +127,7 @@ public sealed partial class ArtistViewModel : ViewModelBase
         _singerMid = singerMid;
         try
         {
-            Avatar = await CoverLoader.LoadAsync(
-                $"https://y.gtimg.cn/music/photo_new/T001R300x300M000{singerMid}.jpg", 240);
+            AvatarUrl = $"https://y.gtimg.cn/music/photo_new/T001R300x300M000{singerMid}.jpg";
 
             var songs = await _qqApi.GetArtistSongsAsync(singerMid, 30);
             Name = ResolveSingerName(songs, singerMid);
@@ -160,7 +158,7 @@ public sealed partial class ArtistViewModel : ViewModelBase
     private void ClearContent()
     {
         Name = "";
-        Avatar = null;
+        AvatarUrl = "";
         Songs.Clear();
         Albums.Clear();
         Singles.Clear();

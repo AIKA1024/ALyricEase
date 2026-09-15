@@ -45,8 +45,8 @@
     <Grid x:Name="Track" Height="4" VerticalAlignment="Center" ClipToBounds="True">
       <!-- 未播放段(整条) -->
       <Border x:Name="TrackInactive" />
-      <!-- 已播放段(宽度=进度比例) -->
-      <Border x:Name="Fill" HorizontalAlignment="Left" IsHitTestVisible="False" />
+      <!-- 已播放段始终占满轨道，仅在渲染层按进度比例 ScaleX，避免播放时触发布局。 -->
+      <Border x:Name="Fill" HorizontalAlignment="Stretch" IsHitTestVisible="False" />
     </Grid>
     <!-- 球:两个圆叠加 — 底层 20x20 深色大球(#454545),顶层 10px 强调色小球(#5EA9A2);
          hover/动画只在球上触发 -->

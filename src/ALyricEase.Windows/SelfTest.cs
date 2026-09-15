@@ -72,7 +72,7 @@ internal static class SelfTest
         }
         Console.WriteLine($"[leak] 连播后 GC={GcMb()}MB WS={WsMb()}MB");
 
-        // 模拟打开歌单:全量曲目 + 懒封面(不调 EnsureCoverLoaded → 不应暴涨)
+        // 模拟打开歌单:全量曲目仅保存封面 URL，未创建 Image → 不应暴涨
         Console.WriteLine("[leak] 打开歌单(懒封面不拉图)...");
         var plSongs = await api.GetPlaylistDetailAsync(19723756);
         var items = new List<SongItemViewModel>();

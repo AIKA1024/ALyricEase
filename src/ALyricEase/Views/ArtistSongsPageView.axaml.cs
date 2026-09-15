@@ -48,11 +48,7 @@ public partial class ArtistSongsPageView : UserControl
     private void OnCoverDebounceTick(object? sender, EventArgs e)
     {
         _coverDebounce?.Stop();
-        foreach (var item in _pendingCovers)
-        {
-            item.EnsureCoverLoaded();
-            item.EnsureLikedLoaded();
-        }
+        foreach (var item in _pendingCovers) item.EnsureLikedLoaded();
         _pendingCovers.Clear();
     }
 }

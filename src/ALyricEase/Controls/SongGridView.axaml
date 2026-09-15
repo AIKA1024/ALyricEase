@@ -8,10 +8,11 @@
              xmlns:views="using:ALyricEase.Views"
              xmlns:controls="using:ALyricEase.Controls"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="404"
+             x:CompileBindings="True"
              x:Class="ALyricEase.Controls.SongGridView">
   <!-- 行模板:复用 TrackRow 套 Search 主题(400x60,播放按钮靠右);悬停高亮/操作浮现由共享 TrackRow 样式驱动 -->
   <UserControl.DataTemplates>
-    <DataTemplate DataType="vm:SongItemViewModel">
+    <DataTemplate x:DataType="vm:SongItemViewModel">
       <views:TrackRow Theme="{StaticResource TrackRowSearchTheme}" />
     </DataTemplate>
   </UserControl.DataTemplates>

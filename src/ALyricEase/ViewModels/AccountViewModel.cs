@@ -3,7 +3,6 @@ using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
-using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -24,7 +23,7 @@ public sealed partial class AccountPlatformViewModel : ViewModelBase
     [ObservableProperty] private string _accountLevelText = "暂未提供";
     [ObservableProperty] private string _membershipDetail = "暂无会员权益";
     [ObservableProperty] private string? _errorMessage;
-    [ObservableProperty] private IImage? _avatar;
+    [ObservableProperty] private string _avatarUrl = "";
 
     public string AvatarLetter => string.IsNullOrWhiteSpace(Username) ? PlatformName[..1] : Username[..1];
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
@@ -49,7 +48,7 @@ public sealed partial class AccountPlatformViewModel : ViewModelBase
         AccountLevelText = "暂未提供";
         MembershipDetail = "暂无会员权益";
         ErrorMessage = null;
-        Avatar = null;
+        AvatarUrl = "";
     }
 
     public async Task LoadAsync(Func<CancellationToken, Task<MusicAccountSummary>> loader, CancellationToken ct)
@@ -71,9 +70,7 @@ public sealed partial class AccountPlatformViewModel : ViewModelBase
             MembershipDetail = summary.MembershipExpiresAt is { } expires
                 ? $"有效期至 {expires.ToLocalTime():yyyy-MM-dd}"
                 : summary.IsVip ? "会员权益已生效" : "暂无会员权益";
-            Avatar = summary.AvatarUrl.Length > 0
-                ? await CoverLoader.LoadAsync(summary.AvatarUrl, 144)
-                : null;
+            AvatarUrl = summary.AvatarUrl;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

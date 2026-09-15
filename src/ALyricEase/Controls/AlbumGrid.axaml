@@ -2,13 +2,15 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:controls="using:ALyricEase.Controls"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:CompileBindings="True"
              x:Class="ALyricEase.Controls.AlbumGrid">
   <UserControl.DataTemplates>
     <!-- 专辑卡片:200 宽,封面黑遮罩悬停,点击跳专辑页(歌手页横滑卡片同款视觉) -->
-    <DataTemplate DataType="vm:AlbumCardViewModel">
+    <DataTemplate x:DataType="vm:AlbumCardViewModel">
       <Button Theme="{StaticResource RowButtonTheme}" Classes="album-card" Command="{Binding OpenCommand}">
         <!-- 两行(封面/标题)而非"标题用 Margin 下移":Grid 内 Stretch + 固定 Height 的封面会被垂直居中
              (实测 225 高的卡片里封面落在 y=12),标题就压到封面底部去了。分行后封面顶对齐,
@@ -16,7 +18,9 @@
         <Grid Width="200" RowDefinitions="200,Auto">
           <Border Grid.Row="0" Width="200" Height="200" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
             <Grid>
-              <Image Source="{Binding Cover}" Stretch="UniformToFill" />
+              <Image infra:ManagedCoverImage.DecodeSize="300"
+                     infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                     Stretch="UniformToFill" />
               <Border Classes="album-card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
             </Grid>
           </Border>
@@ -60,7 +64,7 @@
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
       <DataTemplate x:DataType="controls:AlbumRow">
-        <ItemsControl Classes="row" ItemsSource="{Binding Cards}" ContainerPrepared="OnCardContainerPrepared">
+        <ItemsControl Classes="row" ItemsSource="{Binding Cards}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <StackPanel Orientation="Horizontal" />

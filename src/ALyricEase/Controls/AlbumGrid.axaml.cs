@@ -25,7 +25,14 @@ public partial class AlbumGrid : UserControl
 
     /// <summary>当前订阅的集合变更源(ItemsSource 实例),卸载时退订。</summary>
     private INotifyCollectionChanged? _observedSource;
+    private readonly object _rebuildGate = new();
+    private bool _rebuildScheduled;
+    private bool _isAttached;
+    private int _rebuildGeneration;
     private int _columnsPerRow = 5;
+
+    /// <summary>性能回归探针使用：实际发生的全量分块次数。</summary>
+    internal int RebuildCount { get; private set; }
 
     public AlbumGrid()
     {
@@ -44,7 +51,8 @@ public partial class AlbumGrid : UserControl
         base.OnPropertyChanged(e);
         if (e.Property == ItemsSourceProperty)
         {
-            ObserveItemsSource();
+            if (_isAttached) ObserveItemsSource();
+            else UnobserveItemsSource();
             RebuildRows();
         }
     }
@@ -52,6 +60,7 @@ public partial class AlbumGrid : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _isAttached = true;
         // 页面单例 VM 复用,重挂时按最新数据重建一次(与 SongGridView 同理)
         UpdateColumnsPerRow(Bounds.Width);
         ObserveItemsSource();
@@ -60,6 +69,12 @@ public partial class AlbumGrid : UserControl
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        _isAttached = false;
+        lock (_rebuildGate)
+        {
+            _rebuildGeneration++;
+            _rebuildScheduled = false;
+        }
         UnobserveItemsSource();
         base.OnDetachedFromVisualTree(e);
     }
@@ -70,8 +85,7 @@ public partial class AlbumGrid : UserControl
         var per = Math.Clamp((int)(width / 212), 1, 6);
         if (per == _columnsPerRow) return;
         _columnsPerRow = per;
-        if (Dispatcher.UIThread.CheckAccess()) RebuildRows();
-        else Dispatcher.UIThread.Post(RebuildRows);
+        ScheduleRebuild();
     }
 
     private void ObserveItemsSource()
@@ -91,17 +105,40 @@ public partial class AlbumGrid : UserControl
         _observedSource = null;
     }
 
-    /// <summary>集合内容变化后重建行分块;可能在非 UI 线程触发,统一切回 UI 线程。</summary>
+    /// <summary>集合内容变化后按一个 Dispatcher 周期合并重建，避免逐项追加触发 O(n²) 全量枚举。</summary>
     private void OnItemsSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (Dispatcher.UIThread.CheckAccess()) RebuildRows();
-        else Dispatcher.UIThread.Post(RebuildRows);
+        ScheduleRebuild();
+    }
+
+    private void ScheduleRebuild()
+    {
+        int generation;
+        lock (_rebuildGate)
+        {
+            if (_rebuildScheduled) return;
+            _rebuildScheduled = true;
+            generation = _rebuildGeneration;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (_rebuildGate)
+            {
+                if (generation != _rebuildGeneration) return;
+                _rebuildScheduled = false;
+            }
+
+            if (_isAttached)
+                RebuildRows();
+        }, DispatcherPriority.Background);
     }
 
     /// <summary>ItemsSource/列数变化后重建行分块(尾部不足一行的也成行)。</summary>
     private void RebuildRows()
     {
         if (Rows is null) return; // 属性早于 InitializeComponent 设置时面板尚不存在
+        RebuildCount++;
         var cards = ItemsSource?.OfType<AlbumCardViewModel>().ToList() ?? [];
         var perRow = Math.Max(1, _columnsPerRow);
         Rows.ItemsSource = cards.Count == 0
@@ -110,12 +147,5 @@ public partial class AlbumGrid : UserControl
                 .Select(i => new AlbumRow(
                     cards.GetRange(i * perRow, Math.Min(perRow, cards.Count - i * perRow))))
                 .ToList();
-    }
-
-    /// <summary>卡片容器 realized 时加载封面(幂等),纵向虚拟化下回收再 realize 重触发安全。</summary>
-    private void OnCardContainerPrepared(object? sender, ContainerPreparedEventArgs e)
-    {
-        if (e.Container?.DataContext is AlbumCardViewModel card)
-            card.EnsureCoverLoaded();
     }
 }

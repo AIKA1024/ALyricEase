@@ -7,7 +7,6 @@ using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
-using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -17,16 +16,13 @@ namespace ALyricEase.ViewModels;
 /// activate 为点击行为:歌单卡片→打开歌单页,歌曲卡片→播放(队列=所在区块全部歌);null 不可点。</summary>
 public sealed partial class RecommendCardViewModel : ViewModelBase
 {
-    private readonly string _coverUrl;
     private readonly Func<Task>? _activate;
-    private bool _coverRequested;
-    private bool _coverRevealed;
 
     public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0, long id = 0, Func<Task>? activate = null)
     {
         Title = title;
         Subtitle = subtitle;
-        _coverUrl = coverUrl;
+        CoverUrl = coverUrl;
         PlayCount = playCount;
         Id = id;
         _activate = activate;
@@ -35,6 +31,8 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
     public string Title { get; }
 
     public string Subtitle { get; }
+
+    public string CoverUrl { get; }
 
     /// <summary>歌单 id 或歌曲 id(仅点击行为用)。</summary>
     public long Id { get; }
@@ -50,42 +48,19 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
 
     public string PlayCountText => HasPlayCount ? NetEaseApiClient.FormatPlayCount(PlayCount) : "";
 
-    /// <summary>容器 realized 时调用:首次才拉封面(幂等)。</summary>
-    public void EnsureCoverLoaded()
-    {
-        if (_coverRequested || Cover is not null) return;
-        _coverRequested = true;
-        if (string.IsNullOrEmpty(_coverUrl)) return;
-        _ = LoadCoverAsync();
-    }
-
-    /// <summary>后台加载完成的真实封面(240px)。</summary>
-    [ObservableProperty] private IImage? _cover;
-
-    /// <summary>视图实际显示的封面:过渡期间保持 null(→共享占位图),过渡结束后才换成真实封面。
+    /// <summary>视图实际请求的封面 URL:过渡期间保持 null(→占位底色),过渡结束后才开始加载。
     /// 若 30 张位图都绑在首帧渲染,切页动画第一帧会被位图绘制卡死(实测 ~250ms),所以延后亮出。</summary>
-    [ObservableProperty] private IImage? _displayCover;
-
-    private async Task LoadCoverAsync() => Cover = await CoverLoader.LoadAsync(_coverUrl, 240);
-
-    partial void OnCoverChanged(IImage? value)
-    {
-        // 封面后台加载完成(首次进入,晚于切页):本轮过渡已结束(_coverRevealed)就直接亮出,
-        // 未结束则等 Background 翻转任务统一处理(任务里读的是最新 Cover)。
-        if (value is not null && _coverRevealed) DisplayCover = value;
-    }
+    [ObservableProperty] private string? _displayCoverUrl;
 
     /// <summary>每次容器实化(每次挂树)调用:先把显示封面重置回占位图,再安排过渡结束后亮出真实封面。
     /// 若 30 张位图直接参与首帧渲染,切页动画第一帧会被卡死(实测旧行为 ~300ms);
     /// 每次切回都重置,保证"切回来"同样走延后路径(即使封面已缓存/被淘汰)。</summary>
     public void PrepareCoverForTransition()
     {
-        DisplayCover = null; // 本轮首帧回到共享占位图(首轮本来就是 null,无害;后续轮次清除已亮出的封面)
-        _coverRevealed = false;
+        DisplayCoverUrl = null;
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
-            _coverRevealed = true;
-            if (DisplayCover is null) DisplayCover = Cover;
+            DisplayCoverUrl = CoverUrl;
         }, Avalonia.Threading.DispatcherPriority.Background);
     }
 }

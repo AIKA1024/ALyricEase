@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -19,29 +20,50 @@ public partial class SearchView : UserControl
 
     /// <summary>当前订阅事件的 VM(防 DataContext 变更时重复订阅/泄漏)。</summary>
     private SearchViewModel? _subscribedVm;
+    private bool _isVmSubscribed;
+
+    internal bool IsViewModelSubscribed => _isVmSubscribed;
 
     public SearchView()
     {
         InitializeComponent();
         _resultsScroll = this.FindControl<ScrollViewer>("ResultsScroll");
         SizeChanged += (_, e) => ResponsiveClasses.ApplyByWindow(this);
-        AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
+        AttachedToVisualTree += OnAttachedToVisualTree;
+        DetachedFromVisualTree += OnDetachedFromVisualTree;
     }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
-        if (_subscribedVm is { } old)
-        {
-            old.BackToTopRequested -= OnBackToTop;
-            old.PropertyChanged -= OnVmPropertyChanged;
-        }
+        UnsubscribeFromViewModel();
         _subscribedVm = DataContext as SearchViewModel;
-        if (_subscribedVm is { } vm)
-        {
-            vm.BackToTopRequested += OnBackToTop;
-            vm.PropertyChanged += OnVmPropertyChanged;
-        }
+        if (this.IsAttachedToVisualTree()) SubscribeToViewModel();
+    }
+
+    private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        ResponsiveClasses.ApplyByWindow(this);
+        SubscribeToViewModel();
+    }
+
+    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e) =>
+        UnsubscribeFromViewModel();
+
+    private void SubscribeToViewModel()
+    {
+        if (_isVmSubscribed || _subscribedVm is not { } vm) return;
+        vm.BackToTopRequested += OnBackToTop;
+        vm.PropertyChanged += OnVmPropertyChanged;
+        _isVmSubscribed = true;
+    }
+
+    private void UnsubscribeFromViewModel()
+    {
+        if (!_isVmSubscribed || _subscribedVm is not { } vm) return;
+        vm.BackToTopRequested -= OnBackToTop;
+        vm.PropertyChanged -= OnVmPropertyChanged;
+        _isVmSubscribed = false;
     }
 
     private SearchViewModel? Vm => DataContext as SearchViewModel;
@@ -177,20 +199,10 @@ public partial class SearchView : UserControl
         TabOverflowButton.Flyout = flyout;
     }
 
-    /// <summary>所有结果行容器准备完成(DataContext 已赋值)时触发:歌曲行懒加载封面/红心,
-    /// 分区行懒加载封面。注意用 ContainerPrepared 而非 PreparingContainer(后者时序同
+    /// <summary>歌曲结果行容器准备完成(DataContext 已赋值)时触发红心加载。注意用 ContainerPrepared 而非 PreparingContainer(后者时序同
     /// PlaylistView 注释:DataContext 未赋值,取不到当前项)。</summary>
     private void OnResultContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
-        switch (e.Container?.DataContext)
-        {
-            case SongItemViewModel song:
-                song.EnsureCoverLoaded();
-                song.EnsureLikedLoaded();
-                break;
-            case SearchItemViewModelBase item:
-                item.EnsureCoverLoaded();
-                break;
-        }
+        if (e.Container?.DataContext is SongItemViewModel song) song.EnsureLikedLoaded();
     }
 }

@@ -179,7 +179,7 @@
                       PointerReleased="OnProgressPointerReleased">
                     <Grid x:Name="ProgressTrack" Height="4" VerticalAlignment="Center" ClipToBounds="True">
                         <Border Height="2" VerticalAlignment="Center" Background="#7F8A8A8A" />
-                        <Border x:Name="ProgressFill" Height="2" VerticalAlignment="Center" HorizontalAlignment="Left"
+                        <Border x:Name="ProgressFill" Height="2" VerticalAlignment="Center" HorizontalAlignment="Stretch"
                                 Background="#FF5EA9A2" IsHitTestVisible="False" />
                     </Grid>
                     <Grid x:Name="ProgressThumb" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center"
@@ -313,8 +313,7 @@
                     <Border Grid.Row="1" Background="#0DFFFFFF" BorderBrush="#14FFFFFF" BorderThickness="1"
                             CornerRadius="8" ClipToBounds="True">
                         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                            <ItemsControl x:Name="QueueList" ItemsSource="{Binding Player.UpcomingItems}"
-                                          ContainerPrepared="OnQueueContainerPrepared">
+                            <ItemsControl x:Name="QueueList" ItemsSource="{Binding Player.UpcomingItems}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <VirtualizingStackPanel />
@@ -327,7 +326,9 @@
                                             <Border Classes="queue-row-hover" Grid.ColumnSpan="3" />
                                             <Border Grid.Column="0" Width="44" Height="44" CornerRadius="4" ClipToBounds="True"
                                                     Background="#3A3A3A" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}" Stretch="UniformToFill" />
+                                                <Image infra:ManagedCoverImage.DecodeSize="100"
+                                                       infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
+                                                       Stretch="UniformToFill" />
                                             </Border>
                                             <StackPanel Grid.Column="1" Margin="5,0" VerticalAlignment="Center" Spacing="2">
                                                 <TextBlock Text="{Binding Name}" FontSize="16" Foreground="White" TextTrimming="CharacterEllipsis" />

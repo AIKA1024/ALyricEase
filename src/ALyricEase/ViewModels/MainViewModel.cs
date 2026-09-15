@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -261,6 +262,9 @@ public sealed partial class MainViewModel : ViewModelBase
         IsTransitionReversed = _isGoingBack;
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(CurrentContent));
+        // 页面 VM 为单例，但非当前页的 Image 已释放租约；清掉未租用位图即可让内存及时回落。
+        // 编码封面仍在统一磁盘缓存，返回页面不会重复请求网络。
+        CoverImagePipeline.ClearMemoryCache();
 
         // 未完成页面使用明确占位，不伪装为可用功能。
         if (value == "Browse")

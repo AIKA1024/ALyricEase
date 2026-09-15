@@ -210,14 +210,14 @@ public sealed partial class MainViewModel : ViewModelBase
     private sealed record NavigationEntry(
         string Page,
         string? SelectedNavKey,
-        Models.Playlist? Playlist,
-        Models.AggregatePlaylist? Aggregate);
+        PlaylistNavigationSnapshot? PlaylistSnapshot);
 
     private const int MaxNavigationHistory = 50;
     private readonly List<NavigationEntry> _navigationHistory = new();
     private bool _isGoingBack;
     private bool _selectionNavigationInProgress;
     private bool _suppressSelectedNavNavigation;
+    private bool _restoringPlaylistNavigation;
 
     /// <summary>页面切换动画方向:返回(true)时反向滑动(新页从左进),前进(false)从右进。
     /// 绑定 TransitioningContentControl.IsTransitionReversed。</summary>
@@ -251,9 +251,9 @@ public sealed partial class MainViewModel : ViewModelBase
             && !string.Equals(oldValue, newValue, StringComparison.Ordinal))
             PushCurrentNavigation();
 
-        // 离开歌单视图时真正取消在途分页；返回时 PlaylistViewModel 会按当前入口恢复。
+        // 前进导航已在 PushCurrentNavigation 中落盘并释放；后退没有前进栈，直接丢弃当前页重数据。
         if (oldValue is "Favorites" or "CloudDrive" && newValue != oldValue)
-            _playlist.CancelCurrentLoad();
+            _playlist.ReleaseCurrentPageData();
     }
 
     partial void OnActivePageChanged(string value)
@@ -289,10 +289,10 @@ public sealed partial class MainViewModel : ViewModelBase
         if (value == "Search" && !_isGoingBack)
             Search.ResetToLanding();
 
-        if (value == "Favorites")
+        if (value == "Favorites" && !_restoringPlaylistNavigation)
             _ = _playlist.EnsureLoadedAsync(); // 已存 MUSIC_U 则恢复并打开“我喜欢的音乐”
 
-        if (value == "CloudDrive")
+        if (value == "CloudDrive" && !_restoringPlaylistNavigation)
             _ = _playlist.OpenCloudCommand.ExecuteAsync(null); // 云盘复用歌单页(未登录时由其内部跳过)
 
         // 从搜索/占位页切回导航项时同步选中;非导航页(搜索/账号/设置)清除选中。
@@ -467,6 +467,8 @@ public sealed partial class MainViewModel : ViewModelBase
             var entry = _navigationHistory[last];
             _navigationHistory.RemoveAt(last);
             OnPropertyChanged(nameof(CanGoBack));
+            if (ActivePage is "Favorites" or "CloudDrive")
+                Playlist.ReleaseCurrentPageData();
             RestoreNavigation(entry);
         }
         finally
@@ -580,42 +582,39 @@ public sealed partial class MainViewModel : ViewModelBase
     private void PushCurrentNavigation()
     {
         if (_navigationHistory.Count == MaxNavigationHistory)
+        {
+            Playlist.DiscardNavigationSnapshot(_navigationHistory[0].PlaylistSnapshot);
             _navigationHistory.RemoveAt(0);
+        }
 
+        var playlistSnapshot = ActivePage is "Favorites" or "CloudDrive"
+            ? Playlist.CaptureAndReleaseNavigationSnapshot()
+            : null;
         _navigationHistory.Add(new NavigationEntry(
             ActivePage,
             SelectedNav?.Key,
-            ActivePage == "Favorites" ? Playlist.SelectedPlaylist?.Playlist : null,
-            ActivePage == "Favorites" ? Playlist.CurrentAggregate : null));
+            playlistSnapshot));
         OnPropertyChanged(nameof(CanGoBack));
     }
 
     private void RestoreNavigation(NavigationEntry entry)
     {
-        ActivePage = entry.Page;
-        SetSelectedNavWithoutNavigation(
-            entry.SelectedNavKey is null
-                ? null
-                : ShellNavItems.FirstOrDefault(n => n.Key == entry.SelectedNavKey));
-
-        if (entry.Page != "Favorites") return;
-        if (entry.Aggregate is not null)
+        _restoringPlaylistNavigation = entry.PlaylistSnapshot is not null;
+        try
         {
-            Playlist.OpenAggregateCommand.Execute(entry.Aggregate);
-            return;
+            ActivePage = entry.Page;
+            SetSelectedNavWithoutNavigation(
+                entry.SelectedNavKey is null
+                    ? null
+                    : ShellNavItems.FirstOrDefault(n => n.Key == entry.SelectedNavKey));
+        }
+        finally
+        {
+            _restoringPlaylistNavigation = false;
         }
 
-        if (entry.Playlist is null) return;
-        // 侧栏歌单仍存在时复用它的 VM；历史本身只保存轻量模型，不额外保活 400px 大封面。
-        var playlist = SelectedNav?.Playlist is { } navPlaylist
-            && navPlaylist.Id == entry.Playlist.Id
-            && navPlaylist.Playlist.Source == entry.Playlist.Source
-                ? navPlaylist
-                : new PlaylistItemViewModel(entry.Playlist);
-        if (entry.Playlist.Source == MusicSource.QQ)
-            Playlist.OpenQqPlaylistCommand.Execute(playlist);
-        else
-            Playlist.OpenPlaylistCommand.Execute(playlist);
+        if (entry.PlaylistSnapshot is { } snapshot)
+            _ = Playlist.RestoreNavigationSnapshotAsync(snapshot);
     }
 
     private void SetSelectedNavWithoutNavigation(NavItemViewModel? value)
@@ -639,6 +638,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void OpenShellPlaylist(PlaylistItemViewModel? playlist)
     {
         if (playlist is null) return;
+        PreserveOpenPlaylistBeforeReplacement();
         ActivePage = "Favorites";
         Playlist.OpenPlaylistCommand.Execute(playlist);
     }
@@ -648,8 +648,15 @@ public sealed partial class MainViewModel : ViewModelBase
     private void OpenShellQqPlaylist(PlaylistItemViewModel? playlist)
     {
         if (playlist is null) return;
+        PreserveOpenPlaylistBeforeReplacement();
         ActivePage = "Favorites";
         Playlist.OpenQqPlaylistCommand.Execute(playlist);
+    }
+
+    private void PreserveOpenPlaylistBeforeReplacement()
+    {
+        if ((ActivePage is "Favorites" or "CloudDrive") && Playlist.HasRetainedPageData)
+            PushCurrentNavigation();
     }
 
     /// <summary>歌单行/专辑行点击歌手 → 歌手页。</summary>

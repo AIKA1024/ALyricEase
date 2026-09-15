@@ -47,6 +47,13 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
+        // 单例歌单页重数据回归：离页归零，返回从一次性磁盘快照恢复内容/筛选/滚动状态。
+        if (args.Length > 0 && args[0] == "--playlist-lifetime")
+        {
+            Environment.ExitCode = PlaylistPageLifetimeProbe.Run();
+            return;
+        }
+
         // 歌曲/专辑网格批量追加回归：同一 UI 周期只允许一次全量分块。
         if (args.Length > 0 && args[0] == "--grid-batching")
         {

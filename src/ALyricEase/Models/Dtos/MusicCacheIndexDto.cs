@@ -4,6 +4,8 @@ namespace ALyricEase.Models.Dtos;
 
 /// <summary>媒体缓存中的离线歌单索引。单独使用源生成上下文，兼容 Android 裁剪/AOT。</summary>
 [JsonSerializable(typeof(MusicCacheIndexFile))]
+[JsonSerializable(typeof(PlaylistTracksCacheFile))]
+[JsonSerializable(typeof(PlaylistPageSnapshotFile))]
 internal sealed partial class MusicCacheJsonContext : JsonSerializerContext
 {
 }
@@ -49,6 +51,58 @@ internal sealed class CachedPlaylistFile
     public bool Listed { get; set; }
 
     public List<CachedSongFile> Tracks { get; set; } = new();
+}
+
+/// <summary>从总索引拆出的按歌单曲目文件；读取后不在单例缓存服务中常驻。</summary>
+internal sealed class PlaylistTracksCacheFile
+{
+    public int Version { get; set; } = 1;
+
+    public List<CachedSongFile> Tracks { get; set; } = new();
+}
+
+/// <summary>页面离开时保存的一次性重数据快照；轻量导航历史只持有对应键。</summary>
+internal sealed class PlaylistPageSnapshotFile
+{
+    public int Version { get; set; } = 1;
+
+    public List<CachedPageTrackFile> Tracks { get; set; } = new();
+
+    public long[] TrackIds { get; set; } = [];
+
+    public int Materialized { get; set; }
+
+    public CachedAggregateLoadStateFile? AggregateLoad { get; set; }
+}
+
+internal sealed class CachedPageTrackFile
+{
+    public CachedSongFile Song { get; set; } = new();
+
+    public bool IsPlayable { get; set; }
+
+    public bool IsQueued { get; set; }
+
+    public bool IsPlaybackUnavailable { get; set; }
+
+    public bool PreferCachedPlayback { get; set; }
+}
+
+internal sealed class CachedAggregateLoadStateFile
+{
+    public int MemberIndex { get; set; }
+
+    public long[]? NetEaseTrackIds { get; set; }
+
+    public List<CachedSongFile> NetEaseKnown { get; set; } = new();
+
+    public int NetEaseCursor { get; set; }
+
+    public int QqBegin { get; set; }
+
+    public int FailedCount { get; set; }
+
+    public bool CoverSet { get; set; }
 }
 
 internal sealed class CachedSongFile

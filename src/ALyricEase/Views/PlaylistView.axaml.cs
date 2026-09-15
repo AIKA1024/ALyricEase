@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -13,12 +14,34 @@ public partial class PlaylistView : UserControl
 {
     private DispatcherTimer? _coverDebounce;
     private readonly System.Collections.Generic.HashSet<SongItemViewModel> _pendingCovers = new();
+    private PlaylistViewModel? _observedViewModel;
+    private int _appliedScrollRestoreVersion;
+    private int _scheduledScrollRestoreVersion;
+    private bool _isAttached;
 
     public PlaylistView()
     {
         InitializeComponent();
         SizeChanged += (_, e) => ResponsiveClasses.ApplyByWindow(this);
-        AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
+        AttachedToVisualTree += (_, _) =>
+        {
+            _isAttached = true;
+            ResponsiveClasses.ApplyByWindow(this);
+            ObserveViewModel();
+            ScheduleScrollRestore();
+        };
+        DetachedFromVisualTree += (_, _) =>
+        {
+            _isAttached = false;
+            _scheduledScrollRestoreVersion = 0;
+            StopObservingViewModel();
+        };
+        DataContextChanged += (_, _) =>
+        {
+            if (!_isAttached) return;
+            ObserveViewModel();
+            ScheduleScrollRestore();
+        };
         // 页面滚动接近底部时增量补齐下一批曲目
         PageScroller.ScrollChanged += OnTracksScrollChanged;
     }
@@ -27,9 +50,71 @@ public partial class PlaylistView : UserControl
     private void OnTracksScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (sender is not ScrollViewer sv) return;
+        if (DataContext is PlaylistViewModel current)
+            current.UpdatePageScrollOffset(sv.Offset.Y);
         var remaining = sv.Extent.Height - sv.Offset.Y - sv.Viewport.Height;
         if (remaining < 500 && DataContext is PlaylistViewModel vm)
             _ = vm.LoadMoreAsync();
+    }
+
+    private void ObserveViewModel()
+    {
+        var next = DataContext as PlaylistViewModel;
+        if (ReferenceEquals(next, _observedViewModel)) return;
+        StopObservingViewModel();
+        _observedViewModel = next;
+        if (next is not null) next.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void StopObservingViewModel()
+    {
+        if (_observedViewModel is not null)
+            _observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _observedViewModel = null;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlaylistViewModel.ScrollRestoreVersion))
+            ScheduleScrollRestore();
+    }
+
+    private void ScheduleScrollRestore()
+    {
+        if (DataContext is not PlaylistViewModel vm
+            || !vm.TryGetPendingScrollRestore(
+                _appliedScrollRestoreVersion, out var version, out var offset)
+            || version == _scheduledScrollRestoreVersion)
+            return;
+
+        _scheduledScrollRestoreVersion = version;
+        RestoreScrollAfterLayout(vm, version, offset, attempt: 0);
+    }
+
+    private void RestoreScrollAfterLayout(
+        PlaylistViewModel vm, int version, double offset, int attempt)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(DataContext, vm)
+                || !_isAttached
+                || !vm.TryGetPendingScrollRestore(
+                    _appliedScrollRestoreVersion, out var latestVersion, out var latestOffset)
+                || latestVersion != version)
+                return;
+
+            PageScroller.UpdateLayout();
+            var maximum = Math.Max(0, PageScroller.Extent.Height - PageScroller.Viewport.Height);
+            if (maximum + 1 < latestOffset && attempt < 3)
+            {
+                RestoreScrollAfterLayout(vm, version, latestOffset, attempt + 1);
+                return;
+            }
+
+            PageScroller.Offset = new(PageScroller.Offset.X, Math.Min(latestOffset, maximum));
+            _appliedScrollRestoreVersion = version;
+            _scheduledScrollRestoreVersion = 0;
+        }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Render);
     }
 
     /// <summary>曲目容器 realized 时触发封面懒加载。封面节流:滚动中不立即加载,

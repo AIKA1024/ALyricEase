@@ -1,5 +1,7 @@
 using System.Net;
+using System.Text.Json;
 using ALyricEase.Models;
+using ALyricEase.Models.Dtos;
 using ALyricEase.Services;
 
 namespace ALyricEase.Headless;
@@ -86,11 +88,13 @@ internal static class MusicCacheProbe
             await cache.CachePlaylistListAsync(
                 MusicSource.NetEase, "离线用户", [playlist, secondPlaylist]);
             await cache.CachePlaylistTracksAsync(playlist, [song]);
+            if (cache.RetainedInlinePlaylistTrackCount != 0)
+                return Fail("歌单曲目仍常驻在单例离线总索引中");
 
             // 新实例模拟应用重启，确保不是只在本次运行的内存里可见。
             var restoredCache = new MusicCacheService(128, root, http);
             var library = restoredCache.TryGetPlaylistLibrary(MusicSource.NetEase);
-            var restoredTracks = restoredCache.TryGetPlaylistTracks(playlist);
+            var restoredTracks = await restoredCache.TryGetPlaylistTracksAsync(playlist);
             if (library?.UserName != "离线用户"
                 || library.Playlists.Count != 2
                 || library.Playlists[0].Name != playlist.Name
@@ -98,6 +102,10 @@ internal static class MusicCacheProbe
                 || restoredTracks.Count != 1
                 || restoredTracks[0].Name != song.Name)
                 return Fail("歌单顺序或曲目离线索引未能跨重启恢复");
+            if (restoredCache.RetainedInlinePlaylistTrackCount != 0)
+                return Fail("重启后歌单曲目重新常驻进总索引");
+            if (!await VerifyLegacyInlineTrackMigrationAsync(root, http, playlist, song))
+                return Fail("旧版内嵌歌单曲目没有迁移到独立磁盘文件");
 
             var uncachedSong = new Song { Id = 404, Source = MusicSource.NetEase, Name = "未缓存" };
             if (!cache.IsAudioCached(song) || cache.IsAudioCached(uncachedSong))
@@ -140,6 +148,52 @@ internal static class MusicCacheProbe
     {
         Console.Error.WriteLine("[music-cache] FAIL: " + message);
         return 1;
+    }
+
+    private static async Task<bool> VerifyLegacyInlineTrackMigrationAsync(
+        string root, HttpClient http, Playlist playlist, Song song)
+    {
+        var migrationRoot = Path.Combine(root, "legacy-inline");
+        Directory.CreateDirectory(migrationRoot);
+        var legacy = new MusicCacheIndexFile
+        {
+            Accounts =
+            [
+                new CachedAccountFile
+                {
+                    Source = (int)playlist.Source,
+                    HasPlaylistList = true,
+                    Playlists =
+                    [
+                        new CachedPlaylistFile
+                        {
+                            Id = playlist.Id,
+                            Source = (int)playlist.Source,
+                            Name = playlist.Name,
+                            Listed = true,
+                            Tracks =
+                            [
+                                new CachedSongFile
+                                {
+                                    Id = song.Id,
+                                    Source = (int)song.Source,
+                                    Name = song.Name,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+        await File.WriteAllTextAsync(
+            Path.Combine(migrationRoot, "offline-index.json"),
+            JsonSerializer.Serialize(legacy, MusicCacheJsonContext.Default.MusicCacheIndexFile));
+
+        var migrated = new MusicCacheService(128, migrationRoot, http);
+        var tracks = await migrated.TryGetPlaylistTracksAsync(playlist);
+        return migrated.RetainedInlinePlaylistTrackCount == 0
+               && tracks.Count == 1
+               && tracks[0].Name == song.Name;
     }
 
     private sealed class CountingHandler : HttpMessageHandler

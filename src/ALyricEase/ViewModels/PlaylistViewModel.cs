@@ -178,6 +178,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     private readonly List<SongItemViewModel> _allTrackRows = new();
     private Task? _loadAllForFilterTask;
+    private double _pageScrollOffset;
+    private double _pendingScrollRestoreOffset;
+
+    /// <summary>递增即表示视图应在下一次布局后恢复滚动位置。</summary>
+    [ObservableProperty] private int _scrollRestoreVersion;
 
     public CollectionSortAndFilterViewModel Filters { get; }
 
@@ -656,6 +661,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _queueSongs.Clear();
         _playbackQueue = null;
         _aggregatePlaybackQueue = null;
+        _aggregateLoad = null;
         _materialized = 0;
         _isCloud = false;
         _currentAggregate = null;
@@ -730,6 +736,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _loadCancellation = new CancellationTokenSource();
         // 旧代次的 finally 不会再改新页面状态，必须在这里解除它持有的单飞标记。
         IsLoadingMore = false;
+        _pageScrollOffset = 0;
         return (++_loadGeneration, _loadCancellation.Token);
     }
 
@@ -743,6 +750,226 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _isCloud = false;
         IsBusy = false;
         IsLoadingMore = false;
+    }
+
+    /// <summary>由 PlaylistView 记录当前位置；只保存一个 double，不持有视图或容器。</summary>
+    internal void UpdatePageScrollOffset(double offset)
+        => _pageScrollOffset = double.IsFinite(offset) ? Math.Max(0, offset) : 0;
+
+    internal bool TryGetPendingScrollRestore(
+        int appliedVersion, out int version, out double offset)
+    {
+        version = ScrollRestoreVersion;
+        offset = _pendingScrollRestoreOffset;
+        return version > 0 && version != appliedVersion;
+    }
+
+    /// <summary>导航前冻结重数据到磁盘并立即断开页面引用；返回历史仅保留本方法返回的小对象。</summary>
+    internal PlaylistNavigationSnapshot? CaptureAndReleaseNavigationSnapshot()
+    {
+        if (SelectedPlaylist is null)
+        {
+            ReleaseCurrentPageData();
+            return null;
+        }
+
+        var kind = _isCloud
+            ? PlaylistPageKind.Cloud
+            : IsAggregate
+                ? PlaylistPageKind.Aggregate
+                : SelectedPlaylist.Playlist.Source == MusicSource.QQ
+                    ? PlaylistPageKind.Qq
+                    : PlaylistPageKind.NetEase;
+        var wasBusy = IsBusy;
+        CancelCurrentLoad();
+        var cacheKey = Guid.NewGuid().ToString("N");
+        var snapshot = new PlaylistNavigationSnapshot(
+            cacheKey,
+            kind,
+            CopyCurrentHeader(SelectedPlaylist),
+            _currentAggregate,
+            PlaylistTitle,
+            CreatorName,
+            Filters.SelectedSortIndex,
+            Filters.SearchText,
+            Filters.IsExpanded,
+            _pageScrollOffset);
+
+        var queued = new HashSet<Song>(_queueSongs);
+        var tracks = _allTrackRows.Select(row => new PlaylistPageCacheTrack(
+            row.Song,
+            row.IsPlayable,
+            queued.Contains(row.Song),
+            row.Song.IsPlaybackUnavailable,
+            row.Song.PreferCachedPlayback)).ToList();
+        var aggregateState = _aggregateLoad is null
+            ? null
+            : new AggregatePageCacheState(
+                _aggregateLoad.MemberIndex,
+                _aggregateLoad.NetEaseTrackIds?.ToArray(),
+                _aggregateLoad.NetEaseKnown.Values.ToList(),
+                _aggregateLoad.NetEaseCursor,
+                _aggregateLoad.QqBegin,
+                _aggregateLoad.FailedCount,
+                _aggregateLoad.CoverSet);
+        // 尚未拿到首批内容时不保存“空的加载中页面”，返回时让缺失文件自然触发网络回退。
+        // 云盘没有独立续页游标，只有完整加载结束后才可安全快照。
+        if ((tracks.Count > 0 || !wasBusy) && (kind != PlaylistPageKind.Cloud || !wasBusy))
+            _ = _musicCache.CachePlaylistPageSnapshotAsync(
+                cacheKey,
+                new PlaylistPageCacheData(
+                    tracks, _trackIds.ToArray(), _materialized, aggregateState));
+
+        ReleaseCurrentPageData();
+        return snapshot;
+    }
+
+    /// <summary>后退离开且不需要前进历史时直接释放，不创建无消费者的磁盘文件。</summary>
+    internal void ReleaseCurrentPageData()
+    {
+        CancelCurrentLoad();
+        ClearTrackRows();
+        SelectedTrack = null;
+        _trackIds = [];
+        _known.Clear();
+        _queueSongs.Clear();
+        _playbackQueue = null;
+        _aggregatePlaybackQueue = null;
+        _aggregateLoad = null;
+        _materialized = 0;
+        _loadAllForFilterTask = null;
+        _currentAggregate = null;
+        _isCloud = false;
+        IsAggregate = false;
+        SelectedPlaylist = null;
+        PlaylistTitle = "";
+        CreatorName = "";
+        Message = null;
+        Filters.Reset();
+        _pageScrollOffset = 0;
+    }
+
+    /// <summary>先从一次性磁盘快照恢复精确页面状态；快照失效时回退原有缓存/网络打开流程。</summary>
+    internal async Task RestoreNavigationSnapshotAsync(PlaylistNavigationSnapshot snapshot)
+    {
+        var (generation, ct) = BeginLoad();
+        _isCloud = snapshot.Kind == PlaylistPageKind.Cloud;
+        _currentAggregate = snapshot.Aggregate;
+        IsAggregate = snapshot.Kind == PlaylistPageKind.Aggregate;
+        _aggregateLoad = null;
+        SelectedPlaylist = new PlaylistItemViewModel(snapshot.Header);
+        ClearTrackRows();
+        SelectedTrack = null;
+        Filters.Reset();
+        PlaylistTitle = snapshot.PlaylistTitle;
+        CreatorName = snapshot.CreatorName;
+        _trackIds = [];
+        _known.Clear();
+        _queueSongs.Clear();
+        _playbackQueue = null;
+        _aggregatePlaybackQueue = null;
+        _materialized = 0;
+        IsBusy = true;
+        Message = null;
+
+        var cached = await _musicCache.TryTakePlaylistPageSnapshotAsync(snapshot.CacheKey);
+        if (!IsCurrentLoad(generation, ct)) return;
+        if (cached is null)
+        {
+            IsBusy = false;
+            _isCloud = false;
+            switch (snapshot.Kind)
+            {
+                case PlaylistPageKind.Cloud:
+                    await OpenCloudAsync();
+                    break;
+                case PlaylistPageKind.Aggregate:
+                    await OpenAggregateAsync(snapshot.Aggregate);
+                    break;
+                case PlaylistPageKind.Qq:
+                    await OpenQqPlaylistAsync(new PlaylistItemViewModel(snapshot.Header));
+                    break;
+                default:
+                    await OpenPlaylistAsync(new PlaylistItemViewModel(snapshot.Header));
+                    break;
+            }
+            RestoreNavigationUiState(snapshot);
+            return;
+        }
+
+        var pageSongs = cached.Tracks.Select(track => track.Song).ToList();
+        _trackIds = cached.TrackIds.ToList();
+        _materialized = Math.Max(0, cached.Materialized);
+        _queueSongs.AddRange(cached.Tracks.Where(track => track.IsQueued).Select(track => track.Song));
+
+        if (snapshot.Kind == PlaylistPageKind.NetEase && _trackIds.Count > 0)
+            _playbackQueue = new IndexedSongQueue(_trackIds, pageSongs, _api.GetSongsByIdsAsync);
+        else if (snapshot.Kind == PlaylistPageKind.Aggregate && snapshot.Aggregate is { } aggregate)
+        {
+            var members = OrderAggregateMembers(aggregate);
+            _aggregatePlaybackQueue = CreateAggregatePlaybackQueue(members);
+            _playbackQueue = _aggregatePlaybackQueue;
+            var saved = cached.AggregateLoad;
+            _aggregateLoad = new AggregateLoadState
+            {
+                Members = members,
+                MemberIndex = Math.Clamp(saved?.MemberIndex ?? members.Count, 0, members.Count),
+                NetEaseTrackIds = saved?.NetEaseTrackIds,
+                NetEaseCursor = saved?.NetEaseCursor ?? 0,
+                QqBegin = saved?.QqBegin ?? 0,
+                FailedCount = saved?.FailedCount ?? 0,
+                CoverSet = saved?.CoverSet ?? true,
+            };
+            if (saved is not null)
+                foreach (var song in saved.NetEaseKnown)
+                    if (song.Id != 0) _aggregateLoad.NetEaseKnown[song.Id] = song;
+        }
+
+        for (var index = 0; index < cached.Tracks.Count; index++)
+        {
+            var saved = cached.Tracks[index];
+            saved.Song.IsPlaybackUnavailable = saved.IsPlaybackUnavailable;
+            saved.Song.PreferCachedPlayback = saved.PreferCachedPlayback;
+            var api = saved.Song.Source == MusicSource.NetEase ? _api : null;
+            var row = CreateTrackRow(saved.Song, index, api);
+            row.IsPlayable = saved.IsPlayable;
+            _allTrackRows.Add(row);
+        }
+        IsBusy = false;
+        RestoreNavigationUiState(snapshot);
+    }
+
+    private void RestoreNavigationUiState(PlaylistNavigationSnapshot snapshot)
+    {
+        Filters.RestoreState(
+            snapshot.SelectedSortIndex, snapshot.SearchText, snapshot.IsFilterExpanded);
+        _pendingScrollRestoreOffset = Math.Max(0, snapshot.ScrollOffset);
+        ScrollRestoreVersion++;
+    }
+
+    private static Playlist CopyCurrentHeader(PlaylistItemViewModel item) => new()
+    {
+        Id = item.Playlist.Id,
+        DirId = item.Playlist.DirId,
+        Source = item.Playlist.Source,
+        Name = item.Name,
+        Description = item.Description,
+        TrackCount = item.TrackCount,
+        CoverUrl = item.CoverUrl,
+        CanAddTracks = item.Playlist.CanAddTracks,
+    };
+
+    internal int RetainedTrackRowCount => _allTrackRows.Count;
+    internal int RetainedQueueSongCount => _queueSongs.Count;
+    internal int RetainedTrackIdCount => _trackIds.Count;
+    internal bool HasRetainedPageData => SelectedPlaylist is not null
+                                         || _allTrackRows.Count > 0
+                                         || _trackIds.Count > 0;
+
+    internal void DiscardNavigationSnapshot(PlaylistNavigationSnapshot? snapshot)
+    {
+        if (snapshot is not null)
+            _ = _musicCache.DiscardPlaylistPageSnapshotAsync(snapshot.CacheKey);
     }
 
     private bool IsCurrentLoad(int generation, CancellationToken token)
@@ -831,11 +1058,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _playbackQueue = null;
         _aggregatePlaybackQueue = null;
         _materialized = 0;
-        var hasCachedTracks = RestoreCachedTracks(playlist);
         IsBusy = true;
-        Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
+        var hasCachedTracks = false;
         try
         {
+            hasCachedTracks = await RestoreCachedTracksAsync(playlist, generation, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
             var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
             ClearTrackRows();
@@ -892,11 +1121,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _playbackQueue = null;
         _aggregatePlaybackQueue = null;
         _materialized = 0;
-        var hasCachedTracks = RestoreCachedTracks(playlist);
         IsBusy = true;
-        Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
+        var hasCachedTracks = false;
         try
         {
+            hasCachedTracks = await RestoreCachedTracksAsync(playlist, generation, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
             var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
             ClearTrackRows();
@@ -1293,12 +1524,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     }
 
     /// <summary>把最近一次成功打开的曲目先恢复到详情页；网络刷新成功后会被新数据替换。</summary>
-    private bool RestoreCachedTracks(PlaylistItemViewModel playlist)
+    private async Task<bool> RestoreCachedTracksAsync(
+        PlaylistItemViewModel playlist, int generation, CancellationToken ct)
     {
-        var songs = _musicCache.TryGetPlaylistTracks(playlist.Playlist);
+        var songs = await _musicCache.TryGetPlaylistTracksAsync(playlist.Playlist);
+        if (!IsCurrentLoad(generation, ct)) return false;
         if (songs.Count == 0) return false;
 
-        var cachedAudio = _musicCache.GetAudioCacheAvailability(songs);
+        var cachedAudio = await Task.Run(() => _musicCache.GetAudioCacheAvailability(songs), ct);
+        if (!IsCurrentLoad(generation, ct)) return false;
         // 离线队列也只保留有音频文件的歌曲，防止上一首/下一首或自动连播绕过行禁用状态。
         _queueSongs.AddRange(songs.Where((_, index) => cachedAudio[index]));
         for (var index = 0; index < songs.Count; index++)

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -22,6 +23,7 @@ public sealed class MusicCacheService
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
     private const string OfflineIndexFileName = "offline-index.json";
+    private static readonly string PageSnapshotSession = Guid.NewGuid().ToString("N");
 
     private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromMinutes(10) };
 
@@ -33,6 +35,7 @@ public sealed class MusicCacheService
     private readonly Dictionary<string, int> _pinCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deleteWhenReleased = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Lazy<Task>> _downloads = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Task> _pageSnapshotWrites = new(StringComparer.Ordinal);
     private int _maximumSizeMb;
     private int _clearGeneration;
     private MusicCacheIndexFile _offlineIndex;
@@ -49,7 +52,9 @@ public sealed class MusicCacheService
         _http = http;
         Directory.CreateDirectory(_cacheDirectory);
         DeleteStaleTemporaryFiles();
+        DeleteStalePageSnapshots();
         _offlineIndex = LoadOfflineIndex();
+        MigrateInlinePlaylistTracks();
         _ = TrimToLimitAsync();
     }
 
@@ -204,8 +209,117 @@ public sealed class MusicCacheService
     public Task CachePlaylistTracksAsync(Playlist playlist, IReadOnlyList<Song> songs)
     {
         var playlistSnapshot = ToCachedPlaylist(playlist);
-        var trackSnapshot = songs.Select(ToCachedSong).ToList();
-        return CachePlaylistTracksCoreAsync(playlistSnapshot, trackSnapshot);
+        // 先复制引用窗口，避免后台序列化时与继续分页追加同一个 List 竞争。
+        var songSnapshot = songs.ToArray();
+        return CachePlaylistTracksCoreAsync(
+            playlistSnapshot, songSnapshot, Volatile.Read(ref _clearGeneration));
+    }
+
+    /// <summary>把即将离页的页面重数据写入一次性文件；同键写入单飞，返回恢复会等待在途写入。</summary>
+    internal Task CachePlaylistPageSnapshotAsync(string snapshotKey, PlaylistPageCacheData snapshot)
+    {
+        // DTO 映射和 JSON 编码可能覆盖数千首歌曲，必须离开 UI 线程。
+        var write = CachePlaylistPageSnapshotCoreAsync(
+            snapshotKey, snapshot, Volatile.Read(ref _clearGeneration));
+        _pageSnapshotWrites[snapshotKey] = write;
+        return ObservePageSnapshotWriteAsync(snapshotKey, write);
+    }
+
+    private async Task CachePlaylistPageSnapshotCoreAsync(
+        string snapshotKey, PlaylistPageCacheData snapshot, int clearGeneration)
+    {
+        var bytes = await Task.Run(() =>
+        {
+            var file = new PlaylistPageSnapshotFile
+            {
+                Tracks = snapshot.Tracks.Select(track => new CachedPageTrackFile
+                {
+                    Song = ToCachedSong(track.Song),
+                    IsPlayable = track.IsPlayable,
+                    IsQueued = track.IsQueued,
+                    IsPlaybackUnavailable = track.IsPlaybackUnavailable,
+                    PreferCachedPlayback = track.PreferCachedPlayback,
+                }).ToList(),
+                TrackIds = snapshot.TrackIds.ToArray(),
+                Materialized = snapshot.Materialized,
+                AggregateLoad = snapshot.AggregateLoad is null
+                    ? null
+                    : new CachedAggregateLoadStateFile
+                    {
+                        MemberIndex = snapshot.AggregateLoad.MemberIndex,
+                        NetEaseTrackIds = snapshot.AggregateLoad.NetEaseTrackIds?.ToArray(),
+                        NetEaseKnown = snapshot.AggregateLoad.NetEaseKnown.Select(ToCachedSong).ToList(),
+                        NetEaseCursor = snapshot.AggregateLoad.NetEaseCursor,
+                        QqBegin = snapshot.AggregateLoad.QqBegin,
+                        FailedCount = snapshot.AggregateLoad.FailedCount,
+                        CoverSet = snapshot.AggregateLoad.CoverSet,
+                    },
+            };
+            return JsonSerializer.SerializeToUtf8Bytes(
+                file, MusicCacheJsonContext.Default.PlaylistPageSnapshotFile);
+        }).ConfigureAwait(false);
+        await WriteJsonCacheFileAsync(
+                BuildPageSnapshotFileName(snapshotKey), bytes, clearGeneration)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>读取并删除一次性页面快照。文件缺失/损坏时返回 null，由调用方回退普通缓存或网络。</summary>
+    internal async Task<PlaylistPageCacheData?> TryTakePlaylistPageSnapshotAsync(string snapshotKey)
+    {
+        if (_pageSnapshotWrites.TryGetValue(snapshotKey, out var inFlight))
+        {
+            try { await inFlight.ConfigureAwait(false); }
+            catch { }
+        }
+
+        await _mutationGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var path = Path.Combine(_cacheDirectory, BuildPageSnapshotFileName(snapshotKey));
+            if (!File.Exists(path)) return null;
+            PlaylistPageSnapshotFile? file;
+            try
+            {
+                file = JsonSerializer.Deserialize(
+                    await File.ReadAllBytesAsync(path).ConfigureAwait(false),
+                    MusicCacheJsonContext.Default.PlaylistPageSnapshotFile);
+            }
+            catch
+            {
+                file = null;
+            }
+            TryDelete(path);
+            if (file is null || file.Version != 1) return null;
+
+            var tracks = file.Tracks.Select(track => new PlaylistPageCacheTrack(
+                ToSong(track.Song), track.IsPlayable, track.IsQueued,
+                track.IsPlaybackUnavailable, track.PreferCachedPlayback)).ToList();
+            var aggregate = file.AggregateLoad is null
+                ? null
+                : new AggregatePageCacheState(
+                    file.AggregateLoad.MemberIndex,
+                    file.AggregateLoad.NetEaseTrackIds,
+                    file.AggregateLoad.NetEaseKnown.Select(ToSong).ToList(),
+                    file.AggregateLoad.NetEaseCursor,
+                    file.AggregateLoad.QqBegin,
+                    file.AggregateLoad.FailedCount,
+                    file.AggregateLoad.CoverSet);
+            return new PlaylistPageCacheData(tracks, file.TrackIds, file.Materialized, aggregate);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    internal async Task DiscardPlaylistPageSnapshotAsync(string snapshotKey)
+    {
+        if (_pageSnapshotWrites.TryGetValue(snapshotKey, out var inFlight))
+        {
+            try { await inFlight.ConfigureAwait(false); }
+            catch { }
+        }
+        await RemoveFileAsync(BuildPageSnapshotFileName(snapshotKey)).ConfigureAwait(false);
     }
 
     /// <summary>读取账号歌单快照。返回 null 表示该音源从未成功同步过。</summary>
@@ -227,15 +341,30 @@ public sealed class MusicCacheService
     }
 
     /// <summary>读取歌单最近一次成功解析的曲目快照。</summary>
-    public IReadOnlyList<Song> TryGetPlaylistTracks(Playlist playlist)
+    public async Task<IReadOnlyList<Song>> TryGetPlaylistTracksAsync(Playlist playlist)
     {
-        _mutationGate.Wait();
+        await _mutationGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            var account = _offlineIndex.Accounts.FirstOrDefault(
-                item => item.Source == (int)playlist.Source);
-            var cached = account?.Playlists.FirstOrDefault(item => item.Id == playlist.Id);
-            return cached?.Tracks.Select(ToSong).ToList() ?? [];
+            var path = Path.Combine(_cacheDirectory, BuildPlaylistTracksFileName(playlist));
+            if (File.Exists(path))
+            {
+                var file = JsonSerializer.Deserialize(
+                    await File.ReadAllBytesAsync(path).ConfigureAwait(false),
+                    MusicCacheJsonContext.Default.PlaylistTracksCacheFile);
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+                return file?.Tracks.Select(ToSong).ToList() ?? [];
+            }
+
+            // 兼容迁移失败或旧文件仍内嵌 Tracks 的极端情况。
+            var account = _offlineIndex.Accounts.FirstOrDefault(item => item.Source == (int)playlist.Source);
+            return account?.Playlists.FirstOrDefault(item => item.Id == playlist.Id)
+                       ?.Tracks.Select(ToSong).ToList()
+                   ?? [];
+        }
+        catch
+        {
+            return [];
         }
         finally
         {
@@ -274,6 +403,10 @@ public sealed class MusicCacheService
     }
 
     internal long GetCurrentSizeBytes() => EnumerateCacheFiles().Select(TryGetLength).Sum();
+
+    internal int RetainedInlinePlaylistTrackCount => _offlineIndex.Accounts
+        .SelectMany(account => account.Playlists)
+        .Sum(playlist => playlist.Tracks.Count);
 
     internal static int GetQualityRank(MusicSource source, string quality)
     {
@@ -405,13 +538,8 @@ public sealed class MusicCacheService
             var account = GetOrCreateCachedAccount(source);
             account.UserName = userName ?? "";
             account.HasPlaylistList = true;
-            var previous = account.Playlists.ToDictionary(item => item.Id);
             foreach (var playlist in playlists)
-            {
                 playlist.Listed = true;
-                if (previous.TryGetValue(playlist.Id, out var old))
-                    playlist.Tracks = old.Tracks;
-            }
 
             // 保留从推荐/搜索打开过的公共歌单详情，但它们不进入账号侧栏。
             playlists.AddRange(account.Playlists.Where(item => !item.Listed
@@ -431,11 +559,22 @@ public sealed class MusicCacheService
 
     private async Task CachePlaylistTracksCoreAsync(
         CachedPlaylistFile playlist,
-        List<CachedSongFile> tracks)
+        IReadOnlyList<Song> songs,
+        int clearGeneration)
     {
+        var prepared = await Task.Run(() =>
+        {
+            var tracks = songs.Select(ToCachedSong).ToList();
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(
+                new PlaylistTracksCacheFile { Tracks = tracks },
+                MusicCacheJsonContext.Default.PlaylistTracksCacheFile);
+            return (Tracks: tracks, Bytes: bytes);
+        }).ConfigureAwait(false);
+
         await _mutationGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (clearGeneration != Volatile.Read(ref _clearGeneration)) return;
             var account = GetOrCreateCachedAccount((MusicSource)playlist.Source);
             var existingIndex = account.Playlists.FindIndex(item => item.Id == playlist.Id);
             if (existingIndex >= 0)
@@ -443,8 +582,11 @@ public sealed class MusicCacheService
                 var existing = account.Playlists[existingIndex];
                 playlist.Listed = existing.Listed;
             }
-            playlist.TrackCount = Math.Max(playlist.TrackCount, tracks.Count);
-            playlist.Tracks = tracks;
+            playlist.TrackCount = Math.Max(playlist.TrackCount, prepared.Tracks.Count);
+            playlist.Tracks = [];
+            WriteJsonCacheFileLocked(
+                BuildPlaylistTracksFileName((MusicSource)playlist.Source, playlist.Id),
+                prepared.Bytes);
             // 必须原位替换：删除后 Add 会把每个打开过的歌单挪到末尾，离线重启后侧栏顺序随之改变。
             if (existingIndex >= 0)
                 account.Playlists[existingIndex] = playlist;
@@ -460,6 +602,7 @@ public sealed class MusicCacheService
         {
             _mutationGate.Release();
         }
+        await TrimToLimitAsync().ConfigureAwait(false);
     }
 
     private CachedAccountFile GetOrCreateCachedAccount(MusicSource source)
@@ -485,6 +628,76 @@ public sealed class MusicCacheService
         catch
         {
             return new MusicCacheIndexFile();
+        }
+    }
+
+    /// <summary>旧版把全部曲目常驻总索引；启动时一次性拆文件并清空内嵌列表。</summary>
+    private void MigrateInlinePlaylistTracks()
+    {
+        var changed = false;
+        foreach (var account in _offlineIndex.Accounts)
+        foreach (var playlist in account.Playlists)
+        {
+            if (playlist.Tracks.Count == 0) continue;
+            try
+            {
+                WriteJsonCacheFileLocked(
+                    BuildPlaylistTracksFileName((MusicSource)playlist.Source, playlist.Id),
+                    JsonSerializer.SerializeToUtf8Bytes(
+                        new PlaylistTracksCacheFile { Tracks = playlist.Tracks },
+                        MusicCacheJsonContext.Default.PlaylistTracksCacheFile));
+                playlist.Tracks = [];
+                changed = true;
+            }
+            catch
+            {
+                // 保留内嵌数据，下次启动继续迁移。
+            }
+        }
+        if (changed) SaveOfflineIndexLocked();
+    }
+
+    private async Task ObservePageSnapshotWriteAsync(string snapshotKey, Task write)
+    {
+        try { await write.ConfigureAwait(false); }
+        catch
+        {
+            // 导航快照失败时返回流程会自然回退普通缓存/网络。
+        }
+        finally
+        {
+            if (_pageSnapshotWrites.TryGetValue(snapshotKey, out var current)
+                && ReferenceEquals(current, write))
+                _pageSnapshotWrites.TryRemove(snapshotKey, out _);
+        }
+        await TrimToLimitAsync().ConfigureAwait(false);
+    }
+
+    private async Task WriteJsonCacheFileAsync(string fileName, byte[] bytes, int clearGeneration)
+    {
+        await _mutationGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (clearGeneration != Volatile.Read(ref _clearGeneration)) return;
+            WriteJsonCacheFileLocked(fileName, bytes);
+        }
+        finally { _mutationGate.Release(); }
+    }
+
+    private void WriteJsonCacheFileLocked(string fileName, byte[] bytes)
+    {
+        Directory.CreateDirectory(_cacheDirectory);
+        var path = Path.Combine(_cacheDirectory, fileName);
+        var temporaryPath = path + $".{Guid.NewGuid():N}.part";
+        try
+        {
+            File.WriteAllBytes(temporaryPath, bytes);
+            File.Move(temporaryPath, path, overwrite: true);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+        }
+        finally
+        {
+            TryDelete(temporaryPath);
         }
     }
 
@@ -708,6 +921,15 @@ public sealed class MusicCacheService
 
     private static string BuildLyricFileName(Song song) => "l-" + BuildSongKey(song) + ".lyrics";
 
+    private static string BuildPlaylistTracksFileName(Playlist playlist)
+        => BuildPlaylistTracksFileName(playlist.Source, playlist.Id);
+
+    private static string BuildPlaylistTracksFileName(MusicSource source, long playlistId)
+        => $"p-{(int)source}-{Hash(playlistId.ToString(CultureInfo.InvariantCulture))}.tracks";
+
+    private static string BuildPageSnapshotFileName(string snapshotKey)
+        => $"n-{PageSnapshotSession}-{Hash(snapshotKey)}.snapshot";
+
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
@@ -819,6 +1041,20 @@ public sealed class MusicCacheService
         try
         {
             foreach (var path in Directory.EnumerateFiles(_cacheDirectory, "*.part")) TryDelete(path);
+        }
+        catch
+        {
+        }
+    }
+
+    private void DeleteStalePageSnapshots()
+    {
+        var currentPrefix = $"n-{PageSnapshotSession}-";
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(_cacheDirectory, "n-*.snapshot"))
+                if (!Path.GetFileName(path).StartsWith(currentPrefix, StringComparison.Ordinal))
+                    TryDelete(path);
         }
         catch
         {

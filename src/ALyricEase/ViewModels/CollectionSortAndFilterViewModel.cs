@@ -93,6 +93,17 @@ public sealed partial class CollectionSortAndFilterViewModel : ViewModelBase
         RaiseFilterChanged();
     }
 
+    /// <summary>导航返回时原子恢复筛选 UI，只重建一次集合投影。</summary>
+    internal void RestoreState(int selectedSortIndex, string? searchText, bool isExpanded)
+    {
+        _suppressChanged = true;
+        SelectedSortIndex = Math.Clamp(selectedSortIndex, 0, _sortModes.Count - 1);
+        SearchText = searchText ?? "";
+        IsExpanded = isExpanded;
+        _suppressChanged = false;
+        RaiseFilterChanged();
+    }
+
     [RelayCommand]
     private void ResetFilters() => Reset();
 

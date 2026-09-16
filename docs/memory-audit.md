@@ -14,6 +14,8 @@
 | P1-3 换号红心串味 | 各音源客户端引入**账号代次**（`AccountGeneration`），换号/登出即作废红心缓存与在途请求 |
 | P2-6 磁盘快照层 | 整体删除，快照只驻留内存；容量 8 → 32 页 |
 | P2-7 磁盘读抢 `_mutationGate` | 第一轮随磁盘快照路径消失；第二轮把**其余四个读路径**也摘出来（见 P2-7 正文，有实测） |
+| P1-4 写盘路径的全目录扫描（2026-09-16 追加） | `EnsureSpaceFor` 加 `_knownCacheBytes` 工作副本快路径，封面落盘 551.5ms → 1.8ms/张（见 §5） |
+| P1-5 不确定进度条的最小化动画（2026-09-16 追加） | 新增 `Infrastructure/IndeterminateAnimationGate` 附加属性，最小化时停掉框架主题动画（同轮 A/B 净代价 2.60% → 0.00%，见 `docs/avalonia-tips.md`） |
 
 未动：P2-4（五个手写 LRU 的共用抽象）、P2-5（两套图片缓存的占用口径）、P2-8（`_offlineIndex` 失配）与 P3 全部。
 
@@ -37,7 +39,7 @@ adb logcat -d -s ALyricEaseProbe:I
 | | `BoundedImageMemoryCache` | `CoverLoader` |
 |---|---|---|
 | 位置 | `Infrastructure/BoundedImageMemoryCache.cs` | `Infrastructure/CoverLoader.cs` |
-| 预算 | `ImageMemoryBudget.LeaseCache*`：桌面 64MB **且** 512 项；Android `可用堆/8` 夹在 [12MB, 48MB]，条目按 192KB/张折算（下限 48） | `ImageMemoryBudget.DirectCache*`：桌面 16MB **且** 128 项；Android `max(4MB, 租约字节/4)`、条目 `max(32, 租约条目/4)` |
+| 预算 | `ImageMemoryBudget.LeaseCache*`：桌面 64MB **且** 512 项；Android **ART 堆上限 / 4** 夹在 [12MB, 48MB]，条目按 192KB/张折算（下限 48） | `ImageMemoryBudget.DirectCache*`：桌面 16MB **且** 128 项；Android `max(4MB, 租约字节/4)`、条目 `max(32, 租约条目/4)` |
 | 淘汰语义 | 真 `Dispose()` 位图 | 只从字典摘引用，位图交给 GC |
 | 租约 | 有（可见控件持有期间不淘汰） | 无 |
 | 使用者 | XAML 里的 `Image` 控件（`ManagedCoverImage` 附加属性） | 播放器等需要直接拿 `IImage` 的低频大图 |
@@ -96,6 +98,30 @@ adb logcat -d -s ALyricEaseProbe:I
 读若排在后面就变成"卡不卡取决于当时有没有写撞上来"——即用户感受到的偶发卡顿。
 读与并发删除竞争时统一退化：文件没了当 miss、索引正在被追加当"没有缓存"，由调用方回退常规加载。
 回归探针 `--cache-read-gate`（裁剪占锁期间量各读路径耗时，改前 187ms → 改后 0ms）。
+
+**写盘路径的 O(文件数) 扫描（2026-09-16 修）**：上一条把"读"摘出了锁，但**"写"自己仍然每次落盘
+全目录扫描一次** —— `EnsureSpaceFor` 无条件调 `GetEvictionCandidates()`（枚举整个缓存目录、
+每个文件建 `FileInfo`、按 `LastWriteTimeUtc` 排序）。真实用户缓存 13,899 文件 / 4074MB，
+于是**每写一张封面都在持 `_mutationGate` 的情况下扫一遍全目录**。
+
+`--cache-write-cost` 实测（同一份代码，只换缓存目录里的文件数）：
+
+| 目录文件数 | 单张封面落盘中位数 | 6 路并发封面落盘 |
+|---|---|---|
+| 50 | 4.4ms | — |
+| 13,000 | **551.5ms**（放大约 **125 倍**） | 串行化到 ~16s |
+
+⇒ 用户报告的两个症状由此统一解释：滚动停止后仍在补图的几百毫秒/张 × 几十张 = "图片加载特别慢"，
+且这段时间 CPU 一直有占用（`FileInfo` 建对象 + 排序）；并发的封面下载被这把锁串行化，越等越慢。
+
+修法：给服务加一份**目录字节数的工作副本** `_knownCacheBytes`（-1 = 未校准），
+`EnsureSpaceFor` 先走快路径 —— `known >= 0 && known + incoming <= maximum` 直接放行，不碰文件系统；
+工作副本由所有变更路径按增量维护（写入/下载落盘 `+=`、删除 `-=`、**覆盖要减去旧长度**、
+裁剪/清空/`GetCurrentSizeBytes` 之后重新校准）。修后 50 与 13,000 文件都是 **~1.8ms/张**、
+6 路并发 ~60ms；对账校验通过（工作副本 130224KB == 实际扫描 130224KB，裁剪仍能把总量压到上限）。
+
+端到端（`--pl-cpu-real`，40 个真实封面 URL、13,000 文件缓存目录）：封面出齐
+**90,227ms → 16,596ms**，填充期 CPU 6.81% → 2.82%，最小化 CPU 0.00%。
 
 ## 二、内存预算总账
 

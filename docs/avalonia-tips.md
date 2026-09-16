@@ -497,3 +497,278 @@ I ActivityManager: Process com.aika1024.alyricease has died: fg  TOP   ← 0.3s 
   验包:`lib/libaot-*.so` 条数应为 **0**;程序集仍在 `lib/<abi>/libassembly-store.so` 里。
   注意裁剪仍会执行,所以 `IL2072` 这类问题照样暴露。
 - 真要出带 full Mono AOT 的发布包,**在 Rider 或普通终端里构建**,不要在 WorkBuddy 里做。
+
+## 自续订的 RequestAnimationFrame 循环:必须自己判"窗口是否在呈现"
+
+`ProgressRenderAnimator`(`Views/ProgressRenderAnimator.cs`,2127c30 引入)用
+`TopLevel.RequestAnimationFrame` 推进进度条动画:回调里**直接再请求下一帧**,
+只要 `ShouldAnimate()` 成立就按最多 60 FPS 一直跑。两个实例:
+底部播放条(`PlayerProgressBar`)+ 正在播放页(`NowPlayingView`)。
+
+### 框架不会替你停:最小化时回调照样送达
+
+实测(2026-09-16 真窗口探针):窗口最小化 / `Hide()` 时 Avalonia **仍把 RAF 回调送进来**,
+填充条 `ScaleX` 依然按实时速率推进(6 秒推进 0.0333 = 180 秒曲目的实时速率)。
+所以"窗口不可见 ⇒ 渲染自然停"这个直觉是错的 —— **动画器自己的 `ShouldAnimate()` 不看可见性,
+循环就会为一个看不见的进度条做完整首歌的每帧写入**(每帧改 3 个 Transform + 视觉失效)。
+
+### 修法:判定补"可呈现",状态变化时重新点火
+
+```csharp
+private bool IsHostPresentable()
+{
+    if (_observedTopLevel is not { } topLevel) return true;   // 还没解析到 TopLevel 时不自作主张
+    if (!topLevel.IsVisible) return false;
+    return _observedWindow is null || _observedWindow.WindowState != WindowState.Minimized;
+}
+```
+
+`ShouldAnimate()` 末尾加 `&& IsHostPresentable()`,另外:
+
+- **停止是隐式的**:帧回调里 `ShouldAnimate()` 为 false 就直接 `return`、不再续订,不需要额外机制。
+- **恢复必须显式**:订阅 `TopLevel.PropertyChanged`(只关心 `Visual.IsVisibleProperty` 与
+  `Window.WindowStateProperty`),可呈现性翻转时 `RestartFrameLoop()` 重新点火;
+  用 `_lastPresentable` 防抖,否则窗口状态每抖一下都会重置预测基线。
+- **必须订阅 `WindowState`,不能只订阅 `IsVisible`**:最小化时 `Window.IsVisible` 仍是 `true`。
+- 桌面下 `Window` 本身就是那个 `TopLevel`(同一个对象),订阅时要去重,否则回调走两遍。
+
+### 真实 `AppShell` 下的改前 / 改后对照(探针 `--shell-cpu-real`)
+
+探针用与 `MainWindow.axaml` 逐字节一致的 `TestMainWindow`(真 `AppShell` + 真
+`PlayerBarView` 进度条 + 真 `NowPlayingView`),由真实 `PlayerViewModel` 驱动、
+200ms 一次进度上报(与真实引擎同量级);最小化场景跑 3 轮取配对差值中位数。
+
+| 指标(最小化时) | 改动前 | 改动后 |
+|---|---|---|
+| 填充条 `ScaleX` 推进 / 期望推进 | **1.003 ~ 1.006** ⇒ 循环照跑 | **0.000** ⇒ 完全停摆 |
+| 循环净代价(关掉进度上报,唯一干净口径) | **+1.04% / +1.30%** 单核 | **0.00% / 0.00%** |
+| 循环净代价(开着 5Hz 进度上报) | +1.30% / +0.26% | −0.52% / −0.26%(落在噪声内) |
+| 进程 CPU 绝对量 | 0.78 ~ 1.82% | 0.00 ~ 0.26% |
+| 可见时 | 照常推进(6 秒 0.0334) | 照常推进;从最小化恢复后**自动重启**(推进量回到 0.03342) |
+
+⚠️ **可见时的 CPU 大头不是这台循环**。真实窗口可见时进程 CPU 达 **20~28% 单核**
+(1200×800 窗口 + `AcrylicBlur` 模糊层 + 全窗合成),而"循环开/关"的配对差只有
++0.78% / −1.83% —— 就在噪声里。结论:这台循环在最小化下省掉约 **1% 单核**,
+可见时它相对整窗呈现开销占比很小。**要降可见时的 CPU,方向不在这里**。
+
+### ⚠️ 先分清三类"一直在动",它们的成本模型完全不同
+
+| | `AlbumCoverBackground`(动态背景) | `ProgressRenderAnimator`(进度条) |
+|---|---|---|
+| 机制 | **组合动画** `visual.StartAnimation` + `IterationBehavior.Forever` | **UI 线程上的自续订 `RequestAnimationFrame` 循环** |
+| 跑在哪 | 合成/渲染线程 | UI 线程 |
+| 驱动 | **由帧驱动** —— 不渲染就没有成本 | 只要 `ShouldAnimate()` 成立就一直重挂下一帧 |
+| 窗口最小化时 | 不渲染 ⇒ 停止推进(任务管理器里该进程 GPU 归零是**正常现象**,不代表"没人请求帧") | **回调仍送达**,每帧照改 `ScaleX`/`TranslateX` 并触发视觉失效 |
+| 其它 | 不感知播放状态(**暂停也转**),只在它挂在视觉树上时 | 感知播放状态;两个实例(播放条 + 正在播放页) |
+
+排查"播放/后台 CPU 偏高"时两处都要看,但**别用 GPU 读数否定任一者**:
+最小化时窗口不 present,GPU 必然归零,这只说明"没提交到屏幕"。
+
+第三类(框架主题动画,`IsIndeterminate` 进度条等)见下一节:它跑在**合成线程 + UI 线程**两处,
+最小化时的净代价实测 **2.60%** 单核,同样不感知窗口状态。
+
+### 写这类探针时的坑(都实测踩过)
+
+1. **重挂下一帧必须在回调里直接调用**,不能绕 dispatcher:
+
+   ```csharp
+   void Tick(TimeSpan _)
+   {
+       frames++;
+       topLevel.RequestAnimationFrame(Tick);   // ✅ 与 ProgressRenderAnimator 同款
+   }
+   ```
+
+   第一版写成 `Dispatcher.UIThread.Post(() => topLevel.RequestAnimationFrame(Tick))`,
+   多出来的那趟 dispatcher 往返破坏了帧合并,计数器退化成**自旋** ——
+   实测"2 秒 3 727 916 帧"(每秒 180 万),完全失真。
+
+2. **判定"循环是否在跑"要用离散证据,不要用帧数,更不要用 CPU**。
+   帧数会被"有没有别的东西在失效"污染:同一个计数器,动画器开着时约 **22 帧/秒**,
+   动画器关掉(窗口内容完全静态)时约 **10.8 帧/秒** —— 说明 RAF 送达与渲染挂钩、
+   不是固定时钟。上一版探针**在动画器关闭的情况下数帧**,数到四种窗口状态
+   (可见/最小化/隐藏/恢复)"都是 27 帧/2 秒",于是得出了"后台仍照样出帧"的结论 ——
+   **结论碰巧对,证据是错的**:那个数字量的是"空转的平台",与动画器是否在跑无关。
+   可靠做法是读**动画器自己写入的成果**(填充条 `ScaleX`):只有它在写,
+   它动了就是循环真的在跑,而且推进量还能直接和"实时速率"对照。
+
+3. **进程级 CPU 量不了这个量级,别硬用**。本机静息抖动可达 3% 单核,
+   同一相位跨轮次就能从 1.56% 跳到 6.25%;最小化时还出现过
+   "循环关 2.60% > 循环开 2.08%"的反号。要做 CPU 对照必须
+   **同场景紧邻配对 + 拉长窗口 + 看差值的统计量**,并且接受"落在噪声内 = 测不出"这个结论。
+
+4. **含进度上报时不能拿 `ScaleX` 判活性**。进度上报会走
+   `PlayerViewModel.OnPositionChanged → ScrubPositionMs → UpdateProgress() → SetPlaybackState`,
+   而 `SetPlaybackState` 内部**也会写一次 `ScaleX`**(位置样本一次性改写)。
+   此时推进量与"循环在不在跑"无关,拿它判定会得出"循环在跑"的假结论 ——
+   与同一份报告里"已停摆"的判定自相矛盾(实测踩过)。
+   判活性必须**单独跑一遍"关闭进度上报"**,那时 `ScaleX` 只由动画器写。
+
+5. **预热要把每个场景态都先走一遍**。首个测量窗口会串进冷启动尾巴:第一版第一个
+   "可见·循环关"量到 **34.37%**,而稳态同场景只有 ~20%。做法是测量前把
+   可见/最小化 × 各页面各停 1 秒全部走一遍。
+
+6. **"收敛就提前退出"这类等待循环,计数和时刻必须分开存**。`--pl-cpu-real` 的封面填图窗口
+   第一版把"上次进度"只存一个变量:
+
+   ```csharp
+   var lastProgressAt = 0L;
+   if (loaded != lastProgressAt) lastProgressAt = now;   // ❌ 把时刻(ms)写进了"计数"变量
+   else if (now - lastProgressAt > 5000) break;          // ❌ 13 与 13000 永远不等
+   ```
+
+   计数(`loaded` = 13)和时间戳(13000ms)永远不会相等 ⇒ 条件**恒真** ⇒ `else` 分支永不执行
+   ⇒ 收敛判定彻底失效,每次都跑满 deadline(白等 40 秒,还把噪声引进测量窗口)。
+   正确写法是两个变量:`lastProgressCount` 与 `lastProgressMs`。
+   ⚠ 变量名带 `At` 却存计数的这种"名字撒谎"最容易被读过去,写完这类循环先肉眼过一遍
+   每个变量到底存的是什么量纲。
+
+### ⚠️ 验证"改动是否真的生效"时,先看构建产物
+
+本机有个会让人得出错误结论的陷阱:**用 `Copy-Item` 恢复文件会保留源文件的旧时间戳**,
+于是源文件 mtime 反而比上次编译输出更早,MSBuild 判定"无需编译"直接跳过 ——
+`dotnet build` 照样报 `已成功生成 0 个错误`,但 `bin` 里的 DLL 还是旧的。
+本次实测:32 次构建里那次只用了 **1.40 秒**(正常全量约 24 秒),
+跑出来的"改动后"数据全是旧行为,差点写成"修复无效"。
+
+两条硬规矩:
+
+1. 用 `Copy-Item` / 备份还原过源文件后,**必须刷新时间戳再构建**:
+
+   ```powershell
+   (Get-Item $f).LastWriteTime = Get-Date   # 或 os.utime(f, None) (Python)
+   ```
+
+   更省事的替代:`dotnet build ... --no-incremental`(强制重编译)。
+2. **改动生效性要看符号,不要看"构建成功"**。Debug 构建保留方法名,直接查二进制:
+
+   ```python
+   b = open(r'src/ALyricEase/bin/Debug/net10.0/ALyricEase.dll','rb').read()
+   print(b'IsHostPresentable' in b)   # 新增的私有方法名应能搜到
+   ```
+
+   ⚠ **搜中文串要换成 UTF-16LE**。.NET 把字符串字面量放在元数据的 `#US` 堆里,
+   是 **UTF-16** 而不是 UTF-8;按 UTF-8 搜中文会**全部 False**,于是把"已经生效"误判成"没生效"
+   (本次实测踩到:`'绕过门控'.encode('utf-8') in dll` → False,
+   而同一份 DLL 跑起来明明打印了这句话):
+
+   ```python
+   print('绕过门控'.encode('utf-16-le') in dll)   # ✅ True
+   ```
+
+   另外**比对文件时间**也比"看构建成功"可靠:产物 mtime 必须晚于源文件。
+   构建耗时也是个信号:1~2 秒 = 没编译,20 秒以上 = 真编了(单工程小改动 2~3 秒也可能真编,
+   所以时效要看 mtime + 符号,不能只看秒数)。
+
+### 隔离场景下已实测的框架行为(2026-09-16,探针 `--progress-visibility`)
+
+探针同时量两件事:平台实际送达的帧数(自续订 RAF 计数器),以及填充条 `ScaleX`
+的推进量(动画器每帧自己写入)。场景做了轻/重两档(重 = 三控件 + 800 矩形 + 40 文本块)。
+下面是**机制**证据(隔离场景);**量级数字以真实 `AppShell` 的 `--shell-cpu-real` 为准**。
+
+| 问题 | 实测结果 |
+|---|---|
+| 循环是否真在推进 | 每 6 秒推进 `ScaleX` **0.03333**,180 秒曲目理论 0.03333 ⇒ 精确按实时速率 |
+| 最小化时是否仍在推进 | **是**。`state=Minimized` 下推进 0.03334,与可见时一致 |
+| 隐藏时(`window.Hide()`)是否仍在推进 | **是**,0.03333 |
+| 恢复可见后 | 参数正常恢复(0.03333),无卡死 |
+| 平台送帧数 | 循环开 ≈ 22 帧/秒;循环关(内容全静态)≈ 10.8 帧/秒 ⇒ 与渲染挂钩 |
+| 循环 CPU 代价(重场景可见) | ≈ **+1.3%** 单核(开 1.56~2.08% vs 关 0.26%),但跨轮次波动 1.5~6.3% |
+| 循环 CPU 代价(重场景最小化) | **测不出**(开 2.08% vs 关 2.60%,落在噪声内且反号) |
+
+⚠️ 两条不要误读:
+
+1. "最小化时代价测不出"**不等于**"循环停了" —— 回调确实还在跑(推进量是硬证据)。
+   合理解释是:最小化时不 present,平台把最重的"合成/提交"整段省掉了,
+   只剩回调与失效书签这些便宜的部分。这与"任务管理器里 GPU 归零"吻合。
+   **2026-09-16 已按真实 `AppShell` 重测**:同样在最小化下,循环净代价是
+   **+1.04% / +1.30%** 单核(3 轮配对差值中位数)—— 真实场景比这个合成场景重得多,
+   所以别再拿这里的"测不出"当结论。
+2. 可见时的绝对量级也**不能**直接套到真实应用:探针场景是合成的 840 个元素,
+   真实窗口里还有模糊背景、图片与文本布局。要真实数字,应按真实
+   `AppShell` + 实际页面重测,而不是用这个隔离场景。
+
+## 框架主题动画(`IsIndeterminate` 进度条)同样不感知窗口状态
+
+与上一节的自续订 RAF 循环是**同一类问题**,区别只是那条循环是自己写的、这条是**框架主题动画**——
+但 Avalonia 同样不会替你看窗口状态。用户报告的"打开过歌单页之后,窗口最小化也一直有零点几个
+百分点的占用"就有一部分来自这里。
+
+### 实测:一条 3px 高的不确定进度条值多少 CPU
+
+探针 `--pl-cpu-real`(真窗口 + 真 `PlaylistView` + 真 VM),单独把 `IsLoadingMore` 置 true
+以隔离这条动画(避免与封面写盘的开销混在一起):
+
+| 场景 | CPU(单核) | 活动线程 |
+|---|---|---|
+| 最小化 · 提示条不在(对照) | **0.00%** | 无 |
+| 最小化 · 提示条在(**未门控**) | **2.60%**(另一次 2.34%) | 合成线程 1.82% + UI 线程 0.78% |
+| 最小化 · 提示条在(**已门控**) | **0.00%** | 无 |
+| 可见 · 提示条在 | **5.7 ~ 17.7%**(波动大) | 强制整个窗口每帧重合成 |
+
+其中"未门控 / 已门控"两行是**同一次运行内**的 A/B(见文末"同轮对照组"),
+两行的差异只剩"门控开/关"这一个变量 ⇒ **省下 2.60% 单核**。
+
+⇒ **只要那条提示条还挂在视觉树上,窗口看不见也照样转。** 这是"一条 3px 的装饰条"
+却能在任务管理器里显示出零点几个百分点的原因。
+
+### 修法:`Infrastructure/IndeterminateAnimationGate` 附加属性
+
+```xml
+<ProgressBar IsIndeterminate="True" infra:IndeterminateAnimationGate.IsActive="True" />
+```
+
+判据与 `ProgressRenderAnimator.IsHostPresentable` **逐字一致**,不要在项目里出现第二套口径:
+`TopLevel.IsVisible` 且非 `WindowState.Minimized`。
+
+- 为什么用**附加属性**而不是自定义控件 / 行为:不确定进度条散在 5 处 XAML 里,
+  附加属性一行就能挂上,不动控件树、也不影响设计器预览。
+- 为什么属性叫 `IsActive` 而不是直接接管 `IsIndeterminate`:门控只负责"宿主不可显示时停",
+  可见时**必须把决定权还给 XAML / 绑定**。所以门控**只压不吃** —— 它记住"想要的值"
+  (`GateState.Desired`,挂上门控那一刻读一次,之后由 `ProgressBar.IsIndeterminateProperty`
+  的变更通知更新),不可显示时压成 `false`,可见时还原成 `Desired`;
+  压的时候打一个 `Suppressing` 标记,否则自己写进去的值会被变更通知误当成"绑定改了值",
+  把 `Desired` 覆盖成 `false`(然后恢复时永远恢复不出来)。
+  ⚠ 写成 `bar.IsIndeterminate = presentable`(第一版)会把 `IsIndeterminate="{Binding IsBusy}"`
+  这种用法**强行置 true**;项目里 5 处现状都是静态 `IsIndeterminate="True"`,所以当场不会报错,
+  但以后新增绑定就会踩。
+- 订阅状态用 `ConditionalWeakTable<ProgressBar, GateState>` 保存:控件被回收后条目自动消失,
+  不会因为页面反复建视图而攒下长期引用。
+- 离开视觉树时也压成 `false`(压,不记),重新挂回视觉树时由 `Apply` 还原 `Desired`。
+- 项目里 5 处已全部挂上:`PlaylistView`(补页提示)、`AccountView`(刷新账号)、
+  `SearchView`(搜索中)、`LoginDialogView` ×2(代理登录 / QQ 二维码)。
+  ⚠ `LoginDialogView.axaml` 原先**没有**声明 `xmlns:infra`,要一并补。
+
+### 三个坑
+
+1. **`TopLevel.PropertyChanged` 不是 `INotifyPropertyChanged` 的那个同名事件**。
+   它是 `AvaloniaObject.PropertyChanged`,签名是
+   `EventHandler<AvaloniaPropertyChangedEventArgs>`;照 `System.ComponentModel` 那个写成
+   `PropertyChangedEventHandler` 会报 CS0019(`??=` 无法应用于…)与 CS0029(无法隐式转换)。
+2. **必须订阅 `WindowState`**:最小化时 `Window.IsVisible` 仍是 `true`,
+   只看 `IsVisible` 会正好漏掉"最小化"这个最主要的状态。
+3. **隐藏上层容器:证据不一致,而且本项目用不到 —— 别为它加判据**。
+   两次运行对 `view.IsVisible = false`(窗口仍可见)量到的值差得很远:
+   **0.26%**(第二次)与 **14.83%**(第一次,与不隐藏时的 17.70% 同量级)。
+   差值远超本机静息抖动(同一相位跨轮 1.5% ~ 6.3%),说明这一态的费用不稳定
+   (可能与"隐藏发生在采样窗口之前多久、合成器有没有收敛"有关),
+   **不足以支撑"隐藏拦不住动画"这个结论** —— 所以门控里没有加祖先可见性遍历:
+   - 应用里"提示条不显示"的真实状态是它自己那层 `StackPanel` 被 `IsVisible="{Binding ...}"`
+     隐藏 —— 实测 **0.00%**;
+   - 导航换页时页面是**离开视觉树**(见「复用视图只能省"骨架"」一节),不是靠隐藏留下来。
+   ⇒ 只看 `TopLevel` 已覆盖所有实际会发生的状态。
+   ⚠ 这条同时是个方法论提醒:**一次不一致的测量不能当结论** —— 要么重测到稳定,
+   要么明确写下"测不出",不要把单次读数写成机制。第一版就差点这么干了。
+
+### 探针里怎么量"门控到底有没有生效"
+
+`--pl-cpu-real` 的场景 6 之后带一个**同轮对照组**:把那条挂了门控的进度条手动设回
+`IsIndeterminate = true`(等价"未门控"的旧版本)再采一次样。两条测量的差异就只剩"门控开/关"
+这一个变量 —— 比"换个构建版本再跑一遍"硬得多,跨构建对比很容易被别的改动污染。
+实测输出:`门控效果(同轮 A/B): 绕过门控=2.60% vs 门控生效=0.00% ⇒ 省下 +2.60% 单核`。
+(窗口在最小化状态下改 `IsIndeterminate` 不会触发门控重算,因为 `WindowState` 没变化,
+所以强行设的值能稳定存活到采样结束。)
+
+⚠ 对照组要按**属性**找控件(`IndeterminateAnimationGate.GetIsActive(bar)`),
+不能按 `IsIndeterminate` 找 —— 门控生效时它已经被置成 `false`,按值找会一个都找不到。
+

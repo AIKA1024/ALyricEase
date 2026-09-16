@@ -110,7 +110,13 @@ public static class LyricSwitchProbe
         vm.Player.CurrentSong = songA;
         Interlocked.Exchange(ref playheadMs, 100_000);
         _ = vm.Lyric.LoadAsync(songA);
-        RunFrames(10); // 歌词回填,ticker 同时驱动高亮/滚动
+        // 歌词回填,ticker 同时驱动高亮/滚动。
+        // 必须**等到歌词真的到达**再继续:OfflineProbeApi 对歌 11 有 400ms 延迟,
+        // 而 RunFrames(n) 每帧只 Sleep(25ms) ⇒ 原本的 RunFrames(10)≈250ms 是边界竞态
+        // (Windows 上 Sleep 实际常 30~40ms,连跑多个探针后机器一忙就不够)。
+        // 量到 Lines=0 时,后面按 LyricList 取 ScrollViewer 那步会 First() 抛
+        // "Sequence contains no elements",表现为**假失败**。
+        WaitForLyrics(vm, 80);
         Dump("场景1·A播放中", window, vm);
         Shot(window, "aly-switch-1-a");
 
@@ -406,6 +412,17 @@ public static class LyricSwitchProbe
     [DllImport("gdi32.dll")] private static extern int GetDIBits(IntPtr hdc, IntPtr bmp, int start, int lines, byte[] buffer, ref BitmapInfoHeader bi, int usage);
     [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
     [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr hdc);
+
+    /// <summary>等歌词真正到达再继续(见调用点注释:固定帧数 RunFrames 对异步回填是边界竞态)。
+    /// 上限 maxFrames 帧只是保险,超时也继续,不改变探针语义。</summary>
+    private static void WaitForLyrics(MainViewModel vm, int maxFrames)
+    {
+        for (var i = 0; i < maxFrames && vm.Lyric.Lines.Count == 0; i++)
+        {
+            Thread.Sleep(25);
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
 
     private static void RunFrames(int frames)
     {

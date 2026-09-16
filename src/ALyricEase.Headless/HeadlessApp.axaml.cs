@@ -17,12 +17,16 @@ public partial class HeadlessApp : Application
 {
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
-    /// <summary>无头播放器桩:满足 DI,不做任何事。</summary>
-    private sealed class StubAudioPlayer : IAudioPlayer
+    /// <summary>无头播放器桩:满足 DI,默认不做任何事。
+    /// 探针可用 SetState/RaisePosition 手动驱动状态与进度事件 —— 这样走的是
+    /// PlayerViewModel 真实订阅链路(OnStateChanged/OnPositionChanged),而不是直接改 VM 属性。</summary>
+    internal sealed class StubAudioPlayer : IAudioPlayer
   {
-    public PlaybackState State => PlaybackState.Idle;
+    private PlaybackState _state = PlaybackState.Idle;
+
+    public PlaybackState State => _state;
     public long PositionMs { get; set; }
-    public long DurationMs => 0;
+    public long DurationMs { get; set; }
     public int Volume { get; set; }
     public event EventHandler? StateChanged;
     public event EventHandler<long>? PositionChanged;
@@ -33,6 +37,20 @@ public partial class HeadlessApp : Application
     public void Resume() { }
     public void Stop() { }
     public void Dispose() { }
+
+    /// <summary>切换播放状态并通知订阅者(等价于真实播放引擎的状态回调)。</summary>
+    public void SetState(PlaybackState state)
+    {
+      _state = state;
+      StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>上报一次播放进度(等价于真实播放引擎的周期 PositionChanged)。</summary>
+    public void RaisePosition(long positionMs)
+    {
+      PositionMs = positionMs;
+      PositionChanged?.Invoke(this, positionMs);
+    }
   }
 
     public static void ConfigureServices()

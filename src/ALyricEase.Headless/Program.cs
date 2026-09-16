@@ -57,6 +57,79 @@ public static class Program
             return;
         }
 
+        // 真实 shell 播放期 CPU 对照(--shell-cpu-real):真 AppShell + 真播放链路,
+        // 量"页面 × 窗口可见性 × 循环开关"下的进度动画循环净代价
+        if (args.Length > 0 && args[0] == "--shell-cpu-real")
+        {
+            var shellBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var shellExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { shellExitCode = await ShellPlaybackCpuProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[shell-cpu] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            shellBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = shellExitCode;
+            return;
+        }
+
+        // 真窗口可见性对照(--progress-visibility):最小化/隐藏时进度动画循环是否仍在跑
+        if (args.Length > 0 && args[0] == "--progress-visibility")
+        {
+            var visBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var visExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { visExitCode = await ProgressVisibilityProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[progress-visibility] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            visBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = visExitCode;
+            return;
+        }
+
+        // 真窗口进度动画 CPU 对照(--progress-cpu-real):循环开/关单变量对照 + 窗口不可见时是否仍出帧
+        if (args.Length > 0 && args[0] == "--progress-cpu-real")
+        {
+            var cpuBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var cpuExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { cpuExitCode = await ProgressFrameCpuProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[progress-cpu] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            cpuBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = cpuExitCode;
+            return;
+        }
+
+        // 真窗口歌单页后台 CPU 归因(--pl-cpu-real):空页基线 vs 歌单页顶部/底部 vs 离屏
+        if (args.Length > 0 && args[0] == "--pl-cpu-real")
+        {
+            var plBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var plExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { plExitCode = await PlaylistPageCpuProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[pl-cpu] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            plBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = plExitCode;
+            return;
+        }
+
         // 真窗口歌单页返回延迟(--pl-return-real):量 UI 冻结峰值与恢复各阶段耗时
         if (args.Length > 0 && args[0] == "--pl-return-real")
         {
@@ -136,6 +209,14 @@ public static class Program
         if (args.Length > 0 && args[0] == "--cover-cache")
         {
             Environment.ExitCode = System.Threading.Tasks.Task.Run(CoverLoaderProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 缓存写路径成本:每写一张封面是否要全目录扫描(随缓存规模放大?)
+        if (args.Length > 0 && args[0] == "--cache-write-cost")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(CacheWriteCostProbe.RunAsync)
                 .GetAwaiter().GetResult();
             return;
         }

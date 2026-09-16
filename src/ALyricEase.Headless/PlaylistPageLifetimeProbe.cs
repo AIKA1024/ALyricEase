@@ -10,7 +10,7 @@ using System.Runtime.CompilerServices;
 
 namespace ALyricEase.Headless;
 
-/// <summary>单例歌单页离页释放与一次性磁盘快照恢复回归；全程不访问网络。</summary>
+/// <summary>单例歌单页离页释放与一次性内存快照恢复回归；全程不访问网络、不写磁盘快照。</summary>
 internal static class PlaylistPageLifetimeProbe
 {
     public static int Run()
@@ -37,7 +37,7 @@ internal static class PlaylistPageLifetimeProbe
             Task.Run(VerifyRestoreDoesNotWaitForDiskAsync).GetAwaiter().GetResult();
             Console.WriteLine(
                 "[playlist-lifetime] PASS rows=240->0->240, queue/index=0 after leave, scroll=712, " +
-                "eviction-disk-fallback, restore-no-disk-wait");
+                "eviction-drops-oldest, restore-no-disk-wait");
             return 0;
         }
         catch (Exception ex)
@@ -90,7 +90,7 @@ internal static class PlaylistPageLifetimeProbe
             640);
         await vm.RestoreNavigationSnapshotAsync(initial);
 
-        Assert(vm.RetainedTrackRowCount == songs.Count, "磁盘快照没有恢复全部原始行");
+        Assert(vm.RetainedTrackRowCount == songs.Count, "内存快照没有恢复全部原始行");
         Assert(vm.Tracks.Count == songs.Count, "排序投影恢复后内容数量丢失");
         Assert(vm.RetainedQueueSongCount == songs.Count, "播放队列没有恢复");
         Assert(vm.RetainedTrackIdCount == songs.Count, "懒加载索引没有恢复");
@@ -110,37 +110,61 @@ internal static class PlaylistPageLifetimeProbe
 
         await vm.RestoreNavigationSnapshotAsync(captured);
         Assert(vm.RetainedTrackRowCount == songs.Count && vm.Tracks.Count == songs.Count,
-            "返回后页面内容没有从磁盘完整恢复");
+            "返回后页面内容没有从快照完整恢复");
         Assert(vm.TryGetPendingScrollRestore(0, out _, out var offset)
                && Math.Abs(offset - 712) < 0.01,
             "返回滚动位置没有恢复");
 
     }
 
-    /// <summary>内存快照被容量淘汰后,磁盘兜底必须仍能读回(淘汰条目要立即落盘,不能留在延迟窗口里)。</summary>
+    /// <summary>内存快照容量行为:最近 MaxInMemorySnapshots 层必须全部命中(返回是 LIFO 的),
+    /// 更旧的层被直接丢弃 —— 取不到就让调用方回退常规加载,而不是去磁盘找。
+    /// 同时断言全程不产生任何快照文件(快照只驻内存)。</summary>
     private static async Task VerifySnapshotEvictionAsync()
     {
-        var cache = ServiceLocator.Get<MusicCacheService>();
-        var songs = CreateSongs(30, 950_000);
-        var tracks = songs.Select(song => new NavigationPageCacheTrack(song, true)).ToList();
-        var trackIds = songs.Select(song => song.Id).ToArray();
-        var keys = new List<string>();
-        for (var index = 0; index < 10; index++)
+        var root = Path.Combine(Path.GetTempPath(), $"aly-snapshot-evict-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
         {
-            var key = Guid.NewGuid().ToString("N");
-            keys.Add(key);
-            _ = cache.CachePlaylistPageSnapshotAsync(
-                key, new PlaylistPageCacheData(tracks, trackIds, songs.Count, null));
-        }
+            // 用独立实例 + 临时目录,避免把测试数据写进真实用户缓存。
+            using var http = new HttpClient();
+            var cache = new MusicCacheService(128, root, http);
+            var songs = CreateSongs(30, 950_000);
+            var tracks = songs.Select(song => new NavigationPageCacheTrack(song, true)).ToList();
+            var trackIds = songs.Select(song => song.Id).ToArray();
+            var capacity = MusicCacheService.MaxInMemorySnapshots;
+            var total = capacity + 8;
+            var keys = new List<string>();
+            for (var index = 0; index < total; index++)
+            {
+                var key = Guid.NewGuid().ToString("N");
+                keys.Add(key);
+                await cache.CachePlaylistPageSnapshotAsync(
+                    key, new PlaylistPageCacheData(tracks, trackIds, songs.Count, null));
+            }
 
-        var restored = await cache.TryTakePlaylistPageSnapshotAsync(keys[0]);
-        Assert(restored is not null && restored.Tracks.Count == songs.Count,
-            "内存快照被容量淘汰后磁盘兜底失效");
-        for (var index = 1; index < keys.Count; index++)
-            await cache.DiscardPlaylistPageSnapshotAsync(keys[index]);
+            for (var index = total - capacity; index < total; index++)
+            {
+                var hit = await cache.TryTakePlaylistPageSnapshotAsync(keys[index]);
+                Assert(hit is not null && hit.Tracks.Count == songs.Count,
+                    $"容量内的快照丢失(第 {index} 层,容量 {capacity})");
+            }
+
+            for (var index = 0; index < total - capacity; index++)
+                Assert(await cache.TryTakePlaylistPageSnapshotAsync(keys[index]) is null,
+                    $"被淘汰的快照仍能取回(第 {index} 层)");
+
+            Assert(!Directory.EnumerateFiles(root, "n-*.snapshot").Any(),
+                "快照仍在落盘(应只驻内存)");
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
     }
 
-    /// <summary>返回恢复不得等待落盘:离页后立刻返回应是毫秒级(修复前要等 0.6~1.3s 写完快照)。</summary>
+    /// <summary>返回恢复必须是毫秒级、且与"在别处停留多久"无关:捕获快照时同步完成、不派发任何后台写入,
+    /// 所以返回耗时里不该出现任何 I/O 等待(修复前这里要等 0.6~1.3s 才拿到行)。</summary>
     private static async Task VerifyRestoreDoesNotWaitForDiskAsync()
     {
         var cache = ServiceLocator.Get<MusicCacheService>();

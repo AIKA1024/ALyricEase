@@ -83,14 +83,14 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
-        // 单例歌单页重数据回归：离页归零，返回从一次性磁盘快照恢复内容/筛选/滚动状态。
+        // 单例歌单页重数据回归：离页归零，返回从一次性内存快照恢复内容/筛选/滚动状态。
         if (args.Length > 0 && args[0] == "--playlist-lifetime")
         {
             Environment.ExitCode = PlaylistPageLifetimeProbe.Run();
             return;
         }
 
-        // 歌手/专辑及“查看全部”页面：离页释放，返回从一次性磁盘快照恢复。
+        // 歌手/专辑及“查看全部”页面：离页释放，返回从一次性内存快照恢复。
         if (args.Length > 0 && args[0] == "--detail-lifetime")
         {
             Environment.ExitCode = DetailPageLifetimeProbe.Run();
@@ -209,6 +209,13 @@ public static class Program
         if (args.Length > 0 && args[0] == "--accountstates")
         {
             AccountStatesProbe.Run();
+            return;
+        }
+
+        // 换号后红心状态必须清空(不触网,用临时 cookie 文件,不碰真实登录态)
+        if (args.Length > 0 && args[0] == "--accountlike")
+        {
+            Environment.ExitCode = AccountLikeStateProbe.Run();
             return;
         }
 

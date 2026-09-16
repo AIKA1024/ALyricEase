@@ -11,7 +11,7 @@ internal enum PlaylistPageKind
 }
 
 /// <summary>
-/// 导航栈中的轻量歌单状态。曲目、队列与分页索引只存在磁盘快照中，历史项不保活页面重数据。
+/// 导航栈中的轻量歌单状态。曲目、队列与分页索引只存在内存快照中，历史项不保活页面重数据。
 /// </summary>
 internal sealed record PlaylistNavigationSnapshot(
     string CacheKey,

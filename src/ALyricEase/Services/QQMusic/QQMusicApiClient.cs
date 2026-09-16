@@ -130,8 +130,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _authst = key;
         _cookieHeader = rawCookie; // 保留原文:账号接口依赖 p_skey/euin 等附加字段
         // 换号后已喜欢集合/tid/会员状态缓存全部失效
+        _accountGeneration++; // 连带作废在途的懒加载结果
         _likedDissTid = 0;
         _likedIds = null;
+        _likedLoading = false;
+        _likedLoadTask = null;
         _vipLoaded = false;
         _vipLoading = false;
         IsVip = false;
@@ -149,8 +152,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _authst = "";
         _cookieHeader = "";
         // 登出后已喜欢集合/tid/会员状态缓存失效
+        _accountGeneration++; // 连带作废在途的懒加载结果
         _likedDissTid = 0;
         _likedIds = null;
+        _likedLoading = false;
+        _likedLoadTask = null;
         _vipLoaded = false;
         _vipLoading = false;
         IsVip = false;
@@ -402,8 +408,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _cookie.QQCookieRaw = _cookieHeader;
         _cookie.Save(); // 刷新成功后必须先落盘，后续请求才可继续。
 
+        _accountGeneration++; // 凭证已换,作废在途的懒加载结果
         _likedDissTid = 0;
         _likedIds = null;
+        _likedLoading = false;
+        _likedLoadTask = null;
         _vipLoaded = false;
         _vipLoading = false;
         IsVip = false;
@@ -668,7 +677,15 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private bool _likedLoading;
     private Task? _likedLoadTask;
 
+    /// <summary>登录身份代次:SetCookie/ClearCookie/凭证刷新时自增。
+    /// 用于作废"跨账号切换期间仍在途"的懒加载结果 —— 否则旧账号的响应会在新账号下写回
+    /// _likedIds/_likedDissTid,表现为换号后红心状态串味。</summary>
+    private int _accountGeneration;
+
     public bool CanToggleLike => IsLoggedIn;
+
+    /// <summary>登录身份代次(见 IUserMusicApi.AccountGeneration)。</summary>
+    public int AccountGeneration => _accountGeneration;
 
     // ---------- 会员状态(VipLogin.VipLoginInter/vip_login_base)----------
 
@@ -738,6 +755,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     private async Task LoadLikedIdsAsync(CancellationToken ct)
     {
+        var generation = _accountGeneration;
         try
         {
             var playlists = await GetUserPlaylistsAsync(ct).ConfigureAwait(false);
@@ -746,6 +764,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             // 还会把集合污染进后续 toggle 的目标判定。
             var liked = playlists.FirstOrDefault(p => p.DirId == LikedDirId)
                         ?? playlists.FirstOrDefault(p => p.Name == "我喜欢");
+            if (generation != _accountGeneration) return; // 期间换号,结果作废
             if (liked is null)
             {
                 _likedIds ??= new HashSet<long>(); // 空账号/未识别:视为空集(合法状态,不再重试)
@@ -753,16 +772,20 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             }
             _likedDissTid = liked.Id;
             var tracks = await GetPlaylistTracksAsync(liked.Id, ct).ConfigureAwait(false);
+            if (generation != _accountGeneration) return;
             _likedIds = new HashSet<long>(tracks.Where(t => t.Id != 0).Select(t => t.Id));
         }
         catch
         {
+            if (generation != _accountGeneration) return;
             // 拉取失败降级空集:初始态一律未喜欢,toggle 以"添加"为先(fail-safe 不会误删用户的收藏)
             _likedIds ??= new HashSet<long>();
         }
         finally
         {
-            _likedLoading = false;
+            // 只有同代次的任务才能清标志:换号时已由 SetCookie/ClearCookie 清过,
+            // 且新代次可能已经起了自己的加载任务,这里不能把它的标志按回去。
+            if (generation == _accountGeneration) _likedLoading = false;
         }
     }
 

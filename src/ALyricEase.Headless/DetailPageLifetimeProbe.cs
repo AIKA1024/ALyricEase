@@ -79,7 +79,7 @@ internal static class DetailPageLifetimeProbe
                 Name: "歌手生命周期",
                 AvatarUrl: "https://invalid/artist.jpg"));
         await vm.RestoreNavigationSnapshotAsync(snapshot);
-        Assert(vm.RetainedItemCount == 90, "歌手页磁盘快照恢复数量错误");
+        Assert(vm.RetainedItemCount == 90, "歌手页快照恢复数量错误");
         var weak = CaptureArtistAndRelease(vm, out var captured);
         Assert(vm.RetainedItemCount == 0 && !vm.HasRetainedPageData, "歌手页离页后仍保留重数据");
         AssertCollected(weak, "歌手页歌曲行");
@@ -108,7 +108,7 @@ internal static class DetailPageLifetimeProbe
                 CoverUrl: "https://invalid/album.jpg",
                 PrimaryArtist: new NavigationPageCacheArtist(MusicSource.NetEase, 9101, "", "测试歌手")));
         await vm.RestoreNavigationSnapshotAsync(snapshot);
-        Assert(vm.RetainedTrackCount == tracks.Count, "专辑页磁盘快照恢复数量错误");
+        Assert(vm.RetainedTrackCount == tracks.Count, "专辑页快照恢复数量错误");
         var weak = CaptureAlbumAndRelease(vm, out var captured);
         Assert(vm.RetainedTrackCount == 0 && !vm.HasRetainedPageData, "专辑页离页后仍保留曲目");
         AssertCollected(weak, "专辑页歌曲行");

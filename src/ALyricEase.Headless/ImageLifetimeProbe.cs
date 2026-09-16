@@ -15,6 +15,9 @@ internal static class ImageLifetimeProbe
 {
     public static int Run()
     {
+        // 预算按平台解析,先把它打出来:Android 上这个值决定会不会被图片拖进 OOM,
+        // 真机跑一次就能核对(核心库只面向 net10.0,不能用 #if ANDROID 判平台)。
+        Console.WriteLine($"[image-lifetime] {ImageMemoryBudget.Describe()}");
         var failures = Task.Run(RunCacheChecksAsync).GetAwaiter().GetResult();
         failures += RunSearchViewLifetimeCheck();
         failures += RunRecommendCoverReturnCheck();

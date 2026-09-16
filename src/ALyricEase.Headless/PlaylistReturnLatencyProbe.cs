@@ -29,6 +29,9 @@ internal static class PlaylistReturnLatencyProbe
 
         var cache = ServiceLocator.Get<MusicCacheService>();
         var vm = ServiceLocator.Get<PlaylistViewModel>();
+        var cacheDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ALyricEase", "cache", "music");
         vm.ReleaseCurrentPageData();
         PlaylistViewModel.RestoreTimingTrace = message => Stages.Add((Clock.ElapsedMilliseconds, message));
 
@@ -48,27 +51,27 @@ internal static class PlaylistReturnLatencyProbe
 
         Log($"[pl-latency] 规模: {rows} 首, {rounds} 轮, 在页停留: {string.Join('/', dwells)}ms");
         Log($"[pl-latency] 内存快照驻留成本: {songBytes / 1024.0:F0}KB " +
-            $"(单首约 {songBytes / 1024.0 / rows:F2}KB,上限 {8} 个页面)");
+            $"(单首约 {songBytes / 1024.0 / rows:F2}KB,上限 {MusicCacheService.MaxInMemorySnapshots} 个页面)");
 
-        // 诊断:落盘耗时里有多少是序列化、多少是容量裁剪的目录扫描(缓存目录通常上万文件)。
+        // 诊断:快照只驻内存,捕获这一步应当不产生任何 I/O 与文件。
         if (Environment.GetEnvironmentVariable("ALY_PL_WRITE_PROBE") == "1")
         {
-            foreach (var probeRows in new[] { 0, rows })
-            {
-                var probeSongs = CreateSongs(probeRows);
-                var probeKey = Guid.NewGuid().ToString("N");
-                var probePayload = new PlaylistPageCacheData(
-                    probeSongs.Select(song => new NavigationPageCacheTrack(song, true)).ToList(),
-                    probeSongs.Select(song => song.Id).ToArray(),
-                    probeRows,
-                    null);
-                var probeWatch = Stopwatch.StartNew();
-                await cache.CachePlaylistPageSnapshotAsync(probeKey, probePayload);
-                var total = probeWatch.ElapsedMilliseconds;
-                Log($"[pl-latency] 落盘诊断 {probeRows} 首: 总 {total}ms " +
-                    $"(扣掉 3s 延迟窗口 = 实际落盘约 {Math.Max(0, total - 3000)}ms)");
-                await cache.DiscardPlaylistPageSnapshotAsync(probeKey);
-            }
+            var probeSongs = CreateSongs(rows);
+            var probeKey = Guid.NewGuid().ToString("N");
+            var probePayload = new PlaylistPageCacheData(
+                probeSongs.Select(song => new NavigationPageCacheTrack(song, true)).ToList(),
+                probeSongs.Select(song => song.Id).ToArray(),
+                rows,
+                null);
+            var probeWatch = Stopwatch.StartNew();
+            await cache.CachePlaylistPageSnapshotAsync(probeKey, probePayload);
+            probeWatch.Stop();
+            var probeLeftovers = Directory.Exists(cacheDirectory)
+                ? Directory.GetFiles(cacheDirectory, "n-*.snapshot").Length
+                : 0;
+            Log($"[pl-latency] 捕获诊断 {rows} 首: 耗时 {probeWatch.ElapsedMilliseconds}ms, " +
+                $"缓存目录里的快照文件 {probeLeftovers} 个(都应为 0)");
+            await cache.DiscardPlaylistPageSnapshotAsync(probeKey);
         }
 
         for (var round = 1; round <= rounds; round++)
@@ -81,7 +84,7 @@ internal static class PlaylistReturnLatencyProbe
                 songs.Count,
                 null);
 
-            // 与生产一致:派发后不等待(内存副本立刻可用,落盘是延后的兜底)。
+            // 与生产一致:捕获同步完成,不等待任何 I/O。
             _ = cache.CachePlaylistPageSnapshotAsync(key, payload);
 
             var snapshot = new PlaylistNavigationSnapshot(
@@ -122,7 +125,7 @@ internal static class PlaylistReturnLatencyProbe
                            ?? throw new InvalidOperationException("未生成导航快照");
             var releasedAt = Clock.ElapsedMilliseconds;
 
-            // 模拟"在歌手页停留":写入是在离页那一刻派发的,停留越久越可能已经写完。
+            // 模拟"在歌手页停留":停留时长现在理论上不影响返回耗时(无在途 I/O),保留是为了守住这一点。
             if (dwell > 0) await Task.Delay(dwell);
             var returningAt = Clock.ElapsedMilliseconds;
 
@@ -155,15 +158,10 @@ internal static class PlaylistReturnLatencyProbe
         }
 
         window.Close();
-        // 等过落盘延迟窗口:每轮的快照都已被返回消费,理论上不该留下任何磁盘文件。
-        await Task.Delay(4000);
-        var cacheDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ALyricEase", "cache", "music");
         var leftovers = Directory.Exists(cacheDirectory)
             ? Directory.GetFiles(cacheDirectory, "n-*.snapshot").Length
             : 0;
-        Log($"[pl-latency] 完成: 遗留快照文件={leftovers} 个(本会话应只保留未被消费的)");
+        Log($"[pl-latency] 完成: 遗留快照文件={leftovers} 个(快照只驻内存,应为 0)");
         return 0;
     }
 

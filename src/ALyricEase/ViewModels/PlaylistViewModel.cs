@@ -455,6 +455,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var profile = await _qqApi.GetUserProfileAsync();
             IsQqLoggedIn = true;
             QqUserName = profile.Nickname;
+            NotifyAccountChanged(); // 换号后播放条红心按新账号重判
             _ = LoadQqPlaylistsAsync(); // 侧边栏"QQ音乐"分组随后出现(MainViewModel 监听集合变化)
             QqCookieInput = "";
         }
@@ -742,6 +743,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         Playlists.Clear();
         if (SelectedPlaylist?.Playlist.Source == MusicSource.NetEase)
             ClearCurrentPlaylistContent();
+        NotifyAccountChanged();
+    }
+
+    /// <summary>登录/登出后让播放器重新判定当前曲红心。
+    /// 红心状态是按账号缓存的,而播放条不属于任何页面、不随页面重载刷新 —— 不通知就会显示旧账号的红心。</summary>
+    private static void NotifyAccountChanged()
+    {
+        try { ServiceLocator.Get<PlayerViewModel>().RefreshCurrentLiked(); }
+        catch { /* 宿主未初始化(探针/自检环境):忽略 */ }
     }
 
     [RelayCommand]
@@ -754,6 +764,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _qqPlaylistsLoaded = false;
         if (SelectedPlaylist?.Playlist.Source == MusicSource.QQ)
             ClearCurrentPlaylistContent();
+        NotifyAccountChanged();
     }
 
     /// <summary>兼容旧入口：同时退出两个平台。</summary>
@@ -941,7 +952,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 _aggregateLoad.QqBegin,
                 _aggregateLoad.FailedCount,
                 _aggregateLoad.CoverSet);
-        // 尚未拿到首批内容时不保存“空的加载中页面”，返回时让缺失文件自然触发网络回退。
+        // 尚未拿到首批内容时不保存“空的加载中页面”，返回时让缺失快照自然触发网络回退。
         // 云盘没有独立续页游标，只有完整加载结束后才可安全快照。
         if ((tracks.Count > 0 || !wasBusy) && (kind != PlaylistPageKind.Cloud || !wasBusy))
             _ = _musicCache.CachePlaylistPageSnapshotAsync(
@@ -949,13 +960,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 new PlaylistPageCacheData(
                     tracks, _trackIds.ToArray(), _materialized, aggregateState));
 
-        Mark("派发磁盘写入");
+        Mark("驻留内存快照");
         ReleaseCurrentPageData();
         Mark("释放页面数据");
         return snapshot;
     }
 
-    /// <summary>后退离开且不需要前进历史时直接释放，不创建无消费者的磁盘文件。</summary>
+    /// <summary>后退离开且不需要前进历史时直接释放，不驻留无消费者的快照。</summary>
     internal void ReleaseCurrentPageData()
     {
         CancelCurrentLoad();
@@ -980,7 +991,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _pageScrollOffset = 0;
     }
 
-    /// <summary>先从一次性磁盘快照恢复精确页面状态；快照失效时回退原有缓存/网络打开流程。</summary>
+    /// <summary>先从一次性内存快照恢复精确页面状态；快照失效时回退原有缓存/网络打开流程。</summary>
     internal async Task RestoreNavigationSnapshotAsync(PlaylistNavigationSnapshot snapshot)
     {
         var watch = RestoreTimingTrace is null ? null : System.Diagnostics.Stopwatch.StartNew();
@@ -1009,7 +1020,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         Mark("清场(同步段)");
 
         var cached = await _musicCache.TryTakePlaylistPageSnapshotAsync(snapshot.CacheKey);
-        Mark("读磁盘快照(含等待在途写入)");
+        Mark("取回内存快照");
         if (!IsCurrentLoad(generation, ct)) return;
         if (cached is null)
         {
@@ -1891,6 +1902,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             AvatarUrl = profile.AvatarUrl;
 
             var playlists = await _api.GetUserPlaylistsAsync(profile.UserId);
+            // 此刻"我喜欢的音乐"歌单 id 已按新账号刷新,播放条可以重新判红心
+            NotifyAccountChanged();
             Playlists.Clear();
             foreach (var p in playlists)
                 Playlists.Add(new PlaylistItemViewModel(p));

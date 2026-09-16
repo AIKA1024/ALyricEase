@@ -42,6 +42,11 @@ public interface IUserMusicApi : IMusicApi
     /// <summary>当前登录态能否执行红心操作(未登录/无法定位喜欢集合时为 false,UI 应引导登录)。</summary>
     bool CanToggleLike { get; }
 
+    /// <summary>登录身份代次:换号/登出/刷新凭证时自增。
+    /// 红心状态是按账号缓存的(服务端的已喜欢集合 + UI 上每个曲目项的 IsInLikelist),
+    /// 调用方若缓存过 IsLiked 结果,应在该值变化后失效重取 —— 否则换号后红心会串味。</summary>
+    int AccountGeneration { get; }
+
     /// <summary>懒加载已喜欢曲目 id 集合(幂等,单飞)。未登录或识别不到喜欢集合时静默为空集。</summary>
     Task EnsureLikedIdsAsync(CancellationToken ct = default);
 

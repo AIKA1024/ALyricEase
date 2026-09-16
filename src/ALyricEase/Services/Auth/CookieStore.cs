@@ -4,9 +4,9 @@ using ALyricEase.Models.Dtos;
 namespace ALyricEase.Services.Auth;
 
 /// <summary>MUSIC_U(登录)与匿名 cookie 的本地持久化。
-/// Windows 存 %LocalAppData%\ALyricEase\config\cookie.json,Android 存应用私有
-/// FilesDir\ALyricEase\config\cookie.json。私有用户目录,明文存储;
-/// 日志输出 cookie 一律打码,不写完整值。</summary>
+/// 桌面存 %LocalAppData%\ALyricEase\config\cookie.json;Android 走同一段 #else 代码,
+/// 落在应用私有目录下的 .local/share/ALyricEase\config\cookie.json(见构造函数的说明)。
+/// 私有用户目录,明文存储;日志输出 cookie 一律打码,不写完整值。</summary>
 public sealed class CookieStore
 {
     private readonly string _path;
@@ -33,9 +33,13 @@ public sealed class CookieStore
 
     public CookieStore()
     {
+        // ⚠️ 这里的 #if ANDROID 是**死分支**:核心库只面向 net10.0,ANDROID 常量由 Android SDK
+        // 只对 net*-android 工程定义,所以 Android 上实际走 #else。
+        // 实测 Android 的 LocalApplicationData 并非空串(=.NET 里 <应用私有 files 目录>/.local/share),
+        // 路径可写、登录态能落盘,所以下面那句"返回空串"并不成立;两分支只是路径不同。
+        // 若要真正切到 FilesDir,请用 OperatingSystem.IsAndroid() 或从平台入口注入根目录,
+        // 并处理旧路径的数据迁移(否则升级后用户会"退出登录")。
 #if ANDROID
-        // Android 上 GetFolderPath(LocalApplicationData) 返回空串,路径退化为不可写的
-        // 相对路径,Save 静默失败 → 退出后登录态丢失。改用应用私有 FilesDir。
         var root = Path.Combine(
             global::Android.App.Application.Context.FilesDir!.AbsolutePath, "ALyricEase");
 #else
@@ -45,6 +49,15 @@ public sealed class CookieStore
 #endif
         Directory.CreateDirectory(Path.Combine(root, "config"));
         _path = Path.Combine(root, "config", "cookie.json");
+        Load();
+    }
+
+    /// <summary>指定文件路径的实例:探针/回归用,避免 SetMusicUCookie / ClearCookie
+    /// 这类会 Save 的操作覆盖用户真实的 cookie.json(那等于把用户踢下线)。</summary>
+    internal CookieStore(string path)
+    {
+        _path = path;
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         Load();
     }
 

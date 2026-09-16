@@ -10,7 +10,7 @@ internal enum DetailPageKind
     ArtistAlbums,
 }
 
-/// <summary>详情页导航历史中的轻量状态；列表、队列与卡片只存在一次性磁盘快照中。</summary>
+/// <summary>详情页导航历史中的轻量状态；列表、队列与卡片只存在一次性内存快照中。</summary>
 internal sealed record DetailNavigationSnapshot(
     string CacheKey,
     DetailPageKind Kind,

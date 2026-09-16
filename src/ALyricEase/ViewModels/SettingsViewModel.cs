@@ -262,6 +262,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private void OpenProject(OpenSourceProject? project)
     {
         if (project is null) return;
+        // ⚠️ #if ANDROID 在本程序集里是死分支(核心库只面向 net10.0),实际恒走 #else:
+        // Android 上 Process.Start 会抛异常,落到 catch 里仍然把地址显示出来,行为可接受。
+        // 真要区分平台请用 OperatingSystem.IsAndroid()。
 #if ANDROID
         Status = project.Url;
 #else

@@ -55,7 +55,7 @@ public static class CoverImagePipeline
     private static BoundedImageMemoryCache? _memoryCache;
 
     /// <summary>性能回归探针使用:当前解码图缓存(字节数/条目数)。
-    /// 多次页面往返后应受 64MB/512 项预算约束并趋于稳定,而不是无界增长。</summary>
+    /// 多次页面往返后应受 ImageMemoryBudget 的预算约束并趋于稳定,而不是无界增长。</summary>
     internal static (long Bytes, int Items) MemoryCacheStats
     {
         get
@@ -81,7 +81,8 @@ public static class CoverImagePipeline
             {
                 Timeout = TimeSpan.FromSeconds(10),
             };
-            var memoryCache = new BoundedImageMemoryCache();
+            var memoryCache = new BoundedImageMemoryCache(
+                ImageMemoryBudget.LeaseCacheBytes, ImageMemoryBudget.LeaseCacheItems);
             var pipeline = ImageLoaderPipelineBuilder
                 .Uncached()
                 .UseMemoryCache(memoryCache)

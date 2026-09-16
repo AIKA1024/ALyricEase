@@ -26,6 +26,10 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     private bool _likedRequested;
 
+    /// <summary>已按哪个登录身份取过红心状态(-1 = 从未取)。换号/登出后与
+    /// <see cref="IUserMusicApi.AccountGeneration"/> 不一致时允许重取,否则旧账号的红心会一直留在界面上。</summary>
+    private int _likedGeneration = -1;
+
     /// <summary>红心按钮与跳转是按音源路由的账号能力;红心两音源均支持,歌手/专辑跳转仍仅网易云为纯本地判定。</summary>
     private bool IsNetEase => Song.Source == Services.MusicSource.NetEase;
 
@@ -114,7 +118,9 @@ public sealed partial class SongItemViewModel : ViewModelBase
     public void EnsureLikedLoaded()
     {
         var api = GetLikeApi();
-        if (_likedRequested || api is null) return;
+        if (api is null) return;
+        // 幂等:同一登录身份只取一次;代次变化(换号/登出/刷新凭证)时允许重取。
+        if (_likedRequested && _likedGeneration == api.AccountGeneration) return;
         _likedRequested = true;
         _ = LoadLikedAsync(api);
     }
@@ -263,9 +269,11 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     private async Task LoadLikedAsync(IUserMusicApi api)
     {
+        var generation = api.AccountGeneration;
         try
         {
             await api.EnsureLikedIdsAsync();
+            _likedGeneration = generation; // 记下本次结果对应的登录身份
             IsInLikelist = api.IsLiked(Song.Id);
         }
         catch

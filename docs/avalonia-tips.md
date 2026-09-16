@@ -359,6 +359,28 @@ AppShell 里把首页模板换成了它。
 
 
 
+**后记:磁盘那一层后来被彻底删掉了**
+
+上面这套"内存优先 + 磁盘兜底"其实是个中间形态。既然 `CacheKey` 只为当前进程服务,
+磁盘副本就没有存在价值 —— 于是 `n-*.snapshot` 的写入/读取/清理整套生命周期与六个快照 JSON DTO
+全部删除(约 250 行),`SnapshotMemoryCache` 上限 8 → 32 页(600 首 ≈ 131KB/页,合计 ~4MB 量级,
+仍远小于图片预算)。`Cache*`/`TryTake*` 现在是**同步字典操作**(返回 `Task.CompletedTask`/
+`Task.FromResult`):返回恢复既不等待 I/O,也不再抢 `_mutationGate`;容量外被淘汰的那一层
+直接回退常规加载。升级前遗留的文件由 `MusicCacheService.DeleteLegacyPageSnapshotFiles()` 清一次。
+
+⇒ 上面那条"不要把它放在'返回时 await 在途写入'这条路径上"的规则依然成立,
+但现在的解法更彻底:**让这条路径不存在**。另外注意"等 GCD 排队的锁"和"等 I/O"是同一类问题,
+只有分阶段计量才分得清是哪一个(见下方 `--pl-return-real` 的用法)。
+
+**别把 `#if ANDROID` 当平台开关(核心库专属陷阱)**
+
+写 `MusicCacheService` 的缓存目录、`AppStateStore`、`CookieStore` 时踩到:
+`#if ANDROID` 在**核心库**里是**死分支** —— ANDROID 常量由 Android SDK 只对 `net*-android` 工程定义,
+而核心库只面向 `net10.0`。实测产出的 `ALyricEase.dll` 里查不到任何 Android 类型名
+(`FilesDir`/`Java.Lang.Runtime` 全部为 0 命中),即这些分支永远不会被编译,
+编译不报错、运行时静默走 `#else`。平台判定一律用 `OperatingSystem.IsAndroid()`
+(见 `Infrastructure/ImageMemoryBudget.cs`,项目里 5 处历史 `#if ANDROID` 已加警示注释)。
+
 ## Button 内容默认靠左:HorizontalContentAlignment 默认是 Stretch,不是 Center
 
 Avalonia(WPF 不同)的 `TemplatedControl.HorizontalContentAlignment` 默认值是 **Stretch**

@@ -227,6 +227,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _ = LoadCurrentLikedAsync();
     }
 
+    /// <summary>按当前登录身份重新判定当前曲红心。换号/登出后由账号页调用:
+    /// 播放条不属于任何页面,不会随页面重载刷新 —— 不主动通知就会一直显示旧账号的红心状态。</summary>
+    public void RefreshCurrentLiked() => _ = LoadCurrentLikedAsync();
+
     /// <summary>当前曲红心状态(后台加载;未登录/失败保持未喜欢)。红心按音源路由到对应平台。</summary>
     private async Task LoadCurrentLikedAsync()
     {

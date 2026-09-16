@@ -45,6 +45,11 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     private bool _likedLoading;
     private Task? _likedLoadTask;
 
+    /// <summary>登录身份代次:SetMusicUCookie/ClearCookie 时自增。
+    /// 用于作废"跨账号切换期间仍在途"的懒加载结果 —— 否则旧账号的响应会在新账号下写回
+    /// _likedIds/_likedPlaylistId,表现为换号后红心状态串味。</summary>
+    private int _accountGeneration;
+
     /// <summary>当前登录用户 uid(GetUserProfileAsync 填充,红心接口 userid 参数用)。</summary>
     private long _currentUserId;
 
@@ -133,8 +138,26 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         _csrf = null;
         _cookie.Save();
         AddCookie("MUSIC_U", musicU);
+        // 换号:红心/喜欢相关状态全部作废。
+        // ⚠️ 这里必须与 ClearCookie 一样清 _currentUserId/_likedPlaylistId/_likedIds ——
+        // 只重置 VIP 状态是不够的:GetUserPlaylistsAsync 会把 _likedPlaylistId 刷成新账号的,
+        // 而 EnsureLikedIdsAsync 见到 _likedIds 非 null 直接返回,于是"新账号的歌单 id +
+        // 旧账号的红心集合"组合会让 IsLiked 给出错误结果(也会用错 userid 发点赞请求)。
+        ResetLikeState();
         _vipLoaded = false;
         IsVip = false; // 换号后会员状态作废,待资料接口重载
+    }
+
+    /// <summary>清空红心/喜欢相关的登录态缓存(换号与登出共用)。
+    /// 同时自增身份代次,让在途的懒加载结果落地时被丢弃。</summary>
+    private void ResetLikeState()
+    {
+        _accountGeneration++;
+        _currentUserId = 0;
+        _likedPlaylistId = 0;
+        _likedIds = null;
+        _likedLoading = false;
+        _likedLoadTask = null;
     }
 
     /// <summary>仅退出网易云账号，不影响匿名凭证或其他音源。</summary>
@@ -144,9 +167,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         _cookie.Csrf = null;
         _cookie.Save();
         _csrf = null;
-        _currentUserId = 0;
-        _likedPlaylistId = 0;
-        _likedIds = null;
+        ResetLikeState();
         _vipLoaded = false;
         IsVip = false;
         foreach (var name in new[] { "MUSIC_U", "__csrf" })
@@ -571,6 +592,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>当前登录用户资料(MUSIC_U 缺失会抛"未登录")。</summary>
     public async Task<UserProfile> GetUserProfileAsync(CancellationToken ct = default)
     {
+        var generation = _accountGeneration;
         var url = $"{BaseUrl}/api/nuser/account/get";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
@@ -579,9 +601,13 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyAccountResponse);
         if (resp is null || resp.Code != 200 || resp.Profile is null)
             throw new ApiException("获取用户信息失败(未登录或 cookie 失效)", resp?.Code ?? -1);
-        _currentUserId = resp.Profile.UserId;
-        _vipLoaded = true;
-        IsVip = resp.Profile.VipType != 0; // 10/11 音乐包,111 黑胶VIP
+        // 请求期间换过号 ⇒ 这份资料属于旧账号,只回给调用方,不污染共享字段
+        if (generation == _accountGeneration)
+        {
+            _currentUserId = resp.Profile.UserId;
+            _vipLoaded = true;
+            IsVip = resp.Profile.VipType != 0; // 10/11 音乐包,111 黑胶VIP
+        }
         return new UserProfile
         {
             UserId = resp.Profile.UserId,
@@ -689,6 +715,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>用户创建/收藏的歌单列表。</summary>
     public async Task<List<Playlist>> GetUserPlaylistsAsync(long uid, int limit = 50, CancellationToken ct = default)
     {
+        var generation = _accountGeneration;
         var url = $"{BaseUrl}/api/user/playlist?uid={uid}&limit={limit}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(req, includeRealIp: false);
@@ -697,10 +724,14 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (resp is null || resp.Code != 200 || resp.Playlist is null)
             throw new ApiException("获取歌单失败", resp?.Code ?? -1);
 
-        // 识别"我喜欢的音乐"(红心集合):specialType=5,兜底按名字
-        _likedPlaylistId = resp.Playlist.FirstOrDefault(p => p.SpecialType == 5)?.Id
-            ?? resp.Playlist.FirstOrDefault(p => p.Name == "我喜欢的音乐")?.Id
-            ?? 0;
+        // 识别"我喜欢的音乐"(红心集合):specialType=5,兜底按名字。
+        // 请求期间换过号 ⇒ 识别结果属于旧账号,不能写回(否则新账号会用旧歌单 id 判红心)。
+        if (generation == _accountGeneration)
+        {
+            _likedPlaylistId = resp.Playlist.FirstOrDefault(p => p.SpecialType == 5)?.Id
+                ?? resp.Playlist.FirstOrDefault(p => p.Name == "我喜欢的音乐")?.Id
+                ?? 0;
+        }
 
         return resp.Playlist
             .Select(p => new Playlist
@@ -793,6 +824,9 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>当前登录态能否执行红心操作(未登录时没有"我喜欢的音乐"歌单,UI 应引导登录)。</summary>
     public bool CanToggleLike => _likedPlaylistId != 0;
 
+    /// <summary>登录身份代次(见 IUserMusicApi.AccountGeneration)。</summary>
+    public int AccountGeneration => _accountGeneration;
+
     /// <summary>懒加载已喜欢曲目 id 集合(单飞,幂等)。未登录或未识别到喜欢歌单时为空集。</summary>
     public Task EnsureLikedIdsAsync(CancellationToken ct = default)
     {
@@ -804,19 +838,26 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private async Task LoadLikedIdsAsync(CancellationToken ct)
     {
+        var generation = _accountGeneration;
+        var playlistId = _likedPlaylistId;
         try
         {
-            var overview = await GetPlaylistTrackOverviewAsync(_likedPlaylistId, ct).ConfigureAwait(false);
+            var overview = await GetPlaylistTrackOverviewAsync(playlistId, ct).ConfigureAwait(false);
+            // 加载期间换过号 ⇒ 结果是旧账号的红心集合,丢弃(否则新账号红心状态全错)
+            if (generation != _accountGeneration) return;
             _likedIds = new HashSet<long>(overview.TrackIds);
         }
         catch
         {
+            if (generation != _accountGeneration) return;
             // 失败降级为空集合,避免反复请求
             _likedIds ??= new HashSet<long>();
         }
         finally
         {
-            _likedLoading = false;
+            // 只有同代次的任务才能清标志:换号时 ResetLikeState 已经清过,
+            // 且新代次可能已经起了自己的加载任务,这里不能把它的标志按回去。
+            if (generation == _accountGeneration) _likedLoading = false;
         }
     }
 

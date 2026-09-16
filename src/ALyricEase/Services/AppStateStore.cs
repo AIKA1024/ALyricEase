@@ -107,6 +107,10 @@ public sealed class AppStateStore
 
     private static string GetDefaultPath()
     {
+        // ⚠️ 这里的 #if ANDROID 是**死分支**:核心库只面向 net10.0,ANDROID 常量由 Android SDK
+        // 只对 net*-android 工程定义,所以 Android 上实际走的是 #else。现有行为仍然可用
+        // (Android 的 LocalApplicationData = <应用私有 files 目录>/.local/share),
+        // 只是不等于本分支写的路径。要真正区分平台,得用 OperatingSystem.IsAndroid() 或注入根目录。
 #if ANDROID
         var root = Path.Combine(
             global::Android.App.Application.Context.FilesDir!.AbsolutePath, "ALyricEase");

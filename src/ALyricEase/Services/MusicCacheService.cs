@@ -23,7 +23,6 @@ public sealed class MusicCacheService
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
     private const string OfflineIndexFileName = "offline-index.json";
-    private static readonly string PageSnapshotSession = Guid.NewGuid().ToString("N");
 
     private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromMinutes(10) };
 
@@ -35,19 +34,16 @@ public sealed class MusicCacheService
     private readonly Dictionary<string, int> _pinCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deleteWhenReleased = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Lazy<Task>> _downloads = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, Task> _pageSnapshotWrites = new(StringComparer.Ordinal);
-    // 一次性页面快照的内存副本。CacheKey 是每次捕获时新生成的 GUID,只存在进程内的导航历史里,
-    // 所以磁盘文件同样只服务当前进程 —— 内存副本与磁盘副本功能等价,但省掉了"返回时等一次写入"。
+    // 一次性页面快照的内存副本(纯数据,不含视觉树/ViewModel)。快照 key 是每次捕获时新生成的 GUID,
+    // 只存在进程内的导航历史里 —— 也就是说它天生只服务当前进程,落盘没有任何额外收益。
+    // 所以这里只留内存:读取是同步的,返回时不等待任何 I/O(旧实现还会派发一次延迟落盘,已移除)。
     private readonly SnapshotMemoryCache<PlaylistPageCacheData> _playlistSnapshots = new(MaxInMemorySnapshots);
     private readonly SnapshotMemoryCache<DetailPageCacheData> _detailSnapshots = new(MaxInMemorySnapshots);
-    // 延迟落盘:内存副本已能在本进程内满足返回恢复,磁盘只是内存淘汰后的兜底。
-    // 落盘推迟一小段时间,期间若快照被取走(用户返回了该页)就直接取消,不产生任何磁盘 I/O ——
-    // 实测一次 600 首落盘要 0.6~1.3s,且写入末尾的容量裁剪要 stat 整个缓存目录,会与界面争抢 CPU。
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingSnapshotWrites =
-        new(StringComparer.Ordinal);
-    private static readonly TimeSpan SnapshotWriteDelay = TimeSpan.FromSeconds(3);
-    private const int MaxInMemorySnapshots = 8;
-    // 容量裁剪要 stat + 排序整个缓存目录(真实用户可达上万文件),实测空快照落盘也要约 550ms,
+    // 容量要覆盖"返回栈的常见深度":返回是 LIFO 的,不够大时深层返回取不到快照、只能回退常规加载。
+    // 导航历史上限 50,这里取 32 —— 单页 600 首的纯数据约 131KB,32 页合计约 4MB/类,
+    // 换来的是淘汰几乎不发生(旧值 8 会让第 9 层往后的返回全部落空)。
+    internal const int MaxInMemorySnapshots = 32;
+    // 容量裁剪要 stat + 排序整个缓存目录(真实用户可达上万文件,实测一次空跑也要 550ms),
     // 所以同一条路径按时间窗口节流;需要立即生效的调用(改缓存上限)传 force。
     private const int TrimIntervalMs = 5000;
     private long _lastTrimAt;
@@ -67,7 +63,7 @@ public sealed class MusicCacheService
         _http = http;
         Directory.CreateDirectory(_cacheDirectory);
         DeleteStaleTemporaryFiles();
-        DeleteStalePageSnapshots();
+        DeleteLegacyPageSnapshotFiles();
         _offlineIndex = LoadOfflineIndex();
         MigrateInlinePlaylistTracks();
         _ = TrimToLimitAsync();
@@ -230,301 +226,49 @@ public sealed class MusicCacheService
             playlistSnapshot, songSnapshot, Volatile.Read(ref _clearGeneration));
     }
 
-    /// <summary>驻留即将离页的页面重数据:先在内存留一份纯数据副本(返回时同步取回),
-    /// 磁盘副本延后落盘作兜底。调用方既不等待内存写入也不等待磁盘 I/O。</summary>
+    /// <summary>驻留即将离页的页面重数据:只留一份内存纯数据副本,返回时同步取回。
+    /// 调用方既不等待内存写入,也不等待任何磁盘 I/O。
+    /// (签名保留 Task 形式以兼容既有调用方;内部同步完成,await 不会产生线程跳转。)</summary>
     internal Task CachePlaylistPageSnapshotAsync(string snapshotKey, PlaylistPageCacheData snapshot)
     {
-        // 被内存淘汰的快照立刻落盘:它们之后只能靠磁盘兜底,不能再压在延迟窗口里。
-        foreach (var (evictedKey, evictedData) in _playlistSnapshots.Set(snapshotKey, snapshot))
-            ScheduleSnapshotWriteAsync(evictedKey,
-                () => CachePlaylistPageSnapshotCoreAsync(
-                    evictedKey, evictedData, Volatile.Read(ref _clearGeneration)),
-                TimeSpan.Zero);
-
-        return ScheduleSnapshotWriteAsync(snapshotKey, () =>
-            // DTO 映射和 JSON 编码可能覆盖数千首歌曲，必须离开 UI 线程。
-            CachePlaylistPageSnapshotCoreAsync(
-                snapshotKey, snapshot, Volatile.Read(ref _clearGeneration)));
+        _playlistSnapshots.Set(snapshotKey, snapshot);
+        return Task.CompletedTask;
     }
 
-    /// <summary>延后写一次性快照文件;延迟期内快照若已被取走,直接取消,不产生磁盘 I/O。</summary>
-    private async Task ScheduleSnapshotWriteAsync(
-        string snapshotKey, Func<Task> write, TimeSpan? delay = null)
+    /// <summary>取回页面快照并从缓存移除。返回 null 表示这一层已经不在内存里(LRU 淘汰,或从未捕获),
+    /// 由调用方(PlaylistViewModel.RestoreNavigationSnapshotAsync)回退常规加载。</summary>
+    internal Task<PlaylistPageCacheData?> TryTakePlaylistPageSnapshotAsync(string snapshotKey)
     {
-        var wait = delay ?? SnapshotWriteDelay;
-        var cancellation = new CancellationTokenSource();
-        if (_pendingSnapshotWrites.TryGetValue(snapshotKey, out var previous))
-        {
-            try { previous.Cancel(); } catch { }
-            previous.Dispose();
-        }
-        _pendingSnapshotWrites[snapshotKey] = cancellation;
-
-        var pending = DelayAndWriteAsync();
-        _pageSnapshotWrites[snapshotKey] = pending;
-        await ObservePageSnapshotWriteAsync(snapshotKey, pending).ConfigureAwait(false);
-
-        async Task DelayAndWriteAsync()
-        {
-            if (wait > TimeSpan.Zero)
-            {
-                try { await Task.Delay(wait, cancellation.Token).ConfigureAwait(false); }
-                catch (OperationCanceledException) { return; }
-            }
-            await write().ConfigureAwait(false);
-        }
+        _playlistSnapshots.TryTake(snapshotKey, out var cached);
+        return Task.FromResult(cached);
     }
 
-    /// <summary>取消尚未开始的落盘。已进入写入阶段的无法取消,会正常写完。</summary>
-    private void CancelPendingSnapshotWrite(string snapshotKey)
-    {
-        if (!_pendingSnapshotWrites.TryRemove(snapshotKey, out var cancellation)) return;
-        try { cancellation.Cancel(); } catch { }
-        cancellation.Dispose();
-    }
-
-    private async Task CachePlaylistPageSnapshotCoreAsync(
-        string snapshotKey, PlaylistPageCacheData snapshot, int clearGeneration)
-    {
-        var bytes = await Task.Run(() =>
-        {
-            var file = new PlaylistPageSnapshotFile
-            {
-                Tracks = snapshot.Tracks.Select(track => new CachedPageTrackFile
-                {
-                    Song = ToCachedSong(track.Song),
-                    IsPlayable = track.IsPlayable,
-                    IsQueued = track.IsQueued,
-                    IsPlaybackUnavailable = track.IsPlaybackUnavailable,
-                    PreferCachedPlayback = track.PreferCachedPlayback,
-                }).ToList(),
-                TrackIds = snapshot.TrackIds.ToArray(),
-                Materialized = snapshot.Materialized,
-                AggregateLoad = snapshot.AggregateLoad is null
-                    ? null
-                    : new CachedAggregateLoadStateFile
-                    {
-                        MemberIndex = snapshot.AggregateLoad.MemberIndex,
-                        NetEaseTrackIds = snapshot.AggregateLoad.NetEaseTrackIds?.ToArray(),
-                        NetEaseKnown = snapshot.AggregateLoad.NetEaseKnown.Select(ToCachedSong).ToList(),
-                        NetEaseCursor = snapshot.AggregateLoad.NetEaseCursor,
-                        QqBegin = snapshot.AggregateLoad.QqBegin,
-                        FailedCount = snapshot.AggregateLoad.FailedCount,
-                        CoverSet = snapshot.AggregateLoad.CoverSet,
-                    },
-            };
-            return JsonSerializer.SerializeToUtf8Bytes(
-                file, MusicCacheJsonContext.Default.PlaylistPageSnapshotFile);
-        }).ConfigureAwait(false);
-        await WriteJsonCacheFileAsync(
-                BuildPageSnapshotFileName(snapshotKey), bytes, clearGeneration)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>读取并删除一次性页面快照。文件缺失/损坏时返回 null，由调用方回退普通缓存或网络。</summary>
-    internal async Task<PlaylistPageCacheData?> TryTakePlaylistPageSnapshotAsync(string snapshotKey)
-    {
-        // 内存命中:同步返回,不再等离页时派发的落盘(实测 600 首写完要 0.6~1.3s,
-        // 等它会让返回后的列表空白近 1 秒)。尚未开始的落盘直接取消;已落盘的顺手删掉。
-        if (_playlistSnapshots.TryTake(snapshotKey, out var inMemory) && inMemory is not null)
-        {
-            CancelPendingSnapshotWrite(snapshotKey);
-            _ = DiscardPlaylistPageSnapshotAsync(snapshotKey);
-            return inMemory;
-        }
-
-        if (_pageSnapshotWrites.TryGetValue(snapshotKey, out var inFlight))
-        {
-            try { await inFlight.ConfigureAwait(false); }
-            catch { }
-        }
-
-        await _mutationGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            var path = Path.Combine(_cacheDirectory, BuildPageSnapshotFileName(snapshotKey));
-            if (!File.Exists(path)) return null;
-            PlaylistPageSnapshotFile? file;
-            try
-            {
-                file = JsonSerializer.Deserialize(
-                    await File.ReadAllBytesAsync(path).ConfigureAwait(false),
-                    MusicCacheJsonContext.Default.PlaylistPageSnapshotFile);
-            }
-            catch
-            {
-                file = null;
-            }
-            TryDelete(path);
-            if (file is null || file.Version != 1) return null;
-
-            var tracks = file.Tracks.Select(track => new NavigationPageCacheTrack(
-                ToSong(track.Song), track.IsPlayable, track.IsQueued,
-                track.IsPlaybackUnavailable, track.PreferCachedPlayback)).ToList();
-            var aggregate = file.AggregateLoad is null
-                ? null
-                : new AggregatePageCacheState(
-                    file.AggregateLoad.MemberIndex,
-                    file.AggregateLoad.NetEaseTrackIds,
-                    file.AggregateLoad.NetEaseKnown.Select(ToSong).ToList(),
-                    file.AggregateLoad.NetEaseCursor,
-                    file.AggregateLoad.QqBegin,
-                    file.AggregateLoad.FailedCount,
-                    file.AggregateLoad.CoverSet);
-            return new PlaylistPageCacheData(tracks, file.TrackIds, file.Materialized, aggregate);
-        }
-        finally
-        {
-            _mutationGate.Release();
-        }
-    }
-
-    internal async Task DiscardPlaylistPageSnapshotAsync(string snapshotKey)
+    internal Task DiscardPlaylistPageSnapshotAsync(string snapshotKey)
     {
         _playlistSnapshots.Remove(snapshotKey);
-        CancelPendingSnapshotWrite(snapshotKey);
-        if (_pageSnapshotWrites.TryGetValue(snapshotKey, out var inFlight))
-        {
-            try { await inFlight.ConfigureAwait(false); }
-            catch { }
-        }
-        await RemoveFileAsync(BuildPageSnapshotFileName(snapshotKey)).ConfigureAwait(false);
+        return Task.CompletedTask;
     }
 
-    /// <summary>驻留歌手/专辑详情页的一次性重数据:内存副本供返回时同步取回,磁盘副本延后落盘兜底。</summary>
+    /// <summary>驻留歌手/专辑详情页的一次性重数据(纯内存,与歌单页同策略)。</summary>
     internal Task CacheDetailPageSnapshotAsync(string snapshotKey, DetailPageCacheData snapshot)
     {
-        foreach (var (evictedKey, evictedData) in _detailSnapshots.Set(snapshotKey, snapshot))
-            ScheduleSnapshotWriteAsync(evictedKey,
-                () => CacheDetailPageSnapshotCoreAsync(
-                    evictedKey, evictedData, Volatile.Read(ref _clearGeneration)),
-                TimeSpan.Zero);
-
-        return ScheduleSnapshotWriteAsync(snapshotKey, () =>
-            CacheDetailPageSnapshotCoreAsync(
-                snapshotKey, snapshot, Volatile.Read(ref _clearGeneration)));
+        _detailSnapshots.Set(snapshotKey, snapshot);
+        return Task.CompletedTask;
     }
 
-    private async Task CacheDetailPageSnapshotCoreAsync(
-        string snapshotKey, DetailPageCacheData snapshot, int clearGeneration)
+    /// <summary>取回详情页快照并移除;返回 null 由调用方回退网络加载。</summary>
+    internal Task<DetailPageCacheData?> TryTakeDetailPageSnapshotAsync(string snapshotKey)
     {
-        var bytes = await Task.Run(() =>
-        {
-            var file = new DetailPageSnapshotFile
-            {
-                Tracks = snapshot.Tracks.Select(track => new CachedPageTrackFile
-                {
-                    Song = ToCachedSong(track.Song),
-                    IsPlayable = track.IsPlayable,
-                    IsQueued = track.IsQueued,
-                    IsPlaybackUnavailable = track.IsPlaybackUnavailable,
-                    PreferCachedPlayback = track.PreferCachedPlayback,
-                }).ToList(),
-                Albums = snapshot.Albums.Select(ToCachedAlbum).ToList(),
-                Singles = snapshot.Singles.Select(ToCachedAlbum).ToList(),
-                Name = snapshot.Name,
-                Subtitle = snapshot.Subtitle,
-                AvatarUrl = snapshot.AvatarUrl,
-                ArtistName = snapshot.ArtistName,
-                TrackCountText = snapshot.TrackCountText,
-                PublishTimeMs = snapshot.PublishTimeMs,
-                Description = snapshot.Description,
-                CoverUrl = snapshot.CoverUrl,
-                PrimaryArtist = snapshot.PrimaryArtist is null
-                    ? null
-                    : new CachedArtistPageRefFile
-                    {
-                        Source = (int)snapshot.PrimaryArtist.Source,
-                        NetEaseId = snapshot.PrimaryArtist.NetEaseId,
-                        QqMid = snapshot.PrimaryArtist.QqMid,
-                        Name = snapshot.PrimaryArtist.Name,
-                    },
-                Offset = snapshot.Offset,
-                Total = snapshot.Total,
-                HasMore = snapshot.HasMore,
-            };
-            return JsonSerializer.SerializeToUtf8Bytes(
-                file, MusicCacheJsonContext.Default.DetailPageSnapshotFile);
-        }).ConfigureAwait(false);
-        await WriteJsonCacheFileAsync(
-                BuildPageSnapshotFileName(snapshotKey), bytes, clearGeneration)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>读取并删除一次性详情页快照；缺失或损坏时由 ViewModel 回退网络加载。</summary>
-    internal async Task<DetailPageCacheData?> TryTakeDetailPageSnapshotAsync(string snapshotKey)
-    {
-        // 内存命中:同步返回,不必等离页时派发的落盘。
-        if (_detailSnapshots.TryTake(snapshotKey, out var inMemory) && inMemory is not null)
-        {
-            CancelPendingSnapshotWrite(snapshotKey);
-            _ = DiscardDetailPageSnapshotAsync(snapshotKey);
-            return inMemory;
-        }
-
-        if (_pageSnapshotWrites.TryGetValue(snapshotKey, out var inFlight))
-        {
-            try { await inFlight.ConfigureAwait(false); }
-            catch { }
-        }
-
-        await _mutationGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            var path = Path.Combine(_cacheDirectory, BuildPageSnapshotFileName(snapshotKey));
-            if (!File.Exists(path)) return null;
-            DetailPageSnapshotFile? file;
-            try
-            {
-                file = JsonSerializer.Deserialize(
-                    await File.ReadAllBytesAsync(path).ConfigureAwait(false),
-                    MusicCacheJsonContext.Default.DetailPageSnapshotFile);
-            }
-            catch
-            {
-                file = null;
-            }
-            TryDelete(path);
-            if (file is null || file.Version != 1) return null;
-
-            var tracks = file.Tracks.Select(track => new NavigationPageCacheTrack(
-                ToSong(track.Song), track.IsPlayable, track.IsQueued,
-                track.IsPlaybackUnavailable, track.PreferCachedPlayback)).ToList();
-            var primaryArtist = file.PrimaryArtist is null
-                ? null
-                : new NavigationPageCacheArtist(
-                    (MusicSource)file.PrimaryArtist.Source,
-                    file.PrimaryArtist.NetEaseId,
-                    file.PrimaryArtist.QqMid,
-                    file.PrimaryArtist.Name);
-            return new DetailPageCacheData(
-                tracks,
-                file.Albums.Select(ToNavigationAlbum).ToList(),
-                file.Singles.Select(ToNavigationAlbum).ToList(),
-                file.Name,
-                file.Subtitle,
-                file.AvatarUrl,
-                file.ArtistName,
-                file.TrackCountText,
-                file.PublishTimeMs,
-                file.Description,
-                file.CoverUrl,
-                primaryArtist,
-                file.Offset,
-                file.Total,
-                file.HasMore);
-        }
-        finally
-        {
-            _mutationGate.Release();
-        }
+        _detailSnapshots.TryTake(snapshotKey, out var cached);
+        return Task.FromResult(cached);
     }
 
     internal Task DiscardDetailPageSnapshotAsync(string snapshotKey)
     {
         _detailSnapshots.Remove(snapshotKey);
-        return DiscardPlaylistPageSnapshotAsync(snapshotKey);
+        return Task.CompletedTask;
     }
+
 
     /// <summary>读取账号歌单快照。返回 null 表示该音源从未成功同步过。</summary>
     public CachedPlaylistLibrary? TryGetPlaylistLibrary(MusicSource source)
@@ -588,7 +332,6 @@ public sealed class MusicCacheService
         Interlocked.Increment(ref _clearGeneration);
         _playlistSnapshots.Clear();
         _detailSnapshots.Clear();
-        foreach (var key in _pendingSnapshotWrites.Keys) CancelPendingSnapshotWrite(key);
         await _mutationGate.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -660,6 +403,9 @@ public sealed class MusicCacheService
             if (GetAudioFiles(songKey).Any(file => file.Rank >= rank)) return;
 
             var requestUrl = url;
+            // ⚠️ #if ANDROID 在本程序集里是死分支(核心库只面向 net10.0),这段升级到 https
+            // 从未生效。目前无害:AndroidManifest 里 usesCleartextTraffic="true" 允许明文。
+            // 若哪天关掉明文,这里必须换成 OperatingSystem.IsAndroid() 才能真的起作用。
 #if ANDROID
             if (requestUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
                 requestUrl = "https://" + requestUrl["http://".Length..];
@@ -862,33 +608,6 @@ public sealed class MusicCacheService
             }
         }
         if (changed) SaveOfflineIndexLocked();
-    }
-
-    private async Task ObservePageSnapshotWriteAsync(string snapshotKey, Task write)
-    {
-        try { await write.ConfigureAwait(false); }
-        catch
-        {
-            // 导航快照失败时返回流程会自然回退普通缓存/网络。
-        }
-        finally
-        {
-            if (_pageSnapshotWrites.TryGetValue(snapshotKey, out var current)
-                && ReferenceEquals(current, write))
-                _pageSnapshotWrites.TryRemove(snapshotKey, out _);
-        }
-        await TrimToLimitAsync().ConfigureAwait(false);
-    }
-
-    private async Task WriteJsonCacheFileAsync(string fileName, byte[] bytes, int clearGeneration)
-    {
-        await _mutationGate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (clearGeneration != Volatile.Read(ref _clearGeneration)) return;
-            WriteJsonCacheFileLocked(fileName, bytes);
-        }
-        finally { _mutationGate.Release(); }
     }
 
     private void WriteJsonCacheFileLocked(string fileName, byte[] bytes)
@@ -1146,9 +865,6 @@ public sealed class MusicCacheService
     private static string BuildPlaylistTracksFileName(MusicSource source, long playlistId)
         => $"p-{(int)source}-{Hash(playlistId.ToString(CultureInfo.InvariantCulture))}.tracks";
 
-    private static string BuildPageSnapshotFileName(string snapshotKey)
-        => $"n-{PageSnapshotSession}-{Hash(snapshotKey)}.snapshot";
-
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
@@ -1236,20 +952,6 @@ public sealed class MusicCacheService
         AlbumMid = song.AlbumMid,
     };
 
-    private static CachedAlbumCardFile ToCachedAlbum(NavigationPageCacheAlbum album) => new()
-    {
-        Id = album.Id,
-        Title = album.Title,
-        CoverUrl = album.CoverUrl,
-        Mid = album.Mid,
-    };
-
-    private static NavigationPageCacheAlbum ToNavigationAlbum(CachedAlbumCardFile album) => new(
-        album.Id,
-        album.Title,
-        album.CoverUrl,
-        album.Mid);
-
     private static long TryGetLength(string path)
     {
         try { return new FileInfo(path).Length; }
@@ -1280,14 +982,14 @@ public sealed class MusicCacheService
         }
     }
 
-    private void DeleteStalePageSnapshots()
+    /// <summary>清掉旧版实现遗留的一次性页面快照文件。
+    /// 现在快照只驻内存,但曾经把它们写到 n-&lt;进程 GUID&gt;-&lt;hash&gt;.snapshot,升级后不会有人再读 ——
+    /// 不清就会一直占着缓存配额(还会被容量裁剪当成普通缓存文件)。</summary>
+    private void DeleteLegacyPageSnapshotFiles()
     {
-        var currentPrefix = $"n-{PageSnapshotSession}-";
         try
         {
-            foreach (var path in Directory.EnumerateFiles(_cacheDirectory, "n-*.snapshot"))
-                if (!Path.GetFileName(path).StartsWith(currentPrefix, StringComparison.Ordinal))
-                    TryDelete(path);
+            foreach (var path in Directory.EnumerateFiles(_cacheDirectory, "n-*.snapshot")) TryDelete(path);
         }
         catch
         {
@@ -1296,6 +998,10 @@ public sealed class MusicCacheService
 
     private static string GetDefaultCacheDirectory()
     {
+        // ⚠️ 这里的 #if ANDROID 是**死分支**:核心库只面向 net10.0,ANDROID 常量由 Android SDK
+        // 只对 net*-android 工程定义,所以 Android 上实际走 #else(缓存落在
+        // <应用私有 files 目录>/.local/share/ALyricEase/cache/music)。
+        // 功能上没问题,但要知道它不在 FilesDir 下;改路径会孤立已有缓存,需要一并迁移。
 #if ANDROID
         var root = Path.Combine(
             global::Android.App.Application.Context.FilesDir!.AbsolutePath, "ALyricEase");
@@ -1307,8 +1013,9 @@ public sealed class MusicCacheService
         return Path.Combine(root, "cache", "music");
     }
 
-    /// <summary>一次性页面快照的内存 LRU:纯数据(不含视觉树、不含 ViewModel),按"页面数"限容,
-    /// 超出后丢弃最久未用的条目,由磁盘副本兜底。读取是同步的 —— 这是"返回不再卡一下"的关键。</summary>
+    /// <summary>一次性页面快照的内存 LRU:纯数据(不含视觉树、不含 ViewModel),按"页面数"限容。
+    /// 读取同步完成 —— 这是"返回不再卡一下"的关键。淘汰即丢弃:调用方取不到就回退常规加载,
+    /// 容量按 MaxInMemorySnapshots 配到"淘汰几乎不发生"的量级,所以这条回退是长尾而非常态。</summary>
     private sealed class SnapshotMemoryCache<T> where T : class
     {
         private readonly int _capacity;
@@ -1318,11 +1025,9 @@ public sealed class MusicCacheService
 
         public SnapshotMemoryCache(int capacity) => _capacity = Math.Max(1, capacity);
 
-        /// <summary>写入并返回因超容被淘汰的条目 —— 调用方必须为它们立刻落盘,
-        /// 否则这段延迟窗口里内存和磁盘两头都没有副本。</summary>
-        public IReadOnlyList<(string Key, T Data)> Set(string key, T data)
+        /// <summary>写入;超容时直接丢弃最久未用的条目(没有磁盘副本可兜底)。</summary>
+        public void Set(string key, T data)
         {
-            List<(string Key, T Data)>? evicted = null;
             lock (_order)
             {
                 if (_index.TryGetValue(key, out var existing))
@@ -1338,11 +1043,8 @@ public sealed class MusicCacheService
                     var oldest = _order.Last!;
                     _order.RemoveLast();
                     _index.Remove(oldest.Value.Key);
-                    (evicted ??= []).Add(oldest.Value);
                 }
             }
-
-            return evicted ?? (IReadOnlyList<(string Key, T Data)>)Array.Empty<(string, T)>();
         }
 
         public bool TryTake(string key, out T? data)

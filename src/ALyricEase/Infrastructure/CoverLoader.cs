@@ -17,11 +17,12 @@ namespace ALyricEase.Infrastructure;
 /// 同一规格 URL 的并发请求共享一个在途任务,避免列表同时实化时重复下载与解码。</summary>
 public static class CoverLoader
 {
-    /// <summary>低频直接位图缓存预算(~16MB)：约可保留 10 张 640px 大封面。</summary>
-    private const long MaxCacheBytes = 16L * 1024 * 1024;
+    /// <summary>低频直接位图缓存预算(桌面 ~16MB / Android 按堆缩放)：约可保留 10 张 640px 大封面。
+    /// 与 ManagedCoverImage 的租约缓存共用 ImageMemoryBudget,避免两处预算各写一份。</summary>
+    private static readonly long MaxCacheBytes = ImageMemoryBudget.DirectCacheBytes;
 
     /// <summary>条目数兜底:失败项不占像素预算,仍必须限制其 URL/字典节点数量。</summary>
-    private const int MaxCacheEntries = 128;
+    private static readonly int MaxCacheEntries = ImageMemoryBudget.DirectCacheItems;
 
     /// <summary>失败结果只短暂缓存:防离线/瞬时失败时每行反复请求,同时允许网络恢复后自动重试。</summary>
     private static readonly TimeSpan FailedEntryLifetime = TimeSpan.FromMinutes(2);

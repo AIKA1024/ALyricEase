@@ -252,7 +252,7 @@ public sealed partial class MainViewModel : ViewModelBase
             && !string.Equals(oldValue, newValue, StringComparison.Ordinal))
             PushCurrentNavigation();
 
-        // 前进导航已在 PushCurrentNavigation 中落盘并释放；后退没有前进栈，直接丢弃当前页重数据。
+        // 前进导航已在 PushCurrentNavigation 中留好内存快照并释放；后退没有前进栈，直接丢弃当前页重数据。
         if (oldValue is "Favorites" or "CloudDrive" && newValue != oldValue)
             _playlist.ReleaseCurrentPageData();
         if (newValue != oldValue)

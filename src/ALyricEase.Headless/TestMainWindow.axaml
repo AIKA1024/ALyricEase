@@ -129,20 +129,6 @@
     <Style Selector="ToolTip">
       <Setter Property="CornerRadius" Value="4" />
     </Style>
-
-    <!-- ContentDialog 主按钮(WinUI3 AccentButton 样式):强调色底白字,悬停/按下用系统强调色变体 -->
-    <Style Selector="Button.dialog-primary">
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="4" />
-    </Style>
-    <Style Selector="Button.dialog-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
-    </Style>
-    <Style Selector="Button.dialog-primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
-    </Style>
   </Window.Styles>
 
   <ExperimentalAcrylicBorder Material="{DynamicResource AppAcrylicMaterial}">

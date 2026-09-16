@@ -210,7 +210,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private sealed record NavigationEntry(
         string Page,
         string? SelectedNavKey,
-        PlaylistNavigationSnapshot? PlaylistSnapshot);
+        PlaylistNavigationSnapshot? PlaylistSnapshot,
+        DetailNavigationSnapshot? DetailSnapshot);
 
     private const int MaxNavigationHistory = 50;
     private readonly List<NavigationEntry> _navigationHistory = new();
@@ -254,6 +255,8 @@ public sealed partial class MainViewModel : ViewModelBase
         // 前进导航已在 PushCurrentNavigation 中落盘并释放；后退没有前进栈，直接丢弃当前页重数据。
         if (oldValue is "Favorites" or "CloudDrive" && newValue != oldValue)
             _playlist.ReleaseCurrentPageData();
+        if (newValue != oldValue)
+            ReleaseDetailPageData(oldValue);
     }
 
     partial void OnActivePageChanged(string value)
@@ -261,10 +264,9 @@ public sealed partial class MainViewModel : ViewModelBase
         // 返回时反向滑动(GoBack 期间 _isGoingBack=true),前进正向
         IsTransitionReversed = _isGoingBack;
         OnPropertyChanged(nameof(CanGoBack));
+        // 解码图交给带租约的有界 LRU 管理。切页不整库清空，返回时可直接复用；
+        // 超过容量且没有可见 Image 租用的条目会由缓存自动淘汰并释放。
         OnPropertyChanged(nameof(CurrentContent));
-        // 页面 VM 为单例，但非当前页的 Image 已释放租约；清掉未租用位图即可让内存及时回落。
-        // 编码封面仍在统一磁盘缓存，返回页面不会重复请求网络。
-        CoverImagePipeline.ClearMemoryCache();
 
         // 未完成页面使用明确占位，不伪装为可用功能。
         if (value == "Browse")
@@ -469,6 +471,7 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(CanGoBack));
             if (ActivePage is "Favorites" or "CloudDrive")
                 Playlist.ReleaseCurrentPageData();
+            ReleaseDetailPageData(ActivePage);
             RestoreNavigation(entry);
         }
         finally
@@ -584,16 +587,19 @@ public sealed partial class MainViewModel : ViewModelBase
         if (_navigationHistory.Count == MaxNavigationHistory)
         {
             Playlist.DiscardNavigationSnapshot(_navigationHistory[0].PlaylistSnapshot);
+            DiscardDetailNavigationSnapshot(_navigationHistory[0].DetailSnapshot);
             _navigationHistory.RemoveAt(0);
         }
 
         var playlistSnapshot = ActivePage is "Favorites" or "CloudDrive"
             ? Playlist.CaptureAndReleaseNavigationSnapshot()
             : null;
+        var detailSnapshot = CaptureDetailNavigationSnapshot(ActivePage);
         _navigationHistory.Add(new NavigationEntry(
             ActivePage,
             SelectedNav?.Key,
-            playlistSnapshot));
+            playlistSnapshot,
+            detailSnapshot));
         OnPropertyChanged(nameof(CanGoBack));
     }
 
@@ -615,6 +621,52 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (entry.PlaylistSnapshot is { } snapshot)
             _ = Playlist.RestoreNavigationSnapshotAsync(snapshot);
+        if (entry.DetailSnapshot is { } detailSnapshot)
+            RestoreDetailNavigationSnapshot(detailSnapshot);
+    }
+
+    private DetailNavigationSnapshot? CaptureDetailNavigationSnapshot(string page) => page switch
+    {
+        "Artist" => Artist.CaptureAndReleaseNavigationSnapshot(),
+        "Album" => Album.CaptureAndReleaseNavigationSnapshot(),
+        "ArtistSongs" => ArtistSongsPage.CaptureAndReleaseNavigationSnapshot(),
+        "ArtistAlbums" => ArtistAlbumsPage.CaptureAndReleaseNavigationSnapshot(),
+        _ => null,
+    };
+
+    private void ReleaseDetailPageData(string? page)
+    {
+        switch (page)
+        {
+            case "Artist": Artist.ReleaseCurrentPageData(); break;
+            case "Album": Album.ReleaseCurrentPageData(); break;
+            case "ArtistSongs": ArtistSongsPage.ReleaseCurrentPageData(); break;
+            case "ArtistAlbums": ArtistAlbumsPage.ReleaseCurrentPageData(); break;
+        }
+    }
+
+    private void RestoreDetailNavigationSnapshot(DetailNavigationSnapshot snapshot)
+    {
+        _ = snapshot.Kind switch
+        {
+            DetailPageKind.Artist => Artist.RestoreNavigationSnapshotAsync(snapshot),
+            DetailPageKind.Album => Album.RestoreNavigationSnapshotAsync(snapshot),
+            DetailPageKind.ArtistSongs => ArtistSongsPage.RestoreNavigationSnapshotAsync(snapshot),
+            DetailPageKind.ArtistAlbums => ArtistAlbumsPage.RestoreNavigationSnapshotAsync(snapshot),
+            _ => Task.CompletedTask,
+        };
+    }
+
+    private void DiscardDetailNavigationSnapshot(DetailNavigationSnapshot? snapshot)
+    {
+        if (snapshot is null) return;
+        switch (snapshot.Kind)
+        {
+            case DetailPageKind.Artist: Artist.DiscardNavigationSnapshot(snapshot); break;
+            case DetailPageKind.Album: Album.DiscardNavigationSnapshot(snapshot); break;
+            case DetailPageKind.ArtistSongs: ArtistSongsPage.DiscardNavigationSnapshot(snapshot); break;
+            case DetailPageKind.ArtistAlbums: ArtistAlbumsPage.DiscardNavigationSnapshot(snapshot); break;
+        }
     }
 
     private void SetSelectedNavWithoutNavigation(NavItemViewModel? value)
@@ -664,6 +716,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task OpenArtistAsync(long? artistId)
     {
         if (artistId is null or 0) return;
+        PreserveDetailBeforeReplacement("Artist", Artist.HasRetainedPageData);
         ActivePage = "Artist";
         try { await Artist.LoadAsync(artistId.Value); }
         catch { /* 网络失败:停留在歌手页空内容 */ }
@@ -674,6 +727,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task OpenQqArtistAsync(string? singerMid)
     {
         if (string.IsNullOrEmpty(singerMid)) return;
+        PreserveDetailBeforeReplacement("Artist", Artist.HasRetainedPageData);
         ActivePage = "Artist";
         try { await Artist.LoadQqAsync(singerMid); }
         catch { /* 网络失败:停留在歌手页空内容 */ }
@@ -684,6 +738,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task OpenAlbumAsync(long? albumId)
     {
         if (albumId is null or 0) return;
+        PreserveDetailBeforeReplacement("Album", Album.HasRetainedPageData);
         ActivePage = "Album";
         try { await Album.LoadAsync(albumId.Value); }
         catch { /* 网络失败:停留在专辑页空内容 */ }
@@ -694,6 +749,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task OpenQqAlbumAsync(string? albumMid)
     {
         if (string.IsNullOrEmpty(albumMid)) return;
+        PreserveDetailBeforeReplacement("Album", Album.HasRetainedPageData);
         ActivePage = "Album";
         try { await Album.LoadQqAsync(albumMid); }
         catch { /* 网络失败:停留在专辑页空内容 */ }
@@ -704,6 +760,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task OpenArtistSongsPageAsync(ArtistPageRef? artistRef)
     {
         if (artistRef is null) return;
+        PreserveDetailBeforeReplacement("ArtistSongs", ArtistSongsPage.HasRetainedPageData);
         ActivePage = "ArtistSongs";
         try { await ArtistSongsPage.LoadAsync(artistRef); }
         catch { /* 网络失败:停留在页面空内容 */ }
@@ -714,9 +771,16 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task OpenArtistAlbumsPageAsync(ArtistPageRef? artistRef)
     {
         if (artistRef is null) return;
+        PreserveDetailBeforeReplacement("ArtistAlbums", ArtistAlbumsPage.HasRetainedPageData);
         ActivePage = "ArtistAlbums";
         try { await ArtistAlbumsPage.LoadAsync(artistRef); }
         catch { /* 网络失败:停留在页面空内容 */ }
+    }
+
+    private void PreserveDetailBeforeReplacement(string page, bool hasRetainedPageData)
+    {
+        if (ActivePage == page && hasRetainedPageData)
+            PushCurrentNavigation();
     }
 
     [RelayCommand] private void ToggleNavigationExpanded() => IsNavigationExpanded = !IsNavigationExpanded;

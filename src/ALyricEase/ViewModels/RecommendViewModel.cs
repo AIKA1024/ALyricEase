@@ -16,7 +16,9 @@ namespace ALyricEase.ViewModels;
 /// activate 为点击行为:歌单卡片→打开歌单页,歌曲卡片→播放(队列=所在区块全部歌);null 不可点。</summary>
 public sealed partial class RecommendCardViewModel : ViewModelBase
 {
+    private static readonly TimeSpan CoverTransitionDelay = TimeSpan.FromMilliseconds(320);
     private readonly Func<Task>? _activate;
+    private bool _coverRequestScheduled;
 
     public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0, long id = 0, Func<Task>? activate = null)
     {
@@ -52,16 +54,27 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
     /// 若 30 张位图都绑在首帧渲染,切页动画第一帧会被位图绘制卡死(实测 ~250ms),所以延后亮出。</summary>
     [ObservableProperty] private string? _displayCoverUrl;
 
-    /// <summary>每次容器实化(每次挂树)调用:先把显示封面重置回占位图,再安排过渡结束后亮出真实封面。
-    /// 若 30 张位图直接参与首帧渲染,切页动画第一帧会被卡死(实测旧行为 ~300ms);
-    /// 每次切回都重置,保证"切回来"同样走延后路径(即使封面已缓存/被淘汰)。</summary>
+    /// <summary>卡片第一次实化时延迟到页面过渡结束再请求封面。
+    /// 已经显示过的卡片保持 URL，不在返回首页时先清空再排队；否则持续渲染会让
+    /// Background 队列长期饥饿，出现首页封面几十秒后才一起恢复。</summary>
     public void PrepareCoverForTransition()
     {
-        DisplayCoverUrl = null;
+        if (_coverRequestScheduled
+            || string.Equals(DisplayCoverUrl, CoverUrl, StringComparison.Ordinal))
+            return;
+
+        _coverRequestScheduled = true;
+        _ = CommitCoverAfterTransitionAsync();
+    }
+
+    private async Task CommitCoverAfterTransitionAsync()
+    {
+        await Task.Delay(CoverTransitionDelay).ConfigureAwait(false);
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
+            _coverRequestScheduled = false;
             DisplayCoverUrl = CoverUrl;
-        }, Avalonia.Threading.DispatcherPriority.Background);
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 }
 

@@ -1,4 +1,3 @@
-using System;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using Avalonia;
@@ -15,7 +14,8 @@ public partial class LoginDialogView : UserControl
     public LoginDialogView()
     {
         InitializeComponent();
-        SizeChanged += (_, e) => ApplyResponsiveLayout(e.NewSize);
+        // 宽窄屏布局全部由 axaml 容器查询(Root 为容器,max-width:760 切换堆叠)表达,
+        // 这里不再做任何响应式切换。
         PropertyChanged += (_, e) =>
         {
             if (e.Property == IsVisibleProperty && IsVisible)
@@ -26,18 +26,6 @@ public partial class LoginDialogView : UserControl
         };
     }
 
-    private void ApplyResponsiveLayout(Size size)
-    {
-        var compact = size.Width < 760;
-        Root.Classes.Set("compact", compact);
-        DialogCard.Width = Math.Max(320, Math.Min(760, size.Width - 32));
-        DialogCard.MaxHeight = Math.Max(440, Math.Min(680, size.Height - 32));
-        QqLayout.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "178,*");
-        QqLayout.RowDefinitions = new RowDefinitions(compact ? "Auto,*" : "*");
-        NetEaseFields.ColumnDefinitions = new ColumnDefinitions(compact ? "*" : "1.15*,0.85*");
-        NetEaseFields.RowDefinitions = new RowDefinitions(compact ? "Auto,Auto" : "*");
-    }
-
     private void FocusActiveInput()
     {
         Root.Opacity = 1;
@@ -45,7 +33,9 @@ public partial class LoginDialogView : UserControl
         var playlist = vm?.Playlist;
         var target = playlist switch
         {
-            { IsQQLoginTab: false } => (Control)MusicUBox,
+            // 网易云代理方式的首要控件是启动按钮;Cookie 方式才是输入框(此时它可见)。
+            { IsNetEaseProxyMethod: true } => (Control)NetEaseStartProxyButton,
+            { IsQQLoginTab: false } => MusicUBox,
             { IsQqPhoneLoginMethod: true } => QqPhoneBox,
             { IsQqCookieLoginMethod: true } => QQBox,
             _ => QqQrButton,

@@ -45,13 +45,28 @@ public static class ManagedCoverImage
 }
 
 /// <summary>
-/// 应用级封面管线：解码图仅短期留在 RAM；编码字节复用统一磁盘缓存，
-/// 因此页面返回后即使 RAM 位图已释放，也不会重新请求网络。
+/// 应用级封面管线：解码图由带租约的有界 LRU 缓存在 RAM 中；编码字节复用统一磁盘缓存。
+/// 切页时保留热点解码图，超出预算且无人租用的条目才会被淘汰并释放。
 /// </summary>
 public static class CoverImagePipeline
 {
     private static readonly object Gate = new();
     private static ImageLoaderPipeline? _pipeline;
+    private static BoundedImageMemoryCache? _memoryCache;
+
+    /// <summary>性能回归探针使用:当前解码图缓存(字节数/条目数)。
+    /// 多次页面往返后应受 64MB/512 项预算约束并趋于稳定,而不是无界增长。</summary>
+    internal static (long Bytes, int Items) MemoryCacheStats
+    {
+        get
+        {
+            lock (Gate)
+            {
+                var cache = _memoryCache;
+                return cache is null ? (0, 0) : (cache.CachedBytes, cache.CachedItemCount);
+            }
+        }
+    }
 
     public static void Configure(MusicCacheService cache)
     {
@@ -66,15 +81,17 @@ public static class CoverImagePipeline
             {
                 Timeout = TimeSpan.FromSeconds(10),
             };
+            var memoryCache = new BoundedImageMemoryCache();
             var pipeline = ImageLoaderPipelineBuilder
                 .Uncached()
-                .UseMemoryCache(new BoundedImageMemoryCache())
+                .UseMemoryCache(memoryCache)
                 .UseByteCache(new MusicCoverByteCache(cache))
                 .UseHttpClient(http, disposeHttpClient: true)
                 .Build();
 
             AsyncImageLoader.ImageLoader.AsyncImageLoader = pipeline;
             _pipeline = pipeline;
+            _memoryCache = memoryCache;
             if (!ReferenceEquals(previous, pipeline)) previous.Dispose();
         }
     }

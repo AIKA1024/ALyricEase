@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -11,17 +13,28 @@ namespace ALyricEase.ViewModels;
 
 /// <summary>专辑页:封面 + 名字 + 歌手 + 全量曲目。从歌单行/歌手页的专辑入口进入。
 /// 网易云按数字 id、QQ 按 album mid 取数(两套 Load)。</summary>
-public sealed partial class AlbumViewModel : ViewModelBase
+public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
 {
     private readonly NetEaseApiClient _api;
     private readonly QQMusicApiClient _qqApi;
     private readonly PlayerViewModel _player;
+    private readonly MusicCacheService _musicCache;
+    private long _albumId;
+    private string _albumMid = "";
+    private CancellationTokenSource? _loadCancellation;
+    private int _loadGeneration;
+    private bool _isLoading;
 
-    public AlbumViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player)
+    public AlbumViewModel(
+        NetEaseApiClient api,
+        QQMusicApiClient qqApi,
+        PlayerViewModel player,
+        MusicCacheService musicCache)
     {
         _api = api;
         _qqApi = qqApi;
         _player = player;
+        _musicCache = musicCache;
     }
 
     [ObservableProperty] private string _name = "";
@@ -56,10 +69,14 @@ public sealed partial class AlbumViewModel : ViewModelBase
     /// 失败静默(页面停在空态,而不是上一张专辑的数据)。</summary>
     public async Task LoadAsync(long albumId)
     {
+        var (generation, ct) = BeginLoad();
         ClearContent();
+        _albumId = albumId;
+        _albumMid = "";
         try
         {
-            var album = await _api.GetAlbumAsync(albumId);
+            var album = await _api.GetAlbumAsync(albumId, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
             Name = album.Info.Name;
             var artists = album.Info.Artists?
                 .Where(artist => !string.IsNullOrWhiteSpace(artist.Name))
@@ -79,9 +96,16 @@ public sealed partial class AlbumViewModel : ViewModelBase
             foreach (var s in album.Songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, i++, queue, _api, album.Info.Name));
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
         catch
         {
             // 网络失败静默:停在空态,不崩
+        }
+        finally
+        {
+            if (IsCurrentLoad(generation, ct)) _isLoading = false;
         }
     }
 
@@ -106,12 +130,16 @@ public sealed partial class AlbumViewModel : ViewModelBase
     /// 歌手名取自曲目(详情接口的 singer 结构不稳定)。失败静默(停在空态)。</summary>
     public async Task LoadQqAsync(string albumMid)
     {
+        var (generation, ct) = BeginLoad();
         ClearContent();
+        _albumId = 0;
+        _albumMid = albumMid;
         try
         {
-            var infoTask = _qqApi.GetAlbumInfoByMidAsync(albumMid);
-            var songsTask = _qqApi.GetAlbumSongsByMidAsync(albumMid);
+            var infoTask = _qqApi.GetAlbumInfoByMidAsync(albumMid, ct);
+            var songsTask = _qqApi.GetAlbumSongsByMidAsync(albumMid, ct: ct);
             await Task.WhenAll(infoTask, songsTask).ConfigureAwait(true);
+            if (!IsCurrentLoad(generation, ct)) return;
             var info = infoTask.Result;
             var songs = songsTask.Result;
 
@@ -134,10 +162,175 @@ public sealed partial class AlbumViewModel : ViewModelBase
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, i++, songs, source: info.Name));
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
         catch
         {
             // 网络失败静默:停在空态,不崩
         }
+        finally
+        {
+            if (IsCurrentLoad(generation, ct)) _isLoading = false;
+        }
+    }
+
+    internal DetailNavigationSnapshot? CaptureAndReleaseNavigationSnapshot()
+    {
+        if (_albumId == 0 && _albumMid.Length == 0)
+        {
+            ReleaseCurrentPageData();
+            return null;
+        }
+
+        var wasLoading = _isLoading;
+        var cacheKey = Guid.NewGuid().ToString("N");
+        var source = _albumMid.Length > 0 ? MusicSource.QQ : MusicSource.NetEase;
+        var snapshot = new DetailNavigationSnapshot(
+            cacheKey,
+            DetailPageKind.Album,
+            source,
+            _albumId,
+            _albumMid,
+            Name,
+            0,
+            "",
+            false,
+            PageScrollOffset);
+        CancelCurrentLoad();
+
+        if (!wasLoading)
+        {
+            var primaryArtist = PrimaryArtist is null
+                ? null
+                : new NavigationPageCacheArtist(
+                    PrimaryArtist.IsQq ? MusicSource.QQ : MusicSource.NetEase,
+                    PrimaryArtist.Id,
+                    PrimaryArtist.Mid,
+                    PrimaryArtist.Name);
+            _ = _musicCache.CacheDetailPageSnapshotAsync(
+                cacheKey,
+                new DetailPageCacheData(
+                    Songs.Select(ToCacheTrack).ToList(),
+                    [],
+                    [],
+                    Name: Name,
+                    ArtistName: ArtistName,
+                    TrackCountText: TrackCountText,
+                    PublishTimeMs: PublishTimeMs,
+                    Description: Description,
+                    CoverUrl: CoverUrl,
+                    PrimaryArtist: primaryArtist));
+        }
+
+        ReleaseCurrentPageData();
+        return snapshot;
+    }
+
+    internal void ReleaseCurrentPageData()
+    {
+        CancelCurrentLoad();
+        ClearContent();
+        _albumId = 0;
+        _albumMid = "";
+        ResetPageScrollState();
+    }
+
+    internal async Task RestoreNavigationSnapshotAsync(DetailNavigationSnapshot snapshot)
+    {
+        var (generation, ct) = BeginLoad();
+        ClearContent();
+        _albumId = snapshot.Id;
+        _albumMid = snapshot.Mid;
+
+        var cached = await _musicCache.TryTakeDetailPageSnapshotAsync(snapshot.CacheKey);
+        if (!IsCurrentLoad(generation, ct)) return;
+        if (cached is null)
+        {
+            _isLoading = false;
+            var fallbackLoad = snapshot.Source == MusicSource.QQ
+                ? LoadQqAsync(snapshot.Mid)
+                : LoadAsync(snapshot.Id);
+            var fallbackGeneration = _loadGeneration;
+            await fallbackLoad;
+            if (fallbackGeneration != _loadGeneration) return;
+            RestorePageScrollState(snapshot.ScrollOffset);
+            return;
+        }
+
+        Name = cached.Name;
+        ArtistName = cached.ArtistName;
+        TrackCountText = cached.TrackCountText;
+        PublishTimeMs = cached.PublishTimeMs;
+        Description = cached.Description;
+        CoverUrl = cached.CoverUrl;
+        PrimaryArtist = cached.PrimaryArtist is null
+            ? null
+            : new ArtistNavItem(
+                cached.PrimaryArtist.NetEaseId,
+                cached.PrimaryArtist.Name,
+                cached.PrimaryArtist.QqMid);
+        var queue = cached.Tracks.Where(track => track.IsQueued).Select(track => track.Song).ToList();
+        var index = 1;
+        foreach (var track in cached.Tracks)
+        {
+            RestoreSongFlags(track);
+            var row = new SongItemViewModel(
+                track.Song,
+                _player.PlayFromList,
+                index++,
+                queue,
+                track.Song.Source == MusicSource.NetEase ? _api : null,
+                Name);
+            row.IsPlayable = track.IsPlayable;
+            Songs.Add(row);
+        }
+        _isLoading = false;
+        RestorePageScrollState(snapshot.ScrollOffset);
+    }
+
+    internal bool HasRetainedPageData => _albumId != 0 || _albumMid.Length > 0 || Songs.Count > 0;
+
+    internal int RetainedTrackCount => Songs.Count;
+
+    internal void DiscardNavigationSnapshot(DetailNavigationSnapshot? snapshot)
+    {
+        if (snapshot is not null)
+            _ = _musicCache.DiscardDetailPageSnapshotAsync(snapshot.CacheKey);
+    }
+
+    private (int Generation, CancellationToken Token) BeginLoad()
+    {
+        CancelCurrentLoad();
+        _loadCancellation = new CancellationTokenSource();
+        _isLoading = true;
+        ResetPageScrollState();
+        return (_loadGeneration, _loadCancellation.Token);
+    }
+
+    private void CancelCurrentLoad()
+    {
+        _loadGeneration++;
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = null;
+        _isLoading = false;
+    }
+
+    private bool IsCurrentLoad(int generation, CancellationToken token)
+        => generation == _loadGeneration && !token.IsCancellationRequested;
+
+    private static NavigationPageCacheTrack ToCacheTrack(SongItemViewModel row) => new(
+        row.Song,
+        row.IsPlayable,
+        true,
+        row.Song.IsPlaybackUnavailable,
+        row.Song.PreferCachedPlayback);
+
+    private static void RestoreSongFlags(NavigationPageCacheTrack track)
+    {
+        track.Song.IsPlaybackUnavailable = track.IsPlaybackUnavailable;
+        track.Song.PreferCachedPlayback = track.PreferCachedPlayback;
     }
 
     /// <summary>清空上一张专辑的内容。专辑页每次进入都重建视图并立即绑定现有内容,

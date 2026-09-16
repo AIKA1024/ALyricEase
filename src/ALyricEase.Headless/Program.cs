@@ -39,6 +39,42 @@ public static class Program
             return;
         }
 
+        // 真窗口+真合成器版内存回归(--memloop-real):无头没有 GPU 纹理,封面内存必须真机验证
+        if (args.Length > 0 && args[0] == "--memloop-real")
+        {
+            var realBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var exitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { exitCode = await PageLoopMemoryProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[memloop] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            realBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = exitCode;
+            return;
+        }
+
+        // 真窗口歌单页返回延迟(--pl-return-real):量 UI 冻结峰值与恢复各阶段耗时
+        if (args.Length > 0 && args[0] == "--pl-return-real")
+        {
+            var realBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var exitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { exitCode = await PlaylistReturnLatencyProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[pl-latency] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            realBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = exitCode;
+            return;
+        }
+
         AppBuilder.Configure<HeadlessApp>()
             .UseSkia()
             // 关闭 headless 假绘制:走 Skia 真渲染,RenderTargetBitmap 截图才有像素(默认 true 时 Save 出 0 字节 PNG)
@@ -51,6 +87,20 @@ public static class Program
         if (args.Length > 0 && args[0] == "--playlist-lifetime")
         {
             Environment.ExitCode = PlaylistPageLifetimeProbe.Run();
+            return;
+        }
+
+        // 歌手/专辑及“查看全部”页面：离页释放，返回从一次性磁盘快照恢复。
+        if (args.Length > 0 && args[0] == "--detail-lifetime")
+        {
+            Environment.ExitCode = DetailPageLifetimeProbe.Run();
+            return;
+        }
+
+        // 个性推荐 ↔ 歌手页 往返循环：每轮往返后上一轮视图必须被回收，托管堆不得逐轮上涨。
+        if (args.Length > 0 && args[0] == "--memloop")
+        {
+            Environment.ExitCode = PageLoopMemoryProbe.Run();
             return;
         }
 
@@ -148,10 +198,10 @@ public static class Program
             return;
         }
 
-        // SongGridView 实机探针:6 行自然高度 + 横向虚拟化
+        // SongGridView 实机探针:小屏滚到不足一列的末尾仍保持完整高度，且不在滚动中构造容器
         if (args.Length > 0 && args[0] == "--sg")
         {
-            SongGridProbe.Run();
+            Environment.ExitCode = SongGridProbe.Run();
             return;
         }
 
@@ -287,6 +337,14 @@ public static class Program
         if (args.Length > 0 && args[0] == "--nediag")
         {
             Environment.ExitCode = System.Threading.Tasks.Task.Run(NetEaseDiagProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 官方客户端代理登录端到端:CopycatProxy MITM 捕获伪造 eapi 请求的 MUSIC_U(验证器注入,不碰存档)
+        if (args.Length > 0 && args[0] == "--neproxy")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(NetEaseProxyLoginProbe.RunAsync)
                 .GetAwaiter().GetResult();
             return;
         }

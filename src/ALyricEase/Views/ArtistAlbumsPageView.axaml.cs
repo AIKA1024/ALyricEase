@@ -8,9 +8,12 @@ namespace ALyricEase.Views;
 /// 容器 realized 时懒加载。</summary>
 public partial class ArtistAlbumsPageView : UserControl
 {
+    private readonly DetailPageScrollController _scrollController;
+
     public ArtistAlbumsPageView()
     {
         InitializeComponent();
+        _scrollController = new DetailPageScrollController(this, PageScroller);
         SizeChanged += (_, e) => ResponsiveClasses.ApplyByWindow(this);
         AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
         PageScroller.ScrollChanged += OnScrollChanged;

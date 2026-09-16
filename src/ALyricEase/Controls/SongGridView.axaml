@@ -41,7 +41,11 @@
       </i:Interaction.Behaviors>
       <!-- 横向虚拟化:ItemsSource 按 RowsPerColumn 切成列,横向 VirtualizingStackPanel 只实例化
            视口附近的列(12 由有效视口驱动,外部 ScrollViewer 物理滚动同样生效,见 Headless 探针 vgrid/sg);
-           列高 = 行数 × (60 行高 + 2×2 边距) 由列内容自然测量得出,不卡固定高度 -->
+           列高 = 行数 × (60 行高 + 2×2 边距) 由列内容自然测量得出,不卡固定高度。
+           ⚠ 不要换成普通 StackPanel:非虚拟化会把所有列的行控件一次性实化。
+           同一份代码只改这一行、跑 15 轮真窗口往返实测(其余配置完全不变):
+           首页实化歌曲行 18→60、视觉树节点 1411→2209、"返回首页"每轮分配 23.7MB→43.5MB。
+           见 docs/avalonia-tips.md「横向虚拟化面板不能去掉」。 -->
       <ItemsControl x:Name="Columns">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>

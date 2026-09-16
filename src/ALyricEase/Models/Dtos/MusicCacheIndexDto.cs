@@ -6,6 +6,7 @@ namespace ALyricEase.Models.Dtos;
 [JsonSerializable(typeof(MusicCacheIndexFile))]
 [JsonSerializable(typeof(PlaylistTracksCacheFile))]
 [JsonSerializable(typeof(PlaylistPageSnapshotFile))]
+[JsonSerializable(typeof(DetailPageSnapshotFile))]
 internal sealed partial class MusicCacheJsonContext : JsonSerializerContext
 {
 }
@@ -103,6 +104,64 @@ internal sealed class CachedAggregateLoadStateFile
     public int FailedCount { get; set; }
 
     public bool CoverSet { get; set; }
+}
+
+/// <summary>歌手、专辑及“查看全部”页面的一次性重数据快照。</summary>
+internal sealed class DetailPageSnapshotFile
+{
+    public int Version { get; set; } = 1;
+
+    public List<CachedPageTrackFile> Tracks { get; set; } = new();
+
+    public List<CachedAlbumCardFile> Albums { get; set; } = new();
+
+    public List<CachedAlbumCardFile> Singles { get; set; } = new();
+
+    public string Name { get; set; } = "";
+
+    public string Subtitle { get; set; } = "";
+
+    public string AvatarUrl { get; set; } = "";
+
+    public string ArtistName { get; set; } = "";
+
+    public string TrackCountText { get; set; } = "";
+
+    public long PublishTimeMs { get; set; }
+
+    public string Description { get; set; } = "";
+
+    public string CoverUrl { get; set; } = "";
+
+    public CachedArtistPageRefFile? PrimaryArtist { get; set; }
+
+    public int Offset { get; set; }
+
+    public int Total { get; set; } = -1;
+
+    public bool HasMore { get; set; }
+}
+
+internal sealed class CachedAlbumCardFile
+{
+    public long Id { get; set; }
+
+    public string Title { get; set; } = "";
+
+    public string CoverUrl { get; set; } = "";
+
+    public string Mid { get; set; } = "";
+}
+
+internal sealed class CachedArtistPageRefFile
+{
+    public int Source { get; set; }
+
+    public long NetEaseId { get; set; }
+
+    public string QqMid { get; set; } = "";
+
+    public string Name { get; set; } = "";
 }
 
 internal sealed class CachedSongFile

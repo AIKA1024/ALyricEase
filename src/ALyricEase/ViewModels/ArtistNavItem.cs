@@ -25,6 +25,8 @@ public sealed partial class ArtistNavItem : ObservableObject
     /// <summary>QQ 项(mid 非空):跳 QQ 歌手页。</summary>
     public bool IsQq => _mid.Length > 0;
 
+    internal string Mid => _mid;
+
     [RelayCommand]
     private async Task OpenAsync()
     {

@@ -26,6 +26,8 @@ public sealed partial class AlbumCardViewModel : ViewModelBase
     /// <summary>QQ 专辑(mid 非空):跳 QQ 专辑页。</summary>
     public bool IsQq => _mid.Length > 0;
 
+    internal string Mid => _mid;
+
     [RelayCommand]
     private async Task OpenAsync()
     {

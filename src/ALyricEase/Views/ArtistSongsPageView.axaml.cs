@@ -11,10 +11,12 @@ public partial class ArtistSongsPageView : UserControl
 {
     private DispatcherTimer? _coverDebounce;
     private readonly HashSet<SongItemViewModel> _pendingCovers = new();
+    private readonly DetailPageScrollController _scrollController;
 
     public ArtistSongsPageView()
     {
         InitializeComponent();
+        _scrollController = new DetailPageScrollController(this, PageScroller);
         SizeChanged += (_, e) => ResponsiveClasses.ApplyByWindow(this);
         AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
         PageScroller.ScrollChanged += OnScrollChanged;

@@ -11,14 +11,14 @@ using ALyricEase.ViewModels;
 
 namespace ALyricEase.Controls;
 
-/// <summary>一列歌曲(<= RowsPerColumn 行):横向虚拟化的分块单位。</summary>
+/// <summary>一列歌曲（不超过 RowsPerColumn 行）。</summary>
 public sealed record SongColumn(IReadOnlyList<SongItemViewModel> Rows);
 
 /// <summary>
 /// 横向滚动歌曲网格(圆角容器 + 竖向换行,RowsPerColumn 行/列,默认 6):
 /// 个性推荐"每日歌曲推荐"与歌手页"热门歌曲"共用的容器控件。
-/// 数据按列分块交给横向 VirtualizingStackPanel 虚拟化,行数即分块大小,
-/// 卡片高度随行数自然推导(行高 60 + 上下 2px 边距),不依赖固定高度。
+/// 数据最多 60 首，按列分块后一次构造；所有列参与高度测量，避免末列不足时
+/// 横向滚动导致容器高度坍缩，也避免手机滚动过程中集中构造复杂歌曲行。
 /// </summary>
 public partial class SongGridView : UserControl
 {
@@ -48,6 +48,12 @@ public partial class SongGridView : UserControl
     private bool _isAttached;
     private int _rebuildGeneration;
 
+    /// <summary>上次分块的输入快照(数据源实例 + 行序列):视图被复用时(ReusablePageViewTemplate)
+    /// 重挂树时数据通常没变,此时必须保留已实化的歌曲行,不能整批重建。</summary>
+    private IEnumerable? _builtSource;
+    private List<SongItemViewModel> _builtRows = [];
+    private bool _built;
+
     /// <summary>性能回归探针使用：实际发生的全量分块次数。</summary>
     internal int RebuildCount { get; private set; }
 
@@ -61,11 +67,18 @@ public partial class SongGridView : UserControl
         base.OnPropertyChanged(e);
         if (e.Property == ItemsSourceProperty)
         {
-            if (_isAttached) ObserveItemsSource();
-            else UnobserveItemsSource();
-            RebuildColumns();
+            if (_isAttached)
+            {
+                ObserveItemsSource();
+                RebuildColumns();
+            }
+            else
+            {
+                // 离树时只记录属性值；容器尚不可见，提前生成会在挂树时再做一遍。
+                UnobserveItemsSource();
+            }
         }
-        else if (e.Property == RowsPerColumnProperty)
+        else if (e.Property == RowsPerColumnProperty && _isAttached)
         {
             RebuildColumns();
         }
@@ -142,12 +155,20 @@ public partial class SongGridView : UserControl
         }, DispatcherPriority.Background);
     }
 
-    /// <summary>ItemsSource/RowsPerColumn 变化后重建列分块(尾部不足一列的也成列)。</summary>
+    /// <summary>ItemsSource/RowsPerColumn 变化后重建列分块(尾部不足一列的也成列)。
+    /// 数据与上次分块完全一致时直接返回:复用视图重挂树会走到这里,重建等于把整页歌曲行
+    /// (首页 30 行 × 每行几十个控件)重新构造一遍,正是视图复用要避免的开销。</summary>
     private void RebuildColumns()
     {
         if (Columns is null) return; // 属性早于 InitializeComponent 设置时面板尚不存在
-        RebuildCount++;
         var rows = ItemsSource?.OfType<SongItemViewModel>().ToList() ?? [];
+        if (_built && ReferenceEquals(ItemsSource, _builtSource) && SameRows(rows, _builtRows))
+            return;
+
+        _built = true;
+        _builtSource = ItemsSource;
+        _builtRows = rows;
+        RebuildCount++;
         var perColumn = Math.Max(1, RowsPerColumn);
         Columns.ItemsSource = rows.Count == 0
             ? []
@@ -155,6 +176,15 @@ public partial class SongGridView : UserControl
                 .Select(i => new SongColumn(
                     rows.GetRange(i * perColumn, Math.Min(perColumn, rows.Count - i * perColumn))))
                 .ToList();
+    }
+
+    /// <summary>两次分块的行是否为同一批对象(同一 VM 实例顺序不变)。</summary>
+    private static bool SameRows(List<SongItemViewModel> left, List<SongItemViewModel> right)
+    {
+        if (left.Count != right.Count) return false;
+        for (var index = 0; index < left.Count; index++)
+            if (!ReferenceEquals(left[index], right[index])) return false;
+        return true;
     }
 
     /// <summary>行容器 realized 时加载红心状态；封面由 Image 按可见树生命周期管理。</summary>

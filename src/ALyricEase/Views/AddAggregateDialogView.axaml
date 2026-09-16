@@ -27,20 +27,6 @@
                 <Setter Property="FontWeight" Value="SemiBold" />
                 <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
             </Style>
-            <!-- ContentDialog 主按钮(WinUI3 AccentButton 样式):强调色底白字。
-                 宿主不在 AppShell 子树内,AppShell 里的 dialog-primary 样式够不到,这里自带一份 -->
-            <Style Selector="Button.dialog-primary">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-                <Setter Property="Foreground" Value="White" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="CornerRadius" Value="4" />
-            </Style>
-            <Style Selector="Button.dialog-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
-            </Style>
-            <Style Selector="Button.dialog-primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
-            </Style>
         </Grid.Styles>
         <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
         <Panel Background="#99000000" />
@@ -119,7 +105,7 @@
                                 Command="{Binding $parent[views:AddAggregateDialogView].((vm:MainViewModel)DataContext).CloseAggregateDialogCommand}"
                                 HotKeyManager.HotKey="Escape"
                                 MinWidth="96" Height="32" />
-                        <Button Grid.Column="2" Classes="dialog-primary" Content="{Binding ConfirmText}"
+                        <Button Grid.Column="2" Classes="accent" Content="{Binding ConfirmText}"
                                 Command="{Binding ConfirmCommand}"
                                 MinWidth="96" Height="32" IsEnabled="{Binding CanConfirm}" />
                     </Grid>

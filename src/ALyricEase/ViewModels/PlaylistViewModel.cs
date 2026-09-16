@@ -23,6 +23,13 @@ public enum QqLoginMethod
     Cookie,
 }
 
+/// <summary>网易云登录方式:官方客户端代理登录(捕获客户端登录请求,Windows)与 MUSIC_U 粘贴并列。</summary>
+public enum NetEaseLoginMethod
+{
+    Cookie,
+    Proxy,
+}
+
 /// <summary>歌单 VM:MUSIC_U 粘贴登录 → 用户歌单 → 点开歌单看曲目(双击播放)。
 /// 未登录显示登录卡片;已登录显示用户信息 + 歌单列表 + 选中歌单的曲目。
 /// 登录对话框支持双音源切换:网易云(MUSIC_U)与 QQ 音乐(uin+qqmusic_key cookie,解锁 VIP 音质)。</summary>
@@ -31,6 +38,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     internal const int AggregateNetEaseBatchSize = 100;
     internal const int AggregateQqPageSize = 300;
     private const int AggregateUiBatchSize = 50;
+
+    /// <summary>诊断钩子(默认 null,零开销):离页捕获与返回恢复的各阶段耗时。
+    /// 由探针挂载后才会创建 Stopwatch,生产路径不付任何成本。</summary>
+    internal static Action<string>? RestoreTimingTrace;
 
     private readonly NetEaseApiClient _api;
     private readonly QQMusicApiClient _qqApi;
@@ -71,6 +82,21 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     /// <summary>登录弹窗当前选中的音源页签:false=网易云(默认),true=QQ音乐。</summary>
     [ObservableProperty] private bool _isQQLoginTab;
+
+    /// <summary>网易云登录方式:默认粘贴 MUSIC_U;官方客户端代理登录需 Windows。</summary>
+    [ObservableProperty] private NetEaseLoginMethod _netEaseLoginMethod = NetEaseLoginMethod.Cookie;
+
+    /// <summary>官方客户端代理登录:代理是否在监听、监听端口与状态文案。</summary>
+    [ObservableProperty] private bool _isNetEaseProxyLoginActive;
+    [ObservableProperty] private int _netEaseProxyPort;
+    [ObservableProperty] private string _netEaseProxyStatus = "在网易云音乐客户端中设置下方代理并登录";
+    private NetEaseProxyLoginService? _netEaseProxyLogin;
+
+    public bool IsNetEaseProxyMethod => NetEaseLoginMethod == NetEaseLoginMethod.Proxy;
+    public bool IsNetEaseCookieMethod => NetEaseLoginMethod == NetEaseLoginMethod.Cookie;
+    public bool CanUseNetEaseProxyLogin => NetEaseProxyLoginService.IsSupported;
+    /// <summary>代理端口框内容:IP 由相邻只读框固定显示 127.0.0.1,这里只出端口号,避免重复。</summary>
+    public string NetEaseProxyAddress => NetEaseProxyPort > 0 ? NetEaseProxyPort.ToString() : "—";
 
     /// <summary>QQ音乐登录输入:y.qq.com 的整段完整 Cookie(客户端解析 uin/qqmusic_key 并原文保存;
     /// 账号接口依赖完整字段,精简两项过不了服务端校验)。</summary>
@@ -141,6 +167,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(IsNetEaseLoginTab));
         if (!value) CancelLoginActivities();
+        else CancelNetEaseProxyLogin(); // 切到 QQ 页签时网易云代理一并停止
     }
 
     [RelayCommand] private void SelectNetEaseLoginTab() => IsQQLoginTab = false;
@@ -152,6 +179,102 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [RelayCommand] private void SelectQqPhoneLoginMethod() => QqLoginMethod = QqLoginMethod.Phone;
 
     [RelayCommand] private void SelectQqCookieLoginMethod() => QqLoginMethod = QqLoginMethod.Cookie;
+
+    [RelayCommand] private void SelectNetEaseProxyMethod() => NetEaseLoginMethod = NetEaseLoginMethod.Proxy;
+
+    [RelayCommand] private void SelectNetEaseCookieMethod() => NetEaseLoginMethod = NetEaseLoginMethod.Cookie;
+
+    partial void OnNetEaseLoginMethodChanged(NetEaseLoginMethod value)
+    {
+        OnPropertyChanged(nameof(IsNetEaseProxyMethod));
+        OnPropertyChanged(nameof(IsNetEaseCookieMethod));
+        Message = null;
+        if (value != NetEaseLoginMethod.Proxy)
+        {
+            CancelNetEaseProxyLogin();
+            return;
+        }
+        // 对齐 Cirrus 的体验:切到代理方式即自动起代理,端口立刻可见,
+        // 不留"地址显示 — 还得再点一下启动"的空档。失败时按钮仍在,可手动重试。
+        if (CanUseNetEaseProxyLogin && !IsNetEaseProxyLoginActive)
+            StartNetEaseProxyLogin();
+    }
+
+    /// <summary>启动本地 MITM 代理开始监听官方客户端登录;端口与状态经属性呈现给引导 UI。</summary>
+    [RelayCommand]
+    private void StartNetEaseProxyLogin()
+    {
+        if (!CanUseNetEaseProxyLogin || IsNetEaseProxyLoginActive) return;
+        Message = null;
+        try
+        {
+            IProgress<NetEaseProxyLoginUpdate> progress =
+                new Progress<NetEaseProxyLoginUpdate>(OnNetEaseProxyLoginUpdate);
+            _netEaseProxyLogin?.Dispose();
+            _netEaseProxyLogin = new NetEaseProxyLoginService(_api);
+            NetEaseProxyPort = _netEaseProxyLogin.Start(progress.Report);
+            OnPropertyChanged(nameof(NetEaseProxyAddress));
+        }
+        catch (Exception ex)
+        {
+            _netEaseProxyLogin?.Dispose();
+            _netEaseProxyLogin = null;
+            NetEaseProxyStatus = "代理启动失败";
+            Message = $"代理登录启动失败:{ex.Message}";
+        }
+    }
+
+    /// <summary>代理登录状态推进(Progress 已封送到 UI 线程)。
+    /// Ready 时登录态已由服务持久化,这里复用粘贴登录的完整加载链路 —— IsLoggedIn 翻 true
+    /// 后 AppShell 自动关闭登录弹窗,与 Cookie 登录同一出口。</summary>
+    private void OnNetEaseProxyLoginUpdate(NetEaseProxyLoginUpdate update)
+    {
+        switch (update.Stage)
+        {
+            case NetEaseProxyLoginStage.Listening:
+                IsNetEaseProxyLoginActive = true;
+                NetEaseProxyStatus = "代理已就绪,请在网易云音乐客户端设置代理并登录";
+                break;
+            case NetEaseProxyLoginStage.Verifying:
+                NetEaseProxyStatus = "已捕获登录凭证,正在验证…";
+                break;
+            case NetEaseProxyLoginStage.Ready:
+                IsNetEaseProxyLoginActive = false;
+                NetEaseProxyStatus = $"已登录:{update.Nickname}";
+                break;
+            case NetEaseProxyLoginStage.Rejected:
+                NetEaseProxyStatus = "凭证验证未通过,继续等待客户端请求…";
+                break;
+        }
+        if (update.Error is { } error)
+            Message = update.Stage == NetEaseProxyLoginStage.Rejected
+                ? $"捕获的凭证无效:{error}"
+                : $"代理登录异常:{error}";
+        if (update.Stage == NetEaseProxyLoginStage.Ready)
+        {
+            CompleteNetEaseProxyLogin();
+            _ = LoadProfileAndPlaylistsAsync(); // 网络失败时此方法自己兜底提示,不吞登录态
+        }
+    }
+
+    /// <summary>登录成功后收尾:停掉代理,提醒用户还原官方客户端的代理设置。</summary>
+    private void CompleteNetEaseProxyLogin()
+    {
+        CancelNetEaseProxyLogin();
+        NetEaseProxyStatus = "完成!请记得关闭网易云音乐客户端中的代理设置";
+    }
+
+    /// <summary>关闭弹层/切换登录方式时停止代理监听;再次启动会分配新端口。</summary>
+    public void CancelNetEaseProxyLogin()
+    {
+        var service = _netEaseProxyLogin;
+        _netEaseProxyLogin = null;
+        service?.Dispose();
+        IsNetEaseProxyLoginActive = false;
+        NetEaseProxyPort = 0;
+        OnPropertyChanged(nameof(NetEaseProxyAddress));
+        NetEaseProxyStatus = "在网易云音乐客户端中设置下方代理并登录";
+    }
 
     public bool ShowLogin => !IsLoggedIn;
 
@@ -597,6 +720,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public void CancelLoginActivities()
     {
         CancelQqQrLogin();
+        CancelNetEaseProxyLogin();
         var operation = _qqPhoneOperationCancellation;
         _qqPhoneOperationCancellation = null;
         operation?.Cancel();
@@ -767,6 +891,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>导航前冻结重数据到磁盘并立即断开页面引用；返回历史仅保留本方法返回的小对象。</summary>
     internal PlaylistNavigationSnapshot? CaptureAndReleaseNavigationSnapshot()
     {
+        var watch = RestoreTimingTrace is null ? null : System.Diagnostics.Stopwatch.StartNew();
+        void Mark(string stage) =>
+            RestoreTimingTrace?.Invoke($"[歌单计时] {stage}: {watch!.ElapsedMilliseconds}ms");
+
         if (SelectedPlaylist is null)
         {
             ReleaseCurrentPageData();
@@ -796,12 +924,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _pageScrollOffset);
 
         var queued = new HashSet<Song>(_queueSongs);
-        var tracks = _allTrackRows.Select(row => new PlaylistPageCacheTrack(
+        var tracks = _allTrackRows.Select(row => new NavigationPageCacheTrack(
             row.Song,
             row.IsPlayable,
             queued.Contains(row.Song),
             row.Song.IsPlaybackUnavailable,
             row.Song.PreferCachedPlayback)).ToList();
+        Mark($"构建导航快照(rows={tracks.Count})");
         var aggregateState = _aggregateLoad is null
             ? null
             : new AggregatePageCacheState(
@@ -820,7 +949,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 new PlaylistPageCacheData(
                     tracks, _trackIds.ToArray(), _materialized, aggregateState));
 
+        Mark("派发磁盘写入");
         ReleaseCurrentPageData();
+        Mark("释放页面数据");
         return snapshot;
     }
 
@@ -852,6 +983,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>先从一次性磁盘快照恢复精确页面状态；快照失效时回退原有缓存/网络打开流程。</summary>
     internal async Task RestoreNavigationSnapshotAsync(PlaylistNavigationSnapshot snapshot)
     {
+        var watch = RestoreTimingTrace is null ? null : System.Diagnostics.Stopwatch.StartNew();
+        void Mark(string stage) =>
+            RestoreTimingTrace?.Invoke($"[歌单计时] {stage}: {watch!.ElapsedMilliseconds}ms");
+
         var (generation, ct) = BeginLoad();
         _isCloud = snapshot.Kind == PlaylistPageKind.Cloud;
         _currentAggregate = snapshot.Aggregate;
@@ -871,11 +1006,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _materialized = 0;
         IsBusy = true;
         Message = null;
+        Mark("清场(同步段)");
 
         var cached = await _musicCache.TryTakePlaylistPageSnapshotAsync(snapshot.CacheKey);
+        Mark("读磁盘快照(含等待在途写入)");
         if (!IsCurrentLoad(generation, ct)) return;
         if (cached is null)
         {
+            Mark("快照缺失,回退常规打开流程");
             IsBusy = false;
             _isCloud = false;
             switch (snapshot.Kind)
@@ -935,8 +1073,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             row.IsPlayable = saved.IsPlayable;
             _allTrackRows.Add(row);
         }
+        Mark($"重建歌曲行(rows={_allTrackRows.Count})");
         IsBusy = false;
         RestoreNavigationUiState(snapshot);
+        Mark($"恢复筛选与列表投影(Tracks={Tracks.Count})");
     }
 
     private void RestoreNavigationUiState(PlaylistNavigationSnapshot snapshot)

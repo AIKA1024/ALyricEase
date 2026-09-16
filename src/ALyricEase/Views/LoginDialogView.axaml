@@ -7,7 +7,7 @@
              x:DataType="vm:MainViewModel"
              mc:Ignorable="d"
              x:Class="ALyricEase.Views.LoginDialogView">
-    <Grid x:Name="Root">
+    <Grid x:Name="Root" Container.Name="loginRoot" Container.Sizing="Width">
         <Grid.Styles>
             <Style Selector="Grid#Root">
                 <Setter Property="Transitions">
@@ -43,18 +43,6 @@
                 <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
             </Style>
-            <Style Selector="Button.dialog-primary">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-                <Setter Property="Foreground" Value="White" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="CornerRadius" Value="6" />
-            </Style>
-            <Style Selector="Button.dialog-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
-            </Style>
-            <Style Selector="Button.dialog-primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
-            </Style>
             <Style Selector="Border.field-card">
                 <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
                 <Setter Property="BorderThickness" Value="1" />
@@ -71,33 +59,67 @@
                 <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
-            <Style Selector="Grid#Root.compact StackPanel#MethodList">
-                <Setter Property="Orientation" Value="Horizontal" />
+            <!-- 两栏 = DockPanel:宽屏方法列表 Dock=Left 固定 178,内容填充其余;Cookie 面板同理。
+                 注意:Avalonia 12 里 Grid.ColumnDefinitions/RowDefinitions 已不是 AvaloniaProperty,
+                 不能进 Style setter(反射实测),所以换 DockPanel + Dock/Width 这类可样式化属性切换。 -->
+            <Style Selector="ScrollViewer#QqMethodHost">
+                <Setter Property="DockPanel.Dock" Value="Left" />
+                <Setter Property="Width" Value="178" />
+                <Setter Property="Margin" Value="0,0,24,0" />
             </Style>
-            <Style Selector="Grid#Root.compact TextBlock#MethodLabel">
-                <Setter Property="IsVisible" Value="False" />
+            <Style Selector="ScrollViewer#NetEaseMethodHost">
+                <Setter Property="DockPanel.Dock" Value="Left" />
+                <Setter Property="Width" Value="178" />
+                <Setter Property="Margin" Value="0,0,24,0" />
             </Style>
-            <Style Selector="Grid#Root.compact Button.login-method">
-                <Setter Property="Width" Value="150" />
-                <Setter Property="Height" Value="54" />
+            <Style Selector="StackPanel#MusicUField">
+                <Setter Property="DockPanel.Dock" Value="Left" />
+                <Setter Property="Width" Value="300" />
+                <Setter Property="Margin" Value="0,0,18,0" />
             </Style>
-            <Style Selector="Grid#Root.compact Grid#QqMethodContent">
-                <Setter Property="Grid.Column" Value="0" />
-                <Setter Property="Grid.Row" Value="1" />
-                <Setter Property="Margin" Value="0,16,0,0" />
-            </Style>
-            <Style Selector="Grid#Root.compact Border#NetEaseHelp">
-                <Setter Property="Grid.Column" Value="0" />
-                <Setter Property="Grid.Row" Value="1" />
-                <Setter Property="Margin" Value="0,12,0,0" />
-            </Style>
+            <!-- 小屏:登录弹窗视口 < 760 时两栏放不下,方法列表横排置顶(Dock=Top 全宽),
+                 内容被排到下方;Cookie 面板的输入区同样折为全宽,帮助卡(填充 child)落到下方 -->
+            <ContainerQuery Name="loginRoot" Query="max-width:760">
+                <Style Selector="ScrollViewer#QqMethodHost">
+                    <Setter Property="DockPanel.Dock" Value="Top" />
+                    <Setter Property="Width" Value="NaN" />
+                    <Setter Property="Margin" Value="0,0,0,16" />
+                </Style>
+                <Style Selector="StackPanel#MethodList">
+                    <Setter Property="Orientation" Value="Horizontal" />
+                </Style>
+                <Style Selector="TextBlock#MethodLabel">
+                    <Setter Property="IsVisible" Value="False" />
+                </Style>
+                <Style Selector="Button.login-method">
+                    <Setter Property="Width" Value="150" />
+                    <Setter Property="Height" Value="54" />
+                </Style>
+                <Style Selector="ScrollViewer#NetEaseMethodHost">
+                    <Setter Property="DockPanel.Dock" Value="Top" />
+                    <Setter Property="Width" Value="NaN" />
+                    <Setter Property="Margin" Value="0,0,0,16" />
+                </Style>
+                <Style Selector="StackPanel#NetEaseMethodList">
+                    <Setter Property="Orientation" Value="Horizontal" />
+                </Style>
+                <Style Selector="TextBlock#NetEaseMethodLabel">
+                    <Setter Property="IsVisible" Value="False" />
+                </Style>
+                <Style Selector="StackPanel#MusicUField">
+                    <Setter Property="DockPanel.Dock" Value="Top" />
+                    <Setter Property="Width" Value="NaN" />
+                    <Setter Property="Margin" Value="0,0,0,12" />
+                </Style>
+            </ContainerQuery>
         </Grid.Styles>
 
         <Panel Background="#66000000" />
 
         <Grid DataContext="{Binding Playlist}" x:DataType="vm:PlaylistViewModel"
-              HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16">
-            <Border x:Name="DialogCard" Width="760" MaxHeight="680" CornerRadius="16"
+              Margin="16">
+            <!-- 尺寸交给 XAML:拉伸填满边距内空间,上限即 ContentDialog 常规的 760x680 -->
+            <Border x:Name="DialogCard" MaxWidth="760" MaxHeight="680" CornerRadius="16"
                     Background="{DynamicResource AppSurface}"
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
                     BoxShadow="0 12 40 #52000000" ClipToBounds="True">
@@ -141,39 +163,107 @@
                     <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto">
                     <Grid Margin="28,0" MinHeight="370">
-                        <Grid IsVisible="{Binding IsNetEaseLoginTab}" RowDefinitions="Auto,*,Auto" RowSpacing="18">
-                            <StackPanel Grid.Row="0" Spacing="4">
-                                <TextBlock Text="使用 MUSIC_U 登录" FontSize="18" FontWeight="SemiBold" />
-                                <TextBlock Classes="supporting"
-                                           Text="网易云音乐暂不提供适合桌面客户端的扫码接口，请粘贴浏览器登录凭证。" />
-                            </StackPanel>
-                            <Grid x:Name="NetEaseFields" Grid.Row="1" ColumnDefinitions="1.15*,0.85*" ColumnSpacing="18">
-                                <StackPanel Grid.Column="0" Spacing="7">
-                                    <TextBlock Classes="section-label" Text="MUSIC_U Cookie" />
-                                    <TextBox x:Name="MusicUBox" Text="{Binding MusicUInput}"
-                                             PlaceholderText="粘贴 MUSIC_U 的值" Height="84"
-                                             TextWrapping="Wrap" AcceptsReturn="False"
-                                             PastingFromClipboard="OnPastingFromClipboard"
-                                             AutomationProperties.Name="网易云 MUSIC_U Cookie"
-                                             AutomationProperties.HelpText="仅保存在当前设备" />
-                                </StackPanel>
-                                <Border x:Name="NetEaseHelp" Grid.Column="1" Classes="field-card">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock Classes="section-label" Text="从浏览器获取" />
-                                        <TextBlock Classes="supporting" Text="1  登录 music.163.com" />
-                                        <TextBlock Classes="supporting" Text="2  打开开发者工具的 Application → Cookies" />
-                                        <TextBlock Classes="supporting" Text="3  复制 MUSIC_U 的值" />
+                        <DockPanel x:Name="NetEaseLayout" IsVisible="{Binding IsNetEaseLoginTab}" LastChildFill="True">
+                            <ScrollViewer x:Name="NetEaseMethodHost" HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled">
+                            <StackPanel x:Name="NetEaseMethodList" Spacing="6">                                <TextBlock x:Name="NetEaseMethodLabel" Text="登录方式" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextSecondary}" Margin="4,0,0,4" />
+                                <Button Classes="login-method" Classes.active="{Binding IsNetEaseProxyMethod}"
+                                        IsVisible="{Binding CanUseNetEaseProxyLogin}"
+                                        Command="{Binding SelectNetEaseProxyMethodCommand}"
+                                        AutomationProperties.Name="使用官方客户端代理登录">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="官方客户端登录" FontWeight="SemiBold" />
+                                        <TextBlock Text="推荐，自动获取凭证" FontSize="11.5"
+                                                   Foreground="{DynamicResource TextSecondary}" />
                                     </StackPanel>
-                                </Border>
-                            </Grid>
-                            <Button Grid.Row="2" Classes="dialog-primary" Content="登录网易云音乐"
-                                    Command="{Binding LoginCommand}" HorizontalAlignment="Left"
-                                    MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}"
-                                    AutomationProperties.Name="登录网易云音乐" />
-                        </Grid>
+                                </Button>
+                                <Button Classes="login-method" Classes.active="{Binding IsNetEaseCookieMethod}"
+                                        Command="{Binding SelectNetEaseCookieMethodCommand}"
+                                        AutomationProperties.Name="使用 MUSIC_U Cookie 登录">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="MUSIC_U Cookie" FontWeight="SemiBold" />
+                                        <TextBlock Text="手动粘贴凭证" FontSize="11.5"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            </ScrollViewer>
 
-                        <Grid x:Name="QqLayout" IsVisible="{Binding IsQQLoginTab}" ColumnDefinitions="178,*" ColumnSpacing="24">
-                            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto"
+                            <Grid x:Name="NetEaseMethodContent" MinHeight="370">
+                                <StackPanel IsVisible="{Binding IsNetEaseProxyMethod}" Spacing="14">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="使用官方客户端登录" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Classes="supporting"
+                                                   Text="本地代理会捕获网易云音乐客户端登录时的凭证并自动完成登录，无需手动复制 Cookie。" />
+                                    </StackPanel>
+                                    <Border Classes="field-card">
+                                        <StackPanel Spacing="7">
+                                            <TextBlock Classes="section-label" Text="操作步骤" />
+                                            <TextBlock Classes="supporting" Text="1  点击下方按钮，启动本地代理" />
+                                            <TextBlock Classes="supporting" Text="2  打开网易云音乐客户端 → 设置 → 工具 → HTTP 代理" />
+                                            <TextBlock Classes="supporting" Text="3  选择自定义代理，填入下方地址并保存" />
+                                            <TextBlock Classes="supporting" Text="4  在客户端中重新登录；完成后记得关闭客户端里的代理设置" />
+                                        </StackPanel>
+                                    </Border>
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Classes="section-label" Text="代理服务器" />
+                                        <Grid ColumnDefinitions="120,*" ColumnSpacing="8">
+                                            <TextBox Text="127.0.0.1" IsReadOnly="True"
+                                                     AutomationProperties.Name="代理服务器地址" />
+                                            <TextBox Grid.Column="1" Text="{Binding NetEaseProxyAddress}" IsReadOnly="True"
+                                                     AutomationProperties.Name="代理服务器端口" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="{Binding NetEaseProxyStatus}" FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
+                                        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsNetEaseProxyLoginActive}"
+                                                     Width="214" HorizontalAlignment="Left" Height="3" />
+                                    </StackPanel>
+                                    <!-- 代理监听中按钮隐藏(已自动启动);失败或端口被占时可手动重试 -->
+                                    <Button x:Name="NetEaseStartProxyButton" Classes="accent" Content="重新启动代理"
+                                            Command="{Binding StartNetEaseProxyLoginCommand}" HorizontalAlignment="Left"
+                                            MinWidth="168" Height="38" IsEnabled="{Binding !IsBusy}"
+                                            IsVisible="{Binding !IsNetEaseProxyLoginActive}"
+                                            AutomationProperties.Name="启动本地代理开始监听网易云客户端登录" />
+                                </StackPanel>
+
+                                <StackPanel IsVisible="{Binding IsNetEaseCookieMethod}" Spacing="16">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="使用 MUSIC_U 登录" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Classes="supporting"
+                                                   Text="网易云音乐暂不提供适合桌面客户端的扫码接口，请粘贴浏览器登录凭证。" />
+                                    </StackPanel>
+                                    <DockPanel x:Name="NetEaseFields" LastChildFill="True">
+                                        <StackPanel x:Name="MusicUField" Spacing="7">
+                                            <TextBlock Classes="section-label" Text="MUSIC_U Cookie" />
+                                            <TextBox x:Name="MusicUBox" Text="{Binding MusicUInput}"
+                                                     PlaceholderText="粘贴 MUSIC_U 的值" Height="84"
+                                                     TextWrapping="Wrap" AcceptsReturn="False"
+                                                     PastingFromClipboard="OnPastingFromClipboard"
+                                                     AutomationProperties.Name="网易云 MUSIC_U Cookie"
+                                                     AutomationProperties.HelpText="仅保存在当前设备" />
+                                        </StackPanel>
+                                        <Border x:Name="NetEaseHelp" Classes="field-card">
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Classes="section-label" Text="从浏览器获取" />
+                                                <TextBlock Classes="supporting" Text="1  登录 music.163.com" />
+                                                <TextBlock Classes="supporting" Text="2  打开开发者工具的 Application → Cookies" />
+                                                <TextBlock Classes="supporting" Text="3  复制 MUSIC_U 的值" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DockPanel>
+                                    <Button Classes="accent" Content="登录网易云音乐"
+                                            Command="{Binding LoginCommand}" HorizontalAlignment="Left"
+                                            MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}"
+                                            AutomationProperties.Name="登录网易云音乐" />
+                                </StackPanel>
+                            </Grid>
+                        </DockPanel>
+
+                        <DockPanel x:Name="QqLayout" IsVisible="{Binding IsQQLoginTab}" LastChildFill="True">
+                            <ScrollViewer x:Name="QqMethodHost" HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Disabled">
                             <StackPanel x:Name="MethodList" Spacing="6">
                                 <TextBlock x:Name="MethodLabel" Text="登录方式" FontSize="12" FontWeight="SemiBold"
@@ -208,7 +298,7 @@
                             </StackPanel>
                             </ScrollViewer>
 
-                            <Grid x:Name="QqMethodContent" Grid.Column="1" MinHeight="370">
+                            <Grid x:Name="QqMethodContent" MinHeight="370">
                                 <StackPanel IsVisible="{Binding IsQqQrLoginMethod}" Spacing="12">
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="使用 QQ 音乐扫码" FontSize="18" FontWeight="SemiBold" />
@@ -234,7 +324,7 @@
                                         <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsQqQrLoginActive}"
                                                      Width="214" HorizontalAlignment="Left" Height="3" />
                                     </StackPanel>
-                                    <Button x:Name="QqQrButton" Classes="dialog-primary" Content="获取或刷新二维码"
+                                    <Button x:Name="QqQrButton" Classes="accent" Content="获取或刷新二维码"
                                             Command="{Binding StartQqQrLoginCommand}" HorizontalAlignment="Left"
                                             MinWidth="160" Height="38" IsEnabled="{Binding !IsBusy}" />
                                 </StackPanel>
@@ -267,7 +357,7 @@
                                         </Grid>
                                     </StackPanel>
                                     <TextBlock Text="{Binding QqPhoneStatus}" Classes="supporting" />
-                                    <Button Classes="dialog-primary" Content="使用验证码登录"
+                                    <Button Classes="accent" Content="使用验证码登录"
                                             Command="{Binding LoginQqPhoneCommand}" HorizontalAlignment="Left"
                                             MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}"
                                             AutomationProperties.Name="使用手机号验证码登录 QQ 音乐" />
@@ -292,12 +382,12 @@
                                         <TextBlock Classes="supporting"
                                                    Text="浏览器凭证可能缺少客户端会员播放能力；优先使用扫码或手机号登录。" />
                                     </Border>
-                                    <Button Classes="dialog-primary" Content="使用 Cookie 登录"
+                                    <Button Classes="accent" Content="使用 Cookie 登录"
                                             Command="{Binding LoginCommand}" HorizontalAlignment="Left"
                                             MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}" />
                                 </StackPanel>
                             </Grid>
-                        </Grid>
+                        </DockPanel>
                     </Grid>
                     </ScrollViewer>
 

@@ -1,5 +1,13 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Fluent2/WinUI 的 Button 内容默认居中,而 Avalonia 的 HorizontalContentAlignment 默认是
+         Stretch(反射实测),裸按钮文字会靠左(登录弹窗实测)。这里设为项目级默认;
+         需要拉伸内容的按钮(login-method/navigation-button 等)在自己的样式里显式设回 Stretch。 -->
+    <Style Selector="Button">
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
     <Style Selector="Button.icon-button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />

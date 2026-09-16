@@ -17,6 +17,7 @@ internal static class ImageLifetimeProbe
     {
         var failures = Task.Run(RunCacheChecksAsync).GetAwaiter().GetResult();
         failures += RunSearchViewLifetimeCheck();
+        failures += RunRecommendCoverReturnCheck();
         Console.WriteLine(failures == 0
             ? "[image-lifetime] PASS"
             : $"[image-lifetime] FAIL: {failures}");
@@ -133,6 +134,28 @@ internal static class ImageLifetimeProbe
         Console.WriteLine($"[image-lifetime] SearchView: attached={subscribedWhileAttached} " +
                           $"detached={subscribedAfterDetach} collected={!weak.IsAlive}");
         return subscribedWhileAttached && !subscribedAfterDetach && !weak.IsAlive ? 0 : 1;
+    }
+
+    /// <summary>首页卡片返回时不得把已经提交的 URL 再清空并等待低优先级队列。</summary>
+    private static int RunRecommendCoverReturnCheck()
+    {
+        const string url = "https://invalid/recommend-return.jpg";
+        var card = new RecommendCardViewModel("返回封面", "测试", url);
+        card.PrepareCoverForTransition();
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+        while (card.DisplayCoverUrl != url && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(10);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        var firstLoadCompleted = card.DisplayCoverUrl == url;
+        card.PrepareCoverForTransition();
+        var retainedOnReturn = card.DisplayCoverUrl == url;
+        Console.WriteLine($"[image-lifetime] Recommend return: " +
+                          $"first={firstLoadCompleted} retained={retainedOnReturn}");
+        return firstLoadCompleted && retainedOnReturn ? 0 : 1;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

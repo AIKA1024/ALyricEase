@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
@@ -30,8 +31,13 @@ internal static class PlaylistPageLifetimeProbe
                 $"布局完成后的实际滚动位置错误：{scroller.Offset.Y:F1}");
             window.Close();
             vm.ReleaseCurrentPageData();
+
+            // 这两项会改动单例 VM 状态,必须放在上面"离页后滚动恢复"的检查之后。
+            Task.Run(VerifySnapshotEvictionAsync).GetAwaiter().GetResult();
+            Task.Run(VerifyRestoreDoesNotWaitForDiskAsync).GetAwaiter().GetResult();
             Console.WriteLine(
-                "[playlist-lifetime] PASS rows=240->0->240, queue/index=0 after leave, scroll=712");
+                "[playlist-lifetime] PASS rows=240->0->240, queue/index=0 after leave, scroll=712, " +
+                "eviction-disk-fallback, restore-no-disk-wait");
             return 0;
         }
         catch (Exception ex)
@@ -60,7 +66,7 @@ internal static class PlaylistPageLifetimeProbe
         await cache.CachePlaylistPageSnapshotAsync(
             key,
             new PlaylistPageCacheData(
-                songs.Select(song => new PlaylistPageCacheTrack(song, true, true)).ToList(),
+                songs.Select(song => new NavigationPageCacheTrack(song, true, true)).ToList(),
                 songs.Select(song => song.Id).ToArray(),
                 songs.Count,
                 null));
@@ -110,6 +116,86 @@ internal static class PlaylistPageLifetimeProbe
             "返回滚动位置没有恢复");
 
     }
+
+    /// <summary>内存快照被容量淘汰后,磁盘兜底必须仍能读回(淘汰条目要立即落盘,不能留在延迟窗口里)。</summary>
+    private static async Task VerifySnapshotEvictionAsync()
+    {
+        var cache = ServiceLocator.Get<MusicCacheService>();
+        var songs = CreateSongs(30, 950_000);
+        var tracks = songs.Select(song => new NavigationPageCacheTrack(song, true)).ToList();
+        var trackIds = songs.Select(song => song.Id).ToArray();
+        var keys = new List<string>();
+        for (var index = 0; index < 10; index++)
+        {
+            var key = Guid.NewGuid().ToString("N");
+            keys.Add(key);
+            _ = cache.CachePlaylistPageSnapshotAsync(
+                key, new PlaylistPageCacheData(tracks, trackIds, songs.Count, null));
+        }
+
+        var restored = await cache.TryTakePlaylistPageSnapshotAsync(keys[0]);
+        Assert(restored is not null && restored.Tracks.Count == songs.Count,
+            "内存快照被容量淘汰后磁盘兜底失效");
+        for (var index = 1; index < keys.Count; index++)
+            await cache.DiscardPlaylistPageSnapshotAsync(keys[index]);
+    }
+
+    /// <summary>返回恢复不得等待落盘:离页后立刻返回应是毫秒级(修复前要等 0.6~1.3s 写完快照)。</summary>
+    private static async Task VerifyRestoreDoesNotWaitForDiskAsync()
+    {
+        var cache = ServiceLocator.Get<MusicCacheService>();
+        var vm = ServiceLocator.Get<PlaylistViewModel>();
+        vm.ReleaseCurrentPageData();
+
+        var songs = CreateSongs(600, 960_000);
+        var key = Guid.NewGuid().ToString("N");
+        _ = cache.CachePlaylistPageSnapshotAsync(key, new PlaylistPageCacheData(
+            songs.Select(song => new NavigationPageCacheTrack(song, true, true)).ToList(),
+            songs.Select(song => song.Id).ToArray(),
+            songs.Count,
+            null));
+        var snapshot = new PlaylistNavigationSnapshot(
+            key,
+            PlaylistPageKind.NetEase,
+            new Playlist
+            {
+                Id = 91,
+                Source = MusicSource.NetEase,
+                Name = "返回不等落盘",
+                TrackCount = songs.Count,
+            },
+            null,
+            "返回不等落盘",
+            "测试用户",
+            0,
+            "",
+            false,
+            0);
+        await vm.RestoreNavigationSnapshotAsync(snapshot);
+        vm.UpdatePageScrollOffset(900);
+
+        var captured = vm.CaptureAndReleaseNavigationSnapshot()
+                       ?? throw new InvalidOperationException("未生成导航快照");
+        var watch = Stopwatch.StartNew();
+        await vm.RestoreNavigationSnapshotAsync(captured);
+        watch.Stop();
+
+        Assert(vm.RetainedTrackRowCount == songs.Count, "返回恢复行数错误");
+        Assert(watch.ElapsedMilliseconds < 100,
+            $"歌单页返回等了 {watch.ElapsedMilliseconds}ms 磁盘 I/O(应 < 100ms)");
+        vm.ReleaseCurrentPageData();
+    }
+
+    private static List<Song> CreateSongs(int count, int baseId) =>
+        Enumerable.Range(1, count).Select(index => new Song
+        {
+            Id = baseId + index,
+            Source = MusicSource.NetEase,
+            Name = $"生命周期歌曲 {index:D4}",
+            Artist = "测试歌手",
+            Album = "测试专辑",
+            DurationMs = 180_000,
+        }).ToList();
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference CaptureAndRelease(

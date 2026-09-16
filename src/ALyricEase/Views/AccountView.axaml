@@ -63,9 +63,40 @@
             <Setter Property="Background" Value="{DynamicResource DangerActionBackgroundPressed}" />
             <Setter Property="Foreground" Value="{DynamicResource DangerActionForegroundHover}" />
         </Style>
+
+        <!-- 未登录占位卡:固定 3 列 x 2 行,断点只切按钮自身的附加属性。
+             注意 Avalonia 12 里 Grid.ColumnDefinitions/RowDefinitions 已不是 AvaloniaProperty,
+             不能进 Style setter(反射实测),所以行列定义写死、只动 Grid.Column/Row/Span。
+             宽屏:头像|文字|按钮 三列一行;窄屏(容器宽 <641):按钮折到第 2 行横跨两列整宽,
+             否则 Auto 按钮会把 * 文本列挤到几十像素,文字一字一行(484px 窗口实测)。 -->
+        <Style Selector="Button#NetEaseLoginButton">
+            <Setter Property="Grid.Column" Value="2" />
+            <Setter Property="Grid.Row" Value="0" />
+        </Style>
+        <Style Selector="Button#QqLoginButton">
+            <Setter Property="Grid.Column" Value="2" />
+            <Setter Property="Grid.Row" Value="0" />
+        </Style>
+        <ContainerQuery Name="accountHost" Query="max-width:641">
+            <Style Selector="Button#NetEaseLoginButton">
+                <Setter Property="Grid.Column" Value="0" />
+                <Setter Property="Grid.Row" Value="1" />
+                <Setter Property="Grid.ColumnSpan" Value="2" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="Margin" Value="0,4,0,0" />
+            </Style>
+            <Style Selector="Button#QqLoginButton">
+                <Setter Property="Grid.Column" Value="0" />
+                <Setter Property="Grid.Row" Value="1" />
+                <Setter Property="Grid.ColumnSpan" Value="2" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="Margin" Value="0,4,0,0" />
+            </Style>
+        </ContainerQuery>
     </UserControl.Styles>
 
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                  Container.Name="accountHost" Container.Sizing="Width">
         <Grid MaxWidth="920" HorizontalAlignment="Center" Margin="32,28,32,48"
               RowDefinitions="Auto,Auto,*" RowSpacing="20">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="16">
@@ -154,7 +185,7 @@
 
                 <!-- 网易云未登录:占位卡片(与已登录卡片同款外壳),给入口登录第二个平台 -->
                 <Border Classes="account-card" IsVisible="{Binding !NetEase.IsLoggedIn}">
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+                    <Grid x:Name="NetEasePlaceholderHeader" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16">
                         <Border Width="72" Height="72" CornerRadius="36"
                                 Background="{DynamicResource AppSurfaceElevated}">
                             <TextBlock Text="{Binding NetEase.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
@@ -172,7 +203,7 @@
                                        FontSize="12" Foreground="{DynamicResource TextTertiary}"
                                        TextWrapping="Wrap" />
                         </StackPanel>
-                        <Button Grid.Column="2" Classes="account-primary" Content="登录网易云音乐"
+                        <Button x:Name="NetEaseLoginButton" Classes="account-primary" Content="登录网易云音乐"
                                 Command="{Binding LoginNetEaseCommand}" Height="36" Padding="16,0"
                                 VerticalAlignment="Center"
                                 AutomationProperties.Name="登录网易云音乐账号" />
@@ -249,7 +280,7 @@
 
                 <!-- QQ 音乐未登录:占位卡片 -->
                 <Border Classes="account-card" IsVisible="{Binding !Qq.IsLoggedIn}">
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+                    <Grid x:Name="QqPlaceholderHeader" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16">
                         <Border Width="72" Height="72" CornerRadius="36"
                                 Background="{DynamicResource AppSurfaceElevated}">
                             <TextBlock Text="{Binding Qq.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
@@ -267,7 +298,7 @@
                                        FontSize="12" Foreground="{DynamicResource TextTertiary}"
                                        TextWrapping="Wrap" />
                         </StackPanel>
-                        <Button Grid.Column="2" Classes="account-primary" Content="登录 QQ 音乐"
+                        <Button x:Name="QqLoginButton" Classes="account-primary" Content="登录 QQ 音乐"
                                 Command="{Binding LoginQqCommand}" Height="36" Padding="16,0"
                                 VerticalAlignment="Center"
                                 AutomationProperties.Name="登录 QQ 音乐账号" />

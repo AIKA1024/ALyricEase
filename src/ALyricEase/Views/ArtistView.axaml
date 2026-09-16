@@ -55,7 +55,8 @@
     </Style>
   </UserControl.Styles>
 
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <ScrollViewer x:Name="PageScroller"
+                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="48,20,32,116" Spacing="28">
       <!-- 头部(仿原版 ArtistDetailView):圆形头像水平居中在顶,名字在其下方靠左;右侧 teal 关注 + 更多 -->
       <Grid RowDefinitions="240,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="10">

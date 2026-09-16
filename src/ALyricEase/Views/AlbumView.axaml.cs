@@ -6,9 +6,12 @@ namespace ALyricEase.Views;
 
 public partial class AlbumView : UserControl
 {
+    private readonly DetailPageScrollController _scrollController;
+
     public AlbumView()
     {
         InitializeComponent();
+        _scrollController = new DetailPageScrollController(this, PageScroller);
         SizeChanged += (_, e) => ResponsiveClasses.ApplyByWindow(this);
         AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
     }

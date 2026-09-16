@@ -106,7 +106,8 @@
     <Grid Grid.Row="0" Classes="album-page-title">
       <TextBlock Text="专辑" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer x:Name="PageScroller" Grid.Row="1"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel Classes="album-content" Spacing="0">
         <!-- 宽/中屏：按原版 AlbumDetailView 的 240 + * 横向头部布局。 -->
         <Border x:Name="HeroCard" Classes="album-hero"

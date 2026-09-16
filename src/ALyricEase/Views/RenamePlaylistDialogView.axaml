@@ -18,18 +18,6 @@
                     </Transitions>
                 </Setter>
             </Style>
-            <Style Selector="Button.dialog-primary">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
-                <Setter Property="Foreground" Value="White" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="CornerRadius" Value="4" />
-            </Style>
-            <Style Selector="Button.dialog-primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
-            </Style>
-            <Style Selector="Button.dialog-primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemAccentColorDark1}" />
-            </Style>
         </Grid.Styles>
         <Panel Background="#99000000" />
         <Grid DataContext="{Binding RenamePlaylistDialog}" x:DataType="vm:RenamePlaylistDialogViewModel"
@@ -58,7 +46,7 @@
                                 Command="{Binding $parent[views:RenamePlaylistDialogView].((vm:MainViewModel)DataContext).CloseRenamePlaylistDialogCommand}"
                                 HotKeyManager.HotKey="Escape"
                                 MinWidth="96" Height="32" />
-                        <Button Grid.Column="2" Classes="dialog-primary" Content="保存"
+                        <Button Grid.Column="2" Classes="accent" Content="保存"
                                 Command="{Binding ConfirmCommand}"
                                 MinWidth="96" Height="32" IsEnabled="{Binding CanConfirm}" />
                     </Grid>

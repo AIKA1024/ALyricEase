@@ -383,6 +383,7 @@
                 </Button>
             </Grid>
             <ProgressBar Grid.Row="2" Height="3" IsIndeterminate="True" Margin="24,8,24,0"
+                         infra:IndeterminateAnimationGate.IsActive="True"
                          IsVisible="{Binding IsSearching}" Foreground="{DynamicResource SystemAccentColor}" />
 
             <ScrollViewer Grid.Row="3" x:Name="ResultsScroll" HorizontalScrollBarVisibility="Disabled"

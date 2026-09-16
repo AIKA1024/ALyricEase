@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              x:DataType="vm:MainViewModel"
              mc:Ignorable="d"
              x:Class="ALyricEase.Views.LoginDialogView">
@@ -219,6 +220,7 @@
                                         <TextBlock Text="{Binding NetEaseProxyStatus}" FontSize="12"
                                                    Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
                                         <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsNetEaseProxyLoginActive}"
+                                                     infra:IndeterminateAnimationGate.IsActive="True"
                                                      Width="214" HorizontalAlignment="Left" Height="3" />
                                     </StackPanel>
                                     <!-- 代理监听中按钮隐藏(已自动启动);失败或端口被占时可手动重试 -->
@@ -322,6 +324,7 @@
                                         <TextBlock Text="{Binding QqQrStatus}" FontSize="12"
                                                    Foreground="{DynamicResource TextSecondary}" />
                                         <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsQqQrLoginActive}"
+                                                     infra:IndeterminateAnimationGate.IsActive="True"
                                                      Width="214" HorizontalAlignment="Left" Height="3" />
                                     </StackPanel>
                                     <Button x:Name="QqQrButton" Classes="accent" Content="获取或刷新二维码"

@@ -112,6 +112,7 @@
             </Grid>
 
             <ProgressBar Grid.Row="1" IsIndeterminate="True" Height="3"
+                         infra:IndeterminateAnimationGate.IsActive="True"
                          IsVisible="{Binding IsRefreshing}" />
 
             <StackPanel Grid.Row="2" Spacing="16">

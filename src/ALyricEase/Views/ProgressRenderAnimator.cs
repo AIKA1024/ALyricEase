@@ -35,6 +35,12 @@ internal sealed class ProgressRenderAnimator
     private double _samplePositionMs;
     private double _durationMs;
 
+    // 承载本控件的 TopLevel(桌面即 Window):用来判断进度条所在窗口此刻是否真的在呈现。
+    // 不呈现时必须停摆,详见 IsHostPresentable()。
+    private TopLevel? _observedTopLevel;
+    private Window? _observedWindow;
+    private bool _lastPresentable = true;
+
     public ProgressRenderAnimator(Control host, Control track, Control fill, Control thumb, Control? bubble = null)
     {
         _host = host;
@@ -57,6 +63,8 @@ internal sealed class ProgressRenderAnimator
     {
         if (_attached) return;
         _attached = true;
+        ObserveTopLevel(TopLevel.GetTopLevel(_host));
+        _lastPresentable = IsHostPresentable();
         RestartFrameLoop();
     }
 
@@ -65,6 +73,7 @@ internal sealed class ProgressRenderAnimator
         if (!_attached) return;
         _attached = false;
         StopFrameLoop();
+        ObserveTopLevel(null);
     }
 
     public void SetActive(bool active)
@@ -185,6 +194,7 @@ internal sealed class ProgressRenderAnimator
     {
         if (_frameRequested || !ShouldAnimate()) return;
         if (TopLevel.GetTopLevel(_host) is not { } topLevel) return;
+        ObserveTopLevel(topLevel);
 
         var generation = _frameGeneration;
         _frameRequested = true;
@@ -220,7 +230,66 @@ internal sealed class ProgressRenderAnimator
 
     private bool ShouldAnimate()
         => _attached && _active && _isPlaying && !_isScrubbing
-           && _durationMs > 0 && _samplePositionMs < _durationMs;
+           && _durationMs > 0 && _samplePositionMs < _durationMs
+           && IsHostPresentable();
+
+    /// <summary>承载窗口此刻是否真的在呈现内容。
+    ///
+    /// 为什么必须自己判:窗口最小化/隐藏时,Avalonia 仍会把 RequestAnimationFrame 回调送进来
+    /// (2026-09-16 真窗口实测:最小化态下填充条 ScaleX 依然按实时速率推进),而这个循环是
+    /// **自行续订下一帧**的 —— 只要条件成立就永不主动停。于是一首歌从头到尾都在为一个
+    /// 看不见的进度条做每帧写入(改 3 个 Transform + 视觉失效)。真机(Android 后台)上
+    /// 这类每帧唤醒的耗电代价更高,所以判定要放在框架层能给出的可见性上。
+    ///
+    /// 停摆是隐式的:帧回调里 ShouldAnimate() 为 false 就不再续订;恢复由
+    /// OnHostPresentationChanged 重新点火。TopLevel 尚未解析出来时不自作主张(返回 true)。</summary>
+    private bool IsHostPresentable()
+    {
+        if (_observedTopLevel is not { } topLevel) return true;
+        if (!topLevel.IsVisible) return false;
+        return _observedWindow is null || _observedWindow.WindowState != WindowState.Minimized;
+    }
+
+    /// <summary>解析(或更换)承载 TopLevel 并订阅可见性/窗口状态变化。幂等,只在 Attach 与首次挂帧时走。</summary>
+    private void ObserveTopLevel(TopLevel? topLevel)
+    {
+        var window = topLevel as Window;
+        if (ReferenceEquals(topLevel, _observedTopLevel) && ReferenceEquals(window, _observedWindow)) return;
+
+        UnobserveTopLevel();
+        _observedTopLevel = topLevel;
+        _observedWindow = window;
+        if (topLevel is not null) topLevel.PropertyChanged += OnHostPresentationChanged;
+        // 桌面下 TopLevel 就是 Window,同一个对象只订阅一次。
+        if (window is not null && !ReferenceEquals(window, topLevel))
+            window.PropertyChanged += OnHostPresentationChanged;
+    }
+
+    private void UnobserveTopLevel()
+    {
+        if (_observedTopLevel is not null) _observedTopLevel.PropertyChanged -= OnHostPresentationChanged;
+        if (_observedWindow is not null && !ReferenceEquals(_observedWindow, _observedTopLevel))
+            _observedWindow.PropertyChanged -= OnHostPresentationChanged;
+        _observedTopLevel = null;
+        _observedWindow = null;
+    }
+
+    private void OnHostPresentationChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property != Visual.IsVisibleProperty && e.Property != Window.WindowStateProperty) return;
+        SyncFrameLoopWithPresentation();
+    }
+
+    /// <summary>只在"可呈现性"翻转时动循环 —— 否则每次窗口状态或可见性抖一下都会重置预测基线。</summary>
+    private void SyncFrameLoopWithPresentation()
+    {
+        var presentable = IsHostPresentable();
+        if (presentable == _lastPresentable) return;
+        _lastPresentable = presentable;
+
+        if (presentable) RestartFrameLoop();
+        else StopFrameLoop();
+    }
 
     private static double ClampPosition(double positionMs, double durationMs)
     {

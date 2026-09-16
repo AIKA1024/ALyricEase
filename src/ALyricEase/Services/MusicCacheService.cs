@@ -55,6 +55,21 @@ public sealed class MusicCacheService
     private long _lastTrimAt;
     private int _maximumSizeMb;
     private int _clearGeneration;
+
+    // 缓存目录当前字节数的**工作副本**(-1 = 尚未校准)。
+    //
+    // 为什么需要它:每次写入的 EnsureSpaceFor 都要先知道"目录现在有多大",而唯一的算法是
+    // 枚举整个目录 + 给每个文件建 FileInfo + 按 LastWriteTimeUtc 排序。真实用户缓存有一万三千
+    // 余个文件,实测**每写一张 40KB 封面要 550ms**(50 文件目录只要 4.4ms,放大约 125 倍),
+    // 而这条路径全程持 _mutationGate ⇒ 并发的封面下载被串行化:歌单页快速滚到底时封面出得
+    // 极慢、后台线程 CPU 恒定占用(用户报告"图片加载特别慢,CPU 一直 10% 左右")。
+    // 见探针 --cache-write-cost。
+    //
+    // 因此写路径改成:只要"工作副本 + 本次写入"仍在上限内就**直接放行**,不再枚举目录。
+    // 偏差是单向可容忍的 —— 工作副本偏小最多让缓存短暂略超上限(下一次真实扫描立刻纠正),
+    // 偏大只会多跑一次扫描;两种偏差都由任何一次真实扫描(裁剪/清空/读取容量/改上限)重置。
+    // ⚠️ 新增任何"直接写/删缓存目录文件"的代码都必须同步它,否则偏差会累积。
+    private long _knownCacheBytes = -1;
     private MusicCacheIndexFile _offlineIndex;
 
     public MusicCacheService(AppStateStore state)
@@ -360,6 +375,9 @@ public sealed class MusicCacheService
                 TryDelete(path);
             }
             _offlineIndex = new MusicCacheIndexFile();
+            // 被钉住的文件仍留在磁盘上(等租约释放),所以这里不能记 0 —— 置回"未知",
+            // 由下一次真实扫描重新校准。
+            ResetKnownCacheBytes(-1);
         }
         finally
         {
@@ -367,7 +385,12 @@ public sealed class MusicCacheService
         }
     }
 
-    internal long GetCurrentSizeBytes() => EnumerateCacheFiles().Select(TryGetLength).Sum();
+    internal long GetCurrentSizeBytes()
+    {
+        var total = EnumerateCacheFiles().Select(TryGetLength).Sum();
+        ResetKnownCacheBytes(total); // 已经付过一次全目录扫描,顺手校准工作副本
+        return total;
+    }
 
     internal int RetainedInlinePlaylistTrackCount => _offlineIndex.Accounts
         .SelectMany(account => account.Playlists)
@@ -477,6 +500,7 @@ public sealed class MusicCacheService
                 File.Move(temporaryPath, finalPath, overwrite: false);
                 File.SetLastWriteTimeUtc(finalPath, DateTime.UtcNow);
                 temporaryPath = null;
+                AddKnownCacheBytes(fileLength);
             }
             finally
             {
@@ -632,9 +656,12 @@ public sealed class MusicCacheService
         var temporaryPath = path + $".{Guid.NewGuid():N}.part";
         try
         {
+            var previousLength = TryGetLength(path);
             File.WriteAllBytes(temporaryPath, bytes);
             File.Move(temporaryPath, path, overwrite: true);
             File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+            // 覆盖写:目录净变化是"新长度 - 旧长度",不能按 bytes.Length 计(列表文件会被反复重写)。
+            AddKnownCacheBytes(bytes.LongLength - previousLength);
         }
         finally
         {
@@ -647,11 +674,13 @@ public sealed class MusicCacheService
         Directory.CreateDirectory(_cacheDirectory);
         var path = Path.Combine(_cacheDirectory, OfflineIndexFileName);
         var temporaryPath = path + ".part";
+        var previousLength = TryGetLength(path);
         File.WriteAllText(
             temporaryPath,
             JsonSerializer.Serialize(_offlineIndex, MusicCacheJsonContext.Default.MusicCacheIndexFile));
         File.Move(temporaryPath, path, overwrite: true);
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+        AddKnownCacheBytes(new FileInfo(path).Length - previousLength);
     }
 
     /// <summary>按文件名读回一个缓存项(封面/歌词字节)。只读,不占 gate ——
@@ -705,6 +734,7 @@ public sealed class MusicCacheService
             File.Move(temporaryPath, finalPath, overwrite: false);
             File.SetLastWriteTimeUtc(finalPath, DateTime.UtcNow);
             temporaryPath = null;
+            AddKnownCacheBytes(bytes.LongLength);
         }
         catch
         {
@@ -719,7 +749,7 @@ public sealed class MusicCacheService
     private async Task RemoveFileAsync(string fileName)
     {
         await _mutationGate.WaitAsync().ConfigureAwait(false);
-        try { TryDelete(Path.Combine(_cacheDirectory, fileName)); }
+        try { DeleteTracked(Path.Combine(_cacheDirectory, fileName)); }
         finally { _mutationGate.Release(); }
     }
 
@@ -749,6 +779,7 @@ public sealed class MusicCacheService
                 if (IsPinned(file.FullName)) continue;
                 if (TryDelete(file.FullName)) total -= file.Length;
             }
+            ResetKnownCacheBytes(total);
         }
         catch
         {
@@ -759,10 +790,19 @@ public sealed class MusicCacheService
         }
     }
 
+    /// <summary>写之前确认放得下;放不下就按 LRU 删到放得下。调用方必须持 <c>_mutationGate</c>。
+    ///
+    /// 快路径:工作副本已知且"现状 + 本次写入"仍在上限内 ⇒ 直接放行,不枚举目录
+    /// (这是封面/音频/歌词落盘的热路径,见 <c>_knownCacheBytes</c> 的说明)。
+    /// 慢路径(接近上限或副本未知)才做完整扫描,并顺手把工作副本校准回真实值。</summary>
     private bool EnsureSpaceFor(long incomingLength)
     {
         var maximum = GetMaximumBytes();
         if (incomingLength <= 0 || incomingLength > maximum) return false;
+
+        var known = Interlocked.Read(ref _knownCacheBytes);
+        if (known >= 0 && known + incomingLength <= maximum) return true;
+
         var files = GetEvictionCandidates();
         var total = files.Sum(file => file.Length);
         foreach (var file in files)
@@ -771,7 +811,36 @@ public sealed class MusicCacheService
             if (IsPinned(file.FullName)) continue;
             if (TryDelete(file.FullName)) total -= file.Length;
         }
+        ResetKnownCacheBytes(total);
         return total + incomingLength <= maximum;
+    }
+
+    /// <summary>同步"缓存目录当前字节数"工作副本。<paramref name="delta"/> 是本次操作给目录带来的
+    /// 净变化(写入为正、删除为负)。**只在该操作确实改变了目录时调用** —— 例如写入前发现文件
+    /// 已存在而提前返回(去重)就不能调用,否则会重复计数。</summary>
+    private void AddKnownCacheBytes(long delta)
+    {
+        if (delta == 0) return;
+        while (true)
+        {
+            var current = Interlocked.Read(ref _knownCacheBytes);
+            if (current < 0) return; // 尚未校准:等下一次真实扫描给出基线
+            var next = Math.Max(0, current + delta);
+            if (Interlocked.CompareExchange(ref _knownCacheBytes, next, current) == current) return;
+        }
+    }
+
+    private void ResetKnownCacheBytes(long total) => Interlocked.Exchange(ref _knownCacheBytes, total);
+
+    /// <summary>删除并同步工作副本(适用于"删除单个已知文件"的场景)。
+    /// 批量淘汰(EnsureSpaceFor/TrimToLimitAsync)不要用它:那里在本地变量里累计 total,
+    /// 一次校准即可,逐文件同步反而会多出一堆无谓的原子操作。</summary>
+    private bool DeleteTracked(string path)
+    {
+        var length = TryGetLength(path);
+        if (!TryDelete(path)) return false;
+        AddKnownCacheBytes(-length);
+        return true;
     }
 
     private bool CanMakeSpaceFor(long incomingLength)
@@ -844,7 +913,7 @@ public sealed class MusicCacheService
         }
         else
         {
-            TryDelete(path);
+            DeleteTracked(path);
         }
     }
 
@@ -861,7 +930,7 @@ public sealed class MusicCacheService
                 shouldDelete = _deleteWhenReleased.Remove(path);
             }
         }
-        if (shouldDelete) TryDelete(path);
+        if (shouldDelete) DeleteTracked(path);
         else _ = TrimToLimitAsync();
     }
 

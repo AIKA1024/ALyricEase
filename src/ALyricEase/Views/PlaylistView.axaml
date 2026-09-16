@@ -265,7 +265,9 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
               <StackPanel Grid.Row="1" Margin="12,10" Spacing="7" IsVisible="{Binding IsLoadingMore}">
-                <ProgressBar Height="3" IsIndeterminate="True" />
+                <!-- 最小化时停掉循环动画:框架不会替你看窗口状态,详 IndeterminateAnimationGate -->
+                <ProgressBar Height="3" IsIndeterminate="True"
+                             infra:IndeterminateAnimationGate.IsActive="True" />
                 <TextBlock Text="{Binding LoadingMoreText}" HorizontalAlignment="Center" FontSize="12"
                            Foreground="{DynamicResource TextTertiary}" />
               </StackPanel>

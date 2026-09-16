@@ -148,6 +148,14 @@ public static class Program
             return;
         }
 
+        // 缓存读是否被 _mutationGate 堵住：强制裁剪占锁期间量各读路径耗时。
+        if (args.Length > 0 && args[0] == "--cache-read-gate")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(CacheReadGateProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 最近播放回归：去重置顶、容量上限、元数据持久化与清空。
         if (args.Length > 0 && args[0] == "--recent-history")
         {

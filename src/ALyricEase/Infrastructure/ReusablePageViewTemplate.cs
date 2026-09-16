@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
@@ -36,7 +37,12 @@ public sealed class ReusablePageViewTemplate : IDataTemplate
     /// <summary>匹配的数据类型(写法同 DataTemplate.DataType,如 vm:RecommendViewModel)。</summary>
     public Type? DataType { get; set; }
 
-    /// <summary>复用的视图类型,需有公共无参构造(写法同 DataType,如 views:RecommendView)。</summary>
+    /// <summary>复用的视图类型,需有公共无参构造(写法同 DataType,如 views:RecommendView)。
+    /// ⚠ 必须带 <see cref="DynamicallyAccessedMembersAttribute"/>:这里靠 Activator 反射建实例,
+    /// 不标注的话 Release 裁剪会判定"没人 new 过这个构造函数"而把它删掉,运行时在
+    /// ContentPresenter 建子元素时抛 MissingMethodException(Arg_NoDefCTor)整机启动即崩
+    /// —— 真机实测踩过一次,构建期的 IL2072 警告就是它的预告,别当噪音忽略。</summary>
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
     public Type? ViewType { get; set; }
 
     public bool Match(object? data) =>

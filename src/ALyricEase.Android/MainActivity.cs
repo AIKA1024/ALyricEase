@@ -37,6 +37,27 @@ public class MainActivity : AvaloniaMainActivity
     {
         base.OnCreate(savedInstanceState);
         RequestNotificationPermission();
+        TryRunDeviceProbe(Intent);
+    }
+
+    /// <summary>LaunchMode.SingleTop:应用已在栈顶时 am start 复用本实例,只走这里。真机自检入口依赖这条路径。</summary>
+    protected override void OnNewIntent(global::Android.Content.Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        TryRunDeviceProbe(intent);
+    }
+
+    /// <summary>按 intent extra 触发只读真机自检;不传该 extra 时正常启动,零影响。</summary>
+    private static void TryRunDeviceProbe(global::Android.Content.Intent? intent)
+    {
+        var probe = intent?.GetStringExtra(Diagnostics.DeviceImageBudgetProbe.IntentExtraKey);
+        if (probe is null) return; // 正常启动路径:不打任何日志
+
+        global::Android.Util.Log.Info(
+            "ALyricEaseProbe", $"收到自检请求: {probe}(Activity={intent?.Component?.ShortClassName})");
+
+        if (probe != Diagnostics.DeviceImageBudgetProbe.IntentExtraValue) return;
+        _ = System.Threading.Tasks.Task.Run(Diagnostics.DeviceImageBudgetProbe.Run);
     }
 
     protected override void OnStart()

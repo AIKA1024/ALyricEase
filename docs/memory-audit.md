@@ -9,13 +9,26 @@
 
 | 条目 | 处置方式 |
 |---|---|
-| P1-1 图片预算不分平台 | 新增 `Infrastructure/ImageMemoryBudget.cs` 作为唯一来源，运行时按平台取值 |
+| P1-1 图片预算不分平台 | 新增 `Infrastructure/ImageMemoryBudget.cs` 作为唯一来源，运行时按平台取值（真机生效值已核对，见下） |
 | P1-2 `_pendingSnapshotWrites` 只增不减 | 随磁盘写入层整体移除 |
 | P1-3 换号红心串味 | 各音源客户端引入**账号代次**（`AccountGeneration`），换号/登出即作废红心缓存与在途请求 |
 | P2-6 磁盘快照层 | 整体删除，快照只驻留内存；容量 8 → 32 页 |
-| P2-7 磁盘读抢 `_mutationGate` | 随磁盘读路径一并消失 |
+| P2-7 磁盘读抢 `_mutationGate` | 第一轮随磁盘快照路径消失；第二轮把**其余四个读路径**也摘出来（见 P2-7 正文，有实测） |
 
 未动：P2-4（五个手写 LRU 的共用抽象）、P2-5（两套图片缓存的占用口径）、P2-8（`_offlineIndex` 失配）与 P3 全部。
+
+**真机核对（2026-09-16）**：五项处置在真机上跑通。新增 Android 真机自检入口
+`src/ALyricEase.Android/Diagnostics/DeviceImageBudgetProbe.cs` —— 由 intent extra 触发、只读、输出到 logcat：
+
+```
+adb shell am start -n com.aika1024.alyricease/<MainActivity> --es aly_probe image-budget
+adb logcat -d -s ALyricEaseProbe:I
+```
+
+它打印预算生效值、GC/ART/ActivityManager 三方的内存事实、以及两个缓存实例**实际持有**的上限
+（反射读取，用来排除"预算改了但缓存没跟着改"）。数据与结论见 P1-1 正文。
+同一次真机验证还查出**只有 Release 包才会暴露的两个问题**（Debug 构建与桌面探针都发现不了）：
+页面视图构造函数被裁剪导致启动即崩、Debug 包手动 adb 安装需先关 Fast Deployment —— 均记入 `docs/avalonia-tips.md`。
 
 ## 一、五层结构
 
@@ -77,6 +90,13 @@
 
 页面快照**不再是磁盘文件**（旧的 `n-*.snapshot` 层已删除，只在启动时清理遗留）。
 
+**并发纪律（2026-09-16 定稿）**：`_mutationGate` 只服务**变更**缓存的操作（写入/替换/删除/裁剪/清空）
+与 `TryAcquire`（申请播放租约，要按钉表锁定文件）；**所有读操作一律不占这把锁**。
+原因是裁剪与每次落盘的 `EnsureSpaceFor` 都要 stat + 排序整个缓存目录（真实用户上万文件，单次 200ms 起），
+读若排在后面就变成"卡不卡取决于当时有没有写撞上来"——即用户感受到的偶发卡顿。
+读与并发删除竞争时统一退化：文件没了当 miss、索引正在被追加当"没有缓存"，由调用方回退常规加载。
+回归探针 `--cache-read-gate`（裁剪占锁期间量各读路径耗时，改前 187ms → 改后 0ms）。
+
 ## 二、内存预算总账
 
 | 项 | 上限 | 硬约束 | 按平台区分 |
@@ -102,11 +122,50 @@
 Windows 与 Android 走同一套（`Program.cs:98` / `Android/App.axaml.cs:98` 调用同一个 `CoverImagePipeline.Configure`）。
 80MB 的桌面解码图预算对手机偏大 —— Android 上还要同时留住 32 页页面快照、歌词、播放缓冲与 UI 位图。
 
-**实际做法**：新增 `Infrastructure/ImageMemoryBudget.cs` 作预算唯一来源。桌面维持 64MB/512 项 + 16MB/128 项；
-Android 取 `GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 8` 夹在 [12MB, 48MB]（可用值 ≤0 时按 256MB 估），
-条目数按 192KB/张折算并夹在 [48, 512]；直接缓存按租约预算的 1/4（≥4MB）。两处调用点改为读该类的静态属性。
+**实际做法（两轮，第二轮的结论见下面"输入选错"）**
+
+新增 `Infrastructure/ImageMemoryBudget.cs` 作预算唯一来源。桌面维持 64MB/512 项 + 16MB/128 项；
+Android 取**堆上限 / 4** 夹在 [12MB, 48MB]，条目数按 192KB/张折算并夹在 [48, 512]；
+直接缓存按租约预算的 1/4（≥4MB）。两处调用点改为读该类的静态属性。
 `--image-lifetime` 探针启动时打印 `ImageMemoryBudget.Describe()` 供核对。
-桌面实测生效值：`lease=64MB/512items direct=16MB/128items platform=desktop`。
+桌面实测生效值：`lease=64MB/512items direct=16MB/128items platform=desktop`（无 `heapLimit` 后缀，符合预期）。
+
+**⚠️ 第一轮实测暴露了输入选错（已修）**
+
+初版取 `GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 8`。真机（Android 12）实测该值是
+**4793.7MB** —— 它报的是**物理内存的 0.8 倍**，与 ART 堆无关。÷8 = 599MB **恒大于上限**，
+`Clamp` 永远落到 48MB ⇒ "按堆缩放"在 Android 上退化为固定值（要落进 12~48MB 区间需要
+`available < 384MB`，Android 上没有这种设备）。结果本身安全，但**低端机拿不到降额**：
+`memoryClass=96MB` 的机器同样是 48MB + 12MB = 60MB 图片预算。
+
+**修法**：分母改为 `Java.Lang.Runtime.GetRuntime().MaxMemory()`（≡ `ActivityManager.MemoryClass`，
+Android 官方内存指导值，低端机 96/128MB、中端 192/256MB）。核心库不能引用 Android 类型
+（见"#if ANDROID 死分支"），故：
+
+- 核心库加注入点 `internal static void SetAndroidHeapLimit(long bytes)`（`Volatile.Write`），
+  预算由 `Lazy<Budget>` 惰性解析（避免静态只读定型早于注入）；另留纯函数
+  `LeaseBytesFor(heapLimitBytes)` 供推演各档位；未注入时退回固定 48MB 上限。
+- Android 侧 `Application.OnCreate()` 里注入 `Runtime.MaxMemory()`，**必须早于 `base.OnCreate()`
+  与首次读预算**；失败只记警告并退回固定上限。
+- `Describe()` 在 Android 上追加 `heapLimit=...MB` 后缀，真机可一眼看出分母来源。
+
+**真机实测（2026-09-16，MuMu 模拟器 / Android 12 / arm64 翻译层 / Release 包）**
+
+```
+budget  : image-budget lease=48MB/256items direct=12MB/64items platform=android heapLimit=192MB
+scale   : 96MB→24MB 128MB→32MB 192MB→48MB 256MB→48MB 512MB→48MB
+effective: leaseCache maxBytes=50331648 (48.0MB) maxItems=256
+effective: directCache maxBytes=12582912 (12.0MB) maxItems=64
+```
+
+- `platform=android` 证实运行时判定链路通；`heapLimit=192MB` 证实分母已是 `Runtime.maxMemory()`，
+  不再是物理内存量级。
+- 缩放表证明**低端机现在确实会降额**（96MB→24MB、128MB→32MB），不再一律 48MB。
+- 预算确实落到缓存实例上：反射读 `CoverImagePipeline._memoryCache._maximumBytes` = 50331648、
+  `_maximumItems` = 256。
+- 设备侧事实：`ActivityManager.MemoryClass=192MB`、`largeMemoryClass=512MB`、`Runtime.maxMemory()=192MB`、
+  `MemoryInfo.TotalMem=5950MB`、`ART max=192MB`（均为 Android 12 / API 32 的正常取值）。
+- 首页加载 9 张封面后租约占用 **0.7MB**（≈83KB/张，比代码里 192KB/张的估算小 —— 首页是缩略图）。
 
 **2. ✅ `MusicCacheService._pendingSnapshotWrites` 只增不减**
 
@@ -157,13 +216,41 @@ key 是每次离页新生成的 GUID，落盘成功后 `ObservePageSnapshotWrite
 及其 `[JsonSerializable]` 一并删除。`MaxInMemorySnapshots` 8 → **32**（`internal const`，探针直接读）。
 启动时 `DeleteLegacyPageSnapshotFiles()` 清掉升级前遗留的 `n-*.snapshot`。
 
-**7. ✅ 磁盘兜底路径仍要抢 `_mutationGate`**
+**7. ✅ 读路径抢 `_mutationGate`**
 
 `TryTake*PageSnapshotAsync` 读盘前 `await _mutationGate.WaitAsync()`，而该 gate 被下载落盘、曲目缓存写入、
 `TrimToLimitAsync`（全目录 stat，实测 550ms 级）共享 ⇒ 深层返回（内存未命中）时可能等上百毫秒。
 
-**实际做法**：随 P2-6 消失 —— 内存快照是同步字典操作，不再进入 `_mutationGate`。
-该 gate 现在只服务于真正的缓存变更（写入/删除/裁剪），不再有"读私有快照也要排队"的情况。
+**第一轮实际做法**：随 P2-6 消失 —— 内存快照是同步字典操作，不再进入 `_mutationGate`。
+
+**第二轮（2026-09-16 复查发现"只杀掉了一个实例"）**
+
+第一版收尾时写的"该 gate 现在只服务于真正的缓存变更"**与代码不符**：仍留在 gate 上的还有四个读路径 ——
+`GetAudioCacheAvailability`（扫 `a-*`）、`TryGetPlaylistLibrary`（纯内存字典）、
+`TryGetPlaylistTracksAsync`（读 `p-*.tracks`）、`TryReadBytesAsync`（读封面/歌词字节）。
+它们不需要排队，却排在写入与裁剪后面，而 gate 一旦被扫描类操作占住就是百毫秒级。
+
+新增探针 `--cache-read-gate`（`Headless/CacheReadGateProbe.cs`）把这件事量了出来：
+撑起 4000 个文件的目录，用 `SetMaximumSizeMbAsync`（=强制裁剪，整段扫描都在 gate 里）造窗口，
+**每个读都配一次独立窗口**（若共用一次，第一个读会把整个等待吃掉、后面的读量到 0ms，会掩盖问题）。
+
+| 读路径 | 空闲 | 裁剪占锁期间（改前） | 裁剪占锁期间（改后） |
+|---|---|---|---|
+| 封面字节（读盘） | 3ms | **187ms** | 0ms |
+| 歌词字节（读盘） | 1ms | **183ms** | 0ms |
+| 歌单曲目（读盘） | 3ms | **184ms** | 0ms |
+| 离线歌单索引（纯内存） | 0ms | **176ms** | 0ms |
+| 音频存在性（扫目录） | 2ms | **178ms** | 0ms |
+
+（裁剪占锁窗口约 200ms；改前探针 exit 1 并报"读仍在排队"，改后 exit 0。）
+
+**修法**：读一律不占 gate —— 与并发删除竞争时统一按"当没缓存/没读到"处理（缓存本来就允许 miss）。
+另加 `TouchQuietly`：LRU 的 mtime 续期失败不再丢弃已读到的内容（旧写法把它放在同一个 try 里，
+续期一抛异常就变成假 miss）。**唯一保留 gate 的"读"是 `TryAcquire`**：它要挑候选文件、续期 mtime、
+按钉表锁定租约，而裁剪正是按这份钉表决定"哪些能删"，拆开会出现"挑中了→被裁掉→钉了个已消失的路径"。
+
+改动后 gate 只剩 8 个入口：写入/替换（4）、删除（1）、裁剪（1）、清空（1）、`TryAcquire`（1）。
+纪律已写进 `MusicCacheService._mutationGate` 的字段注释。
 
 **8. `_offlineIndex` 只增不减，且与磁盘文件失配**（`Services/MusicCacheService.cs:1003-1011`）
 
@@ -188,10 +275,14 @@ key 是每次离页新生成的 GUID，落盘成功后 `ObservePageSnapshotWrite
 ## 四、处置顺序
 
 1. ~~**P1-3**（换号红心串味）~~ ✅ 已做：改成账号代次机制，比原计划的三行清理更硬（连在途响应竞态一起堵住）。
-2. ~~**P2-7**（磁盘读脱离 `_mutationGate`）~~ ✅ 已做：随磁盘读路径一并删除。
+2. ~~**P2-7**（读路径脱离 `_mutationGate`）~~ ✅ 已做（两轮）：第一轮随磁盘快照路径删除；
+   第二轮复查发现另有四个读路径仍在排队，一并摘出并用 `--cache-read-gate` 量出前后对照（187ms → 0ms）。
 3. ~~**P1-2**（`_pendingSnapshotWrites` 清理）~~ ✅ 已做：随磁盘写入层一并删除。
 4. ~~**P2-6**（删磁盘快照层 + 内存容量提到 24~32）~~ ✅ 已做：容量取 32。
-5. ~~**P1-1**（按平台区分图片预算）~~ ✅ 已做：桌面生效值已实测，Android 侧的真机目标值仍待真机核对一次。
+5. ~~**P1-1**（按平台区分图片预算）~~ ✅ 已做：桌面与真机生效值均已实测（2026-09-16，MuMu / Android 12）。
+   首轮真机实测发现缩放输入选错（`TotalAvailableMemoryBytes` 报的是物理内存量级，÷8 恒大于上限
+   ⇒ 退化为固定 48MB，低端机拿不到降额），**已改为 `Runtime.maxMemory()`（≡ MemoryClass）作分母**，
+   Android 侧启动早期注入核心库。真机复验：`heapLimit=192MB`、缩放表 `96→24 / 128→32 / 192→48`。详见 P1-1 正文。
 6. 其余 P2/P3 按需。
 
-每步都可用现有探针回归：`--accountlike`、`--playlist-lifetime`、`--detail-lifetime`、`--image-lifetime`、`--memloop-real`、`--pl-return-real`、`--cover-cache`、`--music-cache`。
+每步都可用现有探针回归：`--accountlike`、`--playlist-lifetime`、`--detail-lifetime`、`--image-lifetime`、`--memloop-real`、`--pl-return-real`、`--cover-cache`、`--music-cache`、`--cache-read-gate`。

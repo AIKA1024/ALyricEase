@@ -28,6 +28,12 @@ public sealed class MusicCacheService
 
     private readonly string _cacheDirectory;
     private readonly HttpClient _http;
+    // 只服务**变更**缓存的操作:写入/替换/删除/容量裁剪,以及申请播放租约(它要按钉表挑文件)。
+    // ⚠️ 读操作一律不加这把锁:裁剪要 stat + 排序整个目录(真实用户上万文件,单次实测 ~200ms 起、
+    // 有报告到 550ms),而每次封面落盘的 EnsureSpaceFor 也要扫同一遍 —— 读若排在这把锁上,
+    // 就变成"卡不卡取决于当时有没有写撞上来",即用户说的偶发卡顿。
+    // 代价是读要与并发删除竞争,统一按"当没缓存/当没读到"处理(缓存本来就允许 miss)。
+    // 回归探针:`--cache-read-gate`(裁剪占锁期间量每个读路径的耗时)。
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private readonly SemaphoreSlim _downloadGate = new(2, 2);
     private readonly object _pinGate = new();
@@ -84,10 +90,12 @@ public sealed class MusicCacheService
     /// <summary>只检查歌曲是否存在任意完整音频缓存，不创建播放租约。</summary>
     public bool IsAudioCached(Song song) => GetAudioCacheAvailability([song])[0];
 
-    /// <summary>一次目录扫描返回整批歌曲的缓存状态，避免离线大歌单逐行枚举目录。</summary>
+    /// <summary>一次目录扫描返回整批歌曲的缓存状态，避免离线大歌单逐行枚举目录。
+    /// 只读,不占 <see cref="_mutationGate"/>:读了它做不了任何分配/淘汰决定(唯一用处是
+    /// 标记"这行能不能离线播"),没必要排在写入与裁剪后面 —— 那样会偶发等上百毫秒。
+    /// 与并发裁剪竞争时最坏是少报几首(少报 = 不标可离线播,下次刷新即恢复)。</summary>
     public IReadOnlyList<bool> GetAudioCacheAvailability(IReadOnlyList<Song> songs)
     {
-        _mutationGate.Wait();
         try
         {
             var cachedKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -108,9 +116,11 @@ public sealed class MusicCacheService
         {
             return new bool[songs.Count];
         }
-        finally { _mutationGate.Release(); }
     }
 
+    /// <summary>申请播放租约。**这是唯一保留 gate 的"读"**:它要挑候选文件、续期 mtime、
+    /// 把文件钉进 <see cref="_pinCounts"/>,而裁剪正是按这份钉表决定"哪些能删" ——
+    /// 拆开就会出现"挑中了 → 被裁掉 → 又钉了个已消失的路径"。真正的删/剪都在 gate 里,这段很短。</summary>
     private MusicCacheLease? TryAcquire(Song song, int minimumRank)
     {
         var songKey = BuildSongKey(song);
@@ -270,53 +280,58 @@ public sealed class MusicCacheService
     }
 
 
-    /// <summary>读取账号歌单快照。返回 null 表示该音源从未成功同步过。</summary>
+    /// <summary>读取账号歌单快照。返回 null 表示该音源从未成功同步过。
+    /// 只读内存里的 <see cref="_offlineIndex"/>(不碰磁盘、不做分配),因此**不占 gate** ——
+    /// 它在 `PlaylistViewModel` 构造函数里同步调用,占 gate 就等于把 UI 线程排在
+    /// 一次全目录裁剪(实测百毫秒级)后面。写方只整体替换索引引用或往列表里追加,
+    /// 引用读取是原子的;真撞上"边追加边枚举"就退化成 null,下次刷新即恢复。</summary>
     public CachedPlaylistLibrary? TryGetPlaylistLibrary(MusicSource source)
     {
-        _mutationGate.Wait();
         try
         {
-            var account = _offlineIndex.Accounts.FirstOrDefault(item => item.Source == (int)source);
+            var index = Volatile.Read(ref _offlineIndex);
+            var account = index.Accounts.FirstOrDefault(item => item.Source == (int)source);
             if (account is not { HasPlaylistList: true }) return null;
             return new CachedPlaylistLibrary(
                 account.UserName,
                 account.Playlists.Where(item => item.Listed).Select(ToPlaylist).ToList());
         }
-        finally
+        catch
         {
-            _mutationGate.Release();
+            return null;
         }
     }
 
-    /// <summary>读取歌单最近一次成功解析的曲目快照。</summary>
+    /// <summary>读取歌单最近一次成功解析的曲目快照。
+    /// 只读,不占 gate(见 <see cref="GetAudioCacheAvailability"/> 的说明)。**这条是"深层返回偶发卡顿"的
+    /// 正主**:歌单页内存快照被淘汰后回退常规加载,`RestoreCachedTracksAsync` 一进来就调它 ——
+    /// 若这里排队在裁剪后面,用户看到的就是"返回后卡一下才出歌曲"。</summary>
     public async Task<IReadOnlyList<Song>> TryGetPlaylistTracksAsync(Playlist playlist)
     {
-        await _mutationGate.WaitAsync().ConfigureAwait(false);
         try
         {
             var path = Path.Combine(_cacheDirectory, BuildPlaylistTracksFileName(playlist));
             if (File.Exists(path))
             {
+                var bytes = await File.ReadAllBytesAsync(path).ConfigureAwait(false);
+                TouchQuietly(path);
                 var file = JsonSerializer.Deserialize(
-                    await File.ReadAllBytesAsync(path).ConfigureAwait(false),
+                    bytes,
                     MusicCacheJsonContext.Default.PlaylistTracksCacheFile);
-                File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
                 return file?.Tracks.Select(ToSong).ToList() ?? [];
             }
 
             // 兼容迁移失败或旧文件仍内嵌 Tracks 的极端情况。
-            var account = _offlineIndex.Accounts.FirstOrDefault(item => item.Source == (int)playlist.Source);
+            var index = Volatile.Read(ref _offlineIndex);
+            var account = index.Accounts.FirstOrDefault(item => item.Source == (int)playlist.Source);
             return account?.Playlists.FirstOrDefault(item => item.Id == playlist.Id)
                        ?.Tracks.Select(ToSong).ToList()
                    ?? [];
         }
         catch
         {
+            // 文件被并发裁剪删掉、或索引正在被追加 ⇒ 当"没缓存",由调用方回退常规加载。
             return [];
-        }
-        finally
-        {
-            _mutationGate.Release();
         }
     }
 
@@ -639,25 +654,31 @@ public sealed class MusicCacheService
         File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
     }
 
+    /// <summary>按文件名读回一个缓存项(封面/歌词字节)。只读,不占 gate ——
+    /// 封面是首页与列表的高频读,排在裁剪后面会让整屏封面一起等。文件被并发裁掉时按 miss 处理
+    /// (调用方重新下载或走网络),这是缓存本该有的语义。</summary>
     private async Task<byte[]?> TryReadBytesAsync(string fileName)
     {
-        await _mutationGate.WaitAsync().ConfigureAwait(false);
         try
         {
             var path = Path.Combine(_cacheDirectory, fileName);
             if (!File.Exists(path)) return null;
             var bytes = await File.ReadAllBytesAsync(path).ConfigureAwait(false);
-            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
+            TouchQuietly(path);
             return bytes;
         }
         catch
         {
             return null;
         }
-        finally
-        {
-            _mutationGate.Release();
-        }
+    }
+
+    /// <summary>LRU 的"访问续期"。读已经拿到数据,**续期失败(文件刚被并发裁剪删掉)不该改变结果** ——
+    /// 旧写法把这一步放在同一个 try 里,一旦它抛异常就丢掉已经读到手的内容,变成假 miss。</summary>
+    private static void TouchQuietly(string path)
+    {
+        try { File.SetLastWriteTimeUtc(path, DateTime.UtcNow); }
+        catch { }
     }
 
     private async Task StoreBytesAsync(string fileName, byte[] bytes)

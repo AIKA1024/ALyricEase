@@ -29,7 +29,7 @@
       <Setter Property="MinWidth" Value="0" /><Setter Property="Width" Value="320" />
     </Style>
     <Style Selector="Grid.detail-shell">
-      <Setter Property="Margin" Value="10,16,16,110" />
+      <Setter Property="Margin" Value="10,16,16,0" />
     </Style>
     <Style Selector="Border.playlist-hero">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
@@ -52,10 +52,6 @@
     </Style>
     <Style Selector="ItemsControl.tracks > ContentPresenter">
       <Setter Property="Margin" Value="0,1" />
-    </Style>
-    <!-- 滚动条底部留白:离底部 100(播放条高度),仿 UWP ScrollViewer 模板内 ScrollBar Margin -->
-    <Style Selector="ScrollViewer.tracks-scroller ScrollBar">
-      <Setter Property="Margin" Value="0,0,0,100" />
     </Style>
     <!-- 聚合歌单右上角齿轮设置按钮:32px 透明底,悬停浅底+teal 字形 -->
     <Style Selector="Button.hero-settings">
@@ -102,7 +98,7 @@
     </Style>
   </UserControl.Styles>
   <Grid>
-    <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
+    <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller page-scroll" VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
       <Grid x:Name="DetailShell" Classes="detail-shell" RowDefinitions="Auto,*"
             IsVisible="{Binding ShowPlaylistContent}">

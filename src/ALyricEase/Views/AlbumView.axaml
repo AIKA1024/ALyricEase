@@ -28,19 +28,19 @@
       <Setter Property="Margin" Value="48,0,32,0" />
     </Style>
     <Style Selector="StackPanel.album-content">
-      <Setter Property="Margin" Value="48,0,32,116" />
+      <Setter Property="Margin" Value="48,0,32,0" />
     </Style>
     <Style Selector=".compact Grid.album-page-title">
       <Setter Property="Margin" Value="24,0" />
     </Style>
     <Style Selector=".compact StackPanel.album-content">
-      <Setter Property="Margin" Value="24,0,24,116" />
+      <Setter Property="Margin" Value="24,0,24,0" />
     </Style>
     <Style Selector=".narrow Grid.album-page-title">
       <Setter Property="Margin" Value="16,0" />
     </Style>
     <Style Selector=".narrow StackPanel.album-content">
-      <Setter Property="Margin" Value="16,0,16,116" />
+      <Setter Property="Margin" Value="16,0,16,0" />
     </Style>
 
     <Style Selector="Border.album-hero">
@@ -106,7 +106,7 @@
     <Grid Grid.Row="0" Classes="album-page-title">
       <TextBlock Text="专辑" Classes="page-title" VerticalAlignment="Center" />
     </Grid>
-    <ScrollViewer x:Name="PageScroller" Grid.Row="1"
+    <ScrollViewer x:Name="PageScroller" Grid.Row="1" Classes="page-scroll"
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel Classes="album-content" Spacing="0">
         <!-- 宽/中屏：按原版 AlbumDetailView 的 240 + * 横向头部布局。 -->

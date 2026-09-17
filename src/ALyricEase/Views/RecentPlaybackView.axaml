@@ -8,11 +8,8 @@
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.RecentPlaybackView">
   <UserControl.Styles>
-    <Style Selector="ScrollViewer.tracks-scroller ScrollBar">
-      <Setter Property="Margin" Value="0,0,0,100" />
-    </Style>
     <Style Selector="UserControl.narrow Grid#PageLayout">
-      <Setter Property="Margin" Value="16,16,12,104" />
+      <Setter Property="Margin" Value="16,16,12,0" />
     </Style>
     <Style Selector="UserControl.narrow Grid#PageHeader">
       <Setter Property="Margin" Value="4,0,4,12" />
@@ -42,9 +39,9 @@
     </Style>
   </UserControl.Styles>
 
-  <ScrollViewer Classes="tracks-scroller" VerticalScrollBarVisibility="Auto"
+  <ScrollViewer Classes="tracks-scroller page-scroll" VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled">
-    <Grid x:Name="PageLayout" Margin="48,20,32,110" RowDefinitions="Auto,*">
+    <Grid x:Name="PageLayout" Margin="48,20,32,0" RowDefinitions="Auto,*">
       <Grid x:Name="PageHeader" Grid.Row="0" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
         <StackPanel VerticalAlignment="Center" Spacing="2">
           <TextBlock Text="最近播放" Classes="page-title" />

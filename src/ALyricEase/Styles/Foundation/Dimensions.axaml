@@ -5,6 +5,10 @@
     <Thickness x:Key="PageHorizontalPadding">48,0</Thickness>
     <Thickness x:Key="PageContentPadding">48,0,48,80</Thickness>
     <x:Double x:Key="PlayerBarHeight">100</x:Double>
+    <!-- 内容页底部为常驻播放条预留的安全距离(见 Styles/Controls/Scrolling.axaml 的 ScrollViewer.page-scroll)。
+         播放条覆盖在内容上方,所有内容页根 ScrollViewer 加 page-scroll 后,滚到底时最后一行抬到播放条之上。
+         等于 PlayerBarHeight;进度条上凸 14px 落在预留带内,不遮内容。取代原先各页散落的 28/90/110/116 等硬编码。 -->
+    <Thickness x:Key="PlayerBarReserve">0,0,0,100</Thickness>
     <x:Double x:Key="PlayerBarContentHeight">80</x:Double>
     <x:Double x:Key="PlayerArtworkSize">60</x:Double>
     <x:Double x:Key="TrackRowHeight">60</x:Double>

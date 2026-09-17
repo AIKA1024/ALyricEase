@@ -374,4 +374,16 @@
       </BehaviorCollectionTemplate>
     </Setter>
   </Style>
+
+  <!-- 内容页底部为常驻播放条预留安全距离:播放条覆盖在内容上方(z-index 1),
+       所有内容页根 ScrollViewer 加 page-scroll 后,滚动内容从播放条下方穿过(覆盖式),
+       滚到底时最后一行抬到播放条之上(ScrollViewer.Padding 计入滚动范围,所以滚到底才空出这段)。
+       同时把纵向滚动条底部抬起同样高度,避免滑块/轨道延伸到播放条后面。
+       数值来自 Dimensions.PlayerBarReserve,集中维护、各页统一(取代原先各页散落的 28/90/110/116 等硬编码)。 -->
+  <Style Selector="ScrollViewer.page-scroll">
+    <Setter Property="Padding" Value="{DynamicResource PlayerBarReserve}" />
+  </Style>
+  <Style Selector="ScrollViewer.page-scroll ScrollBar">
+    <Setter Property="Margin" Value="{DynamicResource PlayerBarReserve}" />
+  </Style>
 </Styles>

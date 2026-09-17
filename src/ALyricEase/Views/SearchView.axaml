@@ -387,7 +387,7 @@
                          IsVisible="{Binding IsSearching}" Foreground="{DynamicResource SystemAccentColor}" />
 
             <ScrollViewer Grid.Row="3" x:Name="ResultsScroll" HorizontalScrollBarVisibility="Disabled"
-                          ScrollChanged="OnResultsScrollChanged" Padding="0,0,0,90">
+                          ScrollChanged="OnResultsScrollChanged" Classes="page-scroll">
                 <StackPanel Classes="results-body" Margin="24,12,24,8" Spacing="18">
                     <TextBlock Text="{Binding Message}" FontSize="20" HorizontalAlignment="Center" Margin="0,40"
                                IsVisible="{Binding ShowEmpty}" Foreground="{DynamicResource TextTertiary}" />

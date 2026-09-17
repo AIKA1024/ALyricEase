@@ -957,3 +957,47 @@ private bool IsHostPresentable()
   `<Setter Property="Effect"><BlurEffect Radius="…"/></Setter>` 会给**每一行各造一个**实例
   (半径还不同:远景 5 / above 1.5 / below1 1 / below2 2.5),不能共用一个。
   另外把"恰好 0.00%"单列一档,写明"先怀疑夹具",别让它冒充"特性无效"的证据。
+
+## 新增内容页:根 ScrollViewer 加 `Classes="page-scroll"` 自动让出播放条高度
+
+**背景**:底部播放条(`PlayerBarView`)在 `AppShell` 里以 `VerticalAlignment="Bottom"` +
+`ZIndex=1` **覆盖**在内容区上方(常驻显示、不随"有无曲目"隐藏),`PlayerBarHeight=100`,
+顶部进度条还向上凸 14px(落在预留带内,不遮内容)。这是 overlay 语义——滚到中途内容从播放条
+下方穿过,只有滚到底才空出一片。所以**不能**把播放条改成 docked 布局,只能让每个内容页在
+底部留一段等于播放条高度的空白。
+
+**规则**:任何"整页可滚动"的内容页,根 `ScrollViewer` 加上 `Classes="page-scroll"` 即可,
+**不要再自己写底部留白**(不要给内容 `Grid`/`StackPanel` 写 `Margin="...,100"`、也不要单独写
+`ScrollBar` 底部 `Margin`)。
+
+```xml
+<ScrollViewer Classes="page-scroll" VerticalScrollBarVisibility="Auto" ...>
+  <!-- 内容,底部不需要任何 margin -->
+</ScrollViewer>
+```
+
+`page-scroll` 做两件事(都在 `Styles/Controls/Scrolling.axaml`,两端 `App.axaml` 都已
+`StyleInclude` 该文件,自动生效):
+
+- 给根 `ScrollViewer` 设 `Padding` 底部 = `PlayerBarReserve`(=100,集中定义在
+  `Styles/Foundation/Dimensions.axaml`,与 `PlayerBarHeight` 对齐)。`ScrollViewer.Padding`
+  **计入滚动范围**,所以滚到底才留白、中途不挡内容——正是想要的行为。
+- 给 `ScrollBar` 设底部留白(`Margin="0,0,0,PlayerBarReserve"`),滑块/轨道不伸到播放条后面
+  (保留"滚到中途轨道在播放条上方"的观感)。
+
+**为什么集中**:之前各页各写一个不一致的硬编码底部留白(`Settings` 只留 40、`Search` 留 90、
+其余 110/116),窄屏还用 116/104——`Settings` 和 `Search` 因为留少了,滚到底仍被播放条挡住。
+统一后改播放条高度只动 `Dimensions.axaml` 一处,且不会再出现"某页漏留白"。
+
+**落地实例**:`SettingsView` / `RecommendView` / `ArtistView` / `ArtistSongsPageView` /
+`ArtistAlbumsPageView` / `PlaylistView` / `AlbumView` / `SearchView` / `RecentPlaybackView` /
+`AccountView`(它同时是容器查询 `accountHost` 的宿主,`page-scroll` 与容器查询不冲突)
+/ `DebugView` 的根 `ScrollViewer` 都接了 `page-scroll`。
+
+⚠ **两个要注意**:
+
+1. 居中卡片、没有滚动容器的页(如 `PersonalFmView`)接不上 `page-scroll`;只有窗口够矮时才可能
+   被遮,需要的话给它包一层带 `page-scroll` 的 `ScrollViewer`。
+2. 嵌套在页内的二级滚动区(如歌单页里的横向卡片区)用别的 class(如 `tracks-scroller`),
+   **不要**把 `page-scroll` 套到非根滚动容器上——它的 `Padding` 底部按整页预留,
+   往里套会撑出多余空白。

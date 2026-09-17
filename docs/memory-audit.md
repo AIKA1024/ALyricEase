@@ -313,3 +313,90 @@ key 是每次离页新生成的 GUID，落盘成功后 `ObservePageSnapshotWrite
 6. 其余 P2/P3 按需。
 
 每步都可用现有探针回归：`--accountlike`、`--playlist-lifetime`、`--detail-lifetime`、`--image-lifetime`、`--memloop-real`、`--pl-return-real`、`--cover-cache`、`--music-cache`、`--cache-read-gate`。
+
+## 五、"推荐页 → 歌手页 → 返回"内存复查（2026-09-17）
+
+**结论：这条路径不存在无界保留。** 用户报的"重复操作一直加"来自"每次返回推荐页整页重建 ≈19MB 垃圾 +
+GC 懒回收"形成的阶梯式水位，不是泄漏。
+
+### 5.1 怎么把探针改成用户那条真实路径
+
+`PageLoopMemoryProbe` 原来只有"直接设 `ActivePage = "Artist"`"这一种入口，从不打开任何弹出层。
+新增四个开关，组合出用户手工操作的同一条路：
+
+| 开关 | 作用 |
+|---|---|
+| `ALY_MEMLOOP_VIA_MENU=1` | 点歌曲行的 `ArtistAlbumButton` → `MenuFlyout` 展开 → 反射调 `MenuItem.OnClick(RoutedEventArgs)` → `OpenArtistCommand` |
+| `ALY_REAL_ARTIST=1` | 不注入合成歌手数据，走真实 `ArtistViewModel.LoadAsync`（真网络 + 真封面） |
+| `ALY_MEMLOOP_REAL_WINDOW=1` | 窗口夹具换成与真实 `MainWindow.axaml` 逐字一致的 `TestMainWindow`（常驻 `NowPlayingOverlay`/播放条/导航栏都进来） |
+| `ALY_FIXED_COVER_URL=1` | 每轮封面 URL 不带轮次后缀，模拟"反复进同一个歌手"（URL 稳定、应命中缓存） |
+
+### 5.2 实测（每次完整阻塞 GC 之后取"地板值"）
+
+菜单路径 + 真实歌手数据，40 轮：
+
+| 轮 | managed | private | 工作集 | 句柄 | 线程 | GDI | USER | 视觉节点 |
+|---|---|---|---|---|---|---|---|---|
+| R10 | 27.4MB | 189.0MB | 244.6MB | 1534 | 60 | 19 | 45 | 1161 |
+| R20 | 27.9MB | 202.4MB | 259.4MB | 1545 | 59 | 19 | 47 | 1161 |
+| R30 | 28.1MB | 202.2MB | 256.5MB | 1551 | 60 | 19 | 48 | 1161 |
+| R40 | 28.5MB | 205.7MB | 259.2MB | 1541 | 57 | 19 | 48 | 1161 |
+
+- 形状是 **R10→R20 抬一次（+13MB）然后平台期**，不是线性上行（R30 −0.2、R40 +3.5）。
+- **视觉节点恒 1161、可见控件类型普查恒「33 类 / 1161 个」，每轮一个不差** ——
+  任何控件被留在树里都会在这里露出来。
+- 收尾：遗留对象 **0/78**、菜单存活 **0/41**、推荐页视图实例 1/41 次捕获。`PASS`。
+
+### 5.3 用户看到的"一直加"来自哪里
+
+`分阶段分配中位数`：**进入歌手页 8.3MB / 返回首页 19.1MB**（每轮约 27MB 垃圾），
+而私有内存只在**每 10 轮一次的完整 GC** 时才回落。任务管理器看到的就是"涨涨涨、偶尔掉一下"。
+
+**成本在"返回推荐页"这一步的整页重建**，与歌手页/菜单无关：
+- 对照（直接设 `ActivePage`，不点菜单）同样 18.8MB/次；
+- **固定封面 URL 后仍是 19.1MB/次** ⇒ **与封面下载/解码无关**，就是控件树重建本身。
+
+机制：`AppShell.axaml` 内容区是 `TransitioningContentControl`（`PageHost`）。换页时旧视图被**摘出视觉树**，
+`ReusablePageViewTemplate` 只复用**视图对象**，保不住里面的 `ItemsControl` 容器 —— 重新挂树时区块容器 /
+`SongGridView` / 12 个 `TrackRow` 整体重建（`首区块容器=换`、`网格控件=换新`、`新增行控件=12/12`）。
+与 `ReusablePageViewTemplate` / `AppShell.axaml` 注释里的旧实测（23.7MB/次）一致。
+
+### 5.4 查过并排除的候选
+
+| 候选 | 为什么不是 |
+|---|---|
+| `DetailPageScrollController`（构造里挂 `AttachedToVisualTree`/`DataContextChanged`/`ScrollChanged` 且**从不退订**） | 它在**视图构造函数里只建一次**，视图由 `ReusablePageViewTemplate` 缓存 ⇒ 不随导航累积 |
+| `FlyoutOpenAnimation`（3 个 `ConditionalWeakTable` + `PopupRoot.PositionChanged`/`Popup.Opened` lambda） | `ConditionalWeakTable` 全是弱键；两个 lambda 在触发时自退订。实测 `菜单存活=0/41` |
+| `CoverLoader` / `CoverImagePipeline` 静态缓存 | 字节数 + 条目数双上界 LRU（探针里恒 `38项/3MB`） |
+| `ReusablePageViewTemplate.Cache()` 往每个新建视图挂事件且不退订旧视图 | 引用方向是"旧视图 → 模板"，模板本就是常驻 `DataTemplate`，不会因此留住旧视图 |
+
+**唯一找到的有界增长路径**（不是无界泄漏，但是设计上可商榷）：用**左侧导航**（而不是返回键）回首页时，
+`MainViewModel.OnSelectedNavChanging` → `PushCurrentNavigation()` 会把 Artist 条目（含 `DetailSnapshot`）
+压栈且永不弹出；每往返 +1，上限 `MaxNavigationHistory = 50` 后开始淘汰。
+走**返回键**不会（`_isGoingBack` 挡住 push，`GoBack` 弹出，实测每轮 `可回退=False`）。
+
+### 5.5 新增的探针能力（可复用）
+
+- `TypeCensusDelta()`：视觉树按控件类型计数，逐轮打增量。比"总节点数"更能指出是谁在累加 ——
+  总数一样也可能是"少的和多的互相抵消"。
+- `Floors` 地板序列：只在**完整阻塞 GC 之后**采样，收尾打趋势表。
+  中间轮次的 ±20MB 波动全是"垃圾还没收"，拿它看趋势必误判。
+- `WindowCensus()` 补 `线程数`：每次导航悄悄起常驻线程时，句柄/GDI 都不动，只有线程数会阶梯上涨。
+
+**踩的坑（都已在代码注释里留说明）**：
+
+1. **一条死判据**：早先按 `TopLevel.GetVisualDescendants().OfType<MenuFlyoutPresenter>()` 数菜单呈现器，
+   菜单展开着也恒为 0 —— **Avalonia 12 的菜单不走 `PopupRoot`**，所以"返回后仍留呈现器=失败"这条
+   **永远不会触发**。改成从菜单项的逻辑祖先直接取呈现器观察点，才有"展开时在树上=True → 返回后已脱树"的真实读数。
+2. **弱引用集合别混进"菜单/行控件"**：行控件的 `Button.Resources` 每轮重建，把菜单项塞进 `Pending`
+   会让"遗留"永远非零（假 FAIL）。改成只报呈现器观察点 + 菜单存活计数。
+3. **真实网络偶发失败要"跳过本轮"而不是中断整条寿命**（R10、R39 各撞到一次）：趋势靠轮数，
+   而且失败轮的数据量不同源，混进去反而污染对比。
+
+### 5.6 给用户侧的真机取样工具
+
+`scripts/memwatch.ps1` —— 不改应用、不重新构建，从外部按固定间隔采样工作集/私有字节/句柄/线程/GDI/USER，
+末尾给**块最小值地板序列**与判定（地板单调抬升=真泄漏；来回摆=GC 没来）。
+⚠ 进程名是 `ALyricEase.Windows`（产物在 `src\ALyricEase.Windows\bin\Debug\net10.0-windows10.0.19041.0\`），
+默认参数用通配符 `ALyricEase*` 兼容。
+

@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -18,8 +19,12 @@ using ALyricEase.ViewModels;
 using ALyricEase.Views;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
+using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -90,6 +95,38 @@ internal static class PageLoopMemoryProbe
     private static int _round;
     private static bool _realMode;
 
+    /// <summary>进入歌手页的方式:false = 直接设 ActivePage(老口径);true = 走用户报的真实点击路径
+    /// (点歌曲行「歌手/专辑」按钮 → MenuFlyout → 点「表演者」菜单项)。两种口径其余配置完全相同,
+    /// 差值即"这条路径多出来的东西"。</summary>
+    private static bool _viaMenu;
+
+    /// <summary>歌手页数据来源:false = 探针注入合成数据(离线口径);true = 让 OpenArtistCommand
+    /// 走真实的 LoadAsync,拉真歌手的热门歌曲/专辑与真实封面(ALY_REAL_ARTIST=1)。
+    /// 后者才和用户手工操作的数据量一致 —— 合成数据量再接近也只是近似。</summary>
+    private static bool _realArtist;
+
+    /// <summary>历次展开过的菜单(弱引用):用于检查菜单对象本身是否被长期持有。</summary>
+    private static readonly List<WeakReference> MenuFlyoutHistory = new();
+    private static readonly List<int> PopupCounts = new();
+
+    /// <summary>本轮的菜单观察项:菜单交互当下登记,等返回首页、菜单该关掉之后才并入待判定列表 ——
+    /// 否则量的是"菜单正开着当然还活着",必然假 FAIL。</summary>
+    private static WeakReference? _lastMenuRef;
+
+    /// <summary>窗口夹具是否换成与真实 MainWindow.axaml 一致的 TestMainWindow(ALY_MEMLOOP_REAL_WINDOW=1)。</summary>
+    private static bool _realWindowFixture;
+
+    /// <summary>本轮菜单项所在的 MenuFlyoutPresenter(从菜单项逻辑祖先取的强对象观察点)。</summary>
+    private static WeakReference? _menuPresenterRef;
+
+    /// <summary>视觉树按类型普查的基线(首次采集时建立,之后每轮报增量)。</summary>
+    private static Dictionary<string, int>? _typeBaseline;
+
+    /// <summary>每次"完整阻塞 GC 之后"的水位采样。真实模式下 GC 每 10 轮才来一次,
+    /// 中间的 private/工作集波动 ±20MB 会把"每轮只涨一两 MB"的慢泄漏完全盖住 ——
+    /// 只有完整回收后的地板值才可比。收尾时把这条序列打出来,趋势一眼可见。</summary>
+    private static readonly List<(int Round, double ManagedMb, double PrivateMb, double WorkingSetMb, int Handles, int Threads, int Gdi, int User, int Visuals)> Floors = new();
+
     /// <summary>无头模式:自驱 UI 队列与渲染时钟。</summary>
     public static int Run()
     {
@@ -117,21 +154,45 @@ internal static class PageLoopMemoryProbe
     private static async Task<int> RunCoreAsync()
     {
         using var server = new CoverServer(CoverPixels);
+        // 进入歌手页的方式由 ALY_MEMLOOP_VIA_MENU 切换:默认沿用"直接设 ActivePage",
+        // 设了就走真实点击路径(歌曲行歌手/专辑按钮 → 菜单 → 表演者项)。
+        _viaMenu = Environment.GetEnvironmentVariable("ALY_MEMLOOP_VIA_MENU") is { Length: > 0 };
+        _realArtist = Environment.GetEnvironmentVariable("ALY_REAL_ARTIST") is { Length: > 0 };
         var main = ServiceLocator.Get<MainViewModel>();
         while (main.CanGoBack) main.GoBackCommand.Execute(null);
         main.ActivePage = "Recommend";
 
-        var shell = new AppShell { DataContext = main };
-        _reusableTemplate = shell.DataTemplates.OfType<ReusablePageViewTemplate>().FirstOrDefault();
-        var window = new Window
+        // 窗口夹具两档:老口径是裸 Window 直接塞 AppShell,真实应用里那层
+        // "亚克力边框 + 自绘标题栏 + 常驻 NowPlayingOverlay(+NowPlayingView) + 两个常驻对话框"
+        // 全都不存在。ALY_MEMLOOP_REAL_WINDOW=1 改用与真实 MainWindow.axaml 逐字节一致的
+        // TestMainWindow,把这层结构补回来 —— 它正是"探针量不到、只有真机才漏"的头号嫌疑。
+        _realWindowFixture = Environment.GetEnvironmentVariable("ALY_MEMLOOP_REAL_WINDOW") is { Length: > 0 };
+        AppShell shell;
+        Window window;
+        if (_realWindowFixture)
         {
-            Width = 1200,
-            Height = 800,
-            ShowActivated = false,
-            Content = shell,
-        };
-        window.Show();
-        await IdleAsync(500);
+            window = new TestMainWindow { DataContext = main, ShowActivated = false };
+            window.Show();
+            await IdleAsync(500);
+            shell = window.GetVisualDescendants().OfType<AppShell>().FirstOrDefault()
+                    ?? throw new InvalidOperationException("TestMainWindow 里找不到 AppShell");
+        }
+        else
+        {
+            shell = new AppShell { DataContext = main };
+            window = new Window
+            {
+                Width = 1200,
+                Height = 800,
+                ShowActivated = false,
+                Content = shell,
+            };
+            window.Show();
+            await IdleAsync(500);
+        }
+
+        // 复用模板注册在 AppShell.axaml 上(不在窗口上),两种夹具取法相同
+        _reusableTemplate = shell.DataTemplates.OfType<ReusablePageViewTemplate>().FirstOrDefault();
 
         // 推荐页本身也有内容(每日 30 行 + 3 个卡片区块):返回时这些封面同样会被重建视图重新请求
         FillRecommendContent(server.Port);
@@ -148,6 +209,9 @@ internal static class PageLoopMemoryProbe
         var baselineVisuals = shell.GetVisualDescendants().Count();
 
         Log($"[memloop] 模式={(_realMode ? "真窗口" : "无头")} " +
+            $"窗口夹具={(_realWindowFixture ? "TestMainWindow(真实 MainWindow 结构)" : "裸 Window+AppShell")} " +
+            $"进入歌手页={(_viaMenu ? "走歌曲行菜单(真实点击路径)" : "直接设 ActivePage")} " +
+            $"歌手页数据={(_realArtist ? "真实网络加载" : "探针注入")} " +
             $"复用模板={(_reusableTemplate is null ? "未注册(XAML 模板表里没有 ReusablePageViewTemplate)" : $"{_reusableTemplate.DataType?.Name}→{_reusableTemplate.ViewType?.Name}")} " +
             $"基线: managed={Mb(baselineManaged):F1}MB private={Mb(PrivateMemory()):F1}MB " +
             $"workingSet={Mb(WorkingSet()):F1}MB visuals={baselineVisuals} coverCache={CoverLabel()}");
@@ -183,6 +247,11 @@ internal static class PageLoopMemoryProbe
             var backStart = GC.GetTotalAllocatedBytes(false);
             await BackToRecommendAsync(main, shell);
             var backAllocated = GC.GetTotalAllocatedBytes(false) - backStart;
+            // 返回必须真的发生:GoBack 在 _navigationHistory 为空时会直接 return(静默空操作)。
+            // 万一历史没被压栈,这一整轮就退化成"反复进歌手页、从未返回",结论全废 —— 所以每轮写实。
+            var pageAfterBack = main.ActivePage;
+            var canGoBackAfterBack = main.CanGoBack;
+
 
             var beforeCollect = GC.GetTotalMemory(false);
             // 真机模式每 10 轮才回收一次:看 GC 不来时工作集是否阶梯式上涨
@@ -277,6 +346,12 @@ internal static class PageLoopMemoryProbe
                 $"未GC={Mb(beforeCollect):F1}MB " +
                 $"private={Mb(priv):F1}MB (Δ{Mb(priv - previousPrivate):+0.0;-0.0}) " +
                 $"workingSet={Mb(WorkingSet()):F1}MB{(collectNow ? " [已GC]" : "")} " +
+                $"返回后页面={pageAfterBack}/可回退={canGoBackAfterBack} {WindowCensus()} " +
+                $"菜单呈现器={MenuPresenterCount(shell)}" +
+                (MenuFlyoutHistory.Count > 0
+                    ? $"(历次菜单存活参考={MenuFlyoutHistory.Count(reference => reference.IsAlive)}/{MenuFlyoutHistory.Count}" +
+                      $" 本轮菜单在返回后={LastMenuState()} 菜单呈现器在返回后={MenuPresenterState()})"
+                    : "") + " " +
                 $"歌手页[visuals={artistVisuals} images={onScreenImages} 缓存={peakCache.Items}项/{Mb(peakCache.Bytes):F0}MB " +
                 $"private峰值={Mb(peakPrivate):F0}MB 工作集峰值={Mb(peakWorkingSet):F0}MB 图床累计={server.RequestCount}] " +
                 $"返回后[visuals={visuals} 首页行={homeRows} 卡={homeCards} 已上屏封面={paintedCovers} 缓存={cache.Items}项/{Mb(cache.Bytes):F0}MB " +
@@ -287,9 +362,26 @@ internal static class PageLoopMemoryProbe
                 $"累计遗留={leaked.Count}/{Pending.Count}" +
                 (leaked.Count > 0 ? " [" + string.Join(",", leaked) + "]" : ""));
 
+            // 节点总数持平也可能是"少的和多的互相抵消",这行把差异按类型摊开
+            Log($"[memloop] R{round} 类型普查: {TypeCensusDelta(shell)}");
+
+            // 完整回收后的地板值才是可比量:中间轮次的 ±20MB 波动全是"垃圾还没收"。
+            if (collectNow)
+            {
+                var floorProcess = Process.GetCurrentProcess();
+                Floors.Add((round, Mb(managed), Mb(priv), Mb(WorkingSet()), floorProcess.HandleCount,
+                    floorProcess.Threads.Count, (int)GetGuiResources(floorProcess.Handle, 0),
+                    (int)GetGuiResources(floorProcess.Handle, 1), visuals));
+            }
+
             // 只有"刚做过完整回收"的轮次才拿遗留数判泄漏:
             // 未回收轮里弱引用还活着只是垃圾堆着,不代表有人长期持有。
             if (collectNow && leaked.Count > 0) failures++;
+            // 走菜单那条路径时,返回首页后菜单呈现器不该还挂在视觉树上:
+            // 挂着就是"弹出层没被摘掉",这是真实点击路径独有的失败模式(直接设 ActivePage 不会发生)。
+            // ⚠ 别用叠加层里数 MenuFlyoutPresenter 来判:Avalonia 12 的菜单不走 PopupRoot,
+            // 那个计数恒为 0,判据会变成永远不触发的死条件(实测)。改为直接看从菜单项取到的呈现器。
+            if (collectNow && MenuPresenterState() == "仍在树") failures++;
             // 复用生效时,除"当前这一个"(最多再加一个过渡中的旧实例)之外不应有别的推荐页视图存在
             if (collectNow && recommendInstances > 2) failures++;
             previousManaged = managed;
@@ -305,6 +397,30 @@ internal static class PageLoopMemoryProbe
         var steadyEnter = Median(EnterAllocations.Skip(EnterAllocations.Count / 2).ToList());
         var steadyBack = Median(BackAllocations.Skip(BackAllocations.Count / 2).ToList());
         Log($"[memloop] 分阶段分配中位数(后半程): 进入歌手页={Mb(steadyEnter):F1}MB 返回首页={Mb(steadyBack):F1}MB");
+
+        // 逐轮波动看趋势没意义(±20MB 的垃圾堆),这里只列"完整阻塞 GC 之后"的地板值。
+        // 真泄漏:地板单调上行。只是分配抖动:地板在一条水平线附近来回。
+        if (Floors.Count > 0)
+        {
+            Log("[memloop] 完整GC后地板值序列(轮的 managed/private/工作集/句柄/线程/GDI/USER/视觉节点):");
+            foreach (var floor in Floors)
+            {
+                Log($"[memloop]   地板 R{floor.Round,-3} managed={floor.ManagedMb,6:F1}MB " +
+                    $"private={floor.PrivateMb,7:F1}MB 工作集={floor.WorkingSetMb,7:F1}MB " +
+                    $"句柄={floor.Handles} 线程={floor.Threads} GDI={floor.Gdi} USER={floor.User} 视觉节点={floor.Visuals}");
+            }
+            if (Floors.Count >= 2)
+            {
+                var first = Floors[0];
+                var last = Floors[^1];
+                var span = last.Round - first.Round;
+                Log($"[memloop] 地板趋势 R{first.Round}→R{last.Round}(跨 {span} 轮): " +
+                    $"private {first.PrivateMb:F1}→{last.PrivateMb:F1}MB ({(span > 0 ? (last.PrivateMb - first.PrivateMb) / span : 0):+0.00;-0.00}MB/轮) " +
+                    $"工作集 {first.WorkingSetMb:F1}→{last.WorkingSetMb:F1}MB ({(span > 0 ? (last.WorkingSetMb - first.WorkingSetMb) / span : 0):+0.00;-0.00}MB/轮) " +
+                    $"句柄 {first.Handles}→{last.Handles} 线程 {first.Threads}→{last.Threads} " +
+                    $"GDI {first.Gdi}→{last.Gdi} USER {first.User}→{last.User} 视觉节点 {first.Visuals}→{last.Visuals}");
+            }
+        }
 
         // 循环结束后的首页:复用生效时应与基线完全一致(节点数/歌曲行数/卡片数/已上屏图)
         CensusAndShoot(shell, $"after-{rounds}rounds");
@@ -322,9 +438,12 @@ internal static class PageLoopMemoryProbe
             .Select(reference => reference.Target).Where(target => target is not null).Distinct().Count();
         Log($"[memloop] 收尾: 遗留对象={lingering.Count}/{Pending.Count} " +
             $"{(lingering.Count > 0 ? "[" + string.Join(",", lingering) + "] " : "")}" +
+            $"菜单存活={MenuFlyoutHistory.Count(reference => reference.IsAlive)}/{MenuFlyoutHistory.Count} " +
+            $"弹出层呈现器={MenuPresenterCount(shell)} " +
             $"推荐页视图实例={recommendInstancesFinal}/{RecommendViewHistory.Count}次捕获 " +
             $"缓存={CoverLabel()} private={Mb(PrivateMemory()):F1}MB " +
             $"workingSet={Mb(WorkingSet()):F1}MB");
+        Log($"[memloop] 收尾类型普查: {TypeCensusDelta(shell)}");
 
         await IdleAsync(300);
         window.Close();
@@ -384,21 +503,221 @@ internal static class PageLoopMemoryProbe
         return $"{stats.Items}项/{Mb(stats.Bytes):F1}MB";
     }
 
-    private static long PrivateMemory() => Process.GetCurrentProcess().PrivateMemorySize64;
+    /// <summary>弹出层普查:菜单展开时会把 MenuFlyoutPresenter 挂到 OverlayLayer 上。
+    /// 关不掉 / 回收不掉的菜单会在这里逐轮累加,是"一直重复一直加"最直接的指纹。</summary>
+    private static int MenuPresenterCount(AppShell shell) => OverlayCensus(shell).Presenters;
 
-    private static long WorkingSet() => Process.GetCurrentProcess().WorkingSet64;
+    /// <summary>⚠ 菜单开着时 MenuFlyoutPresenter 挂在 OverlayLayer 上,**不是** TopLevel 的直接后代 ——
+    /// 早先按 `TopLevel.GetVisualDescendants().OfType&lt;MenuFlyoutPresenter&gt;()` 数,
+    /// 结果是"菜单明明已展开、计数恒为 0",那条失败判据等于死条件。
+    /// 必须从 `OverlayLayer.GetOverlayLayer(topLevel)` 进去数,并把 PopupRoot 一起报出来定位。</summary>
 
-    /// <summary>按真实导航路径进入歌手页(ActivePage 变化 → 视图按模板重建)并填满内容。</summary>
+    private static (int Popups, int Presenters) OverlayCensus(AppShell shell)
+    {
+        var topLevel = TopLevel.GetTopLevel(shell);
+        if (topLevel is null) return (-1, -1);
+        var overlay = OverlayLayer.GetOverlayLayer(topLevel);
+        if (overlay is null) return (0, 0);
+        var descendants = overlay.GetVisualDescendants().ToList();
+        return (descendants.OfType<PopupRoot>().Count(),
+                descendants.OfType<MenuFlyoutPresenter>().Count());
+    }
+
+    /// <summary>本轮菜单在"返回首页之后"的状态:已关闭=正常;仍开着=弹出层没被关掉;
+    /// 已回收=对象也没了。三者对应完全不同的修法,所以要分开报。</summary>
+    private static string LastMenuState() => _lastMenuRef?.Target is MenuFlyout flyout
+        ? flyout.IsOpen ? "仍开着" : "已关闭"
+        : "已回收";
+
+    /// <summary>本轮菜单呈现器在"返回首页之后"的下落:仍挂在视觉树上=弹出层没被摘掉(真嫌疑);
+    /// 已脱树=没挂树但对象还在;已回收=对象都没了(最干净)。</summary>
+    /// 判"在不在视觉树上"用 `TopLevel.GetTopLevel(...)` 是不是 null —— 与
+    /// `FlyoutOpenAnimation` 里"脱树"的判法逐字一致,别写第二套口径
+    /// (`Visual.GetVisualRoot()` 在本项目引用的 Avalonia 版本里不是可用的扩展方法)。
+    private static string MenuPresenterState() => _menuPresenterRef?.Target is Visual presenter
+        ? TopLevel.GetTopLevel(presenter) is not null ? "仍在树" : "已脱树"
+        : "已回收";
+
+    /// <summary>视觉树按控件类型普查:节点总数一样不代表没泄漏 ——
+    /// 可能"少了一个行控件、多了三个别的东西"互相抵消。
+    /// 逐轮打印相对首次采集的增量,能把"到底是哪一类控件在累加"直接指出来,
+    /// 不用再靠逐个弱引用猜。首次调用建立基线。</summary>
+    private static string TypeCensusDelta(Visual root)
+    {
+        var current = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var node in root.GetVisualDescendants())
+        {
+            var name = node.GetType().Name;
+            current[name] = current.TryGetValue(name, out var value) ? value + 1 : 1;
+        }
+
+        if (_typeBaseline is null)
+        {
+            _typeBaseline = current;
+            return $"类型基线已建({current.Count}类/{current.Values.Sum()}个)";
+        }
+
+        var changes = current
+            .Select(pair => (Name: pair.Key, Delta: pair.Value - _typeBaseline.GetValueOrDefault(pair.Key)))
+            .Where(item => item.Delta != 0)
+            .OrderByDescending(item => Math.Abs(item.Delta))
+            .Take(8)
+            .Select(item => $"{item.Name}{item.Delta:+#;-#}")
+            .ToList();
+
+        var gone = _typeBaseline.Keys.Where(key => !current.ContainsKey(key)).Take(4).Select(key => $"{key}-全消失");
+        var merged = changes.Concat(gone).ToList();
+        return merged.Count == 0
+            ? $"类型分布不变({current.Count}类/{current.Values.Sum()}个)"
+            : $"类型变化[{string.Join(",", merged)}] 总数={current.Values.Sum()}(基线{_typeBaseline.Values.Sum()})";
+    }
+
+    /// <summary>进程句柄数与顶层窗口数:弹出层若在 Windows 上落了真实窗口/HWND,
+    /// 关不掉就会在这里逐轮累加 —— 无头模式没有这条通道,所以只有在真窗口模式下才量得到。
+    /// 同时读 GDI/USER 对象数:句柄不落、但 GDI/USER 一直涨,说明泄漏在图形资源那一侧。</summary>
+    private static string WindowCensus()
+    {
+        var windows = Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.Windows.Count
+            : -1;
+        var process = Process.GetCurrentProcess();
+        // 线程数一并量:每次导航悄悄起一个后台循环/线程池常驻线程,句柄和 GDI 都不会动,
+        // 只有线程数会阶梯式上涨 —— 这是"一直重复一直加"的另一类指纹。
+        return $"句柄={process.HandleCount} 线程={process.Threads.Count} " +
+               $"GDI={GetGuiResources(process.Handle, 0)} " +
+               $"USER={GetGuiResources(process.Handle, 1)} 顶层窗口={windows}";
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetGuiResources(IntPtr process, uint flags);
+
+    private static long PrivateMemory() => Process.GetCurrentProcess().PrivateMemorySize64;    private static long WorkingSet() => Process.GetCurrentProcess().WorkingSet64;
+
+    /// <summary>按真实导航路径进入歌手页并填满内容。
+    /// 两种入口:直接设 ActivePage(--memloop-real 老口径),或走歌曲行菜单的真实点击路径
+    /// (ALY_MEMLOOP_VIA_MENU=1),两者除"点不点那个按钮"外完全一致。</summary>
     private static async Task EnterArtistAsync(MainViewModel main, AppShell shell, int port)
     {
         var artist = ServiceLocator.Get<ArtistViewModel>();
-        FillArtistContent(artist, port);
-        main.ActivePage = "Artist";
+        if (!_realArtist) FillArtistContent(artist, port);
+        if (_viaMenu)
+        {
+            await EnterArtistViaRowMenuAsync(main, shell);
+            // 真实命令路径会触发一次加载(探针无网络,失败可能清空集合):
+            // 补回内容,保证两模式在"歌手页有多少数据"上一致,否则内存差里混了内容量差。
+            if (!_realArtist) FillArtistContent(artist, port);
+        }
+        else
+        {
+            main.ActivePage = "Artist";
+        }
         await IdleAsync(120);
         CaptureView<ArtistView>(shell, "歌手页视图");
+        if (_realArtist)
+            Log($"[memloop] R{_round} 歌手页真实数据: 歌曲={artist.Songs.Count} 专辑={artist.Albums.Count} " +
+                $"单曲={artist.Singles.Count} 名字=「{artist.Name}」头像={(artist.AvatarUrl.Length > 0 ? "有" : "无")}");
         // VM 层对象:集合被 Clear 后应可回收,否则单例 VM 会逐轮累积整页数据
+        if (artist.Songs.Count == 0)
+        {
+            // 真实口径下网络/登录偶发失败是常态(实测第 7 轮就撞到过一次):这种轮次数据量不同源,
+            // 不能和别的轮比,也不该把整条寿命打断 —— 只跳过本轮观测,继续跑满轮数。
+            if (_realArtist)
+            {
+                Log($"[memloop] R{_round} 真实歌手页本次没加载到数据(网络/登录瞬时失败),本轮不参与观测");
+                return;
+            }
+            throw new InvalidOperationException("歌手页歌曲集合为空,后续弱引用观察会越界");
+        }
         Observe($"R{_round}/歌曲行", new WeakReference(artist.Songs[0]));
-        Observe($"R{_round}/专辑卡", new WeakReference(artist.Albums[0]));
+        if (artist.Albums.Count > 0) Observe($"R{_round}/专辑卡", new WeakReference(artist.Albums[0]));
+    }
+
+    /// <summary>用户报的那条路径:点每日推荐歌曲行里的「歌手/专辑」按钮 → MenuFlyout 展开 →
+    /// 点「表演者: xxx」菜单项 → OpenArtistCommand → 歌手页。
+    /// 老口径(--memloop-real)直接设 ActivePage,从不打开任何弹出层 —— 这正是两条路径的唯一差别,
+    /// 也是"一直重复一直加"只在手工操作里出现的原因。</summary>
+    private static async Task EnterArtistViaRowMenuAsync(MainViewModel main, AppShell shell)
+    {
+        var row = shell.GetVisualDescendants().OfType<TrackRow>()
+            .FirstOrDefault(candidate => candidate.DataContext is SongItemViewModel { HasArtist: true });
+        Assert(row is not null, "推荐页里找不到「有歌手可跳转」的歌曲行");
+
+        var button = row.GetVisualDescendants().OfType<Button>()
+            .FirstOrDefault(candidate => candidate.Name == "ArtistAlbumButton");
+        Assert(button is not null, "歌曲行里找不到 ArtistAlbumButton(当前主题没有此部件)");
+        if (button.Resources["TrackMenuFlyout"] is not MenuFlyout flyout)
+            throw new InvalidOperationException("按钮资源里找不到 TrackMenuFlyout");
+
+        // 真实点击:走 TrackRow.OnArtistAlbumClick → flyout.ShowAt(button)
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await IdleAsync(200);
+
+        var artistItem = flyout.Items.OfType<MenuItem>().FirstOrDefault();
+        Assert(artistItem is not null, "展开的菜单里没有菜单项");
+        var topLevel = TopLevel.GetTopLevel(shell);
+        var openCensus = OverlayCensus(shell);
+        // 更硬、不依赖弹层实现方式的判据:从菜单项往上拿它所在的呈现器本身。
+        // Avalonia 12 的菜单不走 PopupRoot(实测叠加层里 PopupRoot/呈现器都数不到),
+        // 只能抓对象:返回首页后这个呈现器还挂在视觉树上,就是"弹出层没被回收"。
+        var presenter = artistItem.GetLogicalAncestors().OfType<MenuFlyoutPresenter>().FirstOrDefault();
+        _menuPresenterRef = presenter is null ? null : new WeakReference(presenter);
+        Log($"[memloop] R{_round} 菜单: 已展开={flyout.IsOpen} 项数={flyout.Items.Count} " +
+            $"首项=「{artistItem.Header}」可执行={artistItem.Command?.CanExecute(artistItem.CommandParameter)} " +
+            $"叠加层: PopupRoot={openCensus.Popups} 呈现器={openCensus.Presenters} " +
+            $"菜单呈现器={(presenter is null ? "取不到" : "已取到")} " +
+            $"展开时在树上={presenter is not null && TopLevel.GetTopLevel(presenter) is not null}");
+
+        MenuFlyoutHistory.Add(new WeakReference(flyout));
+        _lastMenuRef = new WeakReference(flyout);
+        // 注意:菜单/菜单项**不能**当泄漏判据 —— 它们就在这个歌曲行的 Button.Resources 里,
+        // 行控件还挂在树上时它们当然活着(行每轮重建,旧的自然回收)。真正要判的是
+        // "返回之后弹出层有没有留在 OverlayLayer 上"(见 MenuPresenterCount)与"菜单关没关"。
+
+        var before = main.ActivePage;
+        // MenuItem 的真实点击由指针抬起事件驱动,入口是受保护方法,公开 API 没有等价物。
+        // 先打印一次候选签名(口径依赖 Avalonia 版本),再按签名构造参数调用。
+        if (_round <= 1)
+            Log("[memloop] MenuItem 点击候选方法: " + string.Join(" | ", typeof(MenuItem)
+                .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                .Where(method => method.Name.Contains("Click", StringComparison.Ordinal)
+                              || method.Name.Contains("Invoke", StringComparison.Ordinal))
+                .Select(method => $"{method.Name}({string.Join(",", method.GetParameters().Select(p => p.ParameterType.Name))})")));
+        var invoked = InvokeMenuItemClick(artistItem);
+        await IdleAsync(240);
+        if (main.ActivePage == before
+            && artistItem.Command is { } command
+            && command.CanExecute(artistItem.CommandParameter))
+        {
+            Log($"[memloop] R{_round} 受保护点击入口已调用={invoked} 但未触发导航,退回直接执行菜单项命令");
+            command.Execute(artistItem.CommandParameter);
+            await IdleAsync(200);
+        }
+
+        // 导航发生在"菜单正开着"的时序里:这里记录菜单有没有被关掉 ——
+        // 没关掉 + 还挂在弹出层上,就是逐轮累积的直接嫌疑。
+        var stillOpen = flyout.IsOpen;
+        var afterCensus = OverlayCensus(shell);
+        Log($"[memloop] R{_round} 点菜单项后: ActivePage={main.ActivePage} " +
+            $"菜单仍开着={stillOpen} 叠加层: PopupRoot={afterCensus.Popups} 呈现器={afterCensus.Presenters}");
+        Assert(main.ActivePage == "Artist", "点「表演者」菜单项后没有进入歌手页");
+    }
+
+    /// <summary>点菜单项。Avalonia 的 MenuItem 由指针抬起事件驱动那个受保护的点击处理器,
+    /// 公开 API 没有等价入口;这里按签名构造参数调用同一个处理器(只差指针事件本身),
+    /// 签名不匹配时返回 false,由调用方退回"直接执行菜单项命令"。</summary>
+    private static bool InvokeMenuItemClick(MenuItem item)
+    {
+        foreach (var method in typeof(MenuItem)
+                     .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+                     .Where(candidate => candidate.Name == "OnClick"))
+        {
+            var parameters = method.GetParameters();
+            if (parameters.Length != 1) continue;
+            if (parameters[0].ParameterType != typeof(RoutedEventArgs)) continue;
+            method.Invoke(item, [new RoutedEventArgs(MenuItem.ClickEvent)]);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>返回个性推荐(真实返回命令:弹出历史 + 新建或复用 RecommendView)。</summary>
@@ -578,6 +897,10 @@ internal static class PageLoopMemoryProbe
             Source = MusicSource.NetEase,
             Name = $"每日推荐 {index:D2}",
             Artist = "探针歌手",
+            ArtistIds = [6452],
+            ArtistNames = ["探针歌手"],
+            Album = "探针专辑",
+            AlbumId = 70_000,
             DurationMs = 200_000,
             CoverUrl = CoverUrl(port, $"rec-{index}"),
         }).ToList();

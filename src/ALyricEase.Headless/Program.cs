@@ -365,6 +365,13 @@ public static class Program
             return;
         }
 
+        // page-scroll 预留带不得外溢:页根纵向滚动条抬起 100,嵌套容器的横/纵条必须原样
+        if (args.Length > 0 && args[0] == "--pagescroll")
+        {
+            PageScrollReserveProbe.Run();
+            return;
+        }
+
         // QQ 音乐 API 冒烟:匿名打真实接口验证歌单修复(不依赖登录 Cookie)
         if (args.Length > 0 && args[0] == "--qqapi")
         {

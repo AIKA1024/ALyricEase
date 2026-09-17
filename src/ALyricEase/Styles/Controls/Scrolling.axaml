@@ -383,7 +383,12 @@
   <Style Selector="ScrollViewer.page-scroll">
     <Setter Property="Padding" Value="{DynamicResource PlayerBarReserve}" />
   </Style>
-  <Style Selector="ScrollViewer.page-scroll ScrollBar">
+  <!-- ⚠ 必须用 /template/ + :vertical 收窄,不能写成 `ScrollViewer.page-scroll ScrollBar`:
+       空格是**后代**选择器,会连页内嵌套滚动容器的滚动条一起命中 —— 个性推荐里横向卡片区
+       的水平滚动条会被套上底部 100px 边距、被顶到容器中间(2026-09-17 实测回归)。
+       /template/ 只命中该 ScrollViewer 自己模板里的滚动条,不进嵌套 ScrollViewer;
+       :vertical 再排除横向条(根内容页横向滚动均为 Disabled,这里只为防止误伤)。 -->
+  <Style Selector="ScrollViewer.page-scroll /template/ ScrollBar:vertical">
     <Setter Property="Margin" Value="{DynamicResource PlayerBarReserve}" />
   </Style>
 </Styles>

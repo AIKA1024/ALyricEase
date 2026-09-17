@@ -982,8 +982,17 @@ private bool IsHostPresentable()
 - 给根 `ScrollViewer` 设 `Padding` 底部 = `PlayerBarReserve`(=100,集中定义在
   `Styles/Foundation/Dimensions.axaml`,与 `PlayerBarHeight` 对齐)。`ScrollViewer.Padding`
   **计入滚动范围**,所以滚到底才留白、中途不挡内容——正是想要的行为。
-- 给 `ScrollBar` 设底部留白(`Margin="0,0,0,PlayerBarReserve"`),滑块/轨道不伸到播放条后面
+- 给**它自己的纵向滚动条**设底部留白(`Margin="0,0,0,PlayerBarReserve"`,选择器为
+  `ScrollViewer.page-scroll /template/ ScrollBar:vertical`),滑块/轨道不伸到播放条后面
   (保留"滚到中途轨道在播放条上方"的观感)。
+  ⚠ **这里绝不能写成后代式 `ScrollViewer.page-scroll ScrollBar`** —— 空格是后代选择器、
+  不区分层级,会把**页内嵌套滚动容器**的滚动条一起命中:个性推荐里横向卡片区的水平滚动条
+  被套上底部 100px 边距,直接被顶到容器中间(2026-09-17 实测回归)。
+  `/template/` 只命中该 ScrollViewer 自己模板里的滚动条,不会进嵌套 ScrollViewer;
+  `:vertical` 再排除横向条(根内容页横向滚动均为 Disabled,这里只为防误伤)。
+  回归线:`--pagescroll`(`src/ALyricEase.Headless/PageScrollReserveProbe.cs`),
+  用最小夹具断言"页根纵向条抬起 100、嵌套容器的横/纵条原样",
+  并已做受控 A/B 确认它真能测到后代式写法(后代式 → 5 条不符、exit 1)。
 
 **为什么集中**:之前各页各写一个不一致的硬编码底部留白(`Settings` 只留 40、`Search` 留 90、
 其余 110/116),窄屏还用 116/104——`Settings` 和 `Search` 因为留少了,滚到底仍被播放条挡住。

@@ -19,11 +19,29 @@ namespace ALyricEase.Views;
 /// <summary>
 /// 从封面提取四个代表色，绘制成原版 AlbumCoverBackgroundControl 风格的动态柔光色团。
 /// 色团在合成线程缓慢漂移；切歌时双层交叉淡化，避免整张模糊封面造成的纹理噪声。
+///
+/// <para>
+/// ⚠ 漂移**必须**由宿主按"详情页是否打开"绑 <see cref="MotionEnabled"/> 关掉。
+/// 原因是实测出来的：这个控件由播放详情页覆盖层承载，而覆盖层在真实 MainWindow 里是
+/// **常驻**的（只靠 RenderTransform 移出窗外），所以色团从应用启动起就一直在动 ——
+/// 哪怕详情页根本没打开、哪怕整层移在窗外看不见。横跨整窗的组合动画会让合成器
+/// 每帧把整幅窗口重画一遍，代价与"看不看得见"无关：
+/// 实测首页（详情页关闭）GPU 8.36% / CPU 23.4%，把漂移停掉后降到 0.89% / 1.5%。
+/// 反过来，图层**画出来**只值 1.65%，"让它一直动"值 7.3% —— 钱花在动上，不在画上。
+/// </para>
 /// </summary>
 public partial class AlbumCoverBackground : UserControl
 {
     public static readonly StyledProperty<IImage?> CoverProperty =
         AvaloniaProperty.Register<AlbumCoverBackground, IImage?>(nameof(Cover));
+
+    /// <summary>
+    /// 是否让色团漂移。默认 true 保留设计原意；宿主负责在"看不见这个背景"时置 false。
+    /// 注意这**只是**省掉动画开销：静止的色团层几乎不要钱（实测详情页可见且漂移停掉时 0.93% GPU），
+    /// 所以关掉它不会改变任何观感，只会在切回来时从当前位置继续。
+    /// </summary>
+    public static readonly StyledProperty<bool> MotionEnabledProperty =
+        AvaloniaProperty.Register<AlbumCoverBackground, bool>(nameof(MotionEnabled), defaultValue: true);
 
     private static readonly Color[] s_defaultPalette =
     [
@@ -51,6 +69,12 @@ public partial class AlbumCoverBackground : UserControl
         set => SetValue(CoverProperty, value);
     }
 
+    public bool MotionEnabled
+    {
+        get => GetValue(MotionEnabledProperty);
+        set => SetValue(MotionEnabledProperty, value);
+    }
+
     public AlbumCoverBackground()
     {
         InitializeComponent();
@@ -66,27 +90,23 @@ public partial class AlbumCoverBackground : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == CoverProperty)
             QueuePaletteRefresh();
+        else if (change.Property == MotionEnabledProperty)
+            ApplyMotionPreference();
     }
 
     private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
-        _motionStartAttempts = 0;
-        QueueMotionStart();
+        ApplyMotionPreference();
         QueuePaletteRefresh();
     }
 
-    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e) => StopMotion();
+
+    /// <summary>宿主开关与挂载状态一有变化就重算：两者任一不满足都该停。</summary>
+    private void ApplyMotionPreference()
     {
-        _motionGeneration++;
-        _motionStartQueued = false;
-        _motionStartAttempts = 0;
-        foreach (var ellipse in GetLayer(true).Concat(GetLayer(false)))
-        {
-            var visual = ElementComposition.GetElementVisual(ellipse);
-            visual?.StopAnimation("Translation");
-            visual?.StopAnimation("Scale");
-        }
-        _motionStarted = false;
+        if (MotionEnabled) QueueMotionStart();
+        else StopMotion();
     }
 
     private void QueuePaletteRefresh()
@@ -144,24 +164,43 @@ public partial class AlbumCoverBackground : UserControl
     private void QueueMotionStart()
     {
         if (_motionStarted || _motionStartQueued || _motionStartAttempts >= 8
-            || !this.IsAttachedToVisualTree()) return;
+            || !MotionEnabled || !this.IsAttachedToVisualTree()) return;
 
         var generation = ++_motionGeneration;
         _motionStartQueued = true;
         Dispatcher.UIThread.Post(() =>
         {
             _motionStartQueued = false;
-            if (generation != _motionGeneration || !this.IsAttachedToVisualTree()) return;
+            if (generation != _motionGeneration || !MotionEnabled || !this.IsAttachedToVisualTree()) return;
             if (TryStartMotion()) return;
             _motionStartAttempts++;
 
             if (TopLevel.GetTopLevel(this) is not { } topLevel) return;
             topLevel.RequestAnimationFrame(_ =>
             {
-                if (generation == _motionGeneration && this.IsAttachedToVisualTree())
+                if (generation == _motionGeneration && MotionEnabled && this.IsAttachedToVisualTree())
                     QueueMotionStart();
             });
         }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// 停掉漂移并把"已启动"标记复位。停止是**隐式**的（任一门控条件不满足就停），
+    /// 但重新开始必须显式走到这里 —— 与 ProgressRenderAnimator 同一套约定：
+    /// 漏掉复位会让"关掉再打开"变成单向开关，之后再也不会动。
+    /// </summary>
+    private void StopMotion()
+    {
+        _motionGeneration++;
+        _motionStartQueued = false;
+        _motionStartAttempts = 0;
+        foreach (var ellipse in GetLayer(true).Concat(GetLayer(false)))
+        {
+            var visual = ElementComposition.GetElementVisual(ellipse);
+            visual?.StopAnimation("Translation");
+            visual?.StopAnimation("Scale");
+        }
+        _motionStarted = false;
     }
 
     private bool TryStartMotion()

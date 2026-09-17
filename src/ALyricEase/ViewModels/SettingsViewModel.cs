@@ -88,7 +88,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public bool DynamicBackground
     {
         get => _state.DynamicBackground;
-        set { _state.DynamicBackground = value; _state.Save(); OnPropertyChanged(nameof(DynamicBackground)); }
+        set
+        {
+            _state.DynamicBackground = value;
+            _state.Save();
+            // 只改"怎么画"，不失效任何状态：通知正在显示的界面立刻按新设置改绘。
+            _state.NotifyVisualEffectsChanged();
+            OnPropertyChanged(nameof(DynamicBackground));
+        }
     }
 
     /// <summary>兼容的视觉效果(低端设备减弱动效)。</summary>

@@ -56,6 +56,8 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist.Playlists.CollectionChanged += OnPlaylistsChanged;
         Playlist.QqPlaylists.CollectionChanged += OnPlaylistsChanged;
         Playlist.PropertyChanged += OnPlaylistLoginChanged;
+        // 设置里的渲染开关改了要立刻反映到正在显示的详情页背景上(见 NowPlayingMotionEnabled)
+        appState.VisualEffectsChanged += () => OnPropertyChanged(nameof(NowPlayingMotionEnabled));
         _selectedNav = ShellNavItems.First(item => item.Key == _activePage);
         _ = Recommend.EnsureLoadedAsync(); // 启动即拉首页区块(幂等,失败静默)
         _ = Playlist.EnsureQqLoadedAsync(); // 启动恢复 QQ 登录态并拉侧边栏"QQ音乐"分组(失败静默)
@@ -171,6 +173,24 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>正在播放全屏覆盖层。</summary>
     [ObservableProperty] private bool _showNowPlaying;
+
+    /// <summary>
+    /// 播放详情页的色团背景是否该漂移 —— 设置里的"启用播放详情界面的动态背景效果" × 详情页是否打开。
+    ///
+    /// <para>
+    /// 必须两条件同时成立。覆盖层在窗口里是**常驻**的（只靠 RenderTransform 移出窗外），
+    /// 所以这个背景控件从应用启动起就在视觉树上；不判"详情页是否打开"的话，
+    /// 整幅窗口会以屏幕刷新率永远重画下去 ——
+    /// 实测首页（详情页关闭）：强制让漂移继续跑 8.16% / CPU 22.5%，加上这道门后 0.95% / 1.81%。
+    /// 代价与"看不看得见"无关，钱花在"一直动"上，不在"画出来"上（图层本身只值 2.20%）。
+    /// </para>
+    ///
+    /// 这里同时订阅设置变更（见构造函数）：覆盖层虽然盖住整窗、用户改设置时它必然没打开，
+    /// 但"改了就得马上对"这条不该依赖用户的操作顺序 —— 订阅是一行的事。
+    /// </summary>
+    public bool NowPlayingMotionEnabled => ShowNowPlaying && AppState.DynamicBackground;
+
+    partial void OnShowNowPlayingChanged(bool value) => OnPropertyChanged(nameof(NowPlayingMotionEnabled));
 
     /// <summary>正在播放页右侧面板(歌词/播放列表互斥,再点一次收起)。</summary>
     [ObservableProperty] private NowPlayingPanel _nowPlayingPanel;

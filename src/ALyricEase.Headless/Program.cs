@@ -130,6 +130,26 @@ public static class Program
             return;
         }
 
+        // 真窗口播放详情页 GPU 归因(--np-gpu-real):同轮消融矩阵,逐项摘掉
+        // 封面色团层 / 被盖住的底层页 / 进度自续订循环 / 歌词逐行模糊,量各自吃多少显卡。
+        // ⚠ 窗口会置顶约一分半(GPU 计数只在真的提交到屏幕时才有值)。
+        if (args.Length > 0 && args[0] == "--np-gpu-real")
+        {
+            var gpuBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var gpuExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { gpuExitCode = await NowPlayingGpuProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[np-gpu] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            gpuBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = gpuExitCode;
+            return;
+        }
+
         // 真窗口歌单页返回延迟(--pl-return-real):量 UI 冻结峰值与恢复各阶段耗时
         if (args.Length > 0 && args[0] == "--pl-return-real")
         {

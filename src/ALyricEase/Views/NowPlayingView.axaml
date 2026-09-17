@@ -137,8 +137,13 @@
 
     <Grid Background="#FF000000">
         <!-- 原版不是把封面整张放大模糊，而是由 AlbumCoverBackgroundControl
-             根据封面代表色生成柔光色团并缓慢漂移。 -->
-        <views:AlbumCoverBackground Cover="{Binding Player.Cover}" />
+             根据封面代表色生成柔光色团并缓慢漂移。
+             MotionEnabled 走 NowPlayingMotionEnabled（设置里的"动态背景"开关 × 详情页是否打开）：
+             这个覆盖层在窗口里是常驻的，只绑 ShowNowPlaying 会漏掉用户关掉动态背景的意愿，
+             完全不绑则等于让色团从应用启动起永远漂移、每帧重画整窗
+             （实测首页 GPU 8.16% → 0.95%、CPU 22.5% → 1.81%；详情页内关开关是 8.43% → 0.93%）。 -->
+        <views:AlbumCoverBackground Cover="{Binding Player.Cover}"
+                                    MotionEnabled="{Binding NowPlayingMotionEnabled}" />
 
         <!-- 顶部拖拽条:播放详情页盖住标题栏时,按住顶部空白区可拖动窗口。
              压在画布之下:Canvas 无背景不命中,顶部空白处仍穿透到这里拖拽;画布上的按钮自行命中 -->

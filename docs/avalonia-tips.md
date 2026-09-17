@@ -772,3 +772,188 @@ private bool IsHostPresentable()
 ⚠ 对照组要按**属性**找控件(`IndeterminateAnimationGate.GetIsActive(bar)`),
 不能按 `IsIndeterminate` 找 —— 门控生效时它已经被置成 `false`,按值找会一个都找不到。
 
+## 布局与外观一律走 XAML:别在 C# 里建视觉树,也别写"局部值"
+
+**规则**:能用 XAML 表达的布局与外观(样式、ControlTheme、DataTemplate、容器查询)就不要在 C# 里
+`new` 控件、也不要给它设属性。**更关键的推论**:凡是"以后可能被样式/主题/状态覆盖"的属性,
+都不要直接写在控件上(`Width="120"`、`FontSize="14"`、`Margin="..."`、代码里的 `FontSize = 14` …),
+而要提炼成 `Classes` + `Style`。
+
+**为什么**(官方 `BindingPriority`,数值越小优先级越高 —— 2026-09-17 复核文档):
+
+| 优先级 | 来源 | 什么时候产生 |
+|---|---|---|
+| 1(最高) | `Animation` | 动画 / 过渡写入的值,**连局部值都能盖** |
+| 2 | `LocalValue` | **XAML 里直写的属性**、`new Control { X = … }`、代码 `SetValue`、顶层 XAML 里直写的绑定 |
+| 3 | `StyleTrigger` | **带条件激活**的选择器的 Setter:伪类(`:pointerover`/`:pressed`)、样式类、子位置、属性匹配 |
+| 4 | `Template` | `ControlTemplate` 内直写 |
+| 5 | `Style` | 无条件激活的 Setter —— ⚠ **比 `Template` 还低** |
+| 6 | `Inherited` | 从父级继承 |
+| 7(最低) | `Unset` | 用属性注册时的默认值 |
+
+⇒ 只要留下一个局部值(不管来自 XAML 还是 C#),后面的样式、主题、伪类样式、容器查询**全部静默失效**,
+而且**不报错、不告警**(选择器匹配不上时也不会提示)。官方原话:
+"If you want styles to be able to override a property, avoid setting it directly in XAML."
+
+另外三条容易踩的:
+- `{StaticResource}` / `{DynamicResource}` **不改变优先级**(资源标记扩展对优先级没有影响),
+  所以 `Width="{StaticResource CardWidth}"` 一样是局部值、一样挡样式。
+- **Avalonia 没有 CSS 的 Specificity**。同级之间的次序是:先比"视觉树局部性"(离控件越近的样式越优先),
+  再比 `Styles` 集合里的书写顺序(**后写的赢**)。
+- **控件名选择器(`#name`)不是条件性的** ⇒ 它落 `Style`(5)这一层,因此靠它盖不住
+  `ControlTemplate` 里的直写值(4)。要盖模板里的值,选择器得能带到 `/template/` 内部。
+
+**该用什么替代**:
+
+| 想做的事 | 不要 | 应该 |
+|---|---|---|
+| 变体外观(尺寸/间距/圆角) | 每个控件直写属性 | `Style Selector="Button.card"` + `Classes="card"` |
+| 状态(悬停/按下/选中) | 代码里订阅指针事件改属性 | `Style Selector="Button:pointerover"` |
+| 整套换皮 | 到处改属性 | `ControlTheme`(可按类型整体替换/移除) |
+| 随容器尺寸变化 | 订阅 `SizeChanged` 在代码里算断点 | 容器查询(见下) |
+| 平台 / 形态差异 | `if (OperatingSystem.IsAndroid())` 改布局 | `OnFormFactor` / `OnPlatform` 标记扩展(启动时解析一次) |
+| 颜色 / 字号线 | 硬编码色值 | `DynamicResource` + 主题字典 |
+| 列表行外观 | 代码里造行控件 | `DataTemplate` / `ItemTemplate` |
+
+### 容器查询(Avalonia 11.3+,本项目 12.1.1;仓库里已在两处用上)
+
+把**祖先**声明成容器,查询写在**祖先**的 `Styles` 里(不是写在容器自己身上)。
+项目内的两个落地实例:
+
+- `Views/AccountView.axaml`:容器 = 外层 `ScrollViewer`(`Container.Name="accountHost"`,
+  `Container.Sizing="Width"`),`max-width:641` 时把两个登录按钮从"并排"改成"纵向全宽"。
+- `Views/LoginDialogView.axaml`:容器 = 根 `Grid`(`loginRoot`),`max-width:760` 时把两栏布局
+  折成"方法列表横排置顶 + 内容落到下方"。
+
+```xml
+<ScrollViewer Container.Name="accountHost" Container.Sizing="Width">
+  <ScrollViewer.Styles>
+    <ContainerQuery Name="accountHost" Query="max-width:641">
+      <Style Selector="Button#NetEaseLoginButton">
+        <Setter Property="Grid.Row" Value="1" />
+        <Setter Property="Grid.ColumnSpan" Value="2" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+      </Style>
+    </ContainerQuery>
+  </ScrollViewer.Styles>
+  …
+</ScrollViewer>
+```
+
+- `Container.Name` 只是按名字挂钩,**不要求全局唯一**,同名容器会一起响应同一条查询。
+- `Container.Sizing`:`Normal`(默认,不被查询)/ `Width` / `Height` / `WidthAndHeight`。
+  ⚠ 选 `Width`/`Height` 时容器会**吃掉父级允许的最大尺寸**(DesiredSize 直接用约束值),
+  随手加在不该撑满的控件上会改变布局。项目里两处都挂在**本来就该撑满**的元素上
+  (`ScrollViewer` / 根 `Grid`)—— 照这个来,别挂到卡片之类会被撑变形的控件上。
+- 条件:`min-width` / `max-width` / `width` / 同名 height 系列;`,` = 或,`and` = 且。
+- 两条硬限制:**① 不能写在 `Style` 里**(只能直接当 `Styles` 的子元素,或写在 `ControlTheme` 的
+  `Styles` 里);**② 查询内的样式不能作用于容器自身及其祖先** —— 否则尺寸互相触发会来回抖。
+- 把 `TopLevel` 当容器时,行为等价于媒体查询(响应窗口尺寸)。
+
+### 必须从 C# 写时的三个出口
+
+- `SetCurrentValue(prop, value)`:写在**当前生效的那一层**,不新建 `LocalValue` 条目 ⇒
+  既更新了值,又不会把样式/绑定永久顶掉(控件实现里更新自己的属性就该用它)。
+- `SetValue(prop, value, BindingPriority.Style)`:真要指定层级时用(一般只有样式系统内部需要)。
+- `ClearValue(prop)`:撤掉自己写的局部值,让下层来源重新生效。
+
+项目内的范例与反例:`Infrastructure/IndeterminateAnimationGate` 必须**临时压过**绑定
+(最小化时强停动画),所以它不能只靠 `SetCurrentValue` —— 它是"直接赋值 + 自己记住绑定想要的值
+(`Desired`)+ 压制期间打 `Suppressing` 标记",否则自己写的值会被变更通知当成"绑定改了值"而吃掉。
+这是"确实必须从代码改"的正确写法。
+反例:`Views/PlayerBarView.axaml.cs` 里用 C# 造 `MenuFlyout` 的菜单项、并给图标 `TextBlock`
+写 `FontSize = 14` / `VerticalAlignment` —— 想统一改菜单图标字号就得改代码、也进不了主题。
+(真要修,得先确认 Popup 里的内容吃哪一层的 `Styles` —— 这一条**还没实测过**,别想当然。)
+
+### 例外:可以理直气壮在 C# 里建视觉树的两处
+
+- **探针 / 测试夹具**:`src/ALyricEase.Headless` 里 30+ 处 `new Grid/StackPanel/…` 是有意的
+  (要合成一个受控场景,甚至故意堆 800 个元素量成本)。但要记住这些夹具**同样享受不到样式** ——
+  所以"探针里量到的观感/量级"不能直接当真实应用的数字(见前面"隔离场景"那一节的同类提醒)。
+- **离屏渲染**:`Views/AlbumCoverBackground.axaml.cs` 的 `ExtractPalette` 造一个 48×48 `Image`
+  只为渲进 `RenderTargetBitmap` 取色 —— 它不进视觉树、没有样式语义,不算"布局"。
+
+### 现状盘点(2026-09-17)
+
+`src/ALyricEase`(应用本体,不含探针)里"在 C# 里建布局"只剩 2 处,其中 1 处属上面的例外:
+`Views/AlbumCoverBackground.axaml.cs`(离屏取色,例外)与 `Views/PlayerBarView.axaml.cs`
+(菜单项,见上)。**新增代码时别让这个数字涨**;排查"为什么样式改了没反应"时,先找有没有局部值。
+
+## GPU 也要归因:全屏组合动画在你没看它的时候照样烧钱
+
+**现象**:用户报"播放详情页 GPU 占用 6%,有点高"。任务管理器里进程 GPU 一列常年有值,
+但 CPU 读数挺好看 —— 这类代价落在**合成与光栅化**上,CPU 计数器量不到,得换个尺子。
+
+**工具**:Windows PDH 性能计数器 `\GPU Engine(*)\Utilization Percentage`
+(`src/ALyricEase.Headless/GpuUsageSampler.cs`,P/Invoke `PdhOpenQueryW` /
+`PdhAddEnglishCounterW` / `PdhCollectQueryData` / `PdhGetFormattedCounterArrayW`)。四条硬约束:
+
+- 按 **`pid_` 前缀**过滤实例名(计数器给每个进程的每个引擎各一条实例,不加前缀会把整机算进来)。
+- **加总所有引擎**(3D / Copy / Compute / VideoDecode)。只看 3D 会低估 —— 组合动画的代价经常
+  落在别的引擎上。同时留一个"单引擎峰"口径,任务管理器那一列更接近它。
+- **丢掉第一个采样**:速率型计数器要两次收集才有增量。
+- **窗口必须可见且没被遮挡**。被遮挡时 DWM 不合成,我们的帧没提交,GPU 恒为 0 ——
+  这种"数字很漂亮"的错误比崩溃更难查。所以探针强制 `Topmost = true`,并明说会盖住桌面约两分钟。
+
+**方法**:同轮消融矩阵。每个场景写成一份**完整**状态(不是"在上一个场景上再关一样"),
+行与行才能任意相减;同轮而非跨构建,差里只剩被消融的那一项。再插一行同状态复测当噪声底。
+
+**实测**(`--np-gpu-real`,1200×720,`AlbumCoverBackground` 那 10 个全屏径向渐变椭圆):
+
+| 场景 | GPU | CPU |
+|---|---|---|
+| 首页(详情页关),门控生效 | **0.95%** | 1.8% |
+| 首页(详情页关),强制让漂移继续跑 | 8.16% | 22.5% |
+| 详情页·默认 | **8.43%** | 22.0% |
+| 详情页·关掉「动态背景」开关 | **0.93%** | 3.6% |
+| 详情页·色团层隐藏 | 6.24% | 19.9% |
+| 详情页·停两个进度 RAF 循环 | 8.34% | 25.2% |
+| 详情页·上面全关 | 0.87% | 2.7% |
+| 歌词面板·默认 | 17.46% | 46.0% |
+| 歌词面板·逐行不用 `BlurEffect` | 9.69% | 28.3% |
+
+⇒ **"让它一直动"值 7.50%,图层"画出来"只值 2.20%,两条自续订 RAF 循环 0.09%(≈0)。**
+
+**根因**:`AlbumCoverBackground` 由播放详情页覆盖层承载,而覆盖层在真实 `MainWindow` 里是
+**常驻**的 —— 只靠 `RenderTransform` 移出窗外,视觉树上一直都在。于是色团从应用启动起就在漂移,
+哪怕详情页根本没打开、哪怕整层移在窗外看不见。横跨整窗的组合动画会让合成器**每帧把整幅窗口
+重画一遍**,代价与"看不看得见"完全无关。**钱花在动上,不在画上。**
+
+**修法**:控件加 `MotionEnabled`(默认 `true` 保住设计原意),宿主按
+`ShowNowPlaying && AppState.DynamicBackground` 绑定。两个要点:
+
+- 停是**隐式**的(任一门控条件不满足就停),但**重新开始必须显式** —— `StopMotion()` 要复位
+  私有 `_motionStarted` 并 bump `_motionGeneration`,否则"关掉再打开"会变成单向开关。
+  与 `ProgressRenderAnimator` 同一套约定。
+- 原版 LyricEase 的 `SettingsView` 里本来就有「启用播放详情界面的动态背景效果」(`DynaBackEnableCheckBox`),
+  做法一致 —— 让用户能关掉它是原版就有的设计,不是我们加的。
+
+**歌词面板那一档**(顺带量出来的):面板本身 +9.0% GPU;其中逐行 `BlurEffect` 净代价 **+7.77%**,
+只模糊当前句上下两行的写法是 **+6.09%** —— 收益小、观感却变了,所以**没做**。
+(模糊确实渲染出来了,见下面抓屏判据;该谈的是换个便宜画法,不是能不能删。)
+
+### 写这类 GPU 探针踩到的坑(都实测过)
+
+- **验收场景必须"一行代码都不碰"。** 第一版在默认档里读回控件的 `MotionEnabled` 再"推"一遍动画
+  状态,结果造出"探针 `StartAnimation` 与应用 `StopAnimation` 挤在同一帧"的时序 —— **这种时序停不掉**,
+  于是量出"设置没用"(8.42%,与不关开关一样)。改成完全不碰之后,同一状态是 0.93%。
+  教训:探针自己去拨开关的话,应用改没改好都会量出同一个数。
+- **消融行会污染它之后的所有行,而且是静默的。** 绕过控件直接对合成视觉 `StopAnimation`,
+  控件里 `_motionStarted` 仍是 `true` 而动画已停;后面的默认行属性没变化 ⇒ 没有变更通知
+  ⇒ 永远不会重新点火。实测整张表从那一行起全掉到 0.7~1.0%(本该 8.5%),**而消融行自己看着完全正常**。
+  根因:`StopAnimation` 只有在**控件自己的 `StopMotion` 里**才会 bump 那个代次,而代次正是用来
+  作废在途启动的。结论是别要这种东西 —— 它想量的那一档改由"用户真按设置开关"给出,更硬也更少坑。
+- **`CompositionVisual.Translation` 的 getter 读的是基础值**,不反映组合动画推到服务端的当前值
+  (实测 13 个场景全是"位移 0.00px",连明确在跑的默认态也是)—— 拿它判"还在不在动"是瞎的。
+- **抓屏像素差也不适合判它**:漂移按设计就慢到每帧亚像素、又是柔和渐变,带阈值的像素差恒为
+  `0.00%`(强制开漂移那一档也是)。这反过来是个有用的结论 —— 它的代价是"每帧重画整窗",
+  不是"每帧画面都在明显变"。同一套抓屏在**歌词模糊**上是好用的(噪声底 0.00% / 消融差 5.24%)。
+- **"帧节奏"那一列不能当判据**:同一个状态跨轮读到 7.0ms 和 76.4ms(143fps ↔ 14fps),纯噪声。
+- **夹具里的控件引用会失效。** 歌词面板收起再展开会**重建 `ListBoxItem`**,沿用过一次的快照数组
+  会指向已脱离视觉树的旧实例 —— `Effect` 写了、画面纹丝不动。实测同一套判据前四轮都给出 4.58%,
+  有一轮 0.00%,并据此打印出"模糊没渲染 ⇒ 纯白付、删掉零损失"这个**很强的错误结论**。
+  两条修法:① 夹具每次从视觉树重取当前实化的控件,不要缓存快照;
+  ② 要保留"原本的值"只能从**活的、样式已生效**的控件上读 —— 样式里每条
+  `<Setter Property="Effect"><BlurEffect Radius="…"/></Setter>` 会给**每一行各造一个**实例
+  (半径还不同:远景 5 / above 1.5 / below1 1 / below2 2.5),不能共用一个。
+  另外把"恰好 0.00%"单列一档,写明"先怀疑夹具",别让它冒充"特性无效"的证据。

@@ -16,6 +16,7 @@
 | P2-7 磁盘读抢 `_mutationGate` | 第一轮随磁盘快照路径消失；第二轮把**其余四个读路径**也摘出来（见 P2-7 正文，有实测） |
 | P1-4 写盘路径的全目录扫描（2026-09-16 追加） | `EnsureSpaceFor` 加 `_knownCacheBytes` 工作副本快路径，封面落盘 551.5ms → 1.8ms/张（见 §5） |
 | P1-5 不确定进度条的最小化动画（2026-09-16 追加） | 新增 `Infrastructure/IndeterminateAnimationGate` 附加属性，最小化时停掉框架主题动画（同轮 A/B 净代价 2.60% → 0.00%，见 `docs/avalonia-tips.md`） |
+| P1-6 详情页色团漂移的 GPU（2026-09-17 追加） | `AlbumCoverBackground` 加 `MotionEnabled`，宿主按 `ShowNowPlaying × AppState.DynamicBackground` 绑定。首页 GPU **8.16% → 0.95%**、CPU **22.5% → 1.8%**（同轮消融，漂移本身值 7.50%，图层本身只值 2.20%，见 `docs/avalonia-tips.md`「GPU 也要归因」） |
 
 未动：P2-4（五个手写 LRU 的共用抽象）、P2-5（两套图片缓存的占用口径）、P2-8（`_offlineIndex` 失配）与 P3 全部。
 

@@ -317,16 +317,8 @@ public static class LyricSwitchProbe
     /// 稳定后两帧本应一致;差异显著说明合成器正在呈现与当前可视树不符的旧内容。</summary>
     private static async Task<int> CaptureDiff(Window window, string name)
     {
-        var scale = window.RenderScaling;
-        var w = (int)Math.Round(window.ClientSize.Width * scale);
-        var h = (int)Math.Round(window.ClientSize.Height * scale);
-        if (w <= 0 || h <= 0) return -1;
-
-        var hwnd = window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-        var pt = new NativePoint();
-        ClientToScreen(hwnd, ref pt);
-
-        var before = GrabScreen(pt.X, pt.Y, w, h, out var stride);
+        var beforeFrame = ScreenCapture.GrabClient(window);
+        if (beforeFrame.IsEmpty) return -1;
 
         // 强制整窗重渲染:尺寸抖动 1px 触发完整布局与图层重建
         window.Width = window.Width + 1;
@@ -334,84 +326,17 @@ public static class LyricSwitchProbe
         window.Width = window.Width - 1;
         await Task.Delay(500); // 布局/过渡重新稳定
 
-        var after = GrabScreen(pt.X, pt.Y, w, h, out _);
+        var afterFrame = ScreenCapture.GrabClient(window);
+        var ratio = ScreenCapture.DiffRatio(beforeFrame, afterFrame, null, 28);
 
-        var diff = 0;
-        for (var i = 0; i < before.Length; i += 4)
-        {
-            var d0 = Math.Abs(before[i] - after[i]);
-            var d1 = Math.Abs(before[i + 1] - after[i + 1]);
-            var d2 = Math.Abs(before[i + 2] - after[i + 2]);
-            if (Math.Max(d0, Math.Max(d1, d2)) > 28) diff++;
-        }
+        ScreenCapture.Save(beforeFrame, $"real-{name}-before");
+        ScreenCapture.Save(afterFrame, $"real-{name}-after");
 
-        SaveBgra(before, w, h, stride, $"real-{name}-before");
-        SaveBgra(after, w, h, stride, $"real-{name}-after");
-        return diff;
+        // 调用方按"差异像素个数"设阈值,这里换回绝对个数而不是比例。
+        return double.IsNaN(ratio)
+            ? -1
+            : (int)Math.Round(ratio * beforeFrame.Width * beforeFrame.Height);
     }
-
-    private static byte[] GrabScreen(int x, int y, int w, int h, out int stride)
-    {
-        stride = w * 4;
-        var screen = GetDC(IntPtr.Zero);
-        var mem = CreateCompatibleDC(screen);
-        var bmp = CreateCompatibleBitmap(screen, w, h);
-        var old = SelectObject(mem, bmp);
-        BitBlt(mem, 0, 0, w, h, screen, x, y, 0x00CC0020 /*SRCCOPY*/);
-
-        var bi = new BitmapInfoHeader
-        {
-            Size = 40, Width = w, Height = -h, /* top-down */ Planes = 1, BitCount = 32, Compression = 0,
-        };
-        var bytes = new byte[stride * h];
-        GetDIBits(mem, bmp, 0, h, bytes, ref bi, 0 /*DIB_RGB_COLORS*/);
-
-        SelectObject(mem, old);
-        DeleteObject(bmp);
-        DeleteDC(mem);
-        ReleaseDC(IntPtr.Zero, screen);
-        return bytes;
-    }
-
-    private static void SaveBgra(byte[] bgra, int w, int h, int stride, string name)
-    {
-        // BGRA → PNG:复制到非托管内存后经 Bitmap 构造落盘
-        var ptr = Marshal.AllocHGlobal(bgra.Length);
-        try
-        {
-            Marshal.Copy(bgra, 0, ptr, bgra.Length);
-            using var image = new Avalonia.Media.Imaging.Bitmap(
-                Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul,
-                ptr, new PixelSize(w, h), new Vector(96, 96), stride);
-            image.Save(Path.Combine(Path.GetTempPath(), name + ".png"));
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(ptr);
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint { public int X; public int Y; }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BitmapInfoHeader
-    {
-        public int Size; public int Width; public int Height; public short Planes;
-        public short BitCount; public int Compression; public int SizeImage;
-        public int XPelsPerMeter; public int YPelsPerMeter; public int ClrUsed; public int ClrImportant;
-    }
-
-    [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref NativePoint point);
-    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int w, int h);
-    [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
-    [DllImport("gdi32.dll")] private static extern bool BitBlt(IntPtr hdc, int x, int y, int w, int h, IntPtr srcDc, int sx, int sy, int rop);
-    [DllImport("gdi32.dll")] private static extern int GetDIBits(IntPtr hdc, IntPtr bmp, int start, int lines, byte[] buffer, ref BitmapInfoHeader bi, int usage);
-    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
-    [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr hdc);
 
     /// <summary>等歌词真正到达再继续(见调用点注释:固定帧数 RunFrames 对异步回填是边界竞态)。
     /// 上限 maxFrames 帧只是保险,超时也继续,不改变探针语义。</summary>

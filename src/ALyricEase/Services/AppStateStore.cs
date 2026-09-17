@@ -39,6 +39,15 @@ public sealed class AppStateStore
     /// <summary>最近播放列表发生变化；播放器和页面均在 UI 线程使用。</summary>
     public event Action? RecentSongsChanged;
 
+    /// <summary>
+    /// 影响渲染的开关（动态背景等）发生变化。正在显示的界面据此立刻改绘 ——
+    /// 这些开关只改"怎么画"，不会让状态失效，所以不走保存/重载那条路。
+    /// </summary>
+    public event Action? VisualEffectsChanged;
+
+    /// <summary>由设置项的 setter 调用（见 SettingsViewModel）。</summary>
+    public void NotifyVisualEffectsChanged() => VisualEffectsChanged?.Invoke();
+
     /// <summary>主窗口常规态宽度(DIP);null = 从未记录过。</summary>
     public double? WindowWidth { get; set; }
 

@@ -17,16 +17,22 @@ namespace ALyricEase.Infrastructure;
 /// 与 <see cref="Views.ProgressRenderAnimator"/> 的自续订循环是同一类问题(同一个项目里已修过一次),
 /// 区别只是那条循环是自己写的、这条是框架主题动画,但**框架同样不会替你看窗口状态**。
 ///
-/// 门控只覆盖"宿主不可显示"(最小化/隐藏)。可见时的动画成本是正常 UI 成本,不在本类职责内。
+/// 门控覆盖两类"白跑":①宿主不可显示(最小化/隐藏);②控件自己没被显示(含祖先 IsVisible=false)。
 /// 判定口径与 `ProgressRenderAnimator.IsHostPresentable` 保持一致:
 /// `TopLevel.IsVisible` 且非 `WindowState.Minimized`
 /// (⚠️ 最小化时 `Window.IsVisible` 仍然是 `true`,只看它不够)。
 ///
-/// 为什么**不**再判"控件自身/祖先是否可见"(实测过,不需要):
-/// 应用里"提示条不显示"的真实状态是它自己那层容器被 `IsVisible="{Binding ...}"` 隐藏 —— 实测 0.00%,
-/// Avalonia 对自身不可见的控件本就不再产生合成成本;而导航换页时页面是**离开视觉树**
-/// (见 <see cref="ReusablePageViewTemplate"/>),不是靠隐藏留下来。
-/// ⇒ 只看 TopLevel 已覆盖所有实际会发生的状态,别为一个不存在的场景引入跨层订阅。
+/// ⚠ **2026-09-17 更正**(原注释写着"不再判控件自身可见性,实测过,不需要"——那次测量不成立):
+/// 不确定进度条的循环动画**一旦跑起来过**,把外层容器 `IsVisible` 置 false **不会停它**。
+/// 同进程三态配对实测(歌单页·可见,300 行,每态两个 8s 窗口):
+///   隐藏 + 动画开 = **4.83%** 单核(每 8s 分配 7.2MB,与"可见+动画"同款指纹);
+///   可见 + 动画开 = 5.61% / 4.25%;
+///   可见 + 动画关 = 0.39% / 0.19%;
+///   从未实化     = 0.39%。
+/// ⇒ "不可见就不产生成本"**只在从未实化时成立**;Avalonia 对隐藏但仍挂在视觉树上的控件
+/// 照旧驱动动画时钟(与"最小化时照转"是同一条机理)。这正是用户报的
+/// "在歌单页什么都不做也有 CPU":提示条只要出现过一次,之后即使已隐藏也一直空转,
+/// 直到页面离开视觉树。所以门控必须把"控件自己是否被有效显示"也计进来。
 ///
 /// 用法:`&lt;ProgressBar IsIndeterminate="True" infra:IndeterminateAnimationGate.IsActive="True" /&gt;`
 /// </summary>
@@ -62,6 +68,12 @@ public static class IndeterminateAnimationGate
 
         /// <summary>正在由本类写 <c>IsIndeterminate</c>:此时收到的变更通知不能当成"用户改了绑定值"。</summary>
         public bool Suppressing;
+
+        /// <summary>已订阅 <c>IsVisibleProperty</c> 的自身+祖先(订阅集必须记住才能在脱离时解干净)。</summary>
+        public readonly List<Visual> Watched = [];
+
+        /// <summary>祖先链上任意一层 IsVisible 变化 → 重算该不该转。</summary>
+        public EventHandler<AvaloniaPropertyChangedEventArgs>? VisibilityHandler;
     }
 
     private static void OnIsActiveChanged(ProgressBar bar, AvaloniaPropertyChangedEventArgs args)
@@ -91,8 +103,9 @@ public static class IndeterminateAnimationGate
 
     private static void OnBarPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
     {
-        if (sender is not ProgressBar bar || args.Property != ProgressBar.IsIndeterminateProperty) return;
-        if (!States.TryGetValue(bar, out var state) || state.Suppressing) return;
+        if (sender is not ProgressBar bar || !States.TryGetValue(bar, out var state)) return;
+        if (args.Property != ProgressBar.IsIndeterminateProperty) return;
+        if (state.Suppressing) return;
         state.Desired = args.GetNewValue<bool>();       // 绑定自己改了值 ⇒ 记下来,等可见时还原
     }
 
@@ -115,16 +128,35 @@ public static class IndeterminateAnimationGate
     private static void Subscribe(ProgressBar bar, GateState state)
     {
         state.TopLevel = TopLevel.GetTopLevel(bar);
-        if (state.TopLevel is null) return;
-
-        state.HostHandler ??= (_, args) =>
+        if (state.TopLevel is not null)
         {
-            // 只看这两个:窗口最小化/隐藏是唯一会让"动画白跑"的状态变化。
-            if (args.Property == Visual.IsVisibleProperty || args.Property == Window.WindowStateProperty)
-                Apply(bar, state);
+            state.HostHandler ??= (_, args) =>
+            {
+                // 窗口最小化/隐藏是"宿主不可显示"的两种状态变化。
+                if (args.Property == Visual.IsVisibleProperty || args.Property == Window.WindowStateProperty)
+                    Apply(bar, state);
+            };
+            state.TopLevel.PropertyChanged -= state.HostHandler;
+            state.TopLevel.PropertyChanged += state.HostHandler;
+        }
+
+        // 控件自己 + **全部祖先**的 IsVisible:应用里"提示条不显示"是把外层容器绑成 false,
+        // 控件自己 IsVisible 仍是 true,而 IsEffectivelyVisible 在 Avalonia 12 没有可订阅的公开属性
+        // (只有 getter)⇒ 只能把整条链订阅下来,任何一层变了就重算。
+        // 订阅集必须显式记住:DetachedFromVisualTree 之后祖先链已经断了,靠 GetVisualParent
+        // 回走是收不回来的 —— 而那些祖先(壳层/窗口)比页面活得久,漏解就是真实泄漏。
+        state.VisibilityHandler ??= (_, args) =>
+        {
+            if (args.Property == Visual.IsVisibleProperty) Apply(bar, state);
         };
-        state.TopLevel.PropertyChanged -= state.HostHandler;
-        state.TopLevel.PropertyChanged += state.HostHandler;
+        if (state.Watched.Count == 0)
+        {
+            for (Visual? node = bar; node is not null; node = node.GetVisualParent())
+            {
+                node.PropertyChanged += state.VisibilityHandler;
+                state.Watched.Add(node);
+            }
+        }
     }
 
     private static void Unsubscribe(ProgressBar bar, GateState state)
@@ -132,6 +164,11 @@ public static class IndeterminateAnimationGate
         if (state.TopLevel is not null && state.HostHandler is not null)
             state.TopLevel.PropertyChanged -= state.HostHandler;
         state.TopLevel = null;
+
+        if (state.VisibilityHandler is not null)
+            foreach (var node in state.Watched)
+                node.PropertyChanged -= state.VisibilityHandler;
+        state.Watched.Clear();
     }
 
     private static void Apply(ProgressBar bar, GateState state)
@@ -141,7 +178,12 @@ public static class IndeterminateAnimationGate
         var presentable = topLevel is not null
                           && topLevel.IsVisible
                           && (topLevel is not Window window || window.WindowState != WindowState.Minimized);
-        SetSuppressed(bar, state, presentable && state.Desired);
+        // ⚠ 还要看**控件自己有没有被显示**(含祖先)。2026-09-17 实测:一条 3px 不确定进度条
+        // 只要动画跑起来过,把外层 IsVisible 置 false **不会停它** —— 隐藏态仍吃 4.83% 单核
+        // (与"可见+动画"同量级,每 8s 同样分配 7.2MB),而把它 IsIndeterminate 置 false 后
+        // 立刻回到 0.19%~0.39%;从未显示过时是 0.39%。⇒ "不可见就不产生成本"只在**从未实化**时成立。
+        var shown = bar.IsEffectivelyVisible;
+        SetSuppressed(bar, state, presentable && shown && state.Desired);
     }
 
     /// <summary>本类自己写 <c>IsIndeterminate</c> 时必须打标记,否则会被

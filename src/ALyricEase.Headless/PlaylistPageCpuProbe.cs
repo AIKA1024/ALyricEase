@@ -166,6 +166,26 @@ internal static class PlaylistPageCpuProbe
             flatRows.Add(await CaptureAsync(process, window, view, "歌单页·底部", false, round));
             flatRows.Add(await CaptureAsync(process, window, view, "歌单页·底部", true, round));
 
+            // ---------- 场景 5a:滚到"接近底部但不在补页区"—— 单变量切分 ----------
+            // 底部那一态有两个自变量:①滚得远(实化行更多);②remaining<500,OnTracksScrollChanged
+            // 会打一次 LoadMoreAsync。把位置退到 remaining>1200 再量,就能把②单独摘出来看。
+            var nearBottom = Math.Max(0, bottom - 1700);
+            scroller.Offset = new(0, nearBottom);
+            await DrainAsync(SettleMs);
+            flatRows.Add(await CaptureAsync(process, window, view, "歌单页·近底(不补页)", false, round));
+            Log($"[pl-cpu] 近底位置: offset={scroller.Offset.Y:F0} " +
+                $"剩余={scroller.Extent.Height - scroller.Offset.Y - scroller.Viewport.Height:F0}px " +
+                $"补页中={vm.IsLoadingMore} (>500 才不会触发补页分支)");
+
+            scroller.Offset = new(0, bottom);
+            await DrainAsync(SettleMs);
+
+            // ---------- 场景 5b:静止稳定性 —— "什么都不做"时页面到底在不在变 ----------
+            // 可见页面的 CPU 不是 0 时只有两种可能:①内容在动(两帧像素差 > 0,去找动画源);
+            // ②空转重绘(像素完全一致却仍在出帧,去找无谓的失效源)。两条路的修法完全不同,
+            // 所以先把这一刀切开,别拿 CPU 读数直接猜动画。
+            await LogStabilityAsync(window, scroller, view, vm);
+
             // ---------- 场景 6:补页提示条(IsIndeterminate 的 ProgressBar)----------
             // 这条动画只要控件可见就会一直跑,与"窗口在不在渲染"无关,是"最小化后仍有零点几个
             // 百分点"的候选解释之一。单独量一次,避免与封面写盘的开销混为一谈。
@@ -223,6 +243,75 @@ internal static class PlaylistPageCpuProbe
         Log("[pl-cpu] 完成");
         return 0;
     }
+
+    /// <summary>
+    /// 静止稳定性:在"歌单页·底部"这一态上连采 2 秒,看滚动状态/实化行数/视觉节点数有没有漂移,
+    /// 以及首尾两帧的像素差。三者合起来能把"有 CPU"拆成:布局自激(状态在漂)、真动画(像素差大)、
+    /// 空转重绘(状态与像素都不变,却仍在出帧)。
+    /// ⚠ 依赖抓屏,窗口必须先置顶 —— 被别的窗口盖住时 BitBlt 抓到的是遮挡物,像素差无意义。
+    /// </summary>
+    private static async Task LogStabilityAsync(
+        Window window, ScrollViewer scroller, PlaylistView view, PlaylistViewModel vm)
+    {
+        window.Topmost = true;
+        window.Activate();
+        await DrainAsync(400);
+
+        // 数 ScrollChanged:滚动位置静止时它本不该触发。若这里在 2 秒内刷出几十上百次,
+        // 说明"页面自身在改布局"——PlaylistView 的处理器会在 remaining<500 时打 LoadMoreAsync,
+        // 而 LoadMore 收尾会切 IsLoadingMore(±40px 布局) ⇒ 又能触发下一次 ScrollChanged。
+        var scrollEvents = 0;
+        var scrollSamples = new List<string>();
+        void OnScroll(object? sender, ScrollChangedEventArgs args)
+        {
+            scrollEvents++;
+            if (scrollSamples.Count < 6)
+                scrollSamples.Add($"Δoffset={args.OffsetDelta.Y:+0.0;-0.0;0} " +
+                                  $"Δextent={args.ExtentDelta.Y:+0.0;-0.0;0} " +
+                                  $"Δviewport={args.ViewportDelta.Y:+0.0;-0.0;0}");
+        }
+
+        scroller.ScrollChanged += OnScroll;
+        var offsets = new List<double>();
+        var extents = new List<double>();
+        var maximums = new List<double>();
+        var rows = new List<int>();
+        var nodes = new List<int>();
+        for (var index = 0; index < 10; index++)
+        {
+            offsets.Add(scroller.Offset.Y);
+            extents.Add(scroller.Extent.Height);
+            maximums.Add(scroller.ScrollBarMaximum.Y);
+            rows.Add(CountRows(view));
+            nodes.Add(CountNodes(view));
+            await DrainAsync(200);
+        }
+
+        scroller.ScrollChanged -= OnScroll;
+        Log($"[pl-cpu] 静止稳定性(2s): ScrollChanged {scrollEvents} 次" +
+            (scrollSamples.Count > 0 ? " 前几次: " + string.Join(" | ", scrollSamples) : "") +
+            (scrollEvents > 20 ? " ⇒ 页面自己在反复改布局(滚轮静止却一直在滚)" : " ⇒ 无自激"));
+
+        var first = ScreenCapture.GrabClient(window);
+        await DrainAsync(500);
+        var second = ScreenCapture.GrabClient(window);
+        var diff = ScreenCapture.DiffRatio(first, second);
+
+        Log($"[pl-cpu] 静止稳定性(2s): offset {Spread(offsets)} extent {Spread(extents)} " +
+            $"最大值 {Spread(maximums)} 实化行 {SpreadInt(rows)} 节点 {SpreadInt(nodes)}");
+        Log($"[pl-cpu] 静止稳定性(2s): 两帧像素差={diff:F4} 画布={first.Width}x{first.Height} " +
+            $"⇒ {(double.IsNaN(diff) ? "抓屏失败" : diff <= 0.0005
+                ? "像素完全一致 ⇒ 空转重绘(有东西在请求帧,但没有可见变化)"
+                : "像素在变 ⇒ 有可见动画在跑")} 行={vm.Tracks.Count} 补页中={vm.IsLoadingMore}");
+
+        window.Topmost = false;
+    }
+
+    private static string Spread(List<double> values) =>
+        $"{values.Min():F1}~{values.Max():F1}(Δ{values.Max() - values.Min():F2})";
+
+    private static string SpreadInt(List<int> values) =>
+        $"{values.Min()}~{values.Max()}(Δ{values.Max() - values.Min()})";
 
     /// <summary>
     /// 封面出齐窗口:滚到底后窗口保持可见,每 500ms 采一次"已出图的 Image 数 / 图片总数"与解码图缓存,
@@ -377,12 +466,16 @@ internal static class PlaylistPageCpuProbe
         var state = $"state={window.WindowState},visible={window.IsVisible}";
 
         var before = SnapshotThreads(process);
+        var gcCounts = GcCounts();
+        var allocatedStart = GC.GetTotalAllocatedBytes(false);
         var cpuStart = process.TotalProcessorTime;
         var wallStart = Stopwatch.GetTimestamp();
         await DrainAsync(SampleMs);
         var wall = Stopwatch.GetElapsedTime(wallStart).TotalSeconds;
         process.Refresh();
         var cpu = (process.TotalProcessorTime - cpuStart).TotalSeconds;
+        var allocated = (GC.GetTotalAllocatedBytes(false) - allocatedStart) / 1024.0 / 1024.0;
+        var gcDelta = GcDelta(gcCounts);
         var after = SnapshotThreads(process);
 
         var threads = DescribeThreads(before, after, wall);
@@ -390,7 +483,8 @@ internal static class PlaylistPageCpuProbe
             realizedRows, total, nodes, images, cacheStats.Items, cacheStats.Bytes, state, threads);
         Log($"[pl-cpu] R{round} {scene,-14} {(minimized ? "最小化" : "可见 "),-4} " +
             $"CPU={row.Cpu,6:F2}% | 实化行={realizedRows,4}/{total} 视觉节点={nodes,6} 图片={images,4} " +
-            $"解码图={cacheStats.Items,4}项/{cacheStats.Bytes / 1024.0 / 1024.0:F1}MB | {state}");
+            $"解码图={cacheStats.Items,4}项/{cacheStats.Bytes / 1024.0 / 1024.0:F1}MB " +
+            $"| 分配={allocated,6:F1}MB GC={gcDelta} | {state}");
         Log($"[pl-cpu]      线程: {threads}");
         return row;
     }
@@ -411,6 +505,16 @@ internal static class PlaylistPageCpuProbe
     {
         try { return view.GetVisualDescendants().OfType<Image>().Count(); }
         catch { return -1; }
+    }
+
+    /// <summary>当前三代 GC 的收集次数。用来把"窗口 CPU 高"拆成"真在干活"还是"垃圾堆着、GC 来收"。</summary>
+    private static (int Gen0, int Gen1, int Gen2) GcCounts() =>
+        (GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
+
+    private static string GcDelta((int Gen0, int Gen1, int Gen2) before)
+    {
+        var now = GcCounts();
+        return $"0:+{now.Gen0 - before.Gen0} 1:+{now.Gen1 - before.Gen1} 2:+{now.Gen2 - before.Gen2}";
     }
 
     private static Dictionary<int, TimeSpan> SnapshotThreads(Process process)

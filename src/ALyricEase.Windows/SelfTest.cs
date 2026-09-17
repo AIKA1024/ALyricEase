@@ -206,6 +206,141 @@ internal static class SelfTest
         }
     }
 
+    /// <summary>音频输出设备真机自测:枚举→切换→无效 Id 拒绝→null 复位。
+    /// 需要真实音频子系统(至少一块渲染设备);不联网不播流,只验证 WinRT 设备语义。</summary>
+    public static async Task RunAudioDeviceTestAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var services = new ServiceCollection();
+        services.AddSingleton<DispatcherService>();
+        await using var sp = services.BuildServiceProvider();
+        var player = new WindowsMediaPlayer(sp.GetRequiredService<DispatcherService>());
+
+        var devices = await player.RefreshOutputDevicesAsync();
+        Console.WriteLine($"[audiodev] 枚举到 {devices.Count} 个输出设备:");
+        foreach (var d in devices)
+            Console.WriteLine($"  {(d.IsDefault ? "*" : " ")} {d.Name}  id={d.Id[..Math.Min(48, d.Id.Length)]}...");
+
+        var ok = devices.Count > 0;
+        Console.WriteLine(ok ? "[audiodev] 枚举 OK" : "[audiodev] FAIL 未枚举到任何渲染设备");
+
+        if (ok)
+        {
+            // 切到第一个真实设备:必须成功且回读一致
+            var first = devices[0];
+            var switchOk = player.TrySetOutputDevice(first.Id)
+                           && player.OutputDeviceId == first.Id;
+            Console.WriteLine($"[audiodev] 切到「{first.Name}」 {(switchOk ? "OK" : "FAIL")}");
+            ok &= switchOk;
+
+            // 无效 Id(已拔出/伪造):必须拒绝且当前设备不变
+            var rejectOk = !player.TrySetOutputDevice("{0.0.0.00000000}.{DEADBEEF-0000-0000-0000-000000000000}")
+                           && player.OutputDeviceId == first.Id;
+            Console.WriteLine($"[audiodev] 无效 Id 拒绝 {(rejectOk ? "OK" : "FAIL")}");
+            ok &= rejectOk;
+
+            // null = 回系统默认:必须成功且回读为空
+            var resetOk = player.TrySetOutputDevice(null) && player.OutputDeviceId is null;
+            Console.WriteLine($"[audiodev] null 复位 {(resetOk ? "OK" : "FAIL")}");
+            ok &= resetOk;
+        }
+
+        Console.WriteLine(ok ? "[audiodev] 真机自测全部通过" : "[audiodev] 真机自测存在 FAIL");
+        Environment.ExitCode = ok ? 0 : 1;
+    }
+
+    /// <summary>交叉淡化真机自测:生成两段不同频率的正弦 WAV,验证
+    /// ① 单实例正常播放;② CrossfadeAudioPlayer 双 WinRT MediaPlayer 实例能同时发声(平台无互斥);
+    /// ③ 交叉切换后状态事件来自新实例、无错误;④ 硬切回落路径正常。听感(是否真的渐变)仍需人耳验收。</summary>
+    public static async Task RunXfadeTestAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var dir = Path.Combine(Path.GetTempPath(), "aly-xfade-test");
+        Directory.CreateDirectory(dir);
+        var fileA = WriteToneWav(Path.Combine(dir, "tone-440.wav"), 440.0, 8);
+        var fileB = WriteToneWav(Path.Combine(dir, "tone-660.wav"), 660.0, 8);
+        Console.WriteLine("[xfade] 已生成测试音源(440Hz/660Hz 各 8s)");
+
+        var backend1 = new WindowsMediaPlayer(new DispatcherService());
+        var backend2 = new WindowsMediaPlayer(new DispatcherService());
+        var wrapper = new CrossfadeAudioPlayer(backend1, () => backend2);
+        var errors = new List<string>();
+        wrapper.ErrorOccurred += (_, e) => errors.Add(e);
+
+        wrapper.Volume = 55;
+        wrapper.PlayUrl(fileA);
+        var started = false;
+        for (var i = 0; i < 100 && !started; i++)
+        {
+            await Task.Delay(100);
+            started = wrapper.State == PlaybackState.Playing;
+        }
+
+        Console.WriteLine(started
+            ? $"[xfade] A 段起播 OK(wrapper.State=Playing, dur={wrapper.DurationMs}ms)"
+            : "[xfade] FAIL A 段 10s 内未进入 Playing");
+        if (!started)
+        {
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        // 交叉切到 B 段:A 渐弱 B 渐强,总时长 1.5s
+        var swapped = await wrapper.TryCrossfadePlayAsync(fileB, 1500);
+        Console.WriteLine(swapped ? "[xfade] 交叉切换被接受" : "[xfade] FAIL 交叉切换被拒");
+        await Task.Delay(2500);
+
+        var stillPlaying = wrapper.State == PlaybackState.Playing;
+        Console.WriteLine(stillPlaying
+            ? $"[xfade] 切换后仍 Playing(pos={wrapper.PositionMs}ms,dur={wrapper.DurationMs}ms)"
+            : "[xfade] FAIL 切换后掉出 Playing");
+        Console.WriteLine(errors.Count == 0
+            ? "[xfade] 无错误事件"
+            : $"[xfade] FAIL 错误事件: {string.Join("; ", errors)}");
+
+        // 硬切回落:非交叉状态下 PlayUrl 直接换源
+        wrapper.PlayUrl(fileA);
+        await Task.Delay(500);
+        var hardOk = wrapper.State == PlaybackState.Playing;
+        Console.WriteLine(hardOk ? "[xfade] 硬切回落 OK" : "[xfade] FAIL 硬切后未播放");
+
+        wrapper.Stop();
+        Environment.ExitCode = swapped && stillPlaying && errors.Count == 0 && hardOk ? 0 : 1;
+    }
+
+    /// <summary>写一段 16bit 单声道 44.1kHz 正弦波 WAV(两端 10ms 淡入淡出防爆音)。</summary>
+    private static string WriteToneWav(string path, double freq, double seconds)
+    {
+        const int sampleRate = 44100;
+        var total = (int)(sampleRate * seconds);
+        using var ms = new MemoryStream();
+        using (var w = new BinaryWriter(ms))
+        {
+            w.Write("RIFF"u8);
+            w.Write(36 + total * 2);
+            w.Write("WAVE"u8);
+            w.Write("fmt "u8);
+            w.Write(16);
+            w.Write((short)1); // PCM
+            w.Write((short)1); // mono
+            w.Write(sampleRate);
+            w.Write(sampleRate * 2);
+            w.Write((short)2);
+            w.Write((short)16);
+            w.Write("data"u8);
+            w.Write(total * 2);
+            for (var i = 0; i < total; i++)
+            {
+                var t = i / (double)sampleRate;
+                var fade = Math.Min(1.0, Math.Min(i / 441.0, (total - i) / 441.0)); // ±10ms
+                w.Write((short)(Math.Sin(2 * Math.PI * freq * t) * 0.6 * fade * short.MaxValue));
+            }
+        }
+
+        File.WriteAllBytes(path, ms.ToArray());
+        return path;
+    }
+
     public static async Task RunAsync()
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;

@@ -92,6 +92,12 @@ public sealed class AppStateStore
     /// <summary>交叉淡化时长(秒)。</summary>
     public double CrossfadeSeconds { get; set; } = 4;
 
+    /// <summary>音频输出设备后端标识(null = 跟随系统默认设备)。</summary>
+    public string? AudioOutputDeviceId { get; set; }
+
+    /// <summary>音频输出设备展示名(设备 Id 失配时按名字二次匹配,也用于"已保存设备未连接"的提示)。</summary>
+    public string? AudioOutputDeviceName { get; set; }
+
     /// <summary>播放模式(0=列表循环 1=单曲循环 2=随机播放)。</summary>
     public int PlaybackMode { get; set; }
 
@@ -154,6 +160,8 @@ public sealed class AppStateStore
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
             Crossfade = dto.Crossfade ?? false;
             CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;
+            AudioOutputDeviceId = NormalizeDeviceText(dto.AudioOutputDeviceId);
+            AudioOutputDeviceName = NormalizeDeviceText(dto.AudioOutputDeviceName);
             PlaybackMode = dto.PlaybackMode is >= 0 and <= 2 ? dto.PlaybackMode.Value : 0;
             Volume = Math.Clamp(dto.Volume ?? 80, 0, 100);
             MusicCacheMaximumSizeMb = MusicCacheService.NormalizeMaximumSizeMb(
@@ -248,6 +256,8 @@ public sealed class AppStateStore
                 LegacyPlaybackControl = LegacyPlaybackControl,
                 Crossfade = Crossfade,
                 CrossfadeSeconds = CrossfadeSeconds,
+                AudioOutputDeviceId = AudioOutputDeviceId,
+                AudioOutputDeviceName = AudioOutputDeviceName,
                 PlaybackMode = PlaybackMode,
                 Volume = Volume,
                 MusicCacheMaximumSizeMb = MusicCacheMaximumSizeMb,
@@ -292,6 +302,10 @@ public sealed class AppStateStore
     }
 
     private void StopDeferredSaveTimer() => _deferredSaveTimer?.Stop();
+
+    /// <summary>设备字段的空串一律归一为 null(= 未选择 / 跟随系统默认设备)。</summary>
+    private static string? NormalizeDeviceText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>记录一次真正开始的播放，并按累计次数降序、同次数最近优先排列。</summary>
     public void RecordRecentSong(Song song)

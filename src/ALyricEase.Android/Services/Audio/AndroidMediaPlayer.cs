@@ -54,8 +54,10 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
     try
     {
       _prepared = true;
+      // 准备完成才允许 SetPreferredDevice(见 ApplyPreferredDevice 的状态说明)
+      var routed = _outputDevice is null ? true : ApplyPreferredDevice();
       _mp.Start();
-      Log("Prepared, started streaming");
+      Log($"Prepared, started streaming (device={_outputDeviceId ?? "system default"}, routed={routed})");
     }
     catch (Exception ex)
     {
@@ -141,6 +143,128 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
   }
 
   private int _volume;
+
+  // ---- 音频输出设备(AudioManager.GetDevices + MediaPlayer.SetPreferredDevice,均需 API 23) ----
+
+  private IReadOnlyDictionary<string, global::Android.Media.AudioDeviceInfo> _deviceCache =
+      new Dictionary<string, global::Android.Media.AudioDeviceInfo>(StringComparer.Ordinal);
+  private IReadOnlyList<AudioOutputDevice> _outputDevices = Array.Empty<AudioOutputDevice>();
+  private global::Android.Media.AudioDeviceInfo? _outputDevice;
+  private string? _outputDeviceId;
+
+  /// <summary>API 23 才有 GetDevices/SetPreferredDevice;更老的系统沿用系统默认输出。</summary>
+  public bool SupportsOutputDeviceSelection =>
+      OperatingSystem.IsAndroidVersionAtLeast(23) && TryGetAudioManager() is not null;
+
+  public IReadOnlyList<AudioOutputDevice> OutputDevices => _outputDevices;
+
+  public string? OutputDeviceId => _outputDeviceId;
+
+  /// <summary>枚举本机输出设备(sink)。全同步本地调用,只是要拿 AudioManager 走 Context。</summary>
+  public Task<IReadOnlyList<AudioOutputDevice>> RefreshOutputDevicesAsync()
+  {
+    var manager = TryGetAudioManager();
+    if (manager is null || !OperatingSystem.IsAndroidVersionAtLeast(23))
+      return Task.FromResult<IReadOnlyList<AudioOutputDevice>>(Array.Empty<AudioOutputDevice>());
+
+    try
+    {
+      var infos = manager.GetDevices(global::Android.Media.GetDevicesTargets.Outputs) ?? [];
+      var list = new List<AudioOutputDevice>(infos.Length);
+      var map = new Dictionary<string, global::Android.Media.AudioDeviceInfo>(infos.Length, StringComparer.Ordinal);
+      foreach (var info in infos)
+      {
+        if (info is null || !info.IsSink) continue; // 只要输出端(sink)
+        var id = info.Id.ToString();
+        map[id] = info;
+        // ProductName 在部分机型上是空的,退化成类型名(如"扬声器"/"蓝牙设备")
+        var name = string.IsNullOrWhiteSpace(info.ProductName)
+            ? DescribeDeviceType(info.Type)
+            : info.ProductName!;
+        list.Add(new AudioOutputDevice(id, name, info.Type == global::Android.Media.AudioDeviceType.BuiltinSpeaker));
+      }
+
+      _deviceCache = map;
+      _outputDevices = list;
+      return Task.FromResult(_outputDevices);
+    }
+    catch (Exception ex)
+    {
+      Log($"RefreshOutputDevices failed: {ex.Message}");
+      _deviceCache = new Dictionary<string, global::Android.Media.AudioDeviceInfo>(StringComparer.Ordinal);
+      _outputDevices = Array.Empty<AudioOutputDevice>();
+      return Task.FromResult(_outputDevices);
+    }
+  }
+
+  public bool TrySetOutputDevice(string? deviceId)
+  {
+    if (string.IsNullOrEmpty(deviceId))
+    {
+      _outputDevice = null;
+      _outputDeviceId = null;
+      return ApplyPreferredDevice(); // 传 null 即请求回到系统默认路由
+    }
+
+    if (!_deviceCache.TryGetValue(deviceId, out var info)) return false; // 设备已断开
+    _outputDevice = info;
+    _outputDeviceId = deviceId;
+    return ApplyPreferredDevice();
+  }
+
+  /// <summary>把当前选中的设备贴到 MediaPlayer 上。
+  /// ⚠ MediaPlayer 在 Idle/Error 状态调用 SetPreferredDevice 可能抛 IllegalStateException,
+  /// 所以未 Prepare 完成时只记住偏好,等 OnPrepared 里再贴 —— 这也是"播放中切设备"能生效的原因:
+  /// SetPreferredDevice 在 Prepared/Started 状态是合法且会重新路由的。</summary>
+  private bool ApplyPreferredDevice()
+  {
+    if (!_prepared) return true; // 尚未准备:偏好已记住,OnPrepared 会应用
+
+    try
+    {
+      return _mp.SetPreferredDevice(_outputDevice);
+    }
+    catch (Exception ex)
+    {
+      Log($"SetPreferredDevice failed: {ex.Message}");
+      return false;
+    }
+  }
+
+  private static global::Android.Media.AudioManager? TryGetAudioManager()
+  {
+    try
+    {
+      return global::Android.App.Application.Context
+          .GetSystemService(global::Android.Content.Context.AudioService)
+          as global::Android.Media.AudioManager;
+    }
+    catch
+    {
+      return null;
+    }
+  }
+
+  /// <summary>设备类型的中文标签(ProductName 为空时的兜底名,也用于识别内置扬声器)。</summary>
+  private static string DescribeDeviceType(global::Android.Media.AudioDeviceType type) => type switch
+  {
+    global::Android.Media.AudioDeviceType.BuiltinSpeaker => "内置扬声器",
+    global::Android.Media.AudioDeviceType.BuiltinEarpiece => "听筒",
+    global::Android.Media.AudioDeviceType.WiredHeadset => "有线耳机",
+    global::Android.Media.AudioDeviceType.WiredHeadphones => "有线耳机",
+    global::Android.Media.AudioDeviceType.BluetoothA2dp => "蓝牙音频设备",
+    global::Android.Media.AudioDeviceType.BluetoothSco => "蓝牙通话设备",
+    global::Android.Media.AudioDeviceType.BleHeadset or global::Android.Media.AudioDeviceType.BleSpeaker => "蓝牙 LE 设备",
+    global::Android.Media.AudioDeviceType.UsbDevice or global::Android.Media.AudioDeviceType.UsbHeadset => "USB 音频设备",
+    global::Android.Media.AudioDeviceType.Hdmi => "HDMI 音频设备",
+    global::Android.Media.AudioDeviceType.LineAnalog => "模拟音频输出",
+    global::Android.Media.AudioDeviceType.LineDigital => "数字音频输出",
+    global::Android.Media.AudioDeviceType.AuxLine => "AUX 输出",
+    global::Android.Media.AudioDeviceType.HearingAid => "助听设备",
+    global::Android.Media.AudioDeviceType.Dock => "底座音频",
+    global::Android.Media.AudioDeviceType.FmTuner => "FM 调谐器",
+    _ => $"音频设备({type})",
+  };
 
   public int Volume
   {

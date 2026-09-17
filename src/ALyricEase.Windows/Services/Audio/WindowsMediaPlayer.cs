@@ -1,9 +1,13 @@
 #if WINDOWS
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
+using Windows.Devices.Enumeration;
 using Windows.Media.Core;
+using Windows.Media.Devices;
 using Windows.Media.Playback;
 
 namespace ALyricEase.Services.Audio;
@@ -25,6 +29,13 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
   private bool _hadContent;
   private long _lastPosMs = -1;
   private long _lastDurMs;
+
+  // 输出设备:只缓存 FindAllAsync 返回的 DeviceInformation 实例(见 RefreshOutputDevicesAsync 的说明)。
+  private IReadOnlyDictionary<string, DeviceInformation> _deviceCache =
+      new Dictionary<string, DeviceInformation>(StringComparer.Ordinal);
+  private IReadOnlyList<AudioOutputDevice> _outputDevices = Array.Empty<AudioOutputDevice>();
+  private DeviceInformation? _outputDevice;
+  private string? _outputDeviceId;
 
   public WindowsMediaPlayer(DispatcherService dispatcher)
   {
@@ -84,6 +95,106 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
     set => _mp.Volume = Math.Clamp(value, 0, 100) / 100.0; // MediaPlayer.Volume 是 0..1 的 double
   }
 
+  // ---- 音频输出设备 ----
+
+  public bool SupportsOutputDeviceSelection => true;
+
+  public IReadOnlyList<AudioOutputDevice> OutputDevices => _outputDevices;
+
+  public string? OutputDeviceId => _outputDeviceId;
+
+  /// <summary>枚举系统输出设备(DeviceClass.AudioRender)。两个坑:
+  /// ① <c>DeviceInformation.FindAllAsync</c> 是 WinRT 异步操作:在 STA(UI)线程上同步等它,
+  ///    完成回调没消息泵就永远不回来(死锁)⇒ 整段枚举丢到线程池(MTA)上等,回调用线程再落字段;
+  /// ② <c>MediaPlayer.AudioDevice</c> **只认 FindAllAsync 返回的实例**,用
+  ///    <c>DeviceInformation.CreateFromIdAsync</c> 自己造的对象喂进去不生效 ⇒ 必须缓存实例备切换。</summary>
+  public async Task<IReadOnlyList<AudioOutputDevice>> RefreshOutputDevicesAsync()
+  {
+    try
+    {
+      var (devices, cache) = await Task.Run(async () =>
+      {
+        string? defaultId = null;
+        try
+        {
+          // 默认设备 Id 是 {0.0.0.00000000}.{guid} 形式,DeviceInformation.Id 是
+          // \\?\SWD#MMDEVAPI#{...}#{...} 的复合串 ⇒ 只能做包含匹配。
+          defaultId = MediaDevice.GetDefaultAudioRenderId(AudioDeviceRole.Default);
+        }
+        catch
+        {
+          // 拿不到只是少了"系统默认"标注,枚举照常
+        }
+
+        var infos = await DeviceInformation.FindAllAsync(DeviceClass.AudioRender);
+        var list = new List<AudioOutputDevice>(infos.Count);
+        var map = new Dictionary<string, DeviceInformation>(infos.Count, StringComparer.Ordinal);
+        foreach (var info in infos)
+        {
+          map[info.Id] = info;
+          var isDefault = !string.IsNullOrEmpty(defaultId)
+                          && info.Id.Contains(defaultId, StringComparison.OrdinalIgnoreCase);
+          list.Add(new AudioOutputDevice(info.Id, info.Name, isDefault));
+        }
+
+        return (Devices: (IReadOnlyList<AudioOutputDevice>)list,
+                Cache: (IReadOnlyDictionary<string, DeviceInformation>)map);
+      }).ConfigureAwait(true);
+
+      _deviceCache = cache;
+      _outputDevices = devices;
+      return _outputDevices;
+    }
+    catch (Exception)
+    {
+      // 枚举失败(无音频子系统/服务被禁)按"没有设备"处理,不抛给 UI
+      _deviceCache = new Dictionary<string, DeviceInformation>(StringComparer.Ordinal);
+      _outputDevices = Array.Empty<AudioOutputDevice>();
+      return _outputDevices;
+    }
+  }
+
+  public bool TrySetOutputDevice(string? deviceId)
+  {
+    try
+    {
+      if (string.IsNullOrEmpty(deviceId))
+      {
+        // null = 回到系统默认设备
+        _mp.AudioDevice = null;
+        _outputDevice = null;
+        _outputDeviceId = null;
+        return true;
+      }
+
+      if (!_deviceCache.TryGetValue(deviceId, out var info)) return false; // 设备已拔出/未枚举到
+      _mp.AudioDevice = info;
+      _outputDevice = info;
+      _outputDeviceId = deviceId;
+      return true;
+    }
+    catch (Exception)
+    {
+      return false; // 设备被占用/后端拒绝:保持原设备
+    }
+  }
+
+  /// <summary>换 Source 前把已选设备再贴一次 —— MediaPlayer 换源后有可能回到默认设备。</summary>
+  private void ReapplyOutputDevice()
+  {
+    if (_outputDevice is null) return;
+    try
+    {
+      _mp.AudioDevice = _outputDevice;
+    }
+    catch
+    {
+      // 设备中途被拔:退回默认设备播放,好过整首播不出来
+      _outputDevice = null;
+      _outputDeviceId = null;
+    }
+  }
+
   public event EventHandler? StateChanged;
 
   public event EventHandler<long>? PositionChanged;
@@ -103,6 +214,7 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
           : new Uri(url);
       _mediaSource = MediaSource.CreateFromUri(sourceUri);
       _mp.Source = _mediaSource;
+      ReapplyOutputDevice();
       _hadContent = true;
       _lastPosMs = -1;
       _lastDurMs = 0;

@@ -48,6 +48,34 @@ class Program
       return;
     }
 
+    if (args.Length > 0 && args[0] == "--selftest-audiodev")
+    {
+      // WinRT 枚举完成回调/Posted 动作需要属主线程泵队列,与 --selftest-play 同款等待方式
+      var task = SelfTest.RunAudioDeviceTestAsync();
+      while (!task.IsCompleted)
+      {
+        Dispatcher.UIThread.RunJobs();
+        Thread.Sleep(5);
+      }
+
+      task.GetAwaiter().GetResult();
+      return;
+    }
+
+    if (args.Length > 0 && args[0] == "--selftest-xfade")
+    {
+      // 交叉淡化真机自测:生成两段 WAV,验证双 WinRT MediaPlayer 同时发声与切换语义
+      var xfadeTask = SelfTest.RunXfadeTestAsync();
+      while (!xfadeTask.IsCompleted)
+      {
+        Dispatcher.UIThread.RunJobs();
+        Thread.Sleep(5);
+      }
+
+      xfadeTask.GetAwaiter().GetResult();
+      return;
+    }
+
     if (args.Length > 0 && args[0] == "--selftest")
     {
       SelfTest.RunAsync().GetAwaiter().GetResult();
@@ -75,10 +103,16 @@ class Program
     services.AddSingleton<MusicCacheService>();
     services.AddSingleton<IPlatformShareService, WindowsShareService>();
 #if ANDROID
-    services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
+    services.AddSingleton<AndroidMediaPlayer>();
+    services.AddSingleton<IAudioPlayer>(sp => new CrossfadeAudioPlayer(
+        sp.GetRequiredService<AndroidMediaPlayer>(),
+        () => ActivatorUtilities.CreateInstance<AndroidMediaPlayer>(sp)));
     services.AddSingleton<ISmtcService, SmtcServiceStub>();
 #else
-    services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
+    services.AddSingleton<WindowsMediaPlayer>();
+    services.AddSingleton<IAudioPlayer>(sp => new CrossfadeAudioPlayer(
+        sp.GetRequiredService<WindowsMediaPlayer>(),
+        () => ActivatorUtilities.CreateInstance<WindowsMediaPlayer>(sp)));
     services.AddSingleton<ISmtcService, SmtcService>();
 #endif
     services.AddSingleton<LyricViewModel>();

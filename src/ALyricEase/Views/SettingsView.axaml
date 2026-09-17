@@ -66,18 +66,24 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
     </Style>
-    <!-- 可展开行头按钮:透明铺满卡片,仅承载整行点击开合 -->
-    <Style Selector="Button.row-toggle">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
+    <!-- 设置卡片式 Expander:外观与 setting-card 一致,展开箭头/动画用内置实现 -->
+    <Style Selector="Expander.setting-expander">
+      <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="MinHeight" Value="64" />
       <Setter Property="Padding" Value="16,10" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
-    <Style Selector="Button.row-toggle /template/ ContentPresenter#PART_ContentPresenter">
+    <!-- 行头整行是内置的展开切换钮:压掉默认底色与悬停变色,保持卡片同色 -->
+    <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Expander.setting-expander /template/ Border#ToggleButtonBackground">
       <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="Button.row-toggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="Expander.setting-expander /template/ Border#ToggleButtonBackground:pointerover">
       <Setter Property="Background" Value="Transparent" />
     </Style>
     <!-- 展开指示 chevron:展开时旋转 180° 朝上(与侧栏分组箭头同款过渡) -->
@@ -94,22 +100,6 @@
     </Style>
     <Style Selector="TextBlock.setting-chevron.expanded">
       <Setter Property="RenderTransform" Value="rotate(-180deg)" />
-    </Style>
-    <!-- 展开内容:MaxHeight+Opacity 过渡收展(同侧栏分组折叠) -->
-    <Style Selector="StackPanel.expand-content">
-      <Setter Property="MaxHeight" Value="0" />
-      <Setter Property="Opacity" Value="0" />
-      <Setter Property="ClipToBounds" Value="True" />
-      <Setter Property="Transitions">
-        <Transitions>
-          <DoubleTransition Property="MaxHeight" Duration="0:0:0.2" Easing="CubicEaseOut" />
-          <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut" />
-        </Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="StackPanel.expand-content.expanded">
-      <Setter Property="MaxHeight" Value="200" />
-      <Setter Property="Opacity" Value="1" />
     </Style>
   </UserControl.Styles>
 
@@ -195,12 +185,29 @@
       <!-- ============ 播放 ============ -->
       <TextBlock Classes="section-header" Text="播放" />
 
+      <!-- 音频输出设备:下拉即改即生效并落盘;后端不支持(老安卓/无头)时隐藏下拉,只留说明 -->
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <Grid ColumnDefinitions="Auto,*,Auto">
+        <Grid ColumnDefinitions="Auto,*">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconVolume}" />
-          <TextBlock Grid.Column="1" Classes="setting-title" Text="音频输出设备" />
-          <Button Grid.Column="2" Classes="setting-action" Content="选择设备"
-                  Command="{Binding SelectAudioDeviceCommand}" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Classes="setting-title" Text="音频输出设备" />
+                <TextBlock Classes="about-link" Text="关于该选项"
+                           ToolTip.Tip="选择用哪个设备播放声音,选中立即生效并记住。设备未连接(拔掉耳机/换 USB 口)时自动回到系统默认设备。" />
+              </StackPanel>
+              <Button Grid.Column="1" Classes="setting-action" Content="刷新"
+                      IsVisible="{CompiledBinding AudioDeviceSupported}"
+                      Command="{CompiledBinding RefreshAudioDevicesCommand}" />
+            </Grid>
+            <ComboBox Height="32" Margin="0,8,0,0" HorizontalAlignment="Stretch" MaxWidth="440"
+                      IsVisible="{CompiledBinding AudioDeviceSupported}"
+                      ItemsSource="{CompiledBinding AudioDeviceOptions}"
+                      SelectedIndex="{CompiledBinding AudioDeviceIndex, Mode=TwoWay}" />
+            <TextBlock IsVisible="{CompiledBinding HasAudioDeviceHint}" Text="{CompiledBinding AudioDeviceHint}"
+                       FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"
+                       Margin="0,6,0,0" />
+          </StackPanel>
         </Grid>
       </Border>
 
@@ -319,41 +326,30 @@
       <!-- ============ 关于 ============ -->
       <TextBlock Classes="section-header" Text="关于" />
 
-      <Border Classes="setting-card" Margin="0,0,0,8" Padding="0">
-        <StackPanel>
-          <!-- 行头整行可点;chevron 用兄弟元素右对齐(不依赖按钮内容拉伸) -->
-          <Panel>
-            <Button Classes="row-toggle" Command="{Binding ToggleOpenSourceCommand}">
-              <Grid ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Classes="setting-icon" FontFamily="{DynamicResource LyricEaseIconsOriginal}"
-                           Text="{DynamicResource IconCode}" />
-                <TextBlock Grid.Column="1" Classes="setting-title" Text="开源项目引用" />
-                <!-- 占位:标题过长时不顶到 chevron 下方 -->
-                <TextBlock Grid.Column="2" MinWidth="24" />
-              </Grid>
-            </Button>
-            <TextBlock Classes="setting-chevron" HorizontalAlignment="Right" Margin="0,0,18,0"
-                       IsHitTestVisible="False" Text="{DynamicResource IconChevronDown}"
-                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10"
-                       Classes.expanded="{Binding OpenSourceExpanded}" />
-          </Panel>
-          <!-- 展开内容:开源仓库链接,点击在系统浏览器打开 -->
-          <StackPanel Classes="expand-content" Classes.expanded="{Binding OpenSourceExpanded}"
-                      Margin="36,0,16,10">
-            <ItemsControl ItemsSource="{Binding OpenSourceProjects}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:OpenSourceProject">
-                  <Button Classes="link-button" Margin="0,6,0,0"
-                          Command="{Binding $parent[views:SettingsView].((vm:SettingsViewModel)DataContext).OpenProjectCommand}"
-                          CommandParameter="{Binding}">
-                    <TextBlock Text="{Binding Name}" FontSize="13" TextDecorations="Underline" />
-                  </Button>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-        </StackPanel>
-      </Border>
+      <!-- 开源项目引用:内置 Expander,整行点击开合;IsExpanded 双向绑定 VM(记忆展开态) -->
+      <Expander Classes="setting-expander" IsExpanded="{Binding OpenSourceExpanded, Mode=TwoWay}">
+        <Expander.Header>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Classes="setting-icon" FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                       Text="{DynamicResource IconCode}" />
+            <TextBlock Grid.Column="1" Classes="setting-title" Text="开源项目引用" />
+            <!-- 占位:标题过长时不顶到 chevron 下方 -->
+            <TextBlock Grid.Column="2" MinWidth="24" />
+          </Grid>
+        </Expander.Header>
+        <!-- 展开内容:开源仓库链接,点击在系统浏览器打开;左缩进与标题对齐(Padding 16 + 20) -->
+        <ItemsControl Margin="20,0,0,6" ItemsSource="{Binding OpenSourceProjects}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:OpenSourceProject">
+              <Button Classes="link-button" Margin="0,6,0,0"
+                      Command="{Binding $parent[views:SettingsView].((vm:SettingsViewModel)DataContext).OpenProjectCommand}"
+                      CommandParameter="{Binding}">
+                <TextBlock Text="{Binding Name}" FontSize="13" TextDecorations="Underline" />
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Expander>
 
       <!-- APPEND -->
     </StackPanel>

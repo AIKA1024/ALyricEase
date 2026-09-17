@@ -665,9 +665,12 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     public async Task<bool> PlayAsync(Song? song)
         => await TryPlayAsync(song) != PlayAttemptResult.Unavailable;
 
-    private async Task<PlayAttemptResult> TryPlayAsync(Song? song)
+    private async Task<PlayAttemptResult> TryPlayAsync(Song? song, bool allowCrossfade = true)
     {
         if (song is null) return PlayAttemptResult.Unavailable;
+
+        // 重播同一首(单曲循环/播完重按)不做交叉:同一音源重叠是回声不是淡化
+        if (CurrentSong is not null && SameSong(song, CurrentSong)) allowCrossfade = false;
 
         _advancing++; // 到 finally 才减:PlayUrl 内部 Stop() 会瞬时置 Idle,别把它当"播完"触发自动切歌
         Message = null;
@@ -681,7 +684,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             {
                 song.IsPlaybackUnavailable = false;
                 PrepareSongPlayback(song);
-                StartPlayer(cached.FilePath, cached);
+                await StartPlayerAsync(cached.FilePath, cached, allowCrossfade);
                 return PlayAttemptResult.Started;
             }
 
@@ -691,7 +694,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             {
                 song.IsPlaybackUnavailable = false;
                 PrepareSongPlayback(song);
-                StartPlayer(offlineFallback.FilePath, offlineFallback);
+                await StartPlayerAsync(offlineFallback.FilePath, offlineFallback, allowCrossfade);
                 offlineFallback = null;
                 Message = "正在播放本地缓存";
                 return PlayAttemptResult.Started;
@@ -705,7 +708,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 {
                     song.IsPlaybackUnavailable = false;
                     PrepareSongPlayback(song);
-                    StartPlayer(offlineFallback.FilePath, offlineFallback);
+                    await StartPlayerAsync(offlineFallback.FilePath, offlineFallback, allowCrossfade);
                     offlineFallback = null;
                     Message = "正在播放本地缓存";
                     return PlayAttemptResult.Started;
@@ -725,7 +728,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 Message = "VIP 歌曲仅试听 30 秒";
             offlineFallback?.Dispose();
             offlineFallback = null;
-            StartPlayer(item.Url, cacheLease: null);
+            await StartPlayerAsync(item.Url, cacheLease: null, allowCrossfade);
             if (item.IsTrial != true)
                 _ = _musicCache.CacheAsync(
                     song,
@@ -739,7 +742,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             {
                 song.IsPlaybackUnavailable = false;
                 PrepareSongPlayback(song);
-                StartPlayer(offlineFallback.FilePath, offlineFallback);
+                await StartPlayerAsync(offlineFallback.FilePath, offlineFallback, allowCrossfade);
                 offlineFallback = null;
                 Message = "当前网络不可用，正在播放本地缓存";
                 return PlayAttemptResult.Started;
@@ -882,6 +885,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void PrepareSongPlayback(Song song)
     {
+        _crossfadeAdvancing = false; // 新歌起播:允许在它的末段再触发交叉切歌
         CurrentSong = song;
         Title = song.Name;
         Artist = song.Artist;
@@ -894,13 +898,32 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _ = _lyric.LoadAsync(song); // 并发加载歌词(按音源路由),失败不阻塞播放
     }
 
-    private void StartPlayer(string source, MusicCacheLease? cacheLease)
+    private async Task StartPlayerAsync(string source, MusicCacheLease? cacheLease, bool allowCrossfade)
     {
         var previousLease = _musicCacheLease;
         try
         {
-            _player.PlayUrl(source);
-            _musicCacheLease = cacheLease;
+            // 交叉淡化:旧曲继续播并渐弱、新曲渐强(仅当后端支持、设置开启、且旧曲正在播)。
+            // 返回 false = 未执行(不支持/未开/没在播/失败),回落硬切。
+            var crossfaded = allowCrossfade && _appState.Crossfade
+                             && await _player.TryCrossfadePlayAsync(source, CrossfadeMs());
+            if (crossfaded)
+            {
+                _musicCacheLease = cacheLease;
+                if (previousLease is not null)
+                {
+                    // 旧实例还要把旧音源播完渐变段:缓存租约延迟释放,防渐变中途文件被 LRU 清掉
+                    var lease = previousLease;
+                    _ = Task.Delay(CrossfadeMs() + 1000).ContinueWith(_ => lease.Dispose());
+                }
+            }
+            else
+            {
+                _player.PlayUrl(source);
+                _musicCacheLease = cacheLease;
+                previousLease?.Dispose();
+            }
+
             if (CurrentSong is { } song)
             {
                 try { _appState.RecordRecentSong(song); }
@@ -913,11 +936,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             cacheLease?.Dispose();
             throw;
         }
-        finally
-        {
-            previousLease?.Dispose();
-        }
     }
+
+    /// <summary>交叉淡化时长(毫秒);设置页滑杆 0-12 秒,越界夹回。</summary>
+    private int CrossfadeMs() =>
+        (int)Math.Round(Math.Clamp(_appState.CrossfadeSeconds, 0, 12) * 1000);
 
     /// <summary>普通队列按方向寻找可播歌曲；确认不可播的项立即从队列移除并继续。</summary>
     private async Task PlayQueueAdjacentAsync(bool forward)
@@ -1238,6 +1261,36 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
 
         _lyric.UpdatePosition(value); // 驱动歌词高亮(UI 线程)
+        MaybeCrossfadeAdvance(); // 交叉淡化:剩最后一段时提前切歌,新旧曲重叠渐变
+    }
+
+    // 交叉淡化自动切歌的一次会话标记:防止剩余窗口内反复触发(选歌失败时尤其吵)
+    private bool _crossfadeAdvancing;
+
+    /// <summary>交叉淡化:剩 ≤ 淡化时长时提前走切歌流程(真实重叠需要新旧两个实例同时发声)。
+    /// 只在"下一首是不同的歌"时提前切 —— 单曲循环/单曲队列重播同一首,重叠是回声不是淡化,
+    /// 让它自然播完走普通切换。播放中把进度 Seek 进末段同样会触发(语义一致:剩 N 秒就淡出)。</summary>
+    private void MaybeCrossfadeAdvance()
+    {
+        if (_crossfadeAdvancing || _advancing > 0) return;
+        if (!_appState.Crossfade || !_player.SupportsCrossfade) return;
+        if (CurrentSong is null || !IsPlaying || _scrubbing) return;
+        var fadeMs = CrossfadeMs();
+        if (fadeMs <= 0 || DurationMs <= 0) return;
+        var remaining = DurationMs - PositionMs;
+        if (remaining > fadeMs || remaining <= 0) return;
+        if (PlaybackMode == PlaybackMode.SingleLoop) return;
+        if (!IsFmActive && _lazyQueue is null && _queue.Count <= 1) return;
+
+        _crossfadeAdvancing = true;
+        _ = AdvanceWithCrossfadeAsync();
+    }
+
+    private async Task AdvanceWithCrossfadeAsync()
+    {
+        await PlayNextAsync();
+        // 刻意不在收尾重置 _crossfadeAdvancing:本曲剩余窗口内不重试(选歌失败时尤其吵);
+        // 新歌起播由 PrepareSongPlayback 重置,选歌失败则留给"自然播完 → Idle"的普通切歌路径。
     }
 
     private void OnDurationChanged(object? sender, long value) => DurationMs = value;

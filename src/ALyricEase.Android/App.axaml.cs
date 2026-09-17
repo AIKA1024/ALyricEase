@@ -79,7 +79,10 @@ public partial class App : Avalonia.Application
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
         services.AddSingleton<IPlatformShareService, AndroidShareService>();
-        services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
+        services.AddSingleton<AndroidMediaPlayer>();
+        services.AddSingleton<IAudioPlayer>(sp => new CrossfadeAudioPlayer(
+            sp.GetRequiredService<AndroidMediaPlayer>(),
+            () => ActivatorUtilities.CreateInstance<AndroidMediaPlayer>(sp)));
         services.AddSingleton<ISmtcService, SmtcService>();
         services.AddSingleton<LyricViewModel>();
         services.AddSingleton<PlayerViewModel>();

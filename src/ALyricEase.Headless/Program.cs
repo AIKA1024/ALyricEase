@@ -328,6 +328,22 @@ public static class Program
             return;
         }
 
+        // 音频输出设备设置回归(不碰真实声卡与真实 state.json):选项/索引映射、落盘与恢复、
+        // Id 失配按名回退、设备缺失回落默认、应用失败回滚、不支持后端隐藏
+        if (args.Length > 0 && args[0] == "--audiodevice")
+        {
+            Environment.ExitCode = AudioOutputDeviceProbe.Run();
+            return;
+        }
+
+        // 交叉淡化包装层语义探针:双 Stub 驱动 CrossfadeAudioPlayer,验证切换/斜坡/停旧/转发
+        if (args.Length > 0 && args[0] == "--crossfade")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(CrossfadeProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 专辑卡片几何探针:全部专辑页/歌手页卡片内封面与标题的实际矩形与间距
         if (args.Length > 0 && args[0] == "--albumgrid")
         {

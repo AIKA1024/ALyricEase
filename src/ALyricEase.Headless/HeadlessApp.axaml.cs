@@ -35,8 +35,43 @@ public partial class HeadlessApp : Application
     public void PlayUrl(string url) { }
     public void Pause() { }
     public void Resume() { }
-    public void Stop() { }
+    public void Stop() => StopCallCount++;
     public void Dispose() { }
+
+    /// <summary>Stop 被调用次数(交叉淡化探针用:验证渐变结束后旧实例会被停掉)。</summary>
+    public int StopCallCount { get; private set; }
+
+    // ---- 音频输出设备桩(--audiodevice 探针用:两条假设备 + 可配置的支持位/失败位)----
+
+    private IReadOnlyList<AudioOutputDevice> _outputDevices = Array.Empty<AudioOutputDevice>();
+
+    /// <summary>关掉可模拟"后端不支持切换设备"(Android 老版本/无头)那条分支。</summary>
+    public bool DeviceSelectionSupported { get; set; } = true;
+
+    /// <summary>把这个 Id 设为一次"应用失败",模拟设备被占用 —— 验证设置页会不会静默留假状态。</summary>
+    public string? FailDeviceId { get; set; }
+
+    /// <summary>TrySetOutputDevice 被调用的次数(含传 null 的"回到默认")。</summary>
+    public int SetDeviceCallCount { get; private set; }
+
+    public bool SupportsOutputDeviceSelection => DeviceSelectionSupported;
+
+    public IReadOnlyList<AudioOutputDevice> OutputDevices => _outputDevices;
+
+    public string? OutputDeviceId { get; private set; }
+
+    public void SetOutputDevices(params AudioOutputDevice[] devices) => _outputDevices = devices;
+
+    public Task<IReadOnlyList<AudioOutputDevice>> RefreshOutputDevicesAsync() =>
+        Task.FromResult(_outputDevices);
+
+    public bool TrySetOutputDevice(string? deviceId)
+    {
+      SetDeviceCallCount++;
+      if (deviceId is not null && deviceId == FailDeviceId) return false;
+      OutputDeviceId = deviceId;
+      return true;
+    }
 
     /// <summary>切换播放状态并通知订阅者(等价于真实播放引擎的状态回调)。</summary>
     public void SetState(PlaybackState state)

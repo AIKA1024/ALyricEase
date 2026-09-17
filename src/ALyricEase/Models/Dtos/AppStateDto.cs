@@ -65,6 +65,12 @@ public sealed class AppStateFile
     /// <summary>交叉淡化时长(秒)。</summary>
     public double? CrossfadeSeconds { get; set; }
 
+    /// <summary>音频输出设备后端标识(null = 跟随系统默认设备)。</summary>
+    public string? AudioOutputDeviceId { get; set; }
+
+    /// <summary>音频输出设备展示名(设备 Id 失配时按名字二次匹配,并用于"已保存设备未连接"的提示文案)。</summary>
+    public string? AudioOutputDeviceName { get; set; }
+
     /// <summary>播放模式(0=列表循环 1=单曲循环 2=随机播放)。</summary>
     public int? PlaybackMode { get; set; }
 

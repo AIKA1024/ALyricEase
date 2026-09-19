@@ -191,7 +191,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    public string CrossfadeSecondsText => $"{CrossfadeSeconds:0.#} 秒";
+    public string CrossfadeSecondsText => $"{CrossfadeSeconds:0.#}s"; // 原版样式:3s / 3.5s
 
     // ---- 主题应用 ----
 
@@ -243,6 +243,23 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     /// <summary>启动恢复设备偏好的任务(仅无头回归探针 --audiodevice 等待用,产品代码不读)。</summary>
     internal Task? AudioDeviceRestoreTask { get; private set; }
+
+    /// <summary>打开输出设备选择弹窗(MainViewModel 承载的模态弹层,见 AudioDeviceDialogView)。
+    /// 打开前重扫一遍设备:弹窗里的列表与当前选中都以最新枚举为准。</summary>
+    [RelayCommand]
+    private void OpenAudioDeviceDialog()
+    {
+        if (!AudioDeviceSupported) return;
+        _ = RefreshAudioDevicesAsync();
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().IsAudioDeviceDialogOpen = true;
+        }
+        catch
+        {
+            // 无宿主上下文(部分无头探针):不开弹窗
+        }
+    }
 
     /// <summary>重新扫描输出设备(设置页每次进入 + "刷新"按钮)。保持当前选择,只更新列表与提示。</summary>
     [RelayCommand]

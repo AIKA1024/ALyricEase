@@ -69,22 +69,46 @@
     <!-- 设置卡片式 Expander:外观与 setting-card 一致,展开箭头/动画用内置实现 -->
     <Style Selector="Expander.setting-expander">
       <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
       <Setter Property="CornerRadius" Value="4" />
       <Setter Property="MinHeight" Value="64" />
       <Setter Property="Padding" Value="16,10" />
       <Setter Property="Margin" Value="0,0,0,8" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
-    <!-- 行头整行是内置的展开切换钮:压掉默认底色与悬停变色,保持卡片同色 -->
+    <!-- 展开内容容器(#ExpanderContent)不带描边:主题默认画刷有可见描边,且 BorderThickness 被
+         方向样式(:down 等,StyleTrigger 优先级)按 DynamicResource 改写 ⇒ 用同伪类把粗细压成 0 -->
+    <Style Selector="Expander.setting-expander:down /template/ Border#ExpanderContent">
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <!-- 行头整行是内置的展开切换钮:固定 #242424,hover/pressed 均不变(对齐原版)。
+         底色写在 ToggleButton 上经模板 TemplateBinding 生效;主题在 :pointerover/:pressed
+         以 StyleTrigger 优先级改写 Border#ToggleButtonBackground,必须用同级伪类样式压回 -->
     <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader">
-      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Background" Value="#242424" />
+      <Setter Property="BorderBrush" Value="Transparent" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
-    <Style Selector="Expander.setting-expander /template/ Border#ToggleButtonBackground">
-      <Setter Property="Background" Value="Transparent" />
+    <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pointerover /template/ Border#ToggleButtonBackground">
+      <Setter Property="Background" Value="#242424" />
+      <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
-    <Style Selector="Expander.setting-expander /template/ Border#ToggleButtonBackground:pointerover">
-      <Setter Property="Background" Value="Transparent" />
+    <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pressed /template/ Border#ToggleButtonBackground">
+      <Setter Property="Background" Value="#242424" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <!-- 右侧箭头块:hover/pressed 底色只随行头状态变(原版 #303030 / #2C2C2C),默认与行头同色;
+         缩放挂在 Border 的 RenderTransform 上 —— 箭头 Path 的 RenderTransform 被展开旋转动画占用,不能碰 -->
+    <Style Selector="Expander.setting-expander /template/ Border#ExpandCollapseChevronBorder">
+      <Setter Property="Background" Value="#242424" />
+      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+      <Setter Property="RenderTransform" Value="scale(0.7)" />
+    </Style>
+    <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pointerover /template/ Border#ExpandCollapseChevronBorder">
+      <Setter Property="Background" Value="#303030" />
+    </Style>
+    <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pressed /template/ Border#ExpandCollapseChevronBorder">
+      <Setter Property="Background" Value="#2C2C2C" />
     </Style>
     <!-- 展开指示 chevron:展开时旋转 180° 朝上(与侧栏分组箭头同款过渡) -->
     <Style Selector="TextBlock.setting-chevron">
@@ -185,43 +209,32 @@
       <!-- ============ 播放 ============ -->
       <TextBlock Classes="section-header" Text="播放" />
 
-      <!-- 音频输出设备:下拉即改即生效并落盘;后端不支持(老安卓/无头)时隐藏下拉,只留说明 -->
+      <!-- 音频输出设备:原版交互 = 右侧"选择设备"按钮打开模态弹窗选择;
+           提示行(不支持/设备回退/切换失败)只在该有话可说时出现 -->
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <Grid ColumnDefinitions="Auto,*">
+        <Grid ColumnDefinitions="Auto,*,Auto">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconVolume}" />
-          <StackPanel Grid.Column="1" VerticalAlignment="Center">
-            <Grid ColumnDefinitions="*,Auto">
-              <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Classes="setting-title" Text="音频输出设备" />
-                <TextBlock Classes="about-link" Text="关于该选项"
-                           ToolTip.Tip="选择用哪个设备播放声音,选中立即生效并记住。设备未连接(拔掉耳机/换 USB 口)时自动回到系统默认设备。" />
-              </StackPanel>
-              <Button Grid.Column="1" Classes="setting-action" Content="刷新"
-                      IsVisible="{CompiledBinding AudioDeviceSupported}"
-                      Command="{CompiledBinding RefreshAudioDevicesCommand}" />
-            </Grid>
-            <ComboBox Height="32" Margin="0,8,0,0" HorizontalAlignment="Stretch" MaxWidth="440"
-                      IsVisible="{CompiledBinding AudioDeviceSupported}"
-                      ItemsSource="{CompiledBinding AudioDeviceOptions}"
-                      SelectedIndex="{CompiledBinding AudioDeviceIndex, Mode=TwoWay}" />
-            <TextBlock IsVisible="{CompiledBinding HasAudioDeviceHint}" Text="{CompiledBinding AudioDeviceHint}"
-                       FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"
-                       Margin="0,6,0,0" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+            <TextBlock Classes="setting-title" Text="音频输出设备" />
+            <TextBlock IsVisible="{CompiledBinding HasAudioDeviceHint}"
+                       Text="{CompiledBinding AudioDeviceHint}"
+                       FontSize="12" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}" Margin="0,2,0,0" />
           </StackPanel>
+          <Button Grid.Column="2" Classes="setting-action" Content="选择设备"
+                  IsVisible="{CompiledBinding AudioDeviceSupported}"
+                  Command="{Binding OpenAudioDeviceDialogCommand}" />
         </Grid>
       </Border>
 
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <Grid ColumnDefinitions="Auto,*">
+        <Grid ColumnDefinitions="Auto,*,Auto">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
-          <StackPanel Grid.Column="1" VerticalAlignment="Center">
-            <TextBlock Classes="setting-title" Text="音频质量" />
-            <TextBlock Text="同一档位会按当前歌曲的音乐平台自动映射" FontSize="12"
-                       Foreground="{DynamicResource TextSecondary}" Margin="0,2,0,0" />
-            <ComboBox Height="32" Margin="0,8,0,0" HorizontalAlignment="Stretch" MaxWidth="440"
-                      ItemsSource="{CompiledBinding AudioQualityOptions}"
-                      SelectedIndex="{CompiledBinding AudioQualityIndex, Mode=TwoWay}" />
-          </StackPanel>
+          <TextBlock Grid.Column="1" Classes="setting-title" Text="音频质量" />
+          <ComboBox Grid.Column="2" MinWidth="190" Height="32" VerticalAlignment="Center"
+                    ToolTip.Tip="同一档位会按当前歌曲的音乐平台自动映射"
+                    ItemsSource="{CompiledBinding AudioQualityOptions}"
+                    SelectedIndex="{CompiledBinding AudioQualityIndex, Mode=TwoWay}" />
         </Grid>
       </Border>
 
@@ -256,16 +269,16 @@
                          Margin="2,0,0,0" Classes.expanded="{Binding Crossfade}" />
             </StackPanel>
           </Grid>
-          <!-- 开启后展开时长滑杆(0-12 秒) -->
-          <StackPanel IsVisible="{Binding Crossfade}" Margin="36,10,4,2">
-            <Grid ColumnDefinitions="*,Auto">
-              <Slider Minimum="0" Maximum="12" TickFrequency="0.5" Value="{Binding CrossfadeSeconds}"
-                      VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Text="{Binding CrossfadeSecondsText}" FontSize="12"
-                         Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
-                         Margin="12,0,0,0" MinWidth="44" TextAlignment="Right" />
-            </Grid>
-          </StackPanel>
+          <!-- 开启后展开"淡化时长"行(原版 = 同一卡片内的子行:图标 + 标题 + 时长 + 滑杆) -->
+          <Grid IsVisible="{Binding Crossfade}" Margin="0,10,0,2" ColumnDefinitions="Auto,*,Auto,Auto">
+            <TextBlock Classes="setting-icon" Text="{DynamicResource IconRecents}" />
+            <TextBlock Grid.Column="1" Classes="setting-title" Text="淡化时长" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="{Binding CrossfadeSecondsText}" FontSize="13"
+                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
+                       Margin="0,0,12,0" />
+            <Slider Grid.Column="3" Width="280" Minimum="0" Maximum="12" TickFrequency="0.5"
+                    Value="{Binding CrossfadeSeconds}" VerticalAlignment="Center" />
+          </Grid>
         </StackPanel>
       </Border>
 
@@ -294,7 +307,7 @@
                        Margin="0,2,0,0" />
           </StackPanel>
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <NumericUpDown Width="116" Height="32"
+            <NumericUpDown Width="140" Height="32"
                            Minimum="128" Maximum="10240" Increment="128"
                            Value="{CompiledBinding MusicCacheMaximumSizeMb, Mode=TwoWay}" />
             <TextBlock Text="MB" FontSize="13" VerticalAlignment="Center"

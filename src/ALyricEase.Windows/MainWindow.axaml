@@ -200,6 +200,10 @@
       <!-- 播放条“添加到歌单”:单击菜单项打开，位于所有页面与播放详情之上。 -->
       <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
                                          Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+      <!-- 音频输出设备选择弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
+      <views:AudioDeviceDialogView IsVisible="{Binding IsAudioDeviceDialogOpen}"
+                                   Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
     </Grid>
   </ExperimentalAcrylicBorder>
 </Window>

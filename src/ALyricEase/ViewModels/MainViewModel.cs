@@ -508,6 +508,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
     public bool TryHandleBack()
     {
+        // 设备选择弹层声明在所有弹层最后(盖在最上) ⇒ 返回链最先消费
+        if (IsAudioDeviceDialogOpen)
+        {
+            CloseAudioDeviceDialogCommand.Execute(null);
+            return true;
+        }
+
         if (IsAddSongToPlaylistDialogOpen)
         {
             CloseAddSongToPlaylistDialogCommand.Execute(null);
@@ -1093,6 +1100,15 @@ public sealed partial class MainViewModel : ViewModelBase
         RebuildShellNavigation(); // 聚合分组下新增子项
         IsAggregateDialogOpen = false;
     }
+
+    // ---- 音频输出设备选择弹窗 ----
+
+    /// <summary>音频输出设备选择弹窗(WinUI3 ContentDialog 式窗口内弹层):true=显示。
+    /// 设备列表与选择逻辑都在 SettingsViewModel(弹层内层 DataContext 绑 Settings)。</summary>
+    [ObservableProperty] private bool _isAudioDeviceDialogOpen;
+
+    /// <summary>关闭输出设备选择弹窗(关闭按钮/Esc)。</summary>
+    [RelayCommand] private void CloseAudioDeviceDialog() => IsAudioDeviceDialogOpen = false;
 
     // ---- 聚合歌单设置对话框 ----
 

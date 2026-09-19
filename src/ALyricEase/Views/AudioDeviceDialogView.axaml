@@ -1,0 +1,55 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.AudioDeviceDialogView">
+    <!-- 音频输出设备选择弹窗(WinUI3 ContentDialog 式窗口内弹层,与 AggregateSettingsDialogView 同款):
+         烟雾层 + 居中卡片;列表点选立即生效(失败由 VM 回滚并在弹窗内给出提示);Esc=关闭。 -->
+    <Grid x:Name="Root">
+        <Grid.Styles>
+            <!-- 打开时 0→1 淡入由 code-behind 触发(IsVisible 翻转不跑过渡,先置 0 下一帧再置 1) -->
+            <Style Selector="Grid#Root">
+                <Setter Property="Transitions">
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                    </Transitions>
+                </Setter>
+            </Style>
+        </Grid.Styles>
+        <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
+        <Panel Background="#99000000" />
+        <Grid DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Border MaxWidth="440" MinWidth="380" Margin="24" Padding="24" CornerRadius="8"
+                    Background="{DynamicResource AppSurface}"
+                    BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                    BoxShadow="0 32 64 #66000000">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="选择音频输出设备" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="选择用哪个设备播放声音,选中立即生效并记住;设备拔掉后自动回到系统默认设备。"
+                               FontSize="13" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondary}" />
+                    <ListBox ItemsSource="{Binding AudioDeviceOptions}"
+                             SelectedIndex="{Binding AudioDeviceIndex, Mode=TwoWay}"
+                             MaxHeight="320" MinHeight="72" />
+                    <TextBlock IsVisible="{Binding HasAudioDeviceHint}" Text="{Binding AudioDeviceHint}"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondary}" />
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                        <Button Content="刷新" MinWidth="96" Height="32"
+                                HorizontalAlignment="Left"
+                                Command="{Binding RefreshAudioDevicesCommand}" />
+                        <Button Grid.Column="1" Classes="accent" Content="关闭"
+                                MinWidth="96" Height="32"
+                                HotKeyManager.HotKey="Escape"
+                                Command="{Binding $parent[views:AudioDeviceDialogView].((vm:MainViewModel)DataContext).CloseAudioDeviceDialogCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -70,7 +70,9 @@
     <DockPanel>
         <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorder}"
                 Padding="0,8,0,0">
-            <StackPanel Margin="4,0,8,8" Spacing="4" HorizontalAlignment="Stretch">
+            <!-- 左右各留 4:与上面各行的留白一致(那句来自 ListBoxItem 的 Margin="4,0")。
+                 原先右侧是 8,导致这 3 个入口比上面 7 行窄 4px、右边缘内缩 -->
+            <StackPanel Margin="4,0,4,8" Spacing="4" HorizontalAlignment="Stretch">
                 <Button Classes="navigation-button" Click="OnAccountClick"
                         HorizontalAlignment="Stretch">
                     <Grid ColumnDefinitions="24,Auto" ColumnSpacing="10" HorizontalAlignment="Center">

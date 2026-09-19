@@ -225,6 +225,13 @@ public static class Program
             return;
         }
 
+        // 侧栏收起态(图标栏)内容回归:只留 7 个静态入口,不许出现"看不见却能点"的歌单空行。
+        if (args.Length > 0 && args[0] == "--compact-nav")
+        {
+            Environment.ExitCode = CompactNavigationProbe.Run();
+            return;
+        }
+
         // 图片租约/LRU/取消与 SearchView 事件退订回归。
         if (args.Length > 0 && args[0] == "--image-lifetime")
         {

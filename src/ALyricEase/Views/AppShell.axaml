@@ -184,19 +184,21 @@
             </Button>
             <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorder}"
                     Padding="0,8,0,0">
-              <StackPanel Spacing="4" Margin="0,0,0,8" HorizontalAlignment="Stretch">
-                <Button Classes="icon-button" Click="OnAccountClick" Width="48" Height="40"
+              <!-- 左右各留 4:与上面图标栏各行的留白一致(那句来自 ListBoxItem 的 Margin="4,0"),
+                   否则 3 个入口会贴边、比上面 7 行宽出 8px。按钮不写死宽度,由这里的留白决定 -->
+              <StackPanel Spacing="4" Margin="4,0,4,8" HorizontalAlignment="Stretch">
+                <Button Classes="icon-button" Click="OnAccountClick" Height="40"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
                   <TextBlock Text="{DynamicResource IconPerson}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
-                <Button Classes="icon-button" Command="{Binding GoSettingsCommand}" Width="48" Height="40"
+                <Button Classes="icon-button" Command="{Binding GoSettingsCommand}" Height="40"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
                   <TextBlock Text="{DynamicResource IconSettings}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
                 <!-- Debug 入口(图标栏形态):仅 DEBUG 构建可见 -->
-                <Button Classes="icon-button" Command="{Binding GoDebugCommand}" Width="48" Height="40"
+                <Button Classes="icon-button" Command="{Binding GoDebugCommand}" Height="40"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                         IsVisible="{Binding IsDebug}" ToolTip.Tip="Debug">
                   <TextBlock Text="{DynamicResource IconCode}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16"

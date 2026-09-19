@@ -132,13 +132,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<NavItemViewModel> ShellNavItems { get; } = new();
 
-    /// <summary>手机底部导航仅保留最常用入口，其他入口在抽屉中。</summary>
-    public IReadOnlyList<NavItemViewModel> PrimaryNavItems =>
-        ShellNavItems.Where(item => item.Key is "Search" or "Recommend" or "Library" or "Recents").ToArray();
-
-    /// <summary>收起侧边栏(图标栏)显示的项:全部导航项(仿原版 NavigationView 紧凑态,不是只留常用 4 个)。</summary>
+    /// <summary>收起侧边栏(图标栏)显示的项:只留静态主导航(搜索/个性推荐/浏览/私人FM/我的收藏/音乐云盘/最近播放)。
+    /// 歌单子项(含聚合歌单)与分组头都不进图标栏 —— 子项没有图标字形,进了只会渲染成一排"看不见却能点"的空行。</summary>
     public IReadOnlyList<NavItemViewModel> CompactNavItems =>
-        ShellNavItems.Where(item => item.IsItem).ToArray();
+        ShellNavItems.Where(item => item.IsItem && !item.IsPlaylistChild).ToArray();
 
     /// <summary>当前导航页键(Home/Recommend/Library/Recents/Favorites/Search/Account/Settings)。</summary>
     [ObservableProperty] private string _activePage = "Recommend";
@@ -396,6 +393,9 @@ public sealed partial class MainViewModel : ViewModelBase
                     ShowAsChild = QqPlaylistsHeader.IsExpanded,
                 });
         }
+
+        // CompactNavItems 是 ShellNavItems 的派生列表,不是它自身变化的通知源 —— 重建后要显式通知
+        OnPropertyChanged(nameof(CompactNavItems));
     }
 
     /// <summary>展开/收起一个可折叠分组(聚合歌单/网易云音乐/QQ 音乐)。子项只隐藏不清除:

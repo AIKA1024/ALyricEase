@@ -885,6 +885,16 @@ private bool IsHostPresentable()
   `Styles` 里);**② 查询内的样式不能作用于容器自身及其祖先** —— 否则尺寸互相触发会来回抖。
 - 把 `TopLevel` 当容器时,行为等价于媒体查询(响应窗口尺寸)。
 
+**项目定稿的两条补充硬规则**(2026-09-16,踩过才写下来的):
+
+- **参与断点切换的控件不许写 `Grid.Column/Row` 局部值**。断点要改的是"列 + 行"这一组,
+  而局部值优先级(0)高于 `Style`(3):只被查询改到的那一半会生效,另一半被局部值钉死,
+  表现是**布局"改了一半"**(行生效、列失效)。要么两处都交给样式,要么整体换容器。
+- **`Grid.ColumnDefinitions` / `RowDefinitions` 在 Avalonia 12 里已经不是 `AvaloniaProperty`,
+  不能进 `Style` 的 `Setter`** —— 报 `AVLN3000`,而且**增量构建可能假成功**,清 `obj` 后必炸。
+  所以"两栏 ⇄ 单栏"的断点切换不要试图改列定义,改用 `DockPanel`(切 `Dock` + `Width=NaN`)。
+  排查时若遇到"错误只在清构建缓存后出现",先怀疑这条。
+
 ### 必须从 C# 写时的三个出口
 
 - `SetCurrentValue(prop, value)`:写在**当前生效的那一层**,不新建 `LocalValue` 条目 ⇒

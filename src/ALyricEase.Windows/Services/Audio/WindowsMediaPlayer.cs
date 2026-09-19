@@ -41,6 +41,11 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
   {
     _dispatcher = dispatcher;
     _mp = new MediaPlayer { AutoPlay = false, AudioCategory = MediaPlayerAudioCategory.Media };
+    // 关掉 CommandManager 自动 SMTC 集成:SMTC 会话由 SmtcService 手动驱动。
+    // 不关的话每个 MediaPlayer 实例都会抢同一个系统会话 —— 交叉淡化下新旧两实例并存,
+    // 旧实例淡完 Stop 会把会话打成 Closed,第三方歌词软件(读 SMTC)以为媒体关闭直接退出;
+    // 切歌瞬间旧实例还会把过期的元数据/进度推回去,与新歌互踩。
+    _mp.CommandManager.IsEnabled = false;
     _mp.MediaFailed += OnMediaFailed;
     _mp.MediaEnded += (_, _) => _dispatcher.Post(() => RaiseState(PlaybackState.Idle));
   }

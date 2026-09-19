@@ -241,10 +241,13 @@ public sealed class SmtcService : ISmtcService, IDisposable
     private void UpdateTimeline()
     {
         if (!_enabled || _controls is null) return;
+        var endMs = _player.DurationMs;
+        if (endMs <= 0) return; // 流媒体时长未就绪(NaturalDuration=0):推 EndTime=0 的时间线
+                                // 会让读 SMTC 的歌词软件把会话当成已结束/崩溃,保留上一份有效时间线
         try
         {
             _lastTimelineUpdate = DateTime.UtcNow;
-            var end = TimeSpan.FromMilliseconds(_player.DurationMs);
+            var end = TimeSpan.FromMilliseconds(endMs);
             var pos = TimeSpan.FromMilliseconds(_player.PositionMs);
             var props = new SystemMediaTransportControlsTimelineProperties
             {

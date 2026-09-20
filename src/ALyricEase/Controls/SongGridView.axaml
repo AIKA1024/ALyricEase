@@ -7,7 +7,7 @@
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              xmlns:controls="using:ALyricEase.Controls"
-             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="404"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="400"
              x:CompileBindings="True"
              x:Class="ALyricEase.Controls.SongGridView">
   <!-- 行模板:复用 TrackRow 套 Search 主题(400x60,播放按钮靠右);悬停高亮/操作浮现由共享 TrackRow 样式驱动 -->
@@ -22,18 +22,17 @@
     <Style Selector="ItemsControl.col > ContentPresenter">
       <Setter Property="Margin" Value="2" />
     </Style>
-    <!-- 只移动滚动条的最终绘制位置，不参与 Measure/Arrange，因此不改变内容或容器高度。 -->
-    <Style Selector="ScrollViewer.song-grid-scroller /template/ ScrollBar#PART_HorizontalScrollBar">
-      <Setter Property="RenderTransform">
-        <TranslateTransform Y="4" />
-      </Setter>
-    </Style>
   </UserControl.Styles>
 
-  <!-- 仿原版 HorizontalScrollableGridView:圆角8 + 1px 边框 + 列表背景 + 内边距6；
-       12px 底部空间容纳滚动条，滚动条再通过 RenderTransform 独立下移。 -->
+  <!-- 仿原版 HorizontalScrollableGridView:圆角8 + 1px 边框 + 列表背景 + 内边距6,
+       底部再多留 8px 给滚动条(6 是四边内边距,+8 才是滚动条与下边框之间的距离)。
+       ⚠ 不要改用 RenderTransform 把滚动条"再往下推":横向滚动条占的是 ScrollViewer 模板的最底一行、
+       本来就贴着 ScrollViewer 的下边界,而 ScrollViewer 自带 ClipToBounds —— 任何向下位移都直接越出
+       它的裁剪矩形,底部被切掉(2026-09-20 修过一次:曾用 12px 底部内边距 + RenderTransform Y=4 下推,
+       实测底边被切 4px)。要让滚动条更靠下,只能改这里的 padding(它决定 ScrollViewer 的盒子在哪结束),
+       绘制位移没有用。回归线:Headless 的 sgbottom 探针。 -->
   <Border Background="{DynamicResource AppListBackground}" BorderBrush="{DynamicResource AppBorder}"
-          BorderThickness="1" CornerRadius="8" Padding="6 6 6 12" ClipToBounds="True">
+          BorderThickness="1" CornerRadius="8" Padding="6 6 6 8" ClipToBounds="True">
     <ScrollViewer Classes="song-grid-scroller"
                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
       <i:Interaction.Behaviors>

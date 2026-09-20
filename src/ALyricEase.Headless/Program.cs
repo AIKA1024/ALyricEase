@@ -400,6 +400,13 @@ public static class Program
             return;
         }
 
+        // SongGridView 底部横向滚动条被 RenderTransform 下移后是否被 Border 的 ClipToBounds 切掉
+        if (args.Length > 0 && args[0] == "--sgbottom")
+        {
+            Environment.ExitCode = SongGridBottomProbe.Run();
+            return;
+        }
+
         // QQ 音乐 API 冒烟:匿名打真实接口验证歌单修复(不依赖登录 Cookie)
         if (args.Length > 0 && args[0] == "--qqapi")
         {

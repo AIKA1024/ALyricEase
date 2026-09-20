@@ -7,7 +7,7 @@
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              xmlns:controls="using:ALyricEase.Controls"
-             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="400"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="404"
              x:CompileBindings="True"
              x:Class="ALyricEase.Controls.SongGridView">
   <!-- 行模板:复用 TrackRow 套 Search 主题(400x60,播放按钮靠右);悬停高亮/操作浮现由共享 TrackRow 样式驱动 -->
@@ -26,14 +26,18 @@
 
   <!-- 仿原版 HorizontalScrollableGridView:圆角8 + 1px 边框 + 列表背景 + 内边距6,
        底部再多留 8px 给滚动条(6 是四边内边距,+8 才是滚动条与下边框之间的距离)。
-       ⚠ 不要改用 RenderTransform 把滚动条"再往下推":横向滚动条占的是 ScrollViewer 模板的最底一行、
-       本来就贴着 ScrollViewer 的下边界,而 ScrollViewer 自带 ClipToBounds —— 任何向下位移都直接越出
-       它的裁剪矩形,底部被切掉(2026-09-20 修过一次:曾用 12px 底部内边距 + RenderTransform Y=4 下推,
-       实测底边被切 4px)。要让滚动条更靠下,只能改这里的 padding(它决定 ScrollViewer 的盒子在哪结束),
-       绘制位移没有用。回归线:Headless 的 sgbottom 探针。 -->
+       滚动条位置由**两层**决定,别混:
+       · 外层 Border 的 padding.Bottom(8) = 滚动条下沿到下边框的距离(视觉留白,只是把边框往下放);
+       · 内层 ScrollViewer 的 padding.Bottom(4) = 真正把滚动条往下推的那 4px。
+       ⚠ 横向滚动条占的是 ScrollViewer 模板的最底一行(与内容 overlay,见 Scrolling.axaml 的模板),
+       它**永远钉在 ScrollViewer 盒子的下沿**、而 ScrollViewer 自带 ClipToBounds ⇒ 想让它往下走,
+       只能让**盒子变高**:模板里 ScrollContentPresenter 的 Margin 绑的就是 Padding,所以给 ScrollViewer
+       留 4px 底部内边距 = 盒子长高 4px(滚动条跟着下移)、内容区仍留在原处(歌曲一行都不动)。
+       反过来用 RenderTransform 做绘制位移,只是把像素画到裁剪矩形外面 —— 2026-09-20 实测被切 4px
+       (曾用 12px 底部内边距 + TranslateTransform Y=4)。回归线:Headless 的 sgbottom 探针。 -->
   <Border Background="{DynamicResource AppListBackground}" BorderBrush="{DynamicResource AppBorder}"
           BorderThickness="1" CornerRadius="8" Padding="6 6 6 8" ClipToBounds="True">
-    <ScrollViewer Classes="song-grid-scroller"
+    <ScrollViewer Classes="song-grid-scroller" Padding="0,0,0,4"
                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
       <i:Interaction.Behaviors>
         <b:CtrlHorizontalWheelBehavior />

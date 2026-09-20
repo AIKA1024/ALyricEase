@@ -15,7 +15,9 @@ namespace ALyricEase.Headless;
 
 /// <summary>
 /// SongGridView 实机探针(--sg):小屏(430px,接近手机宽度)真实控件 + 55 个 TrackRow,验证
-/// 1) 完整列决定稳定高度:滚到只有一行的末列后高度仍为 6×64+16=400(不能按末列的一行重算);
+/// 1) 完整列决定稳定高度:滚到只有一行的末列后高度仍为 6×64+20=404(不能按末列的一行重算;
+///    +20 = 6px 上内边距 + 6px 下内边距 + 底部 8px 留白 + 1px×2 边框 = 16,再加 ScrollViewer
+///    自己 4px 底部内边距(把横向滚动条往下推 4px 的那笔,见 SongGridView.axaml 与 sgbottom 探针);
 /// 2) **横向分块虚拟化必须开启**:首帧只实化视口附近的列,滚动过程中按需复用容器;
 /// 3) 最后一首可正常滚入视口。
 ///
@@ -62,7 +64,7 @@ public static class SongGridProbe
         var endHeight = grid.Bounds.Height;
         var lastRealized = rowsAtEnd.Any(row =>
             row.DataContext is SongItemViewModel vm && vm.Song.Id == itemCount);
-        var passed = Math.Abs(initialHeight - 400) < 1
+        var passed = Math.Abs(initialHeight - 404) < 1
                      && Math.Abs(endHeight - initialHeight) < 0.1
                      && hasVirtualizingPanel          // 横向分块虚拟化必须开启
                      && rows.Count < itemCount        // 首帧不得建满全部行

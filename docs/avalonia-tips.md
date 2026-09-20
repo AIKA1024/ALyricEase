@@ -1059,39 +1059,56 @@ private bool IsHostPresentable()
 ## 别用 RenderTransform 把"贴边"的子控件往外推:ScrollViewer 自带 ClipToBounds
 
 **症状**:个性推荐「每日歌曲推荐」区块底部那条横向滚动条,底边被切掉一截
-(用户原话:"设置渲染距离向下了一点,但底下一半被裁剪了")。
+(用户原话:"设置渲染距离向下了一点,但底下一半被裁剪了");第一版修法去掉位移后虽然不再被切,
+用户又反馈"像是把进度条往上拉了,我期望的是往下一点但不会被裁剪" —— 两个方向都是这一条机制。
+
+这个坑修了两次,第二次的结论比第一次更重要 —— **"往下推"必须让容器长高,而不是改外层留白**。
 
 **机制**:`ScrollViewer` 自身 `ClipToBounds = true`(实测:遍历滚动条的祖先,`ScrollViewer` 就在
 `ClipToBounds` 名单里),而**横向滚动条占的是 ScrollViewer 模板 `Grid RowDefinitions="*,Auto"`
 的最后一行** —— 它的布局下沿永远等于 ScrollViewer 盒子的下沿。于是任何把它"再往下推"的绘制
 位移(`RenderTransform`)都直接落到裁剪矩形之外,**推多少切多少**:
 
-| `SongGridView` 底部 padding + 滚动条位移 | 绘制下沿 − 容器高 | Avalonia 给该条算出的 Clip 高度 |
+| `SongGridView` 的写法 | 绘制下沿 − 容器高 | Avalonia 给该条算出的 Clip 高度 |
 |---|---|---|
-| `12` + `TranslateTransform Y=4`(旧写法) | **越界 4px** | 8px(条高 12 → 底部被切 4) |
-| `8` + 无位移(现状) | 0px | 12px(完整) |
+| `Border padding.Bottom=12` + `TranslateTransform Y=4` | **越界 4px** | 8px(条高 12 → 底部被切 4) |
+| `Border padding.Bottom=8`,无位移 | 0px | 12px(完整),但滚动条整体高了 4px |
+| **定稿**:外 `8` + `ScrollViewer Padding="0,0,0,4"` | 0px | 12px,且滑块落回原来那 4px |
 
-**把"绘制位移"折算回布局**:滚动条与下边框的距离由**外层 `Border` 的 padding** 唯一决定
-(`padding.Bottom + 1px 边框`),因为 padding 决定 ScrollViewer 的盒子在哪结束。旧写法的
-"12px 预留带 + 下推 4px" 视觉上等于离下边框 9px,也就等价于 `Padding="6 6 6 8"` 且**不做位移**
-——所以修法是 12 → 8 并删掉那条 `RenderTransform` 样式,滚动条屏幕位置一模一样、不再被切。
+**两层 padding 各管一件事,别混**(2026-09-20 第二次踩坑的根因):
 
-**顺带**:`SongGridView` 的自然高度因此从 `6×64+20=404` 变成 `6×64+16=400`,`--sg` 的断言与
-`d:DesignHeight` 已同步(上文那张"404(稳)"对照表是本次改动前的读数)。
+- **外层 `Border.Padding.Bottom`**(8)= 滚动条下沿到**下边框**的视觉留白。它只把边框往下放:
+  实测 ScrollViewer 盒子的**高度就是内容高**(内容 384 → 盒子 384,自动横条那 12px 不进高度),
+  盒子的**上沿**又被 `Padding.Top` 钉住 ⇒ 改外层底部 padding **不会移动滚动条**,只是让容器变矮/变高
+  (第二次踩坑:把 12 改成 8 就等于把边框上提 4px,用户读成"把进度条往上拉了")。
+- **`ScrollViewer.Padding.Bottom`**(4)= 真正把滚动条往下推的那 4px。模板里
+  `ScrollContentPresenter.Margin` 绑的就是 `Padding`(见 `Styles/Controls/Scrolling.axaml`),
+  所以留 4px 内边距 ⇒ **盒子长高 4px、滚动条(最底一行)跟着下移 4px,内容区仍留在原处**。
 
-**回归线**:`--sgbottom`(`src/ALyricEase.Headless/SongGridBottomProbe.cs`)。判定量全在
-**布局空间**量,不依赖坐标系约定(注意 `TranslatePoint` 会把自身 `RenderTransform` 算进去、
-`GetTransformedBounds().Bounds` 不算,两者混用很容易把 4px 记成 8px):
+**量"用户看到的那条线"要量 Thumb,不是量 ScrollBar**:主题给横向滑块叠了
+`scaleY(0.35) translateY(-2px)`(`HorizontalThumbScale`),8px 的布局高只画出 **2.8px** 细线。
+`ScrollBar` 完整落在裁剪矩形里 ≠ 滑块画到位,所以判据用滑块自身的绘制范围。
+`TranslatePoint` 会把自身 `RenderTransform` 算进去、`GetTransformedBounds().Bounds` 不算,
+**两者混用很容易把 4px 记成 8px**(第一版探针就栽在这上面):
 
 ```
-cut = 滚动条的布局下沿 + RenderTransform.Y − 最内层容器高   // > 0 即底部被切 cut 像素
+cut    = 滚动条的布局下沿 + RenderTransform.Y − 最内层容器高        // > 0 即底部被切 cut 像素
+inkGap = ScrollViewer 盒底 − 滑块绘制下沿(TranslatePoint 两角点算)  // 安全边,要求 ∈ [1,5]
 ```
 
-断言同时校验 `ScrollViewer.ClipToBounds` 为真、滚动条真的实化(条高/滑块高 > 0),避免空过;
-同一轮还会把旧的 `+4` 位移**按代码加回去**做 A/B(现状 0px / 旧写法 4px),
-确认这条线真能测到回归。截图落在临时目录:`songgrid-bar-fixed[-3x].png`、
-`songgrid-bar-old-transform[-3x].png`(3x 版便于放大核对底边)。
+**自然高度**:定稿回到 `6×64+20=404`(= 内容 384 + 上下 6px + 底部 8px 留白 + 1px×2 边框 + ScrollViewer 自己那 4px),
+`--sg` 的断言与 `d:DesignHeight` 已同步。
 
-**可推广的结论**:*凡是想让"贴在容器边上的子控件"往容器外越一点(滚动条、贴边装饰、气泡尖角),
-都不能用 `RenderTransform` —— 祖先的 `ClipToBounds`(ScrollViewer / Border 常设)一定会把它切掉。
-要么改容器的 padding/margin 把位置真的空出来,要么关掉那层裁剪(关裁剪影响面大,不推荐)。*
+**回归线**:`--sgbottom`(`src/ALyricEase.Headless/SongGridBottomProbe.cs`)。断言同时校验
+`ScrollViewer.ClipToBounds` 为真、滚动条真的实化(条高/滑块高 > 0)、滑块的安全边既不为负
+(**被切**)也不超过 5px(**没画到底 → 就是"像是把进度条往上拉了"那种回归**),避免空过;
+同一轮还会把旧的 `+4` 位移**按代码加回去**做 A/B(现状 0px / 旧写法 4px),确认这条线真能测到回归。
+截图落在临时目录:`songgrid-bar-fixed[-3x].png`、`songgrid-bar-old-transform[-3x].png`。
+
+**可推广的结论**:
+
+1. *想让"贴在容器边上的子控件"(滚动条、贴边装饰、气泡尖角)往容器外越一点,不能用
+   `RenderTransform` —— 祖先的 `ClipToBounds`(ScrollViewer / Border 常设)一定会把它切掉。*
+2. *要移动这类"钉在容器某条边上的行",改宿主的 padding 也没用(只挪动那条边),得让**容器本身
+   变高/变宽** —— 优先找容器自己有没有"内边距会推内容"的模板绑定(如本项目 ScrollViewer 的
+   `Padding → ScrollContentPresenter.Margin`),那是唯一"长高但不挪内容"的干净办法。*

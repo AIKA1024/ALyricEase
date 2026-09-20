@@ -18,22 +18,33 @@ using ALyricEase.ViewModels;
 namespace ALyricEase.Headless;
 
 /// <summary>
-/// SongGridView 底部横向滚动条不得被切(sgbottom 探针)。
+/// SongGridView 底部横向滚动条:既要画到位,又不能被切(sgbottom 探针)。
 ///
-/// 背景:横向滚动条占的是 ScrollViewer 模板的**最底一行**,本来就贴着 ScrollViewer 的下边界,
-/// 而 ScrollViewer 自带 ClipToBounds —— 于是任何"把它再往下推"的绘制位移(RenderTransform)
-/// 都会直接越出裁剪矩形、底部被切掉。旧写法(至 2026-09-20)用 `Padding="6 6 6 12"` 预留 12px
-/// 底部空间,再给横向条叠 `TranslateTransform Y=4`:实测底边被切 4px,用户看到滑块"底下一半没了"。
-/// 改成底部 padding 8(= 旧的 12 减去 4)后滚动条位置一模一样,但整体落在 ScrollViewer 内。
+/// 背景:横向滚动条占的是 ScrollViewer 模板的**最底一行**(与内容 overlay,见 Scrolling.axaml 的模板),
+/// 它永远钉在 ScrollViewer 盒子的下沿,而 ScrollViewer 自带 ClipToBounds ⇒ 想让它往下走只有一条路:
+/// **让盒子本身变高**。踩过的两次:
+///   ① 旧写法(至 d6babe1)用 `Border Padding="6 6 6 12"` + 给横向条叠 `TranslateTransform Y=4` 做绘制位移
+///      —— 盒子没长高,推出去的 4px 全在裁剪矩形外,滑块底边被切 4px;
+///   ② 只把外层 Border 的底部 padding 改成 8(去掉位移)后不再被切,但滚动条整体高了 4px
+///      —— 用户反馈"像是把进度条往上拉了"。
+/// 定稿:外层 Border padding 6/6/6/8 管"滚动条到下边框的留白",ScrollViewer 自己 `Padding="0,0,0,4"`
+/// 管"把滚动条往下推 4px"(模板里 ScrollContentPresenter 的 Margin 绑的就是 Padding ⇒ 盒子长高 4px、
+/// 内容区原地不动)。自然高度因此是 6×64+20=404。
 ///
 /// 判定量全在布局空间量,不依赖任何坐标系约定:
 ///   最内层容器 = ScrollViewer 模板里的 Grid(与 ScrollViewer 同尺寸),滚动条布局下沿本来 = 容器高;
 ///   cut = 布局下沿 + RenderTransform.Y - 容器高,> 0 即底部被切 cut 像素。
+/// 用户眼里的"进度条"其实是 Thumb:主题给横向滑块叠了 scaleY(0.35) ⇒ 8px 布局高只画出 2.8px 细线,
+/// 所以另按**滑块自身的绘制范围**判一次(TranslatePoint 会带上自身 RenderTransform)。
 /// 同一轮里还会把旧的 +4 位移按代码加回去做 A/B,确认这条线真能测到回归(不是空过)。
 /// </summary>
 public static class SongGridBottomProbe
 {
     private const double OldNudge = 4;
+    /// <summary>滑块下沿到 ScrollViewer 盒底的安全边下限:贴着裁剪线画不算过。</summary>
+    private const double MinInkGap = 1;
+    /// <summary>安全边上限:超过它说明滚动条没画到底(用户会读成"被往上拉了")。</summary>
+    private const double MaxInkGap = 5;
 
     public static int Run()
     {
@@ -107,6 +118,80 @@ public static class SongGridBottomProbe
 
         win.Close();
 
+        // ---- 自然高度场景:真实用法(RecommendView 每日推荐)是 StackPanel 里按内容高度排 ----
+        // 与上面"被窗口拉伸"的夹具几何不同(ScrollViewer 的盒子是内容高还是被拉伸),这里单独量。
+        var natItems = items;
+        var natGrid = new SongGridView { ItemsSource = natItems };
+        var natHost = new ProbeHost { Content = new StackPanel { Children = { natGrid } } };
+        // 竖排 StackPanel 给子项的始终是"想要的高度" ⇒ 控件保持自然高度 404,不随窗口拉伸
+        var natWin = new Window { Width = 900, Height = 460, Content = natHost };
+        natWin.Show();
+        Drain();
+        shots.Add(Shot(natWin, "songgrid-bar-natural"));
+        shots.Add(Shot(natWin, "songgrid-bar-natural-3x", 3));
+
+        var natScroller = natGrid.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+        var natBar = natScroller?.GetVisualDescendants().OfType<ScrollBar>()
+            .FirstOrDefault(b => b.Orientation == Orientation.Horizontal);
+        var natBorder = natGrid.GetVisualDescendants().OfType<Border>()
+            .FirstOrDefault(b => b.ClipToBounds && b.Padding.Bottom > 0);
+        var natThumb = natBar?.GetVisualDescendants().OfType<Thumb>().FirstOrDefault();
+
+        if (natScroller is null || natBar is null || natBorder is null || natThumb is null)
+        {
+            failed++;
+            Console.WriteLine("[sgbottom] [FAIL] 自然高度夹具没搭起来");
+        }
+        else
+        {
+            var barBottomInBorder = natBar.TranslatePoint(new Point(0, natBar.Bounds.Height), natBorder)!.Value.Y;
+            var barTopInBorder = natBar.TranslatePoint(new Point(0, 0), natBorder)!.Value.Y;
+            var content = natGrid.GetVisualDescendants().OfType<ItemsControl>()
+                .FirstOrDefault(c => c.Name == "Columns");
+            var box = natScroller.Bounds.Height;
+
+            // 滑块(用户眼里的"进度条")实际画在哪、有没有被切:TranslatePoint 会带上自身 RenderTransform
+            // (主题里横向滑块是 scaleY(0.35) translateY(-2px)),所以两个角点就能给出它的绘制范围。
+            var inkTop = natThumb.TranslatePoint(new Point(0, 0), natScroller)!.Value.Y;
+            var inkBottom = natThumb.TranslatePoint(
+                new Point(0, natThumb.Bounds.Height), natScroller)!.Value.Y;
+            var inkCut = inkBottom - box;
+
+            Console.WriteLine(
+                $"[sgbottom] 自然高度: 控件={natGrid.Bounds.Height:F1} Border={natBorder.Bounds.Height:F1} " +
+                $"ScrollViewer={natScroller.Bounds.Height:F1} 内容={content?.Bounds.Height:F1} " +
+                $"条高={natBar.Bounds.Height:F1} 条在Border内 top={barTopInBorder:F1}..{barBottomInBorder:F1} " +
+                $"条下沿→Border外底={natBorder.Bounds.Height - barBottomInBorder:F1}");
+            Console.WriteLine(
+                $"[sgbottom] 自然高度·滑块: 画在 {inkTop:F1}..{inkBottom:F1}(高 {inkBottom - inkTop:F2}," +
+                $"布局高 {natThumb.Bounds.Height:F1}) 条内偏移 top={natThumb.TranslatePoint(new Point(0, 0), natBar)!.Value.Y:F1} " +
+                $"越出 ScrollViewer 盒底={inkCut:F2}px");
+
+            // 不只要「没被切」,还要「够靠下」:只改外层 Border 的 padding 虽然也不会被切,
+            // 但会让滑块悬在半空(2026-09-20 用户反馈的就是这种「像把滚动条往上拉了」),所以两头都断言:
+            // 安全边 ∈ [MinInkGap, MaxInkGap] —— 小于下限=贴着裁剪线画(危险),大于上限=没画到底。
+            var inkGap = -inkCut;
+            if (inkCut > 0.5)
+            {
+                failed++;
+                Console.WriteLine($"[sgbottom] [FAIL] 自然高度下滑块被切 {inkCut:F2}px");
+            }
+            else if (inkGap < MinInkGap)
+            {
+                failed++;
+                Console.WriteLine($"[sgbottom] [FAIL] 滑块下沿离 ScrollViewer 盒底只有 {inkGap:F2}px" +
+                    $"(< {MinInkGap})—— 贴着裁剪线画,再偏一点就被切");
+            }
+            else if (inkGap > MaxInkGap)
+            {
+                failed++;
+                Console.WriteLine($"[sgbottom] [FAIL] 滑块离 ScrollViewer 盒底还有 {inkGap:F2}px" +
+                    $"(> {MaxInkGap})—— 没画到底,会像是「把滚动条往上拉了」");
+            }
+        }
+
+        natWin.Close();
+
         Console.WriteLine(failed == 0
             ? "[sgbottom] [PASS] 横向滚动条完整落在裁剪矩形内,且 +4 绘制位移能被测出越界"
             : $"[sgbottom] [FAIL] {failed} 项");
@@ -143,8 +228,8 @@ public static class SongGridBottomProbe
 
     /// <summary>
     /// 截图。<paramref name="scale"/> &gt; 1 时同时放大像素尺寸与 dpi(逻辑尺寸不变)⇒ 整窗按该倍数渲染,
-    /// 便于放大核对滚动条底边。注意:代码里改的 RenderTransform **不会**反映到 RenderTargetBitmap 上
-    /// (实测两张图逐字节相同),所以"旧写法"的对照只能靠上面的数字,不能靠图。
+    /// 便于放大核对滚动条底边。代码里改的 RenderTransform 会反映到 RenderTargetBitmap 上(A/B 两张图的
+    /// 滑块确实差 4px,逐像素比过),但一张图只有几像素的差别,**判据仍然以数字为准**。
     /// </summary>
     private static string Shot(Window window, string name, int scale = 1)
     {

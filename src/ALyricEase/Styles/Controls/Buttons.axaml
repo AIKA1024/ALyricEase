@@ -8,6 +8,17 @@
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
+    <!-- Fluent 主题按下会把按钮 scale(0.98) 缩小,而 Click 在释放时对释放点做视觉命中测试
+         (Button.OnPointerReleased → GetVisualsAt):点按钮最外缘时,松手瞬间该点已落在
+         缩小后的可视内容之外 ⇒ "有按下样式但 Click 不触发"。网易云原版无缩放,项目内
+         统一去掉(Button/ToggleButton 同款问题);按下反馈由背景变色承担。 -->
+    <Style Selector="Button:pressed">
+        <Setter Property="RenderTransform" Value="none" />
+    </Style>
+    <Style Selector="ToggleButton:pressed">
+        <Setter Property="RenderTransform" Value="none" />
+    </Style>
+
     <Style Selector="Button.icon-button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />

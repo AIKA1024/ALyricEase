@@ -43,7 +43,7 @@
                         <Button Content="刷新" MinWidth="96" Height="32"
                                 HorizontalAlignment="Left"
                                 Command="{Binding RefreshAudioDevicesCommand}" />
-                        <Button Grid.Column="1" Classes="accent" Content="关闭"
+                        <Button Grid.Column="1" Classes="accent" Content="确认"
                                 MinWidth="96" Height="32"
                                 HotKeyManager.HotKey="Escape"
                                 Command="{Binding $parent[views:AudioDeviceDialogView].((vm:MainViewModel)DataContext).CloseAudioDeviceDialogCommand}" />

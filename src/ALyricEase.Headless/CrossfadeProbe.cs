@@ -73,6 +73,12 @@ internal static class CrossfadeProbe
         Check(secondary.Volume == 40, $"新实例停在用户音量(={secondary.Volume})");
         Check(secondary.StopCallCount == 0, "新实例未被误停");
 
+        // 回归(2026-09-21):渐变自然结束后 _fadeCts 曾不清空 ⇒ Volume setter 一直走
+        // "渐变进行中"分支,拖音量条只改 _userVolume 永不落到播放实例。
+        // 修复后(会话标记被清)音量设置必须立即生效。
+        wrapper.Volume = 55;
+        Check(secondary.Volume == 55, $"渐变结束后音量设置立即生效(={secondary.Volume})");
+
         // 事件转发:active 换到 secondary 后,其状态事件应经 wrapper 冒出
         var sawStateEvent = false;
         wrapper.StateChanged += (_, _) => sawStateEvent = true;

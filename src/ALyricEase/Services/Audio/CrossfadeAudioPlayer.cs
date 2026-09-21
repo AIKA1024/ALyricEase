@@ -21,8 +21,9 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
     private int _userVolume;
     private string? _deviceId;
 
-    // 渐变会话:同一时刻最多一个;硬切/Stop 时取消,旧实例音量停在半路由 Stop 兜底
-    private CancellationTokenSource? _fadeCts;
+    // 渐变会话:同一时刻最多一个;硬切/Stop 时取消,旧实例音量停在半路由 Stop 兜底。
+    // volatile:自然结束由线程池清空,Volume setter(UI 线程)读它决定"立即应用还是交给斜坡"。
+    private volatile CancellationTokenSource? _fadeCts;
 
     // active 实例的事件转发(handler 存字段以便交换后退订旧实例)
     private EventHandler? _onStateChanged;
@@ -109,32 +110,42 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
             var delay = Math.Max(10, fadeMs / steps);
             try
             {
-                for (var i = 1; i <= steps; i++)
+                try
                 {
-                    token.ThrowIfCancellationRequested();
-                    var p = i / (double)steps;
-                    var u = Volatile.Read(ref _userVolume) / 100.0;
-                    SetVolumeSafe(oldPlayer, (int)Math.Round(u * (1 - p) * 100));
-                    SetVolumeSafe(newPlayer, (int)Math.Round(u * p * 100));
-                    await Task.Delay(delay, token);
+                    for (var i = 1; i <= steps; i++)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        var p = i / (double)steps;
+                        var u = Volatile.Read(ref _userVolume) / 100.0;
+                        SetVolumeSafe(oldPlayer, (int)Math.Round(u * (1 - p) * 100));
+                        SetVolumeSafe(newPlayer, (int)Math.Round(u * p * 100));
+                        await Task.Delay(delay, token);
+                    }
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                return; // 硬切/Stop 接管了两个实例,这里什么都别再碰
-            }
+                catch (OperationCanceledException)
+                {
+                    return; // 硬切/Stop 接管了两个实例,这里什么都别再碰
+                }
 
-            SetVolumeSafe(oldPlayer, 0);
-            try
-            {
-                oldPlayer.Stop();
-            }
-            catch
-            {
-                // 旧实例已出问题也没关系:它不再被监听
-            }
+                SetVolumeSafe(oldPlayer, 0);
+                try
+                {
+                    oldPlayer.Stop();
+                }
+                catch
+                {
+                    // 旧实例已出问题也没关系:它不再被监听
+                }
 
-            SetVolumeSafe(oldPlayer, Volatile.Read(ref _userVolume)); // 复位留复用;起播前还会再压 0
+                SetVolumeSafe(oldPlayer, Volatile.Read(ref _userVolume)); // 复位留复用;起播前还会再压 0
+            }
+            finally
+            {
+                // 渐变自然结束后清掉会话标记:漏掉这条时 Volume setter 会一直认为
+                // "渐变进行中",拖音量条只改 _userVolume、永不落到播放实例(回归 2026-09-21)。
+                // CAS 只清自己的会话:期间若已换上新 CTS(硬切/新交叉),不动它。
+                Interlocked.CompareExchange(ref _fadeCts, null, cts);
+            }
         });
     }
 

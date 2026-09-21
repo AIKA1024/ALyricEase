@@ -145,6 +145,16 @@
                 <BlurEffect Radius="2.5" />
             </Setter>
         </Style>
+        <!-- 更远的行(距当前句 >2 行,已唱与未唱两侧都算)**不挂模糊**,只靠透明度弱化。
+             为什么:挂 Effect 的行都走"离屏层 + 图像过滤",而整窗每帧都在重画(色团漂移 +
+             进度循环),这些离屏层就得跟着每帧重做一次。实测每行 ≈0.37% GPU / ~0.7 点单核 CPU
+             (1200x720,拉丁方同轮对照:"无模糊"整档省 1.62% / 2.7 点)。
+             而远景行本来就压到 40%~70% 不透明度,5px 模糊在那里几乎不产生可辨识的信息。
+             ⚠ 这一条**必须声明在 above/below1/below2 之后**:同一优先级下后声明者生效,
+             而"已唱 3 行以上"的行会同时带 above 与 far 两个类(far 只压 Effect,不动 above 的透明度)。 -->
+        <Style Selector="views|LyricView.detail ListBoxItem.far">
+            <Setter Property="Effect" Value="{x:Null}" />
+        </Style>
         <Style Selector="views|LyricView.detail ListBoxItem:selected">
             <Setter Property="Opacity" Value="1" />
             <Setter Property="RenderTransform" Value="scale(1,1)" />

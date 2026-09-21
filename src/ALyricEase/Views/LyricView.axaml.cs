@@ -140,12 +140,20 @@ public partial class LyricView : UserControl
                 ApplyProgressClasses(container, i, current);
     }
 
-    /// <summary>映射原版 InteractiveLyricControl2 的 AbovePresent/BelowPresent1/BelowPresent2 状态。</summary>
+    /// <summary>映射原版 InteractiveLyricControl2 的 AbovePresent/BelowPresent1/BelowPresent2 状态。
+    ///
+    /// <para>
+    /// <c>far</c> 是给样式用的"更远的行"标记(距当前句 &gt;2 行,已唱与未唱两侧都算)——
+    /// 那几行不挂模糊,只靠透明度弱化。它**不改**原版那三个状态的语义(above 仍是"所有已唱行",
+    /// 覆盖远近),两者叠加时由 XAML 里的声明顺序决定谁压谁。
+    /// </para>
+    /// </summary>
     private static void ApplyProgressClasses(Control container, int index, int current)
     {
         container.Classes.Set("above", current >= 0 && index < current);
         container.Classes.Set("below1", current >= 0 && index == current + 1);
         container.Classes.Set("below2", current >= 0 && index == current + 2);
+        container.Classes.Set("far", current >= 0 && Math.Abs(index - current) > 2);
     }
 }
 

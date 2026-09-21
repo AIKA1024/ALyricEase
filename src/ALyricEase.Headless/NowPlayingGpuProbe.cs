@@ -228,14 +228,40 @@ internal static class NowPlayingGpuProbe
 
     // ────────────────────────────── 场景矩阵 ──────────────────────────────
 
-    /// <summary>歌词行模糊的三种口径。远近歌词在视觉上差得很多，能不能"只模糊近处"要靠量。</summary>
+    /// <summary>歌词行模糊的几种口径。远近歌词在视觉上差得很多，能不能"只模糊近处"要靠量。</summary>
     private enum LyricBlurMode
     {
-        /// <summary>与样式一致:除当前句外**所有**实化行都带模糊(远景 5px,近景 1~2.5px)。</summary>
+        /// <summary>
+        /// **照样式走**(= 生产现状)。2026-09-21 改法 B 之后,含义是"近处 1~2.5px、远景不挂" ——
+        /// 距当前句 &gt;2 行的行被 <c>.far</c> 置成 <c>Effect=null</c>,只留透明度;当前句也无效果。
+        /// <para>
+        /// ⚠ **这一档在改法 B 之前等于"所有实化行都带模糊",之后不等于**。想拿旧语义当回归对,
+        /// 用 <see cref="LegacyAllRows"/>,别指望这一档 —— 否则差值恒为 0,还会被读成"改动没生效"。
+        /// </para>
+        /// </summary>
         All,
+
+        /// <summary>
+        /// 旧语义(改法 B **之前**的生产样子):远期行也带基样式那条 <c>BlurEffect Radius=5</c>。
+        /// <para>
+        /// 与 <see cref="All"/> 的差就是改法 B 的**全部**代价 —— 同一轮里两格相减即得,不需要跨轮比。
+        /// </para>
+        /// </summary>
+        LegacyAllRows,
 
         /// <summary>只保留当前句上下各两行(样式里的 above/below1/below2),更远的行只靠透明度弱化。</summary>
         Nearest,
+
+        /// <summary>
+        /// 只保留当前句**上下各两行**(按索引距离 <c>|Δ| ≤ 2</c>),更远的行不挂 Effect、只靠透明度弱化。
+        /// <para>
+        /// 与 <see cref="Nearest"/> 的区别是**语义**,不是参数:后者按样式的 class 保留,而
+        /// <c>above</c> 覆盖的是**所有已唱行** —— 长歌词里可能十几行都算 above,于是"只模糊近处"
+        /// 实测几乎没减少带模糊的行数(1920x1080 下 12 行里只砍掉 1 行,读数反而更贵)。
+        /// 这一档才是"只留当前句上下各两行"的**字面**语义。
+        /// </para>
+        /// </summary>
+        Window2,
 
         /// <summary>
         /// 只去掉**当前句**那一行的 Effect。样式给 selected 行的是
@@ -432,22 +458,44 @@ internal static class NowPlayingGpuProbe
         BackdropAblation Mode = BackdropAblation.Default,
         bool PageContent = true,
         bool DynamicBackground = true,
-        bool BackdropVisible = true);
+        bool BackdropVisible = true,
+        /// <summary>歌词面板开不开。色团档一律 false(它们量的是色团);歌词档显式传 true。</summary>
+        bool LyricsPanel = false,
+        /// <summary>歌词行的模糊口径。只在歌词档里有意义。</summary>
+        LyricBlurMode LyricBlur = LyricBlurMode.All);
 
     /// <summary>
     /// 当前跑的是不是 A/B 夹具（拉丁方）。**只有它**允许探针去"落实并校验"驱动状态 ——
     /// 全量验收档必须袖手旁观（门控链路自证才有意义），否则量到的是探针而不是应用。
     /// </summary>
-    private static readonly bool s_abMode =
+    private static readonly bool s_backdropAbMode =
         string.Equals(Env("ALY_NP_MODE"), "backdrop-ab", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// 拉丁方里各变体的**基准序**（第 r 轮把整条序左移 r 位）。
+    /// 歌词档聚焦模式(<c>ALY_NP_MODE=lyric-ab</c>):只跑歌词面板那几个口径。
+    ///
+    /// <para>
+    /// 为什么要单开:全量那套二十多个场景跑一轮三分多钟,而窗口必须**可见且不被遮挡**
+    /// (GPU 计数只在真的提交到屏幕时才有值)⇒ 霸屏三分钟。改一处歌词样式就得等这么久,
+    /// 迭代代价太高。这一档只跑 5 个变体、按拉丁方排位置,一轮约两分钟。
+    /// </para>
+    /// </summary>
+    private static readonly bool s_lyricAbMode =
+        string.Equals(Env("ALY_NP_MODE"), "lyric-ab", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 当前跑的是不是 A/B 夹具（拉丁方）。**只有它**允许探针去"落实并校验"驱动状态 ——
+    /// 全量验收档必须袖手旁观（门控链路自证才有意义），否则量到的是探针而不是应用。
+    /// </summary>
+    private static readonly bool s_abMode = s_backdropAbMode || s_lyricAbMode;
+
+    /// <summary>
+    /// 色团档的拉丁方变体（基准序，第 r 轮把整条序左移 r 位）。
     ///
     /// 顺序就是 `AB·默认` 打头,只有一个原因:报告里的差值全以它为基准,
     /// 而"默认"读数的分母位置偏差已经被拉丁方抵消掉了,谁打头都不影响,但读起来方便。
     /// </summary>
-    private static readonly AbVariant[] s_abVariants =
+    private static readonly AbVariant[] s_backdropVariants =
     [
         // 生产现状:20 条组合动画,由合成器按显示刷新率推帧(2026-09-21 从定时器**回退**到这里)。
         new("AB·默认"),
@@ -467,6 +515,42 @@ internal static class NowPlayingGpuProbe
         // (2.02 vs 2.12),而"间隔改成 16ms 却什么都没变"只能说明 DispatcherTimer 在那个间隔上
         // 根本没按 60Hz 跑 —— 留在表里就是一个说不清的数。要用它先看探针报的**实测频率**。
     ];
+
+    /// <summary>
+    /// 歌词档的拉丁方变体。五个变体的分工:1 个回归对(改前语义)、1 个现状(改后)、
+    /// 1 个**同义核对**、1 个上界锚、1 个标尺锚。
+    ///
+    /// <para>
+    /// ⚠ 「上界锚」是必需的:任何单项收益都该 ≤(现状 − 无模糊),超了就是夹具在骗人。
+    /// 「标尺锚」回答的是另一个问题 —— 歌词面板**整体**(含布局、文字、透明渐变遮罩、模糊)
+    /// 值多少:把它和「无模糊」两句相减,才分得清"钱花在模糊上"还是"钱花在歌词面板本身"。
+    /// </para>
+    /// </summary>
+    private static readonly AbVariant[] s_lyricVariants =
+    [
+        // 回归对:改法 B **之前**的生产样子 —— 远景行也带基样式的 5px 模糊。
+        // 它和下面那格的差就是这次改动的全部收益,同轮相减即可,不用拿跨轮读数比。
+        new("AB·旧(远景也模糊)", LyricsPanel: true, LyricBlur: LyricBlurMode.LegacyAllRows),
+
+        // 现状(改法 B):距当前句 >2 行的远景走 .far ⇒ 不挂 Effect,只靠透明度弱化。
+        // ⚠ 标签必须仍以 `AB·默认` 打头:ReportAbGroups 拿它选基准行(差值全以它为 0 点)。
+        new("AB·默认(改后·近处2行)", LyricsPanel: true),
+
+        // 同义核对:探针**不读生产的类**,自己按 DataContext 索引距离算 |Δ|≤2 保留模糊。
+        // 它应与「现状」重合 —— 重合才说明生产那个 .far 类判的确实是"距当前句 >2",
+        // 而不是"所有已唱行"(≈Nearest 那档的坑,已作废)。两格读数的差就是判据本身的可信度。
+        new("AB·探针按|Δ|≤2", LyricsPanel: true, LyricBlur: LyricBlurMode.Window2),
+
+        // 上界锚:模糊全砍。收益的上限就在这一格。
+        new("AB·无模糊", LyricsPanel: true, LyricBlur: LyricBlurMode.None),
+
+        // 标尺锚:歌词面板整个不显示 —— 回答"歌词面板本身值多少"。
+        new("AB·关歌词面板", LyricsPanel: false),
+    ];
+
+    /// <summary>按 <c>ALY_NP_MODE</c> 选当前这一档要用的变体表(<c>ReportAbGroups</c> 也读它)。</summary>
+    private static readonly AbVariant[] s_abVariants =
+        s_lyricAbMode ? s_lyricVariants : s_backdropVariants;
 
     private static IEnumerable<Scenario> BuildScenarios()
     {
@@ -501,11 +585,13 @@ internal static class NowPlayingGpuProbe
                 yield return new Scenario(
                     $"{variant.Label}#r{round + 1}p{slot + 1}",
                     NowPlaying: true,
-                    LyricsPanel: false,
+                    // 面板开关与模糊口径都交给变体:色团档的变体用默认(false / All),歌词档显式声明
+                    // —— 一张变体表就能同时表达两类夹具,不必为歌词再抄一遍拉丁方。
+                    LyricsPanel: variant.LyricsPanel,
                     BackdropVisible: variant.BackdropVisible,
                     BackdropMotion: MotionMode.Default,
                     ProgressLoop: true,
-                    LyricBlur: LyricBlurMode.All,
+                    LyricBlur: variant.LyricBlur,
                     DynamicBackground: variant.DynamicBackground,
                     Backdrop: variant.Mode,
                     PageContent: variant.PageContent);
@@ -750,6 +836,26 @@ internal static class NowPlayingGpuProbe
         await Task.Delay(600);
         var noEffectOnSelected = ScreenCapture.GrabClient(refs.Window);
 
+        // 改法 B 的视觉判据:生产现状 vs 旧语义(远景行也带基样式的 5px)。
+        // 这两帧之间**只有远景行有没有模糊**这一件事不同 ⇒ 差多少像素、平均通道差几级,
+        // 就是"砍掉远景模糊到底看不看得出来"。同一次调用里连抓,色团与循环全停。
+        var prodBlurred = refs.BlurredItemCount;
+        refs.SetLyricBlur(LyricBlurMode.LegacyAllRows);
+        await Task.Delay(600);
+        var legacyBlurred = refs.BlurredItemCount;
+        var legacyAllRows = ScreenCapture.GrabClient(refs.Window);
+
+        // 同义核对:探针**不读生产的类**,自己按 DataContext 索引距离算 |Δ|≤2 保留模糊。
+        // 两重证据叠加 —— ① 带模糊行数一致;② 这一帧与「现状」在画面上逐像素相同。
+        // 两条都过,才能说生产那个 `.far` 类判的确实是"距当前句 >2",而不是"所有已唱行"。
+        refs.SetLyricBlur(LyricBlurMode.Window2);
+        await Task.Delay(600);
+        var window2Blurred = refs.BlurredItemCount;
+        var window2Only = ScreenCapture.GrabClient(refs.Window);
+
+        refs.SetLyricBlur(LyricBlurMode.All);
+        await Task.Delay(600);
+
         if (blurred1.IsEmpty || region is null)
         {
             Log("[np-gpu] 抓屏失败或定位不到歌词区,跳过像素验证");
@@ -791,6 +897,25 @@ internal static class NowPlayingGpuProbe
                 ? "BitmapCache 把 Effect 一起跳过了 ⇒ 视觉变了,方案不可用"
                 : "无法判定(两者都不落在噪声底或消融差上)";
         Log($"[np-gpu]   方案B判定: {cacheVerdict}");
+
+        // ── 改法 B(只留近处 2 行模糊)的两条判据 ──
+        // ① 带模糊行数:直接数"有几行的 Effect 不是 null",不依赖任何读数噪声。
+        //    生产加了 `.far` 之后,这一步应当比旧语义少掉**远景那几行**。
+        // ② 像素差:现状 vs 旧语义。低于噪声底 ⇒ 砍掉的模糊肉眼不可见,是纯赚;
+        //    若明显高于噪声底,说明远景模糊在屏幕上是有信息的,收益要拿观感换。
+        var legacyVsProd = ScreenCapture.DiffRatio(restored, legacyAllRows, region);
+        var legacyMean = ScreenCapture.MeanDelta(restored, legacyAllRows);
+        var window2VsProd = ScreenCapture.DiffRatio(restored, window2Only, region);
+        Log($"[np-gpu]   带模糊行数: 现状 {prodBlurred} / 旧语义 {legacyBlurred} / 探针|Δ|≤2 {window2Blurred}" +
+            $"  (实化行共 {refs.LyricItemCount} 条)");
+        Log($"[np-gpu]   改法B 现状 vs 旧语义(远景也模糊) = {Percent(legacyVsProd)}" +
+            $" / 平均通道差 {legacyMean:F2} 级  ← 这是这次改动的全部视觉代价");
+        Log($"[np-gpu]   同义核对 现状 vs 探针按|Δ|≤2    = {Percent(window2VsProd)}" +
+            $" / 平均通道差 {ScreenCapture.MeanDelta(restored, window2Only):F2} 级" +
+            $"  ← ≈0 ⇒ 生产那个 .far 类判的距离与 |Δ|≤2 一致");
+        Log($"[np-gpu]   改法B 观感判定: " + (legacyMean < 3
+            ? "砍远景模糊在画面上看不出(平均通道差 <3 级)⇒ 纯赚"
+            : "远景模糊在画面上看得出差别 ⇒ 收益要拿观感换,值不值由用户定"));
 
         // 判据:模糊若真的画出来,关掉它至少要让文字边缘成片变化,量级必然远高于
         // 同一状态两帧之间的噪声底。取两者中较大者的两倍作阈值,免得把噪声读成效果。
@@ -1141,20 +1266,34 @@ internal static class NowPlayingGpuProbe
                 var keep = mode switch
                 {
                     LyricBlurMode.All => true,
+                    LyricBlurMode.LegacyAllRows => true,
                     LyricBlurMode.AllWithZeroOnSelected => true,
                     LyricBlurMode.AllWithRealOnSelected => true,
                     // 样式里 above/below1/below2 就是"当前句上下各两行";更远的 Default 态
                     // 与它们只差在透明度(0.4 vs 0.6~0.8),模糊本来就是最弱的一档。
+                    // ⚠ 但 above 覆盖的是**所有已唱行** —— 长歌词里十几行都算 above,
+                    // 所以这一档实际很少减少带模糊的行数(见 Window2 的注释)。
                     LyricBlurMode.Nearest => item.Classes.Contains("above")
                                              || item.Classes.Contains("below1")
                                              || item.Classes.Contains("below2"),
+                    // 按**索引距离**留当前句上下各两行 —— 这一档才是"只留近处"的字面语义。
+                    LyricBlurMode.Window2 => DistanceFromCurrent(item) is { } distance && distance <= 2,
                     LyricBlurMode.ExceptSelected => !item.IsSelected,
                     _ => false,
                 };
 
                 if (keep)
                 {
-                    if (_lyricEffects.TryGetValue(item, out var original)) item.Effect = original;
+                    _lyricEffects.TryGetValue(item, out var original);
+                    // 旧语义档:生产用 `.far` 把远景行的 Effect 置成了 null,而改法 B **之前**
+                    // 那些行走的是基样式那条 5px —— 原件既然是 null,就得把它补回来。
+                    // 只在"原件确实是 null"时才补:若哪天跑的是没加 `.far` 的构建,原件本身就是
+                    // 一个 5px 的 BlurEffect,直接还原即可,不会重复造实例。
+                    // ⚠ 5 抄自 `LyricView.axaml` 里 detail `ListBoxItem` 那条基样式 Setter;
+                    //    样式改了这里要跟着改,否则"旧语义"这一档就悄悄变成了另一个东西。
+                    if (original is null && mode == LyricBlurMode.LegacyAllRows)
+                        original = new BlurEffect { Radius = 5 };
+                    item.Effect = original;
                 }
                 else
                 {
@@ -1171,6 +1310,27 @@ internal static class NowPlayingGpuProbe
             }
 
             _blurredItems = _lyricItems.Count(item => item.Effect is not null);
+        }
+
+        /// <summary>
+        /// 这一行离当前句几行(<c>null</c> = 定位不到)。
+        ///
+        /// <para>
+        /// 用 <c>DataContext</c> 在 <c>LyricViewModel.Lines</c> 里 <c>IndexOf</c>,而不是
+        /// <c>ListBox.IndexFromContainer</c> —— 后者依赖容器已完成索引回填,在刚实化/刚换
+        /// ItemsSource 的瞬间会返回 -1,而那正是本方法被调用的时机(<c>SetLyricBlur</c> 紧跟在
+        /// 场景切换之后)。数据集与容器身份无关,更稳。
+        /// </para>
+        /// </summary>
+        private int? DistanceFromCurrent(ListBoxItem item)
+        {
+            // Lyric 是 **LyricView 控件**(不是 VM,Refs 里存的是视图)——VM 从它的 DataContext 取。
+            if (Lyric?.DataContext is not LyricViewModel vm) return null;
+            if (item.DataContext is not LyricLine line) return null;
+            var index = vm.Lines.IndexOf(line);
+            if (index < 0) return null;
+            var current = vm.CurrentIndex;
+            return current < 0 ? null : Math.Abs(index - current);
         }
 
         /// <summary>
@@ -2150,7 +2310,16 @@ internal static class NowPlayingGpuProbe
     private static void ReportAbGroups(List<Row> rows)
     {
         var baseline = rows.Where(row => row.Label.StartsWith("AB·默认", StringComparison.Ordinal)).ToList();
-        if (baseline.Count == 0) return;
+        if (baseline.Count == 0)
+        {
+            // 这里原先是**静默 return** —— 只要改一次变体标签(比如给基准档加个后缀说明),
+            // 整份拉丁方报表就凭空消失,而日志里只剩上文那几行原始读数、没有半点"报表没出"的痕迹
+            // (2026-09-21 踩到)。宁可吵一句,也不要让人把"没有报表"当成"报表说没差别"。
+            Log("[np-gpu] ⚠ 拉丁方报表跳过:没有任何一行的标签以「AB·默认」打头 —— " +
+                "变体表里的基准档被改名了?差值需要一个 0 点。当前变体标签:" +
+                string.Join(" / ", s_abVariants.Select(variant => variant.Label)));
+            return;
+        }
 
         static double Spread(List<Row> group) => group.Max(row => row.GpuMean) - group.Min(row => row.GpuMean);
         static string Values(List<Row> group) => string.Join(" / ", group.Select(row => $"{row.GpuMean:F2}"));

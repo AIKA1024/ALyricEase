@@ -1218,9 +1218,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
             var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
-            ClearTrackRows();
-            _queueSongs.Clear();
-            _materialized = 0;
             playlist.RefreshCover(overview.CoverUrl); // 封面随曲目变化(如"我喜欢的音乐"),URL 变了才重载
             _trackIds = overview.TrackIds.ToList();
             foreach (var s in overview.PrefixTracks)
@@ -1228,7 +1225,19 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _playbackQueue = new IndexedSongQueue(
                 _trackIds, overview.PrefixTracks, _api.GetSongsByIdsAsync);
 
-            AppendKnownTracks();
+            // 目标表 = trackIds 顺序里一直取到第一个未知 id 为止(与 AppendKnownTracks 同口径)
+            var prefix = new List<Song>();
+            for (var i = 0; i < _trackIds.Count; i++)
+            {
+                if (!_known.TryGetValue(_trackIds[i], out var song)) break;
+                prefix.Add(song);
+            }
+            _queueSongs.Clear();
+            foreach (var song in prefix) _queueSongs.Add(song);
+
+            // 网络结果落地:缓存行能原地升级的就别重建 —— 重建会让已上屏的封面重新异步加载,
+            // 用户看到"图片又加载了一遍"(见 SongItemViewModel.RebindPlayback)。
+            ApplyFreshRows(prefix, (song, index) => CreateTrackRow(song, index, _api));
             IsBusy = false;
 
             // 后台静默补充到 ~200 首,让首屏滚动不断档(至多一次 song/detail 请求,不阻塞 UI)
@@ -1281,15 +1290,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
             var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
-            ClearTrackRows();
             _queueSongs.Clear();
-            foreach (var s in songs)
-            {
-                _allTrackRows.Add(new SongItemViewModel(
-                    s, _player.PlayFromList, _allTrackRows.Count + 1, _queueSongs, null, playlist.Name));
-                _queueSongs.Add(s);
-            }
-            RefreshVisibleTracks();
+            foreach (var song in songs) _queueSongs.Add(song);
+            // 与网易云同理:缓存行能原地升级就别重建(重建会让已上屏的封面重新异步加载)
+            ApplyFreshRows(songs, (song, index) => new SongItemViewModel(
+                song, _player.PlayFromList, index + 1, _queueSongs, null, playlist.Name));
             await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, songs);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1721,6 +1726,85 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             changed = true;
         }
         if (changed) RefreshVisibleTracks();
+    }
+
+    /// <summary>已上屏的行与 <paramref name="songs"/> 逐首同 id 的最大前缀长度。
+    /// 只有这一段敢"原地升级":再往后可能是新增、换序,或只是缓存里多出来的尾巴,内容不可信。</summary>
+    private int CommonRowPrefix(IReadOnlyList<Song> songs)
+    {
+        var limit = Math.Min(_allTrackRows.Count, songs.Count);
+        var adopt = 0;
+        while (adopt < limit && _allTrackRows[adopt].Song.Id == songs[adopt].Id) adopt++;
+        return adopt;
+    }
+
+    /// <summary>网络结果落地:共同前缀的行**原地换绑播放委托**(既不换行对象、也不动集合
+    /// ⇒ 行控件与已解码的封面都不重建),之后那段整段按新数据重做,可见列表同步跟上。
+    ///
+    /// 为什么不能整表重建:打开歌单是**两遍装载**(先渲染磁盘缓存,网络回来后换在线数据),
+    /// 重建会让每个行容器离树回收;容器复用/重建时 DataContext 先被清成 null,
+    /// 行模板里的封面附加属性收到 null 就把已解码的图丢掉,再走一遍**异步** SetSource ——
+    /// 中间那几帧露出 ArtFallback 占位色,用户看到的就是"图片又加载了一遍"。
+    /// 实测(2026-09-20,--pl-cover-flash):清空重建与"逐位替换集合元素"都会整批换容器,
+    /// 只有"集合元素与行对象都不动"才保得住那些图。详见 <see cref="SongItemViewModel.RebindPlayback"/>。
+    ///
+    /// 歌单封面本来就不受影响:它走 <c>RefreshCover</c>,只在 URL 变了才重载。
+    ///
+    /// <c>internal</c> 是为了让 <c>--pl-cover-flash</c> 探针能直接驱动生产代码的这一条路径
+    /// (与 <see cref="RestoreNavigationSnapshotAsync"/> 同理);生产调用方只有下面两处打开歌单。</summary>
+    internal void ApplyFreshRows(IReadOnlyList<Song> songs, Func<Song, int, SongItemViewModel> createRow)
+    {
+        var lazyQueue = _playbackQueue;
+        var adopt = CommonRowPrefix(songs);
+
+        for (var i = 0; i < adopt; i++)
+        {
+            var index = i;
+            // 在线行与缓存行的差别只有"播放队列怎么算":懒歌单走完整逻辑队列,
+            // 非懒歌单(QQ 歌单/云盘)仍然是"已物化列表 + 来源名"。
+            // (委托类型显式写出来:三元里方法组与 lambda 无法统一推导)
+            Func<Song, IReadOnlyList<Song>?, string?, Task<bool>> binding;
+            IReadOnlyList<Song>? bindingQueue;
+            string? bindingSource;
+            if (lazyQueue is null)
+            {
+                binding = _player.PlayFromList;
+                bindingQueue = _queueSongs;
+                bindingSource = PlaylistTitle;
+            }
+            else
+            {
+                binding = (candidate, _, _) =>
+                    _player.PlayFromLazyList(candidate, lazyQueue, index, _queueSongs, PlaylistTitle);
+                bindingQueue = null;
+                bindingSource = null;
+            }
+            _allTrackRows[index].RebindPlayback(binding, bindingQueue, bindingSource);
+        }
+
+        // 共同前缀之后:内容不可信(新增/换序/缓存尾巴),整段按网络结果重做 —— 本来就要加载。
+        while (_allTrackRows.Count > adopt) _allTrackRows.RemoveAt(_allTrackRows.Count - 1);
+        for (var i = adopt; i < songs.Count; i++) _allTrackRows.Add(createRow(songs[i], i));
+        _materialized = songs.Count;
+
+        if (Filters.IsActive)
+        {
+            // 筛选激活时可见列表不是 _allTrackRows 的同序投影,顺序/条数都对不上,只能整批重算。
+            RefreshVisibleTracks();
+            return;
+        }
+
+        // 可见列表是 _allTrackRows 的同序投影:前 adopt 项**原样保留**(行对象不动 ⇒ 容器不动
+        // ⇒ 封面不重新加载),只在尾部增删。
+        if (adopt == 0)
+        {
+            // 一行都对不上(首次打开、换了歌单、顺序全变):整批换。
+            // 交给既有投影(内部不匹配前缀时会走一次 Reset),不再手写一条等价路径。
+            RefreshVisibleTracks();
+            return;
+        }
+        if (Tracks.Count > adopt) Tracks.RemoveRange(adopt, Tracks.Count - adopt);
+        if (Tracks.Count < _allTrackRows.Count) Tracks.AddRange(_allTrackRows.Skip(Tracks.Count).ToList());
     }
 
     private SongItemViewModel CreateTrackRow(Song song, int zeroBasedIndex, NetEaseApiClient? api)

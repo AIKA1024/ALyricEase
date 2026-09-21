@@ -19,9 +19,9 @@ namespace ALyricEase.ViewModels;
 /// 版权/区域等只有播放时才知道的,播放失败后补标禁用。</summary>
 public sealed partial class SongItemViewModel : ViewModelBase
 {
-    private readonly Func<Song, IReadOnlyList<Song>?, string?, Task<bool>> _playSong;
-    private readonly IReadOnlyList<Song>? _queue;
-    private readonly string? _source;
+    private Func<Song, IReadOnlyList<Song>?, string?, Task<bool>> _playSong;
+    private IReadOnlyList<Song>? _queue;
+    private string? _source;
     private readonly NetEaseApiClient? _api;
 
     private bool _likedRequested;
@@ -99,6 +99,33 @@ public sealed partial class SongItemViewModel : ViewModelBase
     /// <summary>整行是否可播放(不可播时行禁用置灰)。预判 + 播放实测两路更新。</summary>
     [ObservableProperty]
     private bool _isPlayable = true;
+
+    /// <summary>就地换播放绑定:把"离线缓存行"升级为"在线行"(歌单页网络刷新时用)。
+    ///
+    /// ⚠ 为什么必须是"就地换"而不是"重建一行":歌单页打开时是两遍装载 ——
+    /// 先渲染该歌单的磁盘缓存(封面立刻有图),网络结果回来后再换在线数据。
+    /// 实测(2026-09-20,--pl-cover-flash,同进程三档对照)**清空重建与"逐位替换集合元素"
+    /// 都会让 ItemsControl 把行控件整批换掉**(Avalonia 的 Replace 通知同样走容器回收):
+    /// 容器复用/重建时 DataContext 先被清成 null,行模板里的
+    /// <c>infra:ManagedCoverImage.Source</c> 收到 null 就把已解码的那张图丢掉,
+    /// 新 DataContext 落下来时再走一遍**异步** SetSource,中间那几帧露出行模板底下的
+    /// ArtFallback 占位色 —— 用户看到的就是"图片又加载了一遍"。
+    /// 只有"集合元素与行对象都不动、只换行内部的播放绑定"才能保住那张图。
+    ///
+    /// Song 元数据不变(同一首歌的同一份元数据),所以展示属性无需通知。</summary>
+    public void RebindPlayback(
+        Func<Song, IReadOnlyList<Song>?, string?, Task<bool>> playSong,
+        IReadOnlyList<Song>? queue,
+        string? source)
+    {
+        _playSong = playSong;
+        _queue = queue;
+        _source = source;
+        // 离线快照给这条曲目打的"跳过在线音质升级"标记,到在线为止。
+        Song.PreferCachedPlayback = false;
+        // 离线时按"有没有本地音频"禁用的行,在线后要按登录/会员重新判定,否则会一直灰着。
+        RefreshPlayability();
+    }
 
     /// <summary>按当前登录/会员状态重算可播性(数据驱动,播放前即可确定的部分):
     /// 免费歌恒可点；VIP 歌曲在未登录、或会员状态已确认且非会员时禁用。

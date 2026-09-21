@@ -151,6 +151,25 @@ public static class Program
             return;
         }
 
+        // 打开别的歌单时曲目封面"又加载一遍"(--pl-cover-flash):真窗口 + 真歌单页 + 真实封面,
+        // 同进程对照"清空重建 vs 逐位替换"两档下"本该显示封面却没显示"的可见行数逐帧曲线。
+        if (args.Length > 0 && args[0] == "--pl-cover-flash")
+        {
+            var flashBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var flashExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { flashExitCode = await PlaylistCoverFlashProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[flash] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            flashBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = flashExitCode;
+            return;
+        }
+
         // 真窗口播放详情页 GPU 归因(--np-gpu-real):同轮消融矩阵,逐项摘掉
         // 封面色团层 / 被盖住的底层页 / 进度自续订循环 / 歌词逐行模糊,量各自吃多少显卡。
         // ⚠ 窗口会置顶约一分半(GPU 计数只在真的提交到屏幕时才有值)。

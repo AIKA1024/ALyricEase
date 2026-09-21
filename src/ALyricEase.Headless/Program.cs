@@ -112,6 +112,34 @@ public static class Program
             return;
         }
 
+        // 真窗口进度条帧节奏对照(--progress-cadence-real):同窗口同播放状态下,只改
+        // "Win32 消息队列里放什么"(空 / 非输入消息 / 持续鼠标移动),量 RAF 交付间隔的分布。
+        // 用来定性"进度条卡顿感 vs 鼠标是否在动"这条用户反馈。
+        // 诊断旋钮:ALY_DISPATCH_STARVE=<秒> 改 DispatcherOptions.InputStarvationTimeout
+        // (给个很大的值等于关掉"渲染降级到 Input 优先级"那条路径)。
+        if (args.Length > 0 && args[0] == "--progress-cadence-real")
+        {
+            var cadBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            if (double.TryParse(Environment.GetEnvironmentVariable("ALY_DISPATCH_STARVE"), out var starveSeconds)
+                && starveSeconds > 0)
+                cadBuilder = cadBuilder.With(new DispatcherOptions
+                {
+                    InputStarvationTimeout = TimeSpan.FromSeconds(starveSeconds),
+                });
+            HeadlessApp.ConfigureServices();
+            var cadExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { cadExitCode = await ProgressCadenceProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[cadence] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            cadBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = cadExitCode;
+            return;
+        }
+
         // 真窗口歌单页后台 CPU 归因(--pl-cpu-real):空页基线 vs 歌单页顶部/底部 vs 离屏
         if (args.Length > 0 && args[0] == "--pl-cpu-real")
         {

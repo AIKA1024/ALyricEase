@@ -116,6 +116,13 @@
             <Setter Property="Effect">
                 <BlurEffect Radius="5" />
             </Setter>
+            <!-- ⚠ 这里试过 CacheMode="BitmapCache"(把每行栅格化进中间位图复用),已撤回。
+                 收益是真的:同轮 A/B 省 2.97~4.46% GPU(1920x1080,摘掉缓存那一档
+                 16.55% vs 带上 13.43%)。但**副作用更大**:挂上缓存后,后续改 Effect
+                 不再反映到画面 —— 实测"把每行 Effect 置空"后抓屏像素差 0.00%
+                 (没挂缓存时同一操作是 5.68%)。而歌词行的模糊正是靠 class 切换
+                 (above/below1/below2)驱动的,缓存会把模糊状态冻在第一次栅格化那一刻。
+                 ⇒ 要再试的话,必须先证明"样式路径改 Effect 能触发缓存重建"。 -->
         </Style>
         <!-- 原版状态是有方向的，不是当前句上下对称：
              已唱歌词 AbovePresent=0.7/1.5px；下一句 BelowPresent1=0.8/1px；
@@ -141,9 +148,13 @@
         <Style Selector="views|LyricView.detail ListBoxItem:selected">
             <Setter Property="Opacity" Value="1" />
             <Setter Property="RenderTransform" Value="scale(1,1)" />
-            <Setter Property="Effect">
-                <BlurEffect Radius="0" />
-            </Setter>
+            <!-- 当前句不需要模糊。这里原是 <BlurEffect Radius="0"/> : 半径 0 在视觉上
+                 等于没有模糊,却仍让该行走「离屏层 + 图像过滤」那条管线,而且它是全场唯一
+                 每帧都在变的那一行(字号最大、被滚动定位),于是每帧都要重做一次离屏。
+                 实测(1200x720,用 GPU 归因探针):这一行的代价 +5.91% GPU,
+                 而旁边 4 行**真模糊**(半径 1~2.5)加起来才 1.79%。
+                 显式置 null 才能压掉基样式那条 Radius="5";只写空 Setter 不行。 -->
+            <Setter Property="Effect" Value="{x:Null}" />
         </Style>
         <!-- 原版 Present 状态没有持久选中底色；压掉 Fluent ListBoxItem 的强调色背景，
              仅在真实 pointerover/pressed 时显示交互底色。 -->

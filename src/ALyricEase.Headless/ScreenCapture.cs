@@ -74,6 +74,45 @@ internal static class ScreenCapture
         return total == 0 ? double.NaN : (double)different / total;
     }
 
+    /// <summary>
+    /// 区域内每像素"最大通道差"的**平均值**(0~255),连续量。
+    ///
+    /// 为什么要有它:<see cref="DiffRatio"/> 带阈值,只回答"有多少像素差得**明显**",
+    /// 用来判"某个 Effect 有没有画出来"够用;但判"两种画法是不是同一张画"时它会失灵
+    /// —— 重采样误差每像素只差几级,全落在阈值下面,读数恒 0.00%,什么也没证明。
+    /// 平均差则能给出"到底差多少级",1~2 级是重采样误差,10 级以上才是真的换了样子。
+    /// </summary>
+    public static double MeanDelta(Frame first, Frame second, PixelRect? region = null)
+    {
+        if (first.IsEmpty || second.IsEmpty) return double.NaN;
+        if (first.Width != second.Width || first.Height != second.Height) return double.NaN;
+
+        var area = region ?? new PixelRect(0, 0, first.Width, first.Height);
+        var x0 = Math.Clamp(area.X, 0, first.Width);
+        var y0 = Math.Clamp(area.Y, 0, first.Height);
+        var x1 = Math.Clamp(area.X + area.Width, x0, first.Width);
+        var y1 = Math.Clamp(area.Y + area.Height, y0, first.Height);
+        if (x1 <= x0 || y1 <= y0) return double.NaN;
+
+        long total = 0;
+        long sum = 0;
+        for (var y = y0; y < y1; y++)
+        {
+            var rowStart = y * first.Stride;
+            for (var x = x0; x < x1; x++)
+            {
+                var offset = rowStart + x * 4;
+                var db = Math.Abs(first.Bgra[offset] - second.Bgra[offset]);
+                var dg = Math.Abs(first.Bgra[offset + 1] - second.Bgra[offset + 1]);
+                var dr = Math.Abs(first.Bgra[offset + 2] - second.Bgra[offset + 2]);
+                sum += Math.Max(db, Math.Max(dg, dr));
+                total++;
+            }
+        }
+
+        return total == 0 ? double.NaN : (double)sum / total;
+    }
+
     /// <summary>落盘成 PNG(临时目录),供人工核对。</summary>
     public static string Save(Frame frame, string name)
     {

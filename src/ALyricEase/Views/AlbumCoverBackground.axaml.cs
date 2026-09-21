@@ -29,6 +29,24 @@ namespace ALyricEase.Views;
 /// 实测首页（详情页关闭）GPU 8.36% / CPU 23.4%，把漂移停掉后降到 0.89% / 1.5%。
 /// 反过来，图层**画出来**只值 1.65%，"让它一直动"值 7.3% —— 钱花在动上，不在画上。
 /// </para>
+///
+/// <para>
+/// ⚠ **驱动方式试过一次"降频省电"，已回退 —— 别再试**（2026-09-21，拉丁方 4 变体 × 4 位置）：
+/// 把 20 条组合动画换成 33ms 的 <c>DispatcherTimer</c> 直接写 <c>visual.Translation/Scale</c>，
+/// GPU 12.06% → 1.86%、CPU 22.8% → 4.4%，但**画面肉眼可见地卡**。原因两条：
+/// ① 那台定时器实测只跑到 <b>12.5~14 次/秒</b>（名义 33ms 不是实际值 —— 间隔改成 16ms 读数一样、
+/// 优先级 Render↔Normal 也一样，说明贴在某个上限上）；
+/// ② 相位取自 15.6ms 分辨率的 <c>Environment.TickCount64</c>，位置被量化成阶梯，速度一顿一顿。
+/// </para>
+///
+/// <para>
+/// 之所以"降频必然换来卡"：这一层的代价**几乎只与"整窗重绘多少次"成正比**，与"每帧画什么"无关。
+/// 同轮实测：色团整层不画只值 <b>0.85%</b>、详情页主画布整块不画只值 <b>+0.11%</b>、
+/// "渐变→纯色 / 渐变→预渲染位图"都落在噪声里；换算到**每帧**，组合动画 0.16% GPU/帧、
+/// 定时器 0.13% GPU/帧，几乎一样。⇒ 省 GPU 只能少出帧，流畅只能按刷新率出帧，**二者不可兼得**。
+/// 而组合动画由合成器推帧，**UI 线程再忙也不掉帧**；定时器会被 UI 线程饿死（空载就已经只有 14 次/秒），
+/// 播放中只会更差。要降这一层的钱，只剩"别在看不见的时候动"（<see cref="MotionEnabled"/> 门控，已做）。
+/// </para>
 /// </summary>
 public partial class AlbumCoverBackground : UserControl
 {
@@ -74,6 +92,15 @@ public partial class AlbumCoverBackground : UserControl
         get => GetValue(MotionEnabledProperty);
         set => SetValue(MotionEnabledProperty, value);
     }
+
+    /// <summary>
+    /// 状态机是否认为"动画已启动"。**只给探针读**：夹具必须能读回真实状态，否则
+    /// "标签说要动、其实没动"这种失败会伪装成"省下一大截"（实测同一档在一轮里读出过
+    /// 0.58% 与 8.51% 两种值，差 15 倍）。
+    /// ⚠ 它只反映状态机，不反推"屏幕上真有动画在跑"：若外部直接对椭圆 <c>StopAnimation</c>，
+    /// 这里仍是 true —— 所以停必须走 <see cref="MotionEnabled"/>，别去停动画本身。
+    /// </summary>
+    internal bool IsDriftRunning => _motionStarted;
 
     public AlbumCoverBackground()
     {

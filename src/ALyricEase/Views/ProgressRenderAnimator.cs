@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using ALyricEase.Infrastructure;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -9,10 +10,29 @@ namespace ALyricEase.Views;
 /// <summary>
 /// 以最多 60 FPS 仅更新进度条的渲染变换。轨道始终留在原布局坐标中，
 /// 因而指针到播放位置的换算不会受到动画或视觉插值影响。
+///
+/// <para>
+/// ⚠ **它自己续订 <c>RequestAnimationFrame</c> 是不够的** —— 实测:光靠这个循环,
+/// 静息时每秒只真正写入视觉 8.7 次(帧间隔 p90 79ms),原因是 UI 线程在长睡而
+/// <c>WM_TIMER</c> 唤不醒它。所以循环活着的时候要一并持有
+/// <see cref="UiFramePacer"/>,由它按 ~60Hz 投递把 UI 线程叫醒。
+/// 数字、排除过程与"为什么不是别的方向"都写在 <see cref="UiFramePacer"/> 上。
+/// </para>
 /// </summary>
 internal sealed class ProgressRenderAnimator
 {
     internal const int TargetFramesPerSecond = 60;
+
+    /// <summary>诊断钩子:每收到一帧 RAF 回调就报一次(参数 = <see cref="Stopwatch.GetTimestamp"/> 时间戳)。
+    /// 交付帧率是平台给的、也是这条动画的输入,只能数出来、不能假设 ——
+    /// 实测它随"Win32 队列里有没有待处理输入"变化(见 ProgressCadenceProbe)。
+    /// 生产里没人订阅时是 null,零开销;只给探针读。</summary>
+    internal static Action<ProgressRenderAnimator, long>? FrameDelivered;
+
+    /// <summary>诊断钩子:每真的把预测位置写进视觉(<c>ScaleX</c>/球/气泡)就报一次。
+    /// 与 <see cref="FrameDelivered"/> 分开是因为两者可以不等:逻辑时间轴按 60FPS 累加,
+    /// 平台给得更快时会出现"收到帧但这一帧不写"的情况。</summary>
+    internal static Action<ProgressRenderAnimator, long>? FrameRendered;
     private static readonly long FrameIntervalTicks =
         (long)Math.Ceiling(Stopwatch.Frequency / (double)TargetFramesPerSecond);
 
@@ -29,6 +49,7 @@ internal sealed class ProgressRenderAnimator
     private bool _isPlaying;
     private bool _isScrubbing;
     private bool _frameRequested;
+    private bool _pacerHeld;
     private int _frameGeneration;
     private long _sampleTimestamp = Stopwatch.GetTimestamp();
     private long _nextRenderTimestamp;
@@ -188,6 +209,7 @@ internal sealed class ProgressRenderAnimator
         _frameGeneration++;
         _frameRequested = false;
         _nextRenderTimestamp = 0;
+        ReleasePacer();
     }
 
     private void EnsureFrameRequested()
@@ -198,14 +220,41 @@ internal sealed class ProgressRenderAnimator
 
         var generation = _frameGeneration;
         _frameRequested = true;
+        AcquirePacer();
         topLevel.RequestAnimationFrame(now => OnAnimationFrame(topLevel, generation, now));
     }
 
-    private void OnAnimationFrame(TopLevel topLevel, int generation, TimeSpan _)
+    /// <summary>
+    /// 帧泵的持有/归还必须成对,且与"循环是否真的在续订"一致 ——
+    /// 泵开着时 UI 线程不再长睡,空闲占用会略升,所以循环一停就要立刻还回去。
+    /// 归还点有两个:显式 <see cref="StopFrameLoop"/>(停用/拖动/离开视觉树),
+    /// 与 <see cref="OnAnimationFrame"/> 里 <see cref="ShouldAnimate"/> 转假(隐式停摆)。
+    /// 用标志去重,避免重复归还把别的持有者的份额减掉。
+    /// </summary>
+    private void AcquirePacer()
+    {
+        if (_pacerHeld) return;
+        _pacerHeld = true;
+        UiFramePacer.Acquire();
+    }
+
+    private void ReleasePacer()
+    {
+        if (!_pacerHeld) return;
+        _pacerHeld = false;
+        UiFramePacer.Release();
+    }
+
+    private void OnAnimationFrame(TopLevel topLevel, int generation, TimeSpan frameTimestamp)
     {
         if (generation != _frameGeneration) return;
+        FrameDelivered?.Invoke(this, frameTimestamp.Ticks);
         _frameRequested = false;
-        if (!ShouldAnimate()) return;
+        if (!ShouldAnimate())
+        {
+            ReleasePacer();
+            return;
+        }
 
         var timestamp = Stopwatch.GetTimestamp();
         if (_nextRenderTimestamp == 0)
@@ -214,6 +263,7 @@ internal sealed class ProgressRenderAnimator
         {
             var position = GetPredictedPosition();
             RenderPosition(position);
+            FrameRendered?.Invoke(this, timestamp);
             if (position >= _durationMs) return;
 
             // 按固定时间轴累加而不是“本次实际帧时间 + 33ms”，在 60/120/144Hz

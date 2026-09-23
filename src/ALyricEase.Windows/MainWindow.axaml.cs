@@ -130,7 +130,15 @@ public partial class MainWindow : Window
             splashVisual.StartAnimation("Opacity", fade);
         }
         SplashPane.IsHitTestVisible = false;
-        DispatcherTimer.RunOnce(() => SplashPane.IsVisible = false, TimeSpan.FromMilliseconds(220));
+        // ⚠ 收起启动画面必须**同时停掉转圈那条合成动画**,不能只 IsVisible=false:
+        // 合成器只要还挂着活动动画就按显示刷新率持续出帧,"动画的控件画没画出来"不影响这个
+        // (实测口径:被裁到窗外的色团漂移照样值 ~7.5% GPU)。窗口里还有 Acrylic 模糊层要每帧
+        // 重合成,于是这条空转是实打实的 —— 症状就是"开机后什么都不干,也一直有 CPU/GPU"。
+        DispatcherTimer.RunOnce(() =>
+        {
+            StopSplashSpinner();
+            SplashPane.IsVisible = false;
+        }, TimeSpan.FromMilliseconds(220));
 
         EnsureNowPlayingController();
         // 壳层刚挂载、布局未落定:补覆盖层屏幕外位置与标题栏按钮可见性
@@ -154,6 +162,30 @@ public partial class MainWindow : Window
         rotation.InsertKeyFrame(1f, MathF.PI * 2f);
         visual.StartAnimation("RotationAngle", rotation);
     }
+
+    /// <summary>停掉旋转指示(启动画面淡完后调用,见 <see cref="AttachShell"/>)。
+    ///
+    /// <para>
+    /// ⚠ 只把 <c>SplashPane.IsVisible</c> 置 false **停不掉它**。这条动画是
+    /// <c>IterationBehavior.Forever</c> 的**合成**动画,而合成器只要还有活动动画就按显示
+    /// 刷新率一直出帧 —— 代价 ≈ **出帧次数 × 每帧固定开销**,与"每帧画什么"几乎无关
+    /// (本项目已有两条独立实测:被裁到窗外的色团漂移值 ~7.5% GPU;同驱动的单视觉纯平移
+    /// 比 10 个椭圆还贵)。窗口里还有 Acrylic 模糊层需要每帧重合成,所以这条"看不见的空转"
+    /// 是实打实的开机后常驻占用。
+    /// </para>
+    ///
+    /// <para>诊断旋钮 <c>ALY_SPIN_KEEP=1</c> 保留旧行为(不停动画),用于同口径 A/B。</para>
+    /// </summary>
+    private void StopSplashSpinner()
+    {
+        if (KeepSplashSpinnerRunning) return;
+        if (ElementComposition.GetElementVisual(Spinner) is not { } visual) return;
+        visual.StopAnimation("RotationAngle");
+    }
+
+    /// <summary>诊断旋钮:置 1 时保持"隐藏但不停动画"的旧行为,只给对照实验用。</summary>
+    private static readonly bool KeepSplashSpinnerRunning =
+        Environment.GetEnvironmentVariable("ALY_SPIN_KEEP") == "1";
 
     private void EnsureNowPlayingController()
     {

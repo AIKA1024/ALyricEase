@@ -266,11 +266,13 @@ public partial class AlbumCoverBackground : UserControl
             var perp = new Vector3(-dir.Y, dir.X, 0);
             var amp = new Vector3(burst.X, burst.Y, 0).Length() * 0.75f;
 
+            // ⚠ 必须包含进度 0 的原点路标(k=0):漏掉它会让动画在第一个路标上冻住 1/8 周期,
+            // 且循环回卷时从终点瞬移回起点 —— 实测观感"一顿一顿"(2026-09-23)。
             var drift = visual.Compositor.CreateVector3DKeyFrameAnimation();
             drift.Target = "Translation";
             drift.Duration = s_motionCycle;
             drift.IterationBehavior = AnimationIterationBehavior.Forever;
-            for (var k = 1; k <= 8; k++)
+            for (var k = 0; k <= 8; k++)
             {
                 var angle = k * Math.PI / 4;
                 var offset = new Vector3(

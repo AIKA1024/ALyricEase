@@ -52,7 +52,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public IReadOnlyList<string> LanguageOptions { get; } = ["匹配系统设置(默认)", "简体中文"];
 
-    public IReadOnlyList<string> PerformanceOptions { get; } = ["平衡(默认)", "最佳性能", "最佳质量"];
+    /// <summary>性能与体验:0=最佳性能(歌词不模糊),1=最佳质量(歌词模糊)。</summary>
+    public IReadOnlyList<string> PerformanceOptions { get; } = ["最佳性能", "最佳质量"];
 
     public IReadOnlyList<string> AudioQualityOptions { get; } =
     [
@@ -89,14 +90,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>性能与体验(当前仅存储偏好)。</summary>
+    /// <summary>性能与体验。目前唯一生效的是"歌词行要不要模糊"这一条 ——
+    /// 最佳质量 = 模糊开(默认),最佳性能 = 整块歌词面板不挂 Effect。</summary>
     public int PerformanceIndex
     {
-        get => _state.PerformanceMode switch { "Performance" => 1, "Quality" => 2, _ => 0 };
+        get => _state.PerformanceMode == "Performance" ? 0 : 1;
         set
         {
-            _state.PerformanceMode = value switch { 1 => "Performance", 2 => "Quality", _ => "Balanced" };
+            _state.PerformanceMode = value == 0 ? "Performance" : "Quality";
             _state.Save();
+            // 和"动态背景"一样:只改"怎么画",不失效任何状态 —— 通知正在显示的详情页就地改绘,
+            // 不用重载歌词、不用重建列表。
+            _state.NotifyVisualEffectsChanged();
             OnPropertyChanged(nameof(PerformanceIndex));
         }
     }

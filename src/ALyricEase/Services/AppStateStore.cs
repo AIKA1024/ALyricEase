@@ -71,8 +71,22 @@ public sealed class AppStateStore
     /// <summary>界面语言:System/zh-CN(当前仅存储偏好)。</summary>
     public string Language { get; set; } = "System";
 
-    /// <summary>性能与体验:Balanced/Quality(当前仅存储偏好)。</summary>
-    public string PerformanceMode { get; set; } = "Balanced";
+    /// <summary>
+    /// 性能与体验:Performance(最佳性能)/ Quality(最佳质量)。
+    /// <para>
+    /// 原先还有一档 Balanced(默认)。那一档对渲染毫无影响 —— 它和 Quality 画出来的东西
+    /// 完全一样,只是个"看起来能调"的空位,2026-09-21 删掉,只留两个**真的会改画面**的档。
+    /// 老配置文件里的 <c>"Balanced"</c> 等于"当年什么都不改" ⇒ 加载时归一到 Quality,
+    /// 免得老用户升级后歌词突然不模糊了。
+    /// </para>
+    /// </summary>
+    public string PerformanceMode { get; set; } = "Quality";
+
+    /// <summary>
+    /// 歌词行要不要模糊。整个"性能与体验"档位目前**只**管这一件事 ——
+    /// 保留这个计算属性是为了让档位语义有个单一定义点,别在设置页和主 VM 里各解析一次字符串。
+    /// </summary>
+    public bool LyricBlurEnabled => PerformanceMode == "Quality";
 
     /// <summary>播放详情页动态背景效果。</summary>
     public bool DynamicBackground { get; set; } = true;
@@ -153,7 +167,11 @@ public sealed class AppStateStore
             WindowMaximized = dto.WindowMaximized ?? false;
             Theme = string.IsNullOrEmpty(dto.Theme) ? "System" : dto.Theme;
             Language = string.IsNullOrEmpty(dto.Language) ? "System" : dto.Language;
-            PerformanceMode = string.IsNullOrEmpty(dto.PerformanceMode) ? "Balanced" : dto.PerformanceMode;
+            // 只有显式写着 Performance 才是最佳性能;其余(含老配置里的 "Balanced"、空值、
+            // 将来冒出来的未知值)一律归到 Quality —— 认不出来的档位宁可多留观感,不要偷偷降画质。
+            PerformanceMode = string.Equals(dto.PerformanceMode, "Performance", StringComparison.OrdinalIgnoreCase)
+                ? "Performance"
+                : "Quality";
             DynamicBackground = dto.DynamicBackground ?? true;
             CompatibilityVisual = dto.CompatibilityVisual ?? true;
             AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 0);

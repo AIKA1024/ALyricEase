@@ -44,7 +44,7 @@ public sealed class AppStateFile
     /// <summary>界面语言:System/zh-CN(当前仅存储偏好,本地化尚未接入)。</summary>
     public string? Language { get; set; }
 
-    /// <summary>性能与体验:Balanced/Quality(当前仅存储偏好)。</summary>
+    /// <summary>性能与体验:Performance(歌词不模糊)/ Quality(歌词模糊)。旧值 Balanced 加载时归一为 Quality。</summary>
     public string? PerformanceMode { get; set; }
 
     /// <summary>播放详情页动态背景效果。</summary>

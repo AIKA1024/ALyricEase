@@ -17,6 +17,49 @@ public partial class LyricView : UserControl
 {
     private int _scrollAnimationVersion;
 
+    /// <summary>
+    /// 手动滚动(滚轮/滚动条拖拽/触摸平移)后自动跟随的暂停时长:暂停期只高亮不拉回,
+    /// 到点后的下一句变化恢复跟随。修"滚到一半被下一句拉回去"(2026-09-23)。
+    /// </summary>
+    private const long AutoFollowPauseMs = 4000;
+    private long _lastUserScrollTimestamp;
+
+    /// <summary>
+    /// 自身 + **全部祖先**的 `IsVisible` 订阅集(必须记住:脱离视觉树后祖先链就断了,靠回走收不回来,
+    /// 而那些祖先比本控件活得久,漏解就是真泄漏)。
+    ///
+    /// <para>
+    /// 为什么不直接读 <c>IsEffectivelyVisible</c>:Avalonia 12 里它**只有 getter**、没有可订阅的属性
+    /// (`IndeterminateAnimationGate` 也踩过同一件事)⇒ 只能把整条链订阅下来,任一层变化都当作
+    /// "有效可见性可能变了"。判定见 <see cref="IsEffectivelyPresentable"/>。
+    /// </para>
+    /// </summary>
+    private readonly List<Visual> _visibilityChain = [];
+    private EventHandler<AvaloniaPropertyChangedEventArgs>? _visibilityHandler;
+
+    /// <summary>
+    /// 不可见期间攒下的定位请求(见 <see cref="OnSelectionChanged"/>):记"要把哪一项滚到中间",
+    /// `-1` = 无事可做。重新可见时由 <see cref="OnVisibilityChainChanged"/> 补做一次。
+    /// </summary>
+    private int _pendingRecenterIndex = -1;
+
+    /// <summary>
+    /// 详情页是不是被**平移出窗外**(收起状态)。
+    ///
+    /// <para>
+    /// ⚠ 这才是本控件真正的"看不见":页面收起时 `IsVisible` 全程仍是 true
+    /// (`NowPlayingOverlayController` 只用 `RenderTransform` 把整页移出去),所以光订阅 `IsVisible` 抓不到。
+    /// 而页面收起期间**每条切句都会走到这里**:离屏状态下 `TranslatePoint` 算不出可信的容器位置,
+    /// 定位补间会把 `Offset` 拖到离谱的地方 —— 实测 **792 → 4382**(当前句才第 12 行),
+    /// 用户进屋后必须先纠正这个被拖跑的偏移(模型塌成 0..0、再从 0 号逐页实化回来,约 0.5 秒),
+    /// 那正是"进详情页时歌词要过一会才加载全"。
+    /// </para>
+    /// <para>
+    /// 初值是 <c>true</c>:控件刚构造时页面还没打开过,不该先跑定位。
+    /// </para>
+    /// </summary>
+    private bool _pageParked = true;
+
     /// <summary>用户点按一行歌词后，请求播放器跳到该行在实际播放时间轴上的位置。</summary>
     public event EventHandler<LyricSeekRequestedEventArgs>? SeekRequested;
 
@@ -24,10 +67,36 @@ public partial class LyricView : UserControl
     public static readonly StyledProperty<double> FontScaleProperty =
         AvaloniaProperty.Register<LyricView, double>(nameof(FontScale), 1.0);
 
+    /// <summary>
+    /// 歌词行要不要模糊。true(默认)= 样式里的正常样子:近处 1~2.5px、远景 5px。
+    /// false = 整个面板不挂 <c>Effect</c>,只留透明度分级 ——
+    /// 挂 Effect 的行都要走"离屏层 + 图像过滤"这条管线,整档关掉实测省 ≈0.95% GPU(1200×720,≈0.24%/行)。
+    /// 由设置「性能与体验」驱动(最佳质量 = true,最佳性能 = false),见 <c>MainViewModel.LyricBlurEnabled</c>。
+    /// </summary>
+    public static readonly StyledProperty<bool> BlurEnabledProperty =
+        AvaloniaProperty.Register<LyricView, bool>(nameof(BlurEnabled), defaultValue: true);
+
     public double FontScale
     {
         get => GetValue(FontScaleProperty);
         set => SetValue(FontScaleProperty, value);
+    }
+
+    public bool BlurEnabled
+    {
+        get => GetValue(BlurEnabledProperty);
+        set => SetValue(BlurEnabledProperty, value);
+    }
+
+    /// <summary>
+    /// 关模糊**只改类**,不写任何行的 <c>Effect</c> 本地值:类变了一样会触发样式重算,
+    /// 而本地值会盖过样式 ⇒ 以后样式改半径、改哪几行带模糊,这里就全都不跟了。
+    /// </summary>
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == BlurEnabledProperty)
+            Classes.Set("no-blur", !BlurEnabled);
     }
 
     public LyricView()
@@ -47,6 +116,74 @@ public partial class LyricView : UserControl
             OnLyricListTapped,
             RoutingStrategies.Bubble,
             handledEventsToo: true);
+        // 用户手动滚动打标(滚轮/按下/按住拖拽),暂停期内自动跟随让位(见 AutoFollowPauseMs)。
+        LyricList.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            OnLyricListUserScroll,
+            RoutingStrategies.Tunnel);
+        LyricList.AddHandler(
+            InputElement.PointerPressedEvent,
+            OnLyricListUserScroll,
+            RoutingStrategies.Tunnel);
+        LyricList.AddHandler(
+            InputElement.PointerMovedEvent,
+            OnLyricListPointerMoved,
+            RoutingStrategies.Tunnel);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        SubscribeVisibilityChain();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        UnsubscribeVisibilityChain();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void SubscribeVisibilityChain()
+    {
+        _visibilityHandler ??= OnVisibilityChainChanged;
+        if (_visibilityChain.Count > 0) return;
+        for (Visual? node = this; node is not null; node = node.GetVisualParent())
+        {
+            node.PropertyChanged += _visibilityHandler;
+            _visibilityChain.Add(node);
+        }
+    }
+
+    private void UnsubscribeVisibilityChain()
+    {
+        if (_visibilityHandler is null) return;
+        foreach (var node in _visibilityChain) node.PropertyChanged -= _visibilityHandler;
+        _visibilityChain.Clear();
+    }
+
+    /// <summary>重新变得可见时,把不可见期间攒下的定位请求补做一次。</summary>
+    private void OnVisibilityChainChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property != Visual.IsVisibleProperty) return;
+        if (_pendingRecenterIndex < 0 || !IsEffectivelyPresentable()) return;
+
+        var index = _pendingRecenterIndex;
+        _pendingRecenterIndex = -1;
+        Dispatcher.UIThread.Post(() => Recenter(index), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// 现在能不能做定位/补间(等价 <c>IsEffectivelyVisible</c>,另加"页面没被平移出窗外")。
+    /// ⚠ 前半段只能自己算:Avalonia 12 的 `IsEffectivelyVisible` **只有 getter**、不可订阅,
+    /// 所以退化成"自身 + 全部祖先的 `IsVisible`";后半段靠 <see cref="OnPageShown"/> /
+    /// <see cref="OnPageHidden"/> 显式驱动,因为平移出窗外不改任何 `IsVisible`。
+    /// </summary>
+    private bool IsEffectivelyPresentable()
+    {
+        if (_pageParked) return false;
+        for (Visual? node = this; node is not null; node = node.GetVisualParent())
+            if (!node.IsVisible) return false;
+        return true;
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -56,11 +193,103 @@ public partial class LyricView : UserControl
         var index = LyricList.SelectedIndex;
         if (index < 0) return;
 
-        // 先把虚拟化容器带入视口，再在下一次布局后做居中补间。
+        // ⚠ **不可见时不要发定位请求。** `ScrollIntoView` 里有 `if (!IsEffectivelyVisible) return null`
+        // —— 请求会被静默丢弃,而"隐藏期间"的这场定位正是游离容器的来源(上游 #15194,详见
+        // docs/avalonia-tips.md 末节)。改成记账,等重新可见时补一次;在途补间也一起掐掉,
+        // 否则它会继续往一个不可见的偏移上逐帧写。
+        if (!IsEffectivelyPresentable())
+        {
+            _pendingRecenterIndex = index;
+            _scrollAnimationVersion++;
+            return;
+        }
+
+        // 手动滚动暂停期:只高亮不拉回(见 AutoFollowPauseMs),version++ 顺带掐掉在途补间。
+        if (IsAutoFollowSuppressed)
+        {
+            _scrollAnimationVersion++;
+            return;
+        }
+
+        Recenter(index);
+    }
+
+    private bool IsAutoFollowSuppressed
+        => Environment.TickCount64 - _lastUserScrollTimestamp < AutoFollowPauseMs;
+
+    private void OnLyricListUserScroll(object? sender, RoutedEventArgs e)
+        => MarkUserScroll();
+
+    /// <summary>按住拖动(滚动条拖拽/触摸平移)算用户滚动;悬停移动不算。</summary>
+    private void OnLyricListPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (e.GetCurrentPoint(LyricList).Properties.IsLeftButtonPressed)
+            MarkUserScroll();
+    }
+
+    /// <summary>打标并掐掉在途补间 —— 否则补间逐帧写绝对 Offset 会覆盖用户的滚动位移。</summary>
+    private void MarkUserScroll()
+    {
+        _lastUserScrollTimestamp = Environment.TickCount64;
+        _scrollAnimationVersion++;
+    }
+
+    /// <summary>把目标行带入视口,再在下次布局后做居中补间(仅在有效可见时调用)。</summary>
+    private void Recenter(int index)
+    {
         LyricList.ScrollIntoView(index);
         var version = ++_scrollAnimationVersion;
         Dispatcher.UIThread.Post(() => AnimateSelectedToCenter(index, version), DispatcherPriority.Loaded);
     }
+
+    /// <summary>
+    /// 详情页重新出现时调一次:此时列表的定位请求最容易被"面板还没拿到视口"吃掉。
+    /// 连发两拍(当帧 + 隔一帧),让定位在布局之后一定重来一次。
+    /// </summary>
+    internal void OnPageShown()
+    {
+        // 页面收起时是"平移出窗外",`IsVisible` 不变 ⇒ 可见性订阅链**不会**被触发,
+        // 所以解封与补做都得在这里显式做。
+        _pageParked = false;
+
+        // 不可见期间攒下的定位请求在这里补做一次。只有真攒过才补:
+        // 健康路径上多叫一次 `ScrollIntoView` 本身就是在给上游那个锚点缺陷递机会。
+        var pending = _pendingRecenterIndex;
+        _pendingRecenterIndex = -1;
+        if (pending >= 0 && IsEffectivelyPresentable())
+            Dispatcher.UIThread.Post(() => Recenter(pending), DispatcherPriority.Loaded);
+
+        // 再补一拍居中:健康时是空操作(目标位移 ≤0.5px 就返回),只在"进屋时布局还没落定、
+        // 上一拍的补间没算准"时才有实际作用。
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                var index = LyricList.SelectedIndex;
+                if (index >= 0) AnimateSelectedToCenter(index, _scrollAnimationVersion);
+            },
+            DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// 详情页被收起(整页平移出窗外)时调一次:此后不再做定位与补间。
+    ///
+    /// <para>
+    /// 离屏时容器位置的 `TranslatePoint` 不可信 ⇒ 补间会把 `Offset` 拖到离谱的地方
+    /// (实测 792 → 4382,当前句才第 12 行),而且那段补间没人看得见。收起期间一律只记账,
+    /// 由 <see cref="OnPageShown"/> 一次补上。⚠ 顺带掐掉在途补间 —— 否则它会继续往那个离屏偏移上逐帧写。
+    /// </para>
+    /// </summary>
+    internal void OnPageHidden()
+    {
+        _pageParked = true;
+        _scrollAnimationVersion++;
+    }
+
+    // 这里曾有 `HealRealization` / `HealReporter`(实化自愈):检测到面板模型塌成 `0..0`、或视觉树里
+    // 多出一个 `IndexFromContainer == -1` 的游离容器时,就掐补间 → `InvalidateMeasure` → 仍不行则重挂集合。
+    // **已删除**(2026-09-23):那两条病理都属于 `VirtualizingStackPanel` 的实化模型,而上游 12.1.2 已修掉
+    // auto-sized 面板的渲染问题(#22081)。⚠ 若"只实化一两行 / 同一句重复"复发,先从
+    // `artifacts/lyric-workarounds-before-removal.patch` 取回这套,别从零重写。
 
     private void AnimateSelectedToCenter(int index, int version)
     {
@@ -141,19 +370,14 @@ public partial class LyricView : UserControl
     }
 
     /// <summary>映射原版 InteractiveLyricControl2 的 AbovePresent/BelowPresent1/BelowPresent2 状态。
-    ///
-    /// <para>
-    /// <c>far</c> 是给样式用的"更远的行"标记(距当前句 &gt;2 行,已唱与未唱两侧都算)——
-    /// 那几行不挂模糊,只靠透明度弱化。它**不改**原版那三个状态的语义(above 仍是"所有已唱行",
-    /// 覆盖远近),两者叠加时由 XAML 里的声明顺序决定谁压谁。
-    /// </para>
-    /// </summary>
+    /// 更远行的弱化交给这三档自己的透明度(0.7 / 0.8 / 0.6 / 0.4),不再另开"远近"类
+    /// —— 曾试过按距离摘掉远景那些行的模糊(省约 0.9%),观感有可测的代价而收益只有上界的一半,
+    /// 已还原;省模糊改由「性能与体验 → 最佳性能」整档开关承担。</summary>
     private static void ApplyProgressClasses(Control container, int index, int current)
     {
         container.Classes.Set("above", current >= 0 && index < current);
         container.Classes.Set("below1", current >= 0 && index == current + 1);
         container.Classes.Set("below2", current >= 0 && index == current + 2);
-        container.Classes.Set("far", current >= 0 && Math.Abs(index - current) > 2);
     }
 }
 

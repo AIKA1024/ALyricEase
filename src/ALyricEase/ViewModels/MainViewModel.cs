@@ -57,7 +57,11 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist.QqPlaylists.CollectionChanged += OnPlaylistsChanged;
         Playlist.PropertyChanged += OnPlaylistLoginChanged;
         // 设置里的渲染开关改了要立刻反映到正在显示的详情页背景上(见 NowPlayingMotionEnabled)
-        appState.VisualEffectsChanged += () => OnPropertyChanged(nameof(NowPlayingMotionEnabled));
+        appState.VisualEffectsChanged += () =>
+        {
+            OnPropertyChanged(nameof(NowPlayingMotionEnabled));
+            OnPropertyChanged(nameof(LyricBlurEnabled));
+        };
         _selectedNav = ShellNavItems.First(item => item.Key == _activePage);
         _ = Recommend.EnsureLoadedAsync(); // 启动即拉首页区块(幂等,失败静默)
         _ = Playlist.EnsureQqLoadedAsync(); // 启动恢复 QQ 登录态并拉侧边栏"QQ音乐"分组(失败静默)
@@ -186,6 +190,14 @@ public sealed partial class MainViewModel : ViewModelBase
     /// 但"改了就得马上对"这条不该依赖用户的操作顺序 —— 订阅是一行的事。
     /// </summary>
     public bool NowPlayingMotionEnabled => ShowNowPlaying && AppState.DynamicBackground;
+
+    /// <summary>
+    /// 歌词行要不要模糊 —— 由设置「性能与体验」决定(最佳质量 = 开,最佳性能 = 关)。
+    /// 走 <see cref="AppStateStore.LyricBlurEnabled"/>,不在这里重复解析档位字符串。
+    /// 关掉时整块歌词面板不挂 <c>Effect</c>:实测整档省 ≈0.95% GPU(1200×720,4 条带模糊行),
+    /// 代价只是文字边缘少了软化,位置/字号/透明度全不变。
+    /// </summary>
+    public bool LyricBlurEnabled => AppState.LyricBlurEnabled;
 
     partial void OnShowNowPlayingChanged(bool value) => OnPropertyChanged(nameof(NowPlayingMotionEnabled));
 

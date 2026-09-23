@@ -10,8 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ALyricEase\ALyricEase.csproj" />
-    <PackageReference Include="Avalonia.Headless" Version="12.1.1" />
-    <PackageReference Include="Avalonia.Skia" Version="12.1.1" /><!-- TEMP-DIAG:真实渲染截图 -->
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" /><!-- TEMP-DIAG:真窗口探针 UsePlatformDetect -->
+    <PackageReference Include="Avalonia.Headless" Version="12.1.2" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.2" /><!-- TEMP-DIAG:真实渲染截图 -->
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.2" /><!-- TEMP-DIAG:真窗口探针 UsePlatformDetect -->
   </ItemGroup>
 </Project>

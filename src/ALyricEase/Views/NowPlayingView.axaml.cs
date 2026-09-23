@@ -5,7 +5,9 @@ using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Media.Transformation;
+using Avalonia.Interactivity;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -43,18 +45,172 @@ public partial class NowPlayingView : UserControl
   private readonly Dictionary<Control, int> _opacityAnimationVersions = new();
   private readonly Dictionary<Control, int> _sizeAnimationVersions = new();
 
+  // ── 临时诊断:歌词列表"再进去只显示一行"(2026-09-22 加,**排查完连日志一起删**) ──────────
+  //
+  // 为什么写进应用而不是探针:Headless 探针在同一台机器、1200×720 与 1920×1080 两种尺寸、
+  // 五条往返路径上把可疑机制逐条证伪(没重载 / 没丢偏移 / 没回收容器 / 非逐帧实化 /
+  // 窗外补间不冻 / 模糊层不晚到),连"保留生产动画负载"那一档也补上了,仍复现不出来。
+  // ⇒ 只能拿用户真实运行时的状态:这段埋点把"到底哪一格不对"变成一行可读的量。
+  //
+  // 开关:Debug 构建默认开;Release 需显式 ALY_LYRIC_DIAG=1;任意构建 ALY_LYRIC_DIAG=0 可关。
+  // 输出:%TEMP%\aly-lyric-diag.log(追加写)。**诊断期间应用被强杀也不丢已写的行**(每次重开文件)。
+  private static readonly bool s_lyricDiag = IsLyricDiagEnabled();
+  private static readonly string s_lyricDiagPath = Path.Combine(Path.GetTempPath(), "aly-lyric-diag.log");
+  private int _lyricDiagGeneration;
+
+  private static bool IsLyricDiagEnabled()
+  {
+    var env = Environment.GetEnvironmentVariable("ALY_LYRIC_DIAG");
+    if (env == "0") return false;
+    if (env == "1") return true;
+#if DEBUG
+    return true;
+#else
+    return false;
+#endif
+  }
+
+  private static bool s_lyricDiagHeaderWritten;
+
+  private static void DiagWrite(string message)
+  {
+    if (!s_lyricDiag) return;
+    try
+    {
+      var text = message + Environment.NewLine;
+      if (!s_lyricDiagHeaderWritten)
+      {
+        // 每个进程写一次抬头:**必须能一眼看出这段日志是哪一版跑出来的**。
+        // 起因很实际:上一轮排查里疑似跑了旧 DLL(应用开着时编译,ALyricEase.dll 换不掉、
+        // 构建却报成功),结果"改完还是老样子"被当成"修法无效"。别靠记忆判版本。
+        s_lyricDiagHeaderWritten = true;
+        text = $"===== 新进程 PID={Environment.ProcessId} 构建={BuildStamp()} " +
+               $"启动={DateTime.Now:yyyy-MM-dd HH:mm:ss} ====={Environment.NewLine}{text}";
+      }
+
+      File.AppendAllText(s_lyricDiagPath, text);
+    }
+    catch
+    {
+      // 诊断绝不能反过来影响应用
+    }
+  }
+
+  /// <summary>应用程序集及其构建时间 —— 用来判"这份日志是哪一版跑出来的"。</summary>
+  private static string BuildStamp()
+  {
+    try
+    {
+      // ⚠ 必须用**应用程序集**,不能用 `Environment.ProcessPath`:后者在 `dotnet run` 下是
+      // dotnet.exe,打印出来的是 SDK 的时间戳 —— 那会把"你跑的是哪一版"又骗一次。
+      // 而 `ALyricEase.dll` 恰好就是"应用开着时编译换不掉"(MSB3027)的那个文件。
+      var path = typeof(NowPlayingView).Assembly.Location;
+      return string.IsNullOrEmpty(path)
+        ? "?"
+        : $"{Path.GetFileName(path)}@{File.GetLastWriteTime(path):MM-dd HH:mm:ss}";
+    }
+    catch
+    {
+      return "?";
+    }
+  }
+
+  /// <summary>开一轮采样:进页面后 0/80/160/240/320/480/800/1500ms 各记一行。</summary>
+  private async void RunLyricDiag(string reason)
+  {
+    if (!s_lyricDiag) return;
+    var generation = ++_lyricDiagGeneration;
+    try
+    {
+      var elapsed = 0;
+      foreach (var at in new[] { 0, 80, 160, 240, 320, 480, 800, 1500 })
+      {
+        if (at > elapsed)
+        {
+          await Task.Delay(at - elapsed);
+          elapsed = at;
+        }
+        if (generation != _lyricDiagGeneration) return; // 又开了一轮 ⇒ 这一轮作废
+        DiagWrite($"{Snapshot()} [{reason}] +{elapsed}ms");
+      }
+    }
+    catch
+    {
+    }
+  }
+
+  /// <summary>
+  /// 一行里塞进所有能判"哪里不对"的量:窗口尺寸/缩放、面板与列表可见性、歌词数据、选中项、
+  /// **实化出来的每个容器**及其高/透明度/模糊半径、以及视口·内容·偏移。
+  /// 「实化=1」「容器高度=0」「透明度=0」「模糊缺一档」这些形态在两行之间就能看出来。
+  /// </summary>
+  private string Snapshot()
+  {
+    var top = TopLevel.GetTopLevel(this);
+    var lyricView = this.GetVisualDescendants().OfType<LyricView>().FirstOrDefault();
+    var list = lyricView?.GetVisualDescendants().OfType<ListBox>().FirstOrDefault();
+    var scroll = list?.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+    var lyricVm = lyricView?.DataContext as LyricViewModel;
+    var items = list?.GetVisualDescendants().OfType<ListBoxItem>().ToList();
+    // 面板**自己**认的状态:类型、`CacheLength` 读回值、它认定的实化区间。
+    // ⚠ 2026-09-23 起那条 `CacheLength=1` 的绕法已删(上游 12.1.2 修掉 auto-sized VSP 的渲染问题)⇒
+    // `缓存=0` 是**预期值**,不再代表"样式没生效"。这条读回值仍要留着:它是"面板以为该实化多少"的唯一
+    // 直接证据 —— 用户机上出现过 `区间=0..3` 而列表高 897(面板以为只需填一小块 ⇒ 屏幕下半截空白)。
+    var vpanel = list?.GetVisualDescendants().OfType<VirtualizingStackPanel>().FirstOrDefault();
+    var perItem = items is null
+      ? "-"
+      : string.Join(" ", items.Select(item =>
+      {
+        var index = list!.IndexFromContainer(item);
+        var effect = item.Effect switch
+        {
+          null => "-",
+          BlurEffect blur => $"b{blur.Radius:F1}",
+          IEffect other => other.GetType().Name,
+        };
+        return $"{index}:{item.Bounds.Height:F0}h/{item.Opacity:F2}/{effect}";
+      }));
+
+    return $"{DateTime.Now:HH:mm:ss.fff} " +
+           $"win={top?.ClientSize.Width:F0}x{top?.ClientSize.Height:F0}@{top?.RenderScaling:F2} " +
+           $"面板={LyricsPanel.IsVisible}/{LyricsPanel.Opacity:F2} 列表可见={list?.IsVisible} " +
+           $"行数={lyricVm?.Lines.Count} HasLyric={lyricVm?.HasLyric} 当前句={lyricVm?.CurrentIndex} " +
+           $"选中={list?.SelectedIndex} 实化={items?.Count} " +
+           $"列表={list?.Bounds.Width:F0}x{list?.Bounds.Height:F0} 视口={scroll?.Viewport.Height:F0} " +
+           $"内容={scroll?.Extent.Height:F0} 偏移={scroll?.Offset.Y:F0} " +
+           $"面板={vpanel?.GetType().Name}/缓存={vpanel?.CacheLength}/区间={vpanel?.FirstRealizedIndex}..{vpanel?.LastRealizedIndex} " +
+           $"容器[{perItem}]";
+  }
+
+  private void OnLyricViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+  {
+    // 切句也打一行:用户看到的"其余行陆续出现"若跟着切句走,时间线一叠就能看出来。
+    if (e.PropertyName is nameof(LyricViewModel.CurrentIndex))
+      DiagWrite($"{Snapshot()} [切句]");
+  }
+
   public NowPlayingView()
   {
     InitializeComponent();
     _progressVisual = new ProgressRenderAnimator(ProgressRoot, ProgressTrack, ProgressFill, ProgressThumb);
     // 移动端(触屏 Head)隐藏全屏切换:窗口全屏是桌面概念,移动端整页本来就近乎全屏
     if (InteractionDefaults.IsTouchPrimary) FullScreenToggle.IsVisible = false;
+    MoreButton.Click += OnMoreButtonClick;
     SizeChanged += OnSizeChanged;
     AttachedToVisualTree += OnAttachedToVisualTree;
     DetachedFromVisualTree += OnDetachedFromVisualTree;
     DataContextChanged += OnDataContextChanged;
     // Escape 由收起按钮的 HotKeyManager.HotKey 全局处理(XAML),不依赖本视图焦点;
     // 聚焦(OnShowNowPlaying)仅为进度条方向键等内部键盘交互争取焦点,失败不影响 Escape。
+  }
+
+  /// <summary>右上角"更多"按钮:弹出当前歌曲菜单(与播放条/歌曲行同一份,见 SongContextMenu)。
+  /// 无当前曲目时不弹。</summary>
+  private void OnMoreButtonClick(object? sender, RoutedEventArgs e)
+  {
+    var player = _vm?.Player;
+    if (player is null || player.CurrentSong is null) return;
+    SongContextMenu.Create(MoreButton, player.CurrentSong, player.QueueSourceName).ShowAt(MoreButton);
   }
 
   /// <summary>覆盖层常驻(关闭时在屏幕外),打开(ShowNowPlaying=true)时聚焦本视图。</summary>
@@ -64,6 +220,7 @@ public partial class NowPlayingView : UserControl
     {
       _vm.PropertyChanged -= OnViewModelPropertyChanged;
       _vm.Player.PropertyChanged -= OnPlayerPropertyChanged;
+      _vm.Lyric.PropertyChanged -= OnLyricViewModelPropertyChanged;
     }
 
     _vm = DataContext as MainViewModel;
@@ -71,6 +228,7 @@ public partial class NowPlayingView : UserControl
     {
       _vm.PropertyChanged += OnViewModelPropertyChanged;
       _vm.Player.PropertyChanged += OnPlayerPropertyChanged;
+      _vm.Lyric.PropertyChanged += OnLyricViewModelPropertyChanged; // 临时诊断用(切句时间线)
       UpdateProgressBar();
     }
     UpdatePanelPresentation(_vm?.NowPlayingPanel ?? NowPlayingPanel.None, animate: false);
@@ -84,12 +242,26 @@ public partial class NowPlayingView : UserControl
     {
       _progressVisual.SetActive(vm.ShowNowPlaying && vm.Player.HasProgress);
       if (vm.ShowNowPlaying)
+      {
         Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Background);
+        // 进页面时补一次歌词列表的定位与实化自愈:此刻列表面板刚重新可见,
+        // 定位请求最容易被"面板还没拿到视口"吃掉(用户机上表现为实化区间塌成 0..0)。
+        this.GetVisualDescendants().OfType<LyricView>().FirstOrDefault()?.OnPageShown();
+        RunLyricDiag("打开详情页"); // 临时诊断:重进详情页那一刻起的 1.5 秒逐点采样
+      }
+      else
+      {
+        // 收起详情页 = 整页平移出窗外(**不是** IsVisible)⇒ 必须显式告诉 LyricView,否则它在离屏期间
+        // 照样每条切句做定位补间,而离屏算出来的目标偏移不可信(实测把 Offset 从 792 拖到 4382)
+        // ⇒ 用户再进来时得先纠正那个偏移,看起来就是"歌词过一会才加载全"。
+        this.GetVisualDescendants().OfType<LyricView>().FirstOrDefault()?.OnPageHidden();
+      }
     }
     else if (e.PropertyName is nameof(MainViewModel.NowPlayingPanel))
     {
       UpdateDesktopLayout(); // 面板开关 → 重算布局(控件漂移过去)
       UpdatePanelPresentation(vm.NowPlayingPanel, animate: _transitionsAttached);
+      DiagWrite($"{Snapshot()} [面板切到 {vm.NowPlayingPanel}]"); // 临时诊断
     }
   }
 

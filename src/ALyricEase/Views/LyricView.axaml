@@ -42,6 +42,14 @@
     <UserControl.Styles>
         <Style Selector="ListBox#LyricList">
             <Setter Property="ItemTemplate" Value="{StaticResource DefaultLyricItemTemplate}" />
+            <!-- 这里曾有 `ItemsPanel` = `VirtualizingStackPanel CacheLength="1"`,用来压住
+                 "边缘行卡在要不要实化的边界 ⇒ 面板反复 Measure/Arrange、进页面只实化一两行"的抖动
+                 (用户实测:进详情页那一刻实化数 8→2、`Extent.Height` 在 3268↔4049 之间乱跳)。
+                 **已删除**(2026-09-23):那属于 `VirtualizingStackPanel` 的自适应尺寸/变高项路径,
+                 上游 12.1.2 已修(#22081 Fix auto-sized VirtualizingStackPanel not rendering),
+                 面板回到默认配置;同时那批"游离容器/模型塌陷"的自愈绕法也一并清掉了。
+                 ⚠ 若哪天真又看到"只实化一个视口 + `Extent` 乱跳",先确认框架版本没被降回去,
+                 别急着重新加 `CacheLength` —— 它治的是症状,而且按行付 GPU。 -->
         </Style>
         <Style Selector="ListBoxItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -145,14 +153,14 @@
                 <BlurEffect Radius="2.5" />
             </Setter>
         </Style>
-        <!-- 更远的行(距当前句 >2 行,已唱与未唱两侧都算)**不挂模糊**,只靠透明度弱化。
-             为什么:挂 Effect 的行都走"离屏层 + 图像过滤",而整窗每帧都在重画(色团漂移 +
-             进度循环),这些离屏层就得跟着每帧重做一次。实测每行 ≈0.37% GPU / ~0.7 点单核 CPU
-             (1200x720,拉丁方同轮对照:"无模糊"整档省 1.62% / 2.7 点)。
-             而远景行本来就压到 40%~70% 不透明度,5px 模糊在那里几乎不产生可辨识的信息。
+        <!-- 性能档「最佳性能」:整个歌词面板不挂模糊(设置里「性能与体验」选「最佳质量」才开)。
+             为什么值得给这个开关:挂 Effect 的行都走"离屏层 + 图像过滤",而整窗每帧都在重画
+             (色团漂移 + 进度循环),这些离屏层就得跟着每帧重做一次 —— 实测整档关掉省 ≈0.95% GPU
+             (1200×720 拉丁方同轮:质量档 6.38% vs 性能档 5.43%,4 条带模糊行 ⇒ ≈0.24%/行)。
              ⚠ 这一条**必须声明在 above/below1/below2 之后**:同一优先级下后声明者生效,
-             而"已唱 3 行以上"的行会同时带 above 与 far 两个类(far 只压 Effect,不动 above 的透明度)。 -->
-        <Style Selector="views|LyricView.detail ListBoxItem.far">
+             否则那三条会把模糊又加回来(ListBoxItem 无 CSS 特异性)。
+             开关来自 LyricView.BlurEnabled —— 它往自身挂/摘 no-blur 类,见 LyricView.axaml.cs。 -->
+        <Style Selector="views|LyricView.detail.no-blur ListBoxItem">
             <Setter Property="Effect" Value="{x:Null}" />
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem:selected">
@@ -180,9 +188,19 @@
         </Style>
     </UserControl.Styles>
     <Grid>
+        <!-- ⚠ 这里**故意不用** `IsVisible="{Binding HasLyric}"`:那正是上游缺陷的触发条件。
+             每次切歌 `LyricViewModel.LoadAsync` 都先 `Reset()` ⇒ `HasLyric=false` ⇒ 列表隐藏;
+             紧接着新集合灌入、`SelectedIndex` 又跟着 `CurrentIndex` 变 —— 这一串全落在"列表隐藏"的窗口里。
+             而 Avalonia 的虚拟化面板在隐藏期间出的错,显形后收不回来
+             (上游 #15194:列表隐藏期间滚动/改内容 ⇒ 显示时出现重复/幽灵容器,至今 open、12 上仍复现):
+             实测留下一个 `IndexFromContainer == -1`、带 `:selected` 高亮的容器 —— 不在面板模型里却参与渲染,
+             压在真实那句上,就是用户报的"同一句歌词重复、重叠";模型塌成单个元素时则表现为"只剩当前句"。
+             ⚠ 去掉 IsVisible 不会让空态变脏:没有歌词时列表本就是空的(自身 Background=Transparent、
+             无边框 ⇒ 一个像素都不画),空态文字由下面那个 Message 覆盖层负责。
+             输入行为保持不变:`IsHitTestVisible` 跟随 `HasLyric`,与原来 `IsVisible=false` 时不可点等价。 -->
         <ListBox x:Name="LyricList" ItemsSource="{Binding Lines}"
                  SelectedIndex="{Binding CurrentIndex, Mode=OneWay}"
-                 IsVisible="{Binding HasLyric}"
+                 IsHitTestVisible="{Binding HasLyric}"
                  Background="Transparent" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Hidden"

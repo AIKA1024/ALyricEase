@@ -211,8 +211,23 @@ internal static class NowPlayingGpuProbe
 
             }
 
-            await BlurPixelTestAsync(refs);
-            await BackdropPixelTestAsync(refs);
+            // 歌词档:验收"设置切档 → 画面真的变"靠的是类样式链路,**不能**让逐行消融先跑 ——
+            // 它写的是本地值,本地值盖过样式,跑过之后门控就再也测不出来了。所以两条路二选一。
+            if (s_roundTripMode)
+            {
+                // 只要时序,不要读数:抓屏验收全部跳过(它们各自要停漂移、连抓多帧,几十秒起步)。
+                await OverlayRoundTripTestAsync(refs);
+            }
+            else
+            {
+                if (s_lyricAbMode) await LyricBlurGateTestAsync(refs);
+                else await BlurPixelTestAsync(refs);
+                await BackdropPixelTestAsync(refs);
+
+                // 覆盖层往返诊断(只在歌词档跑):它回答的是"退出详情页再进来,歌词列表停在哪"。
+                // 故意放在所有 GPU 计数之后 —— 它要开关覆盖层,放在计数中间会把帧节奏体检搅乱。
+                if (s_lyricAbMode) await OverlayRoundTripTestAsync(refs);
+            }
 
             StopPositionReporting();
             refs.Main.AppState.DynamicBackground = true;
@@ -232,36 +247,13 @@ internal static class NowPlayingGpuProbe
     private enum LyricBlurMode
     {
         /// <summary>
-        /// **照样式走**(= 生产现状)。2026-09-21 改法 B 之后,含义是"近处 1~2.5px、远景不挂" ——
-        /// 距当前句 &gt;2 行的行被 <c>.far</c> 置成 <c>Effect=null</c>,只留透明度;当前句也无效果。
-        /// <para>
-        /// ⚠ **这一档在改法 B 之前等于"所有实化行都带模糊",之后不等于**。想拿旧语义当回归对,
-        /// 用 <see cref="LegacyAllRows"/>,别指望这一档 —— 否则差值恒为 0,还会被读成"改动没生效"。
-        /// </para>
+        /// **照样式走**(= 生产现状,设置「性能与体验」= 最佳质量):除当前句外**每个实化行**都带模糊
+        /// —— 远景基样式 5px,近景 above/below1/below2 各 1.5/1/2.5px,当前句无效果。
         /// </summary>
         All,
 
-        /// <summary>
-        /// 旧语义(改法 B **之前**的生产样子):远期行也带基样式那条 <c>BlurEffect Radius=5</c>。
-        /// <para>
-        /// 与 <see cref="All"/> 的差就是改法 B 的**全部**代价 —— 同一轮里两格相减即得,不需要跨轮比。
-        /// </para>
-        /// </summary>
-        LegacyAllRows,
-
         /// <summary>只保留当前句上下各两行(样式里的 above/below1/below2),更远的行只靠透明度弱化。</summary>
         Nearest,
-
-        /// <summary>
-        /// 只保留当前句**上下各两行**(按索引距离 <c>|Δ| ≤ 2</c>),更远的行不挂 Effect、只靠透明度弱化。
-        /// <para>
-        /// 与 <see cref="Nearest"/> 的区别是**语义**,不是参数:后者按样式的 class 保留,而
-        /// <c>above</c> 覆盖的是**所有已唱行** —— 长歌词里可能十几行都算 above,于是"只模糊近处"
-        /// 实测几乎没减少带模糊的行数(1920x1080 下 12 行里只砍掉 1 行,读数反而更贵)。
-        /// 这一档才是"只留当前句上下各两行"的**字面**语义。
-        /// </para>
-        /// </summary>
-        Window2,
 
         /// <summary>
         /// 只去掉**当前句**那一行的 Effect。样式给 selected 行的是
@@ -270,7 +262,7 @@ internal static class NowPlayingGpuProbe
         /// </summary>
         ExceptSelected,
 
-        /// <summary>全部关掉(消融用)。</summary>
+        /// <summary>全部关掉(消融用)。= 设置「性能与体验」= 最佳性能 那个样子。</summary>
         None,
 
         /// <summary>
@@ -447,7 +439,12 @@ internal static class NowPlayingGpuProbe
         /// 背景层不归它管 ⇒ 可以做到"色团照漂移、页面不画",用来回答
         /// "那 10% 到底花在色团上还是花在**被反复重画的页面**上"。
         /// </summary>
-        bool PageContent = true);
+        bool PageContent = true,
+        /// <summary>
+        /// 非 null = 走生产链路:改 <c>LyricView.BlurEnabled</c>(探针不写任何行的本地值)。
+        /// null = 走探针的逐行消融(<see cref="LyricBlur"/>)。
+        /// </summary>
+        bool? LyricBlurEnabled = null);
 
     /// <summary>
     /// 聚焦模式(拉丁方)里的一个变体 —— 一份**完整状态**,不是一个"开关"。
@@ -462,7 +459,18 @@ internal static class NowPlayingGpuProbe
         /// <summary>歌词面板开不开。色团档一律 false(它们量的是色团);歌词档显式传 true。</summary>
         bool LyricsPanel = false,
         /// <summary>歌词行的模糊口径。只在歌词档里有意义。</summary>
-        LyricBlurMode LyricBlur = LyricBlurMode.All);
+        LyricBlurMode LyricBlur = LyricBlurMode.All,
+        /// <summary>
+        /// 非 null = 走**生产那条链路**:探针一行都不碰,只改 <c>LyricView.BlurEnabled</c>
+        /// (控件自己往自身挂/摘 <c>no-blur</c> 类,样式再决定挂不挂 Effect)。
+        /// null = 走探针的逐行消融(见 <see cref="LyricBlur"/>)。
+        /// <para>
+        /// ⚠ 两条路**不能混用**:逐行消融往 <c>ListBoxItem.Effect</c> 上写的是本地值,
+        /// 而本地值盖过样式 —— 混着跑之后"类样式能不能关掉模糊"就再也测不出来了
+        /// (读出来恒等于"关不掉",而那是探针自己造成的)。
+        /// </para>
+        /// </summary>
+        bool? BlurEnabled = null);
 
     /// <summary>
     /// 当前跑的是不是 A/B 夹具（拉丁方）。**只有它**允许探针去"落实并校验"驱动状态 ——
@@ -472,16 +480,61 @@ internal static class NowPlayingGpuProbe
         string.Equals(Env("ALY_NP_MODE"), "backdrop-ab", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// 歌词档聚焦模式(<c>ALY_NP_MODE=lyric-ab</c>):只跑歌词面板那几个口径。
+    /// 歌词档聚焦模式(<c>ALY_NP_MODE=lyric-ab</c>):只跑歌词模糊"开/关/没有面板"三个口径,
+    /// 外加一次门控抓屏验收。
     ///
     /// <para>
     /// 为什么要单开:全量那套二十多个场景跑一轮三分多钟,而窗口必须**可见且不被遮挡**
     /// (GPU 计数只在真的提交到屏幕时才有值)⇒ 霸屏三分钟。改一处歌词样式就得等这么久,
-    /// 迭代代价太高。这一档只跑 5 个变体、按拉丁方排位置,一轮约两分钟。
+    /// 迭代代价太高。这一档只跑 3 个变体、按拉丁方排位置,一轮约一分半。
+    /// </para>
+    /// <para>
+    /// ⚠ 这一档**只走生产链路**(<c>LyricView.BlurEnabled</c>),不碰任何行的
+    /// <c>Effect</c> 本地值 —— 它要回答的是"设置里切档到底省多少、画面变不变",不是
+    /// "把模糊抠掉值多少"。后者由全量档的「歌词·减模糊」回答。
     /// </para>
     /// </summary>
     private static readonly bool s_lyricAbMode =
         string.Equals(Env("ALY_NP_MODE"), "lyric-ab", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 只跑详情页往返诊断的模式(<c>ALY_NP_MODE=roundtrip</c>):一格场景把夹具推到"用户样子"
+    /// (详情页 + 歌词面板 + 生产模糊档),然后直接进 <see cref="OverlayRoundTripTestAsync"/>。
+    ///
+    /// <para>
+    /// 为什么要单开:往返诊断要看的是**容器逐帧实化**这种几十毫秒级的时序,采样必须加密到 40ms;
+    /// 而拉丁方那套(5 变体 × 5 位置 × 每格数秒)在这件事上一格读数都不需要。分开跑一轮几十秒,
+    /// 混在一起就是三分半 —— 调一次采样间隔的代价差 5 倍。
+    /// </para>
+    /// </summary>
+    private static readonly bool s_roundTripMode =
+        string.Equals(Env("ALY_NP_MODE"), "roundtrip", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 往返诊断的"带负载"档(<c>ALY_NP_LOAD=1</c>):**保留应用自己的动画负载**
+    /// (色团漂移 + 进度循环 + 帧泵都在跑),只停"播放位置推进"这一项。
+    ///
+    /// <para>
+    /// 为什么要这一档:往返诊断默认会把色团漂移和两个动画器全停掉 —— 那是为了让像素对照
+    /// 有干净的噪声底。但**用户报的"当前句先出来、其余陆续补上"很可能只在满负载下出现**:
+    /// 轻载时每一帧都闲着,容器实化/布局随手就做完了。于是同一份代码在轻载夹具里永远
+    /// 复现不出来,而"复现不出来"会被误读成"这条机制不成立"。
+    /// 单变量对照:只多"动画开着"这一件事,序列形状一比就知道负载有没有参与。
+    /// </para>
+    /// </summary>
+    private static readonly bool s_loadMode = Env("ALY_NP_LOAD") == "1";
+
+    /// <summary>
+    /// 往返诊断的"位置照常推进"档(<c>ALY_NP_POS=1</c>):**不冻结播放位置**。
+    ///
+    /// <para>
+    /// 往返诊断默认会把播放位置冻住,否则每次切句都会触发居中补间、把"没人负责定位"这类缺陷掩盖掉。
+    /// 但冻结本身也是一种夹具偏差:列表完全静止 ⇒ 虚拟化面板能一次把"视口 + 缓冲"实化满。
+    /// 用户那边歌在放、每几秒切一句、每次切句都跑 420ms 居中补间,面板一直在被 arrange 打断 ——
+    /// 实测只实化到一个视口就停(7~9 行 / 需 ~23 行)。这一档就是为复刻那个差别而加的。
+    /// </para>
+    /// </summary>
+    private static readonly bool s_positionMode = Env("ALY_NP_POS") == "1";
 
     /// <summary>
     /// 当前跑的是不是 A/B 夹具（拉丁方）。**只有它**允许探针去"落实并校验"驱动状态 ——
@@ -517,35 +570,29 @@ internal static class NowPlayingGpuProbe
     ];
 
     /// <summary>
-    /// 歌词档的拉丁方变体。五个变体的分工:1 个回归对(改前语义)、1 个现状(改后)、
-    /// 1 个**同义核对**、1 个上界锚、1 个标尺锚。
+    /// 歌词档的拉丁方变体。三个变体的分工:1 个现状(质量档)、1 个性能档、1 个标尺锚。
     ///
     /// <para>
-    /// ⚠ 「上界锚」是必需的:任何单项收益都该 ≤(现状 − 无模糊),超了就是夹具在骗人。
+    /// ⚠ 三格**全部**走 <see cref="AbVariant.BlurEnabled"/>(生产那条类样式链路),不碰任何行的
+    /// <c>Effect</c> 本地值 —— 这样一来这一档量的就是"设置改档位之后,该省多少 GPU",
+    /// 而不是"探针手动关掉模糊之后省多少"。两者的区别正是"开关接没接上"。
+    /// </para>
+    /// <para>
     /// 「标尺锚」回答的是另一个问题 —— 歌词面板**整体**(含布局、文字、透明渐变遮罩、模糊)
-    /// 值多少:把它和「无模糊」两句相减,才分得清"钱花在模糊上"还是"钱花在歌词面板本身"。
+    /// 值多少:把它和「性能档」相减,才分得清"钱花在模糊上"还是"钱花在歌词面板本身"。
     /// </para>
     /// </summary>
     private static readonly AbVariant[] s_lyricVariants =
     [
-        // 回归对:改法 B **之前**的生产样子 —— 远景行也带基样式的 5px 模糊。
-        // 它和下面那格的差就是这次改动的全部收益,同轮相减即可,不用拿跨轮读数比。
-        new("AB·旧(远景也模糊)", LyricsPanel: true, LyricBlur: LyricBlurMode.LegacyAllRows),
-
-        // 现状(改法 B):距当前句 >2 行的远景走 .far ⇒ 不挂 Effect,只靠透明度弱化。
+        // 现状 = 设置选「最佳质量」:除当前句外每个实化行都带模糊(远景 5px、近景 1~2.5px)。
         // ⚠ 标签必须仍以 `AB·默认` 打头:ReportAbGroups 拿它选基准行(差值全以它为 0 点)。
-        new("AB·默认(改后·近处2行)", LyricsPanel: true),
+        new("AB·默认(质量档)", LyricsPanel: true, BlurEnabled: true),
 
-        // 同义核对:探针**不读生产的类**,自己按 DataContext 索引距离算 |Δ|≤2 保留模糊。
-        // 它应与「现状」重合 —— 重合才说明生产那个 .far 类判的确实是"距当前句 >2",
-        // 而不是"所有已唱行"(≈Nearest 那档的坑,已作废)。两格读数的差就是判据本身的可信度。
-        new("AB·探针按|Δ|≤2", LyricsPanel: true, LyricBlur: LyricBlurMode.Window2),
-
-        // 上界锚:模糊全砍。收益的上限就在这一格。
-        new("AB·无模糊", LyricsPanel: true, LyricBlur: LyricBlurMode.None),
+        // 设置选「最佳性能」:整块歌词面板不挂 Effect。与上一格的差就是用户切档能拿到的钱。
+        new("AB·性能档", LyricsPanel: true, BlurEnabled: false),
 
         // 标尺锚:歌词面板整个不显示 —— 回答"歌词面板本身值多少"。
-        new("AB·关歌词面板", LyricsPanel: false),
+        new("AB·关歌词面板", LyricsPanel: false, BlurEnabled: true),
     ];
 
     /// <summary>按 <c>ALY_NP_MODE</c> 选当前这一档要用的变体表(<c>ReportAbGroups</c> 也读它)。</summary>
@@ -554,6 +601,19 @@ internal static class NowPlayingGpuProbe
 
     private static IEnumerable<Scenario> BuildScenarios()
     {
+        // 往返模式:只要一格,把夹具推到**用户的真实起点** —— 详情页开着、歌词面板开着、
+        // 模糊走生产样式(不写任何本地值)。往返诊断要的是这条路径上的时序,不需要读数矩阵。
+        if (s_roundTripMode)
+        {
+            // ⚠ 色团层必须**可见**:ALY_NP_LOAD=1 那一档要量的就是"色团漂移在跑"这份负载,
+            // 藏起来的话漂移对着空控件动,标签写着"有"而实际一帧都不重绘(已踩过一次:
+            // B-2 抓到 0.00% 像素差就是铁证 —— 满负载下不可能零差)。
+            yield return new Scenario("往返·起点", NowPlaying: true, LyricsPanel: true,
+                BackdropVisible: true, BackdropMotion: MotionMode.Default, ProgressLoop: true,
+                LyricBlur: LyricBlurMode.All);
+            yield break;
+        }
+
         // 聚焦模式(拉丁方):同一批变体在同一轮里把每个位置都坐一遍,只看**均值差**。
         //
         // 为什么非要同轮:GPU 计数器量的是"本进程占引擎活跃时间的比例",别的程序一占 GPU,
@@ -594,7 +654,8 @@ internal static class NowPlayingGpuProbe
                     LyricBlur: variant.LyricBlur,
                     DynamicBackground: variant.DynamicBackground,
                     Backdrop: variant.Mode,
-                    PageContent: variant.PageContent);
+                    PageContent: variant.PageContent,
+                    LyricBlurEnabled: variant.BlurEnabled);
             }
             yield break;
         }
@@ -746,7 +807,10 @@ internal static class NowPlayingGpuProbe
         refs.Main.AppState.DynamicBackground = scenario.DynamicBackground;
         refs.Main.AppState.NotifyVisualEffectsChanged();
 
-        refs.SetLyricBlur(scenario.LyricBlur);
+        // 两条互斥的路(理由见 AbVariant.BlurEnabled):变体声明了 BlurEnabled 就走生产的类样式链路,
+        // 探针一行都不碰;否则走逐行消融。混用会让"本地值盖过样式"这个副作用污染判据。
+        if (scenario.LyricBlurEnabled is { } blurEnabled) refs.SetLyricBlurByStyle(blurEnabled);
+        else refs.SetLyricBlur(scenario.LyricBlur);
         refs.SetBackdropAblation(scenario.Backdrop);
         // 放在 SetLyricBlur 之后:行引用在那里面刚刷新过,缓存要挂到当前实化的实例上。
         refs.SetLyricCache(scenario.LyricCache);
@@ -760,6 +824,10 @@ internal static class NowPlayingGpuProbe
         if (s_abMode) refs.EnsureProductionDrift(wantProductionDrift);
 
         await Task.Delay(SettleMs);
+
+        // 走类样式链路时,模糊是**异步**生效的(要等一次样式重算)——行数必须在 settle 之后重数,
+        // 否则读到的是上一档的 Effect,报表上会显示"切了档但带模糊行数纹丝不动"(看起来像开关没接上)。
+        if (scenario.LyricBlurEnabled is not null) refs.CaptureVisualStats();
 
         if (s_abMode)
         {
@@ -836,23 +904,6 @@ internal static class NowPlayingGpuProbe
         await Task.Delay(600);
         var noEffectOnSelected = ScreenCapture.GrabClient(refs.Window);
 
-        // 改法 B 的视觉判据:生产现状 vs 旧语义(远景行也带基样式的 5px)。
-        // 这两帧之间**只有远景行有没有模糊**这一件事不同 ⇒ 差多少像素、平均通道差几级,
-        // 就是"砍掉远景模糊到底看不看得出来"。同一次调用里连抓,色团与循环全停。
-        var prodBlurred = refs.BlurredItemCount;
-        refs.SetLyricBlur(LyricBlurMode.LegacyAllRows);
-        await Task.Delay(600);
-        var legacyBlurred = refs.BlurredItemCount;
-        var legacyAllRows = ScreenCapture.GrabClient(refs.Window);
-
-        // 同义核对:探针**不读生产的类**,自己按 DataContext 索引距离算 |Δ|≤2 保留模糊。
-        // 两重证据叠加 —— ① 带模糊行数一致;② 这一帧与「现状」在画面上逐像素相同。
-        // 两条都过,才能说生产那个 `.far` 类判的确实是"距当前句 >2",而不是"所有已唱行"。
-        refs.SetLyricBlur(LyricBlurMode.Window2);
-        await Task.Delay(600);
-        var window2Blurred = refs.BlurredItemCount;
-        var window2Only = ScreenCapture.GrabClient(refs.Window);
-
         refs.SetLyricBlur(LyricBlurMode.All);
         await Task.Delay(600);
 
@@ -898,25 +949,6 @@ internal static class NowPlayingGpuProbe
                 : "无法判定(两者都不落在噪声底或消融差上)";
         Log($"[np-gpu]   方案B判定: {cacheVerdict}");
 
-        // ── 改法 B(只留近处 2 行模糊)的两条判据 ──
-        // ① 带模糊行数:直接数"有几行的 Effect 不是 null",不依赖任何读数噪声。
-        //    生产加了 `.far` 之后,这一步应当比旧语义少掉**远景那几行**。
-        // ② 像素差:现状 vs 旧语义。低于噪声底 ⇒ 砍掉的模糊肉眼不可见,是纯赚;
-        //    若明显高于噪声底,说明远景模糊在屏幕上是有信息的,收益要拿观感换。
-        var legacyVsProd = ScreenCapture.DiffRatio(restored, legacyAllRows, region);
-        var legacyMean = ScreenCapture.MeanDelta(restored, legacyAllRows);
-        var window2VsProd = ScreenCapture.DiffRatio(restored, window2Only, region);
-        Log($"[np-gpu]   带模糊行数: 现状 {prodBlurred} / 旧语义 {legacyBlurred} / 探针|Δ|≤2 {window2Blurred}" +
-            $"  (实化行共 {refs.LyricItemCount} 条)");
-        Log($"[np-gpu]   改法B 现状 vs 旧语义(远景也模糊) = {Percent(legacyVsProd)}" +
-            $" / 平均通道差 {legacyMean:F2} 级  ← 这是这次改动的全部视觉代价");
-        Log($"[np-gpu]   同义核对 现状 vs 探针按|Δ|≤2    = {Percent(window2VsProd)}" +
-            $" / 平均通道差 {ScreenCapture.MeanDelta(restored, window2Only):F2} 级" +
-            $"  ← ≈0 ⇒ 生产那个 .far 类判的距离与 |Δ|≤2 一致");
-        Log($"[np-gpu]   改法B 观感判定: " + (legacyMean < 3
-            ? "砍远景模糊在画面上看不出(平均通道差 <3 级)⇒ 纯赚"
-            : "远景模糊在画面上看得出差别 ⇒ 收益要拿观感换,值不值由用户定"));
-
         // 判据:模糊若真的画出来,关掉它至少要让文字边缘成片变化,量级必然远高于
         // 同一状态两帧之间的噪声底。取两者中较大者的两倍作阈值,免得把噪声读成效果。
         var threshold = Math.Max(noise, 0.002) * 2;
@@ -935,6 +967,409 @@ internal static class NowPlayingGpuProbe
         var savedOff = ScreenCapture.Save(cleared, "np-gpu-blur-off");
         if (saved.Length > 0) Log($"[np-gpu] 两张对照图: {saved} / {savedOff}");
     }
+
+    /// <summary>
+    /// 歌词模糊**门控**的验收(只在 <c>lyric-ab</c> 模式跑)。
+    ///
+    /// <para>
+    /// 回答的是"设置里切「最佳性能」,画面真的会变吗"。这一条只能靠像素 + 行数,
+    /// 不能靠 GPU 读数:读数变好可能只是掉帧压实(实测踩过),而行数从 N 变 0 只可能是
+    /// 样式真的被换掉了。三段:
+    /// ① 质量档连抓两帧 = 噪声底;② 切性能档 ⇒ 模糊该消失;③ 切回质量档 ⇒ 必须回到 ① ——
+    /// 否则这个开关是**单向**的(切过去就回不来),那种"能省但回不去"的开关比没有更糟。
+    /// </para>
+    /// <para>
+    /// ⚠ 必须在**逐行消融之前**跑:消融往每行的 <c>Effect</c> 上写本地值,而本地值盖过样式,
+    /// 之后"改类还能不能生效"就再也测不出来了(读出来恒等于"关不掉",而那是探针自己造的)。
+    /// </para>
+    /// </summary>
+    private static async Task LyricBlurGateTestAsync(Refs refs)
+    {
+        Log("[np-gpu] ===== 抓屏验证:歌词模糊门控(生产类样式链路)=====");
+
+        refs.Main.NowPlayingPanel = NowPlayingPanel.Lyrics;
+        // 顺序要紧:先让色团层回到应用自己的样子(上一行若是「单纹理」/「限频」,替身还在树里),
+        // **再**停漂移 —— 反过来会把还原时那一次"重建动画"留在测量态里,整个像素验证的背景
+        // 就在动,所有差值都变成噪声。
+        refs.SetBackdropAblation(BackdropAblation.Default);
+        refs.SetPageContent(true);
+        refs.SetBackdropMotion(false);
+        refs.BarAnimator?.SetActive(false);
+        refs.NowPlayingAnimator?.SetActive(false);
+
+        refs.SetLyricBlurByStyle(true);
+        await Task.Delay(1500);
+        refs.CaptureVisualStats();
+        var region = LyricRegion(refs);
+        var quality = ScreenCapture.GrabClient(refs.Window);
+        var qualityRows = refs.BlurredItemCount;
+        var total = refs.LyricItemCount;
+        await Task.Delay(350);
+        var qualityAgain = ScreenCapture.GrabClient(refs.Window);
+
+        refs.SetLyricBlurByStyle(false);
+        await Task.Delay(700);
+        refs.CaptureVisualStats();
+        var performance = ScreenCapture.GrabClient(refs.Window);
+        var performanceRows = refs.BlurredItemCount;
+
+        refs.SetLyricBlurByStyle(true);
+        await Task.Delay(700);
+        refs.CaptureVisualStats();
+        var restored = ScreenCapture.GrabClient(refs.Window);
+        var restoredRows = refs.BlurredItemCount;
+
+        Log($"[np-gpu]   带模糊行数: 质量档 {qualityRows} / 性能档 {performanceRows} / 切回质量档 {restoredRows}" +
+            $"  (实化行共 {total} 条)");
+        var gateOk = qualityRows > 0 && performanceRows == 0 && restoredRows == qualityRows;
+        Log($"[np-gpu]   门控判定: " + (gateOk
+            ? "开→关→开 行数走了 N → 0 → N ⇒ 类样式链路双向可用"
+            : $"⚠ 行数没走成 N→0→N(读到 {qualityRows}→{performanceRows}→{restoredRows})—— " +
+              "要么 no-blur 类没生效(样式选择器/声明顺序),要么 BlurEnabled 的绑定链断了一环"));
+
+        if (quality.IsEmpty || region is null)
+        {
+            Log("[np-gpu]   抓屏失败或定位不到歌词区,像素部分跳过");
+            return;
+        }
+
+        var noise = ScreenCapture.DiffRatio(quality, qualityAgain, region);
+        var effect = ScreenCapture.DiffRatio(quality, performance, region);
+        var restore = ScreenCapture.DiffRatio(quality, restored, region);
+        Log($"[np-gpu]   歌词区 {region.Value.Width}x{region.Value.Height} 设备像素");
+        Log($"[np-gpu]   噪声底(质量档 vs 质量档)     = {Percent(noise)}");
+        Log($"[np-gpu]   切档差(质量档 vs 性能档)     = {Percent(effect)}" +
+            $" / 平均通道差 {ScreenCapture.MeanDelta(quality, performance):F2} 级  ← 这是「关掉模糊」的全部视觉代价");
+        Log($"[np-gpu]   可逆性(质量档 vs 切回)       = {Percent(restore)}  ← 与噪声底同档即开关可逆");
+
+        // 阈值取"噪声底"与 0.2% 中较大者的两倍:低于它就是把噪声读成了效果。
+        var threshold = Math.Max(noise, 0.002) * 2;
+        // 恰好 0.00% 单独一档:那更像"这次切档没作用到画面上"(绑定或样式没生效)而不是"模糊本来就没画"。
+        var pixels = double.IsNaN(effect)
+            ? "无法比较(抓屏失败)"
+            : effect == 0
+                ? "⚠ 切档后画面零变化 —— 模糊压根没参与渲染,或者门控没作用到画面上,先查绑定与样式"
+                : effect < threshold
+                    ? "模糊没有渲染 ⇒ 这些 GPU 是纯白付"
+                    : "模糊确实渲染了 ⇒ 「最佳性能」这一档省下来的观感代价就是上面那个切档差";
+        Log($"[np-gpu]   像素判定: {pixels}(阈值 {threshold * 100:F2}%)");
+
+        var savedQuality = ScreenCapture.Save(quality, "np-gpu-blur-gate-quality");
+        var savedPerformance = ScreenCapture.Save(performance, "np-gpu-blur-gate-performance");
+        if (savedQuality.Length > 0)
+            Log($"[np-gpu] 两张对照图: {savedQuality} / {savedPerformance}");
+    }
+
+    /// <summary>
+    /// 详情页"滑出窗外 → 滑回来"之后,歌词列表停在哪儿。
+    ///
+    /// <para>
+    /// 起因:覆盖层是**常驻**的(<c>NowPlayingOverlayController</c> 只改 <c>RenderTransform</c>,
+    /// 既不摘出视觉树也不切 <c>IsVisible</c>)⇒ 重新进入时 <c>LyricList.SelectedIndex</c> 没有变化,
+    /// <c>SelectionChanged</c> 就不会触发。而 <c>LyricView</c> 里**只有**那个事件处理器会调
+    /// <c>ScrollIntoView</c> 与居中补间 ⇒ 重新进入后没有任何代码把当前句滚回视口。
+    /// </para>
+    ///
+    /// <para>
+    /// 这个诊断就是把"没有任何代码负责"这句话变成可观察的量:行数、实化容器数、列表高度、
+    /// 视口高度、内容高度、滚动偏移 —— 在往返前后与重进后各读一遍。
+    /// 判据很直白:**重进后「选中行 ≠ 当前句」或「视口只够一行」** 就是缺陷本身;
+    /// 若过几秒自己好了,那是下一次切句(<c>SelectionChanged</c>)把它顺手修回来的。
+    /// </para>
+    ///
+    /// <para>
+    /// ⚠ 采样点刻意分成 120ms / 540ms / 1.8s 三档:只有一个"最终态"会把
+    /// "进来就错、过一会自愈"读成"一切正常"。
+    /// </para>
+    /// </summary>
+    private static async Task OverlayRoundTripTestAsync(Refs refs)
+    {
+        Log("[np-gpu] ===== 诊断:面板关开 / 详情页往返后的歌词列表状态 =====");
+
+        // 先把面板摆成"用户在用的样子",再让模糊回到生产档 —— 免得诊断自己引入变量。
+        refs.Main.NowPlayingPanel = NowPlayingPanel.Lyrics;
+        refs.SetLyricBlurByStyle(true);
+        // ALY_NP_LOAD=1:保留应用自己的动画负载(色团漂移 + 进度循环 + 帧泵都在跑)。
+        // 默认把这三项停掉,是为了让后面的像素对照有干净的噪声底 —— 但那也让夹具变成轻载,
+        // "负载相关"的缺陷在这里永远复现不出来。位置推进无论如何都停在下面那行。
+        if (!s_loadMode)
+        {
+            refs.SetBackdropMotion(false);
+            refs.BarAnimator?.SetActive(false);
+            refs.NowPlayingAnimator?.SetActive(false);
+        }
+        else
+        {
+            refs.SetBackdropMotion(true);
+            refs.BarAnimator?.SetActive(true);
+            refs.NowPlayingAnimator?.SetActive(true);
+            // 别只看"我设了 true":漂移是真的在跑才算负载(见 docs/perf-notes.md 那条铁律 ——
+            // 同一档曾在一轮里读出 0.58% 与 8.51%,差 15 倍,就是"标签说要动、其实没动")。
+            await Task.Delay(400);
+            Log($"[np-gpu] 负载档:色团漂移={Describe(refs.Backdrop?.MotionEnabled)} " +
+                $"实际在跑={refs.Backdrop?.IsDriftRunning} 底部动画器={Describe(refs.BarAnimator)} " +
+                $"详情页动画器={Describe(refs.NowPlayingAnimator)}" +
+                " —— ⚠ 本档下 B-2 的像素对照无意义(每帧都在动),只看 B1/⑦ 的**序列形状**");
+            if (refs.Backdrop?.IsDriftRunning != true)
+                Log("[np-gpu]   ⚠ 漂移其实没在跑,本档退化成轻载 —— 别拿它当负载对照");
+        }
+
+        // 先冻结歌词进度,否则这个诊断**必然假阴性**:位置定时器每 PositionReportMs 推一次,
+        // 只要在采样窗口里切了一句,SelectedIndex 变化就会触发 SelectionChanged
+        // ⇒ 顺手把当前句滚回视口,缺陷被修好了,读出来一片正常。
+        // 冻结之后 CurrentIndex 停住,重进时"没有代码负责定位"这件事才浮得出来。
+        //
+        // ⚠ **但冻结本身也是夹具偏差**:冻住之后列表完全静止,虚拟化面板能安安静静地一次
+        // 把视口+缓冲实化满;而用户那边歌在放、每几秒切一句、每次切句都要跑 420ms 居中补间 ——
+        // 面板一直在被 arrange 打断。用户实测(1270×1011,视口 897、行高 97)只实化了 7~9 行
+        // = **刚好一个视口、缓冲一行都没有**,而同构建的静止夹具是 22~23 行。
+        // `ALY_NP_POS=1` 就是不冻结、照原样推进,用来复刻那个差别(单变量)。
+        if (s_positionMode)
+            Log("[np-gpu] 位置推进档:播放位置照常推进(复刻用户真实状态:切句 + 居中补间都在跑)");
+        else
+            StopPositionReporting();
+
+        await Task.Delay(1200);
+        DumpLyricListState(refs, "①基线(在页内)");
+
+        // ── 路径 A:关歌词面板再打开(唯一真的会切 IsVisible 的那条)──
+        // SetPanelVisible 的消失动画是 300ms,IsVisible 在动画之后才落到 false,
+        // 所以采样间隔必须 > 那种延迟,否则读到的还是"正在消失"。
+        refs.Main.NowPlayingPanel = NowPlayingPanel.None;
+        await Task.Delay(620);
+        DumpLyricListState(refs, "②面板已收起");
+
+        refs.Main.NowPlayingPanel = NowPlayingPanel.Lyrics;
+        await Task.Delay(120);
+        DumpLyricListState(refs, "③面板重开 120ms");
+        await Task.Delay(420);
+        DumpLyricListState(refs, "④面板重开 540ms");
+        await Task.Delay(1300);
+        DumpLyricListState(refs, "⑤面板重开 1.8s");
+
+        // ── 路径 B:点"收起"按钮退出详情页,再点底部播放条进来 —— **用户实际走的那条** ──
+        // 关键区别:这条路上 LyricsPanel.IsVisible **一次都没变过**(覆盖层只改 RenderTransform,
+        // 面板状态与容器全保留)⇒ "面板重建 / 丢滚动位置"那一类解释在这里根本不成立。
+        // 用户报的"只看到当前句、其余陆续出现"因此只能是**容器逐帧实化**,而单点采样看不见过程。
+        refs.Main.CloseNowPlayingCommand.Execute(null);
+        await Task.Delay(900);
+        DumpLyricListState(refs, "⑥收起后(面板仍开)");
+
+        // ── 路径 B-1:覆盖层**在窗外**时连续切句,列表跟不跟得上 ──
+        // 用户的真实场景是:收起详情页后歌继续放,一句一句往前走,等他们回来时看到
+        // "当前句先出来、其余陆续补上"。
+        //
+        // ⚠ **2026-09-22 起这条路径的期望值变了(落地 `LyricView.OnPageHidden`)**:页面收起 =
+        // 整页平移出窗外,离屏时 `TranslatePoint` 算出的目标偏移**不可信** —— 用户机上实测把
+        // `Offset` 从 792 拖到 **4382**(当前句才第 12 行),他再进屋时得先纠正这个偏移
+        // (模型塌成 0..0、再从 0 号逐页实化回来,约 0.5 秒)= 用户说的"歌词过一会才加载全"。
+        // 所以现在收起期间**一律不做定位与补间**,只记账(pending),进屋时一次补上。
+        // ⇒ 正确读数:**每格内那 4 个 `Offset.Y` 完全相同**(补间真停了);跨格最多按
+        //    "让选中项保持可见"挪一行 —— 那是 ListBox 自己的最小滚动,不是我们的补间。
+        Log("[np-gpu]   ── B-1:页面在窗外时连续切句 ──");
+        var offscreen = ServiceLocator.Get<LyricViewModel>();
+        for (var i = 0; i < 6 && offscreen.CurrentIndex + 1 < offscreen.Lines.Count; i++)
+        {
+            offscreen.CurrentIndex += 1;
+            await DumpLyricSeriesAsync(refs, $"B1·窗外切句{i + 1}", stepMs: 60, count: 4);
+        }
+        DumpLyricListState(refs, "B1·窗外切句结束");
+        Log("[np-gpu]   判读:每格内那 4 个 `Offset.Y` **必须完全相同**(= 我们那条 420ms 居中补间真的停了);"
+            + "跨格仍会挪一点 —— 那是 ListBox **自己**为\"让选中项保持可见\"做的最小滚动(约一行高),不是我们的补间,"
+            + "别把它读成\"定位还在跑\"。关键是 ⑦:进屋后应当**一次**补正到位(偏差 0),而不是先塌成 0..0 再逐页实化。");
+
+        refs.Main.OpenNowPlayingCommand.Execute(null);
+        // 速采样:容器数有没有变化(若恒定,说明"行列被回收重建"这条解释不成立,是夹具正常性的旁证)。
+        await DumpLyricSeriesAsync(refs, "⑦滑回后", stepMs: 40, count: 12);
+
+        // ── 路径 B-2:"其余行"是不是**还没画出来** ──
+        // 这是最后一个站得住的解释:当前句是**唯一不挂 Effect** 的那一行(样式里 selected → Effect=null),
+        // 而其余每一行都要走"离屏层 + 模糊"。若这几层在滑回那几帧里还没渲染出来,屏幕上就恰好是
+        // "当前句先出来、其余陆续补上" —— 和用户描述逐字吻合,且能解释"有时候又会全部出来"(赶得上就正常)。
+        //
+        // 判据很干净:滑回动画 400ms 之后位置已冻结、色团与全部动画都停 ⇒ 此刻到稳定态之间的
+        // **任何像素差只可能是"某些行还没画"**。所以拿 480ms/780ms/1.4s 三帧分别减 3.2s 的稳定帧,
+        // 再拿"稳定帧 vs 稳定帧重抓"定噪声底 —— 差值贴着噪声底就是这一条也不成立,得换方向。
+        await Task.Delay(150);
+        var early = ScreenCapture.GrabClient(refs.Window);
+        await Task.Delay(300);
+        var mid = ScreenCapture.GrabClient(refs.Window);
+        await Task.Delay(600);
+        var late = ScreenCapture.GrabClient(refs.Window);
+        await Task.Delay(1800);
+        var settled = ScreenCapture.GrabClient(refs.Window);
+        await Task.Delay(300);
+        var settledAgain = ScreenCapture.GrabClient(refs.Window);
+
+        if (early.IsEmpty || settled.IsEmpty)
+        {
+            Log("[np-gpu]   ⚠ 抓屏失败,跳过 B-2 逐帧对照");
+        }
+        else
+        {
+            var lyricRegion = LyricRegion(refs);
+            Log($"[np-gpu]   滑回后逐帧 vs 稳定帧(歌词区域内,区域={(lyricRegion is { } r ? $"{r.X},{r.Y} {r.Width}x{r.Height}" : "整窗")}):");
+            Log($"[np-gpu]     480ms = {Percent(ScreenCapture.DiffRatio(early, settled, lyricRegion))}" +
+                $" / 平均通道差 {ScreenCapture.MeanDelta(early, settled, lyricRegion):F2} 级");
+            Log($"[np-gpu]     780ms = {Percent(ScreenCapture.DiffRatio(mid, settled, lyricRegion))}" +
+                $" / 平均通道差 {ScreenCapture.MeanDelta(mid, settled, lyricRegion):F2} 级");
+            Log($"[np-gpu]     1.4s  = {Percent(ScreenCapture.DiffRatio(late, settled, lyricRegion))}" +
+                $" / 平均通道差 {ScreenCapture.MeanDelta(late, settled, lyricRegion):F2} 级");
+            Log($"[np-gpu]     噪声底(稳定帧 vs 重抓)= {Percent(ScreenCapture.DiffRatio(settled, settledAgain, lyricRegion))}" +
+                $" / 平均通道差 {ScreenCapture.MeanDelta(settled, settledAgain, lyricRegion):F2} 级");
+            Log("[np-gpu]   判读:早期帧若明显高于噪声底 ⇒ 「当前句先出、其余行晚到」成立(根因是逐行离屏层);"
+                + " 全部贴着噪声底 ⇒ 这条也不成立,屏幕上其实是整块一起好的,得往别处查");
+        }
+
+        // 再切一句(等价于播放推进),看切句后的实化是不是**又从头铺一遍**:
+        // 用户说"有时候又会全部出来",若两段的形状不同,区别就在这一次切句上。
+        var advance = ServiceLocator.Get<LyricViewModel>();
+        var from = advance.CurrentIndex;
+        if (from >= 0 && from + 1 < advance.Lines.Count)
+        {
+            advance.CurrentIndex = from + 1;
+            await DumpLyricSeriesAsync(refs, "⑧切句后", stepMs: 40, count: 30);
+        }
+        else
+        {
+            Log($"[np-gpu]   ⚠ 跳过切句采样:当前句={from},行数={advance.Lines.Count}(无从 +1)");
+        }
+
+        // ── 路径 C:面板**不可见**时收到定位请求 ──
+        // 这是应用启动后"第一次打开歌词面板"的真实时序:歌词加载完(Reset 把当前句置 -1)
+        // → 第一次进度回调定位到某句,那一下 SelectionChanged 是在面板还不可见时跑的。
+        // 而 SelectionChanged 里那两件事在不可见状态下都是空操作:
+        // ScrollIntoView 拿不到容器,AnimateSelectedToCenter 因 Viewport.Height=0 直接 return。
+        // 之后**没有任何代码补做** ⇒ 面板打开时列表停在默认位置。
+        var vm = ServiceLocator.Get<LyricViewModel>();
+        refs.Main.NowPlayingPanel = NowPlayingPanel.None;
+        await Task.Delay(620);
+        vm.CurrentIndex = -1;          // 等价于"刚 Reset:还没有当前句"
+        await Task.Delay(150);
+        vm.CurrentIndex = 18;          // 等价于"第一次定位到当前句"
+        await Task.Delay(320);
+        DumpLyricListState(refs, "⑧不可见时定位");
+
+        refs.Main.NowPlayingPanel = NowPlayingPanel.Lyrics;
+        await Task.Delay(700);
+        DumpLyricListState(refs, "⑨打开面板后");
+
+        // ── 路径 D:歌词重载(= 换歌走的那条)──
+        // ⚠ **2026-09-22 落地 A+B 之后这条路的意思变了**:`LyricView.axaml` 里那条
+        // `IsVisible="{Binding HasLyric}"` 已删掉(上游 #15194 —— 列表"隐藏期间"改内容/滚动 ⇒
+        // 显形后出现重复/幽灵容器,详见 `docs/avalonia-tips.md` 末节),`HasLyric` 现在只留在
+        // `IsHitTestVisible` 上 ⇒ **重载期间列表不再隐藏**。
+        // 所以这里必须按**真实换歌序列**演,三步缺一不可:
+        // ① `Reset` 的等价物(`Lines` 清空 + `CurrentIndex = -1`)→ ② 灌入新集合 →
+        // ③ **首次定位**(`CurrentIndex = n`,真实应用里由进度回调驱动)。
+        // 少了第 ③ 步就不是用户那条路径 —— 而它正是 recenter(`ScrollIntoView` + 居中补间)的触发点。
+        Log("[np-gpu]   ── D:歌词重载(真实换歌序列:清空 → 灌入 → 首次定位)──");
+        var reload = ServiceLocator.Get<LyricViewModel>();
+        var reloaded = reload.Lines.ToList();   // 重建一个新集合(行对象不动)
+        reload.CurrentIndex = -1;               // ① 等价于"刚 Reset:还没有当前句"
+        reload.Lines = new();
+        reload.HasLyric = false;
+        await Task.Delay(500);
+        DumpLyricListState(refs, "D·重载中(空集,列表仍可见)");
+        reload.Lines = new(reloaded);           // ②
+        reload.HasLyric = true;
+        await DumpLyricSeriesAsync(refs, "D·重载后(尚未定位)", stepMs: 80, count: 8);
+        reload.CurrentIndex = reloaded.Count > 20 ? 18 : 0;   // ③ 首次定位
+        await DumpLyricSeriesAsync(refs, "D·首次定位后", stepMs: 80, count: 12);
+
+        // ── 路径 E:让歌词行的容器拿到焦点,再进出详情页 ──
+        // 猜想(来自用户机日志:进页面时 `区间=0..0` + 容器 `[0, 当前句]`,约 300ms 才恢复):
+        // 进详情页时 `Focus()` 会把焦点**还给上次点过的那个 ListBoxItem**,滚动基础设施随即对它
+        // 做 BringIntoView ⇒ 对虚拟化面板下一次 ScrollIntoView ⇒ 面板的实化模型塌成 {0}、
+        // 当前句那个容器游离在模型外 ⇒ 视口里只剩它一句、其余全空。
+        // **夹具一直复现不出来,正因为从没点过歌词行 —— 焦点不在歌词项上。**
+        // 验证:聚焦某行容器 → 收起/打开详情页 → 看"实化/区间"是否塌。
+        Log("[np-gpu]   ── E:聚焦某行 → 进出详情页 ──");
+        var lyricList = refs.LyricList;
+        var focusVm = ServiceLocator.Get<LyricViewModel>();
+        var focusIndex = focusVm.CurrentIndex;
+        // ⚠ 用 VM 的当前句而不是 `SelectedIndex`:路径 D 把歌词整集合换过之后,选中被清成 -1
+        // (OneWay 绑定不回推),照 SelectedIndex 走会直接跳过这一步。
+        if (lyricList is not null && focusIndex >= 0)
+        {
+            lyricList.ScrollIntoView(focusIndex);   // 先让目标容器实化出来才拿得到
+            await Task.Delay(150);
+        }
+
+        if (lyricList is not null && focusIndex >= 0 &&
+            lyricList.ContainerFromIndex(focusIndex) is Control focusTarget)
+        {
+            focusTarget.Focus();
+            await Task.Delay(250);
+            // ⚠ 必须把"焦点到底拿到没有"打出来:夹具窗口是 ShowActivated=false,
+            // 拿不到焦点的话这一步就是空测,别把它读成"聚焦不影响面板"。
+            Log($"[np-gpu]   E·聚焦第 {focusIndex} 行: 项.IsFocused={focusTarget.IsFocused} " +
+                $"列表.IsFocused={lyricList.IsFocused} 列表.IsKeyboardFocusWithin={lyricList.IsKeyboardFocusWithin}");
+            DumpLyricListState(refs, "E·已聚焦某行");
+            refs.Main.CloseNowPlayingCommand.Execute(null);
+            await Task.Delay(700);
+            refs.Main.OpenNowPlayingCommand.Execute(null);
+            await DumpLyricSeriesAsync(refs, "E·进出后", stepMs: 60, count: 12);
+        }
+        else
+        {
+            Log($"[np-gpu]   ⚠ 跳过 E:拿不到第 {focusIndex} 行的容器");
+        }
+
+        Log("[np-gpu]   判据:唯一会滚回当前句的入口是 SelectionChanged(选中行变化才跑)。"
+            + " ③④ 里「偏差≠0」或「偏移掉到 0」= 重开面板丢了滚动位置;"
+            + " ⑨ 若偏移明显偏离 ① 的值,说明「不可见时那次定位是空操作、之后无人补做」;"
+            + " ⑤ 若自己好了,是切句顺手修回来的(用户看到的就是\"过一会才正常\")");
+    }
+
+    /// <summary>
+    /// 加密采样:每 <paramref name="stepMs"/> 毫秒读一次"实化容器数 @ 滚动偏移"。
+    ///
+    /// <para>
+    /// **为什么单个时刻的读数不够**:用户报的"进去时只看到当前句,其余行陆续出现"是**填充过程**,
+    /// 不是终态。而 120ms / 540ms / 1.8s 三档在这个窗口下永远读到"已经填满",
+    /// 于是"逐帧实化"会被读成"一切正常" —— 采样间隔必须小于一次实化的耗时,过程才摊得开。
+    /// </para>
+    /// </summary>
+    private static async Task DumpLyricSeriesAsync(Refs refs, string when, int stepMs, int count)
+    {
+        var vm = ServiceLocator.Get<LyricViewModel>();
+        var parts = new List<string>(count);
+        for (var i = 0; i < count; i++)
+        {
+            await Task.Delay(stepMs);
+            parts.Add($"{refs.RealizedLyricItemCount}@{refs.LyricScroll?.Offset.Y:F0}");
+        }
+
+        var panel = refs.LyricsPanel;
+        Log($"[np-gpu]   {when,-18} 实化@偏移(每 {stepMs}ms): {string.Join(" ", parts)}");
+        Log($"[np-gpu]   {"",-18} 面板可见={panel?.IsVisible} 列表可见={refs.LyricList?.IsVisible} " +
+            $"行数={vm.Lines.Count} 当前句={vm.CurrentIndex} 选中行={refs.LyricList?.SelectedIndex} " +
+            $"视口={refs.LyricScroll?.Viewport.Height:F0} 内容={refs.LyricScroll?.Extent.Height:F0}");
+    }
+
+    /// <summary>
+    /// 打印歌词列表此刻的完整布局状态。每格都写出"是被谁改的"这一层含义,
+    /// 免得把"列表高度"与"视口高度"当成同一个量(它们是两回事)。
+    /// </summary>
+    private static void DumpLyricListState(Refs refs, string when)
+    {
+        var vm = ServiceLocator.Get<LyricViewModel>();
+        var list = refs.LyricList;
+        var scroll = refs.LyricScroll;
+        var panel = refs.LyricsPanel;
+        var selected = list?.SelectedIndex ?? -1;
+        // 选中行与当前句差几行 —— 这一格就是"用户看到的那句话对不对"。
+        var offBy = selected >= 0 && vm.CurrentIndex >= 0 ? selected - vm.CurrentIndex : int.MinValue;
+        Log($"[np-gpu]   {when,-16} " +
+            $"行数={vm.Lines.Count,3} HasLyric={vm.HasLyric,-5} 当前句={vm.CurrentIndex,3} 选中行={selected,3} " +
+            $"偏差={DescribeDelta(offBy),4} 实化={refs.RealizedLyricItemCount,2} " +
+            $"面板高={panel?.Bounds.Height,6:F0} 列表高={list?.Bounds.Height,6:F0} " +
+            $"视口={scroll?.Viewport.Height,6:F0} 内容={scroll?.Extent.Height,7:F0} 偏移={scroll?.Offset.Y,7:F0}");
+    }
+
+    /// <summary>选中行相对当前句的偏差(<c>n/a</c> = 有一边是 -1,还谈不上偏差)。</summary>
+    private static string DescribeDelta(int delta) => delta == int.MinValue ? "n/a" : delta.ToString("+0;-0;0");
 
     /// <summary>
     /// 用屏幕像素回答"色团换了画法之后,还是不是同一个样子"。
@@ -1210,6 +1645,26 @@ internal static class NowPlayingGpuProbe
 
         public int LyricItemCount => _lyricItems.Length;
 
+        /// <summary>
+        /// 现场数一遍实化行,不读 <see cref="CaptureVisualStats"/> 的快照。
+        ///
+        /// <para>
+        /// 和 <see cref="LyricItemCount"/> 的区别是**时机**:那个是"上一轮采样时"的行数,
+        /// 这个读的是"此刻"。诊断"面板重开后列表长什么样"必须用后者 —— 症状恰恰是
+        /// "行数在这一刻不对",拿上一轮快照会把问题读没。
+        /// </para>
+        /// </summary>
+        public int RealizedLyricItemCount => RealizedLyricItems().Length;
+
+        /// <summary>歌词面板(常驻 Grid,开关只改它的 <c>IsVisible</c>)。</summary>
+        public Grid? LyricsPanel => NowPlaying?.FindControl<Grid>("LyricsPanel");
+
+        /// <summary>歌词列表本体。<c>LyricList</c> 的名字在 <see cref="Lyric"/> 的名字作用域里,不在详情页那层。</summary>
+        public ListBox? LyricList => Lyric?.FindControl<ListBox>("LyricList");
+
+        /// <summary>列表内部那个 ScrollViewer —— 滚动位置与视口高度的唯一来源。</summary>
+        public ScrollViewer? LyricScroll => LyricList?.FindDescendantOfType<ScrollViewer>();
+
         public int BlurredItemCount => _blurredItems;
 
         public int BackdropEllipses => _backdropEllipses;
@@ -1266,18 +1721,16 @@ internal static class NowPlayingGpuProbe
                 var keep = mode switch
                 {
                     LyricBlurMode.All => true,
-                    LyricBlurMode.LegacyAllRows => true,
                     LyricBlurMode.AllWithZeroOnSelected => true,
                     LyricBlurMode.AllWithRealOnSelected => true,
                     // 样式里 above/below1/below2 就是"当前句上下各两行";更远的 Default 态
                     // 与它们只差在透明度(0.4 vs 0.6~0.8),模糊本来就是最弱的一档。
-                    // ⚠ 但 above 覆盖的是**所有已唱行** —— 长歌词里十几行都算 above,
-                    // 所以这一档实际很少减少带模糊的行数(见 Window2 的注释)。
+                    // ⚠ 但 above 覆盖的是**所有已唱行** —— 长歌词里十几行都算 above,所以这一档
+                    // 实测很少减少带模糊的行数(1920×1080 下 12 行里只砍掉 1 行,读数反而更贵)。
+                    // "只留近处"这条路 2026-09-21 判负,结论见 docs/perf-notes.md。
                     LyricBlurMode.Nearest => item.Classes.Contains("above")
                                              || item.Classes.Contains("below1")
                                              || item.Classes.Contains("below2"),
-                    // 按**索引距离**留当前句上下各两行 —— 这一档才是"只留近处"的字面语义。
-                    LyricBlurMode.Window2 => DistanceFromCurrent(item) is { } distance && distance <= 2,
                     LyricBlurMode.ExceptSelected => !item.IsSelected,
                     _ => false,
                 };
@@ -1285,14 +1738,6 @@ internal static class NowPlayingGpuProbe
                 if (keep)
                 {
                     _lyricEffects.TryGetValue(item, out var original);
-                    // 旧语义档:生产用 `.far` 把远景行的 Effect 置成了 null,而改法 B **之前**
-                    // 那些行走的是基样式那条 5px —— 原件既然是 null,就得把它补回来。
-                    // 只在"原件确实是 null"时才补:若哪天跑的是没加 `.far` 的构建,原件本身就是
-                    // 一个 5px 的 BlurEffect,直接还原即可,不会重复造实例。
-                    // ⚠ 5 抄自 `LyricView.axaml` 里 detail `ListBoxItem` 那条基样式 Setter;
-                    //    样式改了这里要跟着改,否则"旧语义"这一档就悄悄变成了另一个东西。
-                    if (original is null && mode == LyricBlurMode.LegacyAllRows)
-                        original = new BlurEffect { Radius = 5 };
                     item.Effect = original;
                 }
                 else
@@ -1313,24 +1758,23 @@ internal static class NowPlayingGpuProbe
         }
 
         /// <summary>
-        /// 这一行离当前句几行(<c>null</c> = 定位不到)。
+        /// 走**生产链路**开/关歌词模糊:只改控件的 <c>BlurEnabled</c>,一行都不碰。
         ///
         /// <para>
-        /// 用 <c>DataContext</c> 在 <c>LyricViewModel.Lines</c> 里 <c>IndexOf</c>,而不是
-        /// <c>ListBox.IndexFromContainer</c> —— 后者依赖容器已完成索引回填,在刚实化/刚换
-        /// ItemsSource 的瞬间会返回 -1,而那正是本方法被调用的时机(<c>SetLyricBlur</c> 紧跟在
-        /// 场景切换之后)。数据集与容器身份无关,更稳。
+        /// 与 <see cref="SetLyricBlur"/> 的区别是**信任边界**:那一条是探针亲手写每行的
+        /// <c>Effect</c> 本地值,只能回答"模糊本身值多少钱";这一条要回答的是
+        /// "设置里切档,应用真的会去改画面吗" —— 中间隔着 设置 → AppState →
+        /// 主 VM 属性 → 绑定 → 控件的 StyledProperty → 自身类 → 样式 六跳,
+        /// 任何一跳断了都表现成"设置没用",而 GPU 读数分不出是哪一跳。
+        /// </para>
+        /// <para>
+        /// ⚠ 行数**不能在这里读**:改类是异步生效的(等一次样式重算)。调用方要在
+        /// settle 之后再 <see cref="CaptureVisualStats"/> 一次,否则读到上一档的 Effect。
         /// </para>
         /// </summary>
-        private int? DistanceFromCurrent(ListBoxItem item)
+        public void SetLyricBlurByStyle(bool enabled)
         {
-            // Lyric 是 **LyricView 控件**(不是 VM,Refs 里存的是视图)——VM 从它的 DataContext 取。
-            if (Lyric?.DataContext is not LyricViewModel vm) return null;
-            if (item.DataContext is not LyricLine line) return null;
-            var index = vm.Lines.IndexOf(line);
-            if (index < 0) return null;
-            var current = vm.CurrentIndex;
-            return current < 0 ? null : Math.Abs(index - current);
+            if (Lyric is not null) Lyric.BlurEnabled = enabled;
         }
 
         /// <summary>
@@ -2325,18 +2769,33 @@ internal static class NowPlayingGpuProbe
         static string Values(List<Row> group) => string.Join(" / ", group.Select(row => $"{row.GpuMean:F2}"));
 
         var baselineMean = baseline.Average(row => row.GpuMean);
+        var baselineLabel = s_abVariants
+            .First(variant => variant.Label.StartsWith("AB·默认", StringComparison.Ordinal)).Label;
         Log($"[np-gpu] ===== 拉丁方:{s_abVariants.Length} 变体 × {s_abVariants.Length} 位置(每变体在每个位置上各一次)=====");
-        Log($"[np-gpu]   {"AB·默认",-14} {baselineMean,6:F2}% GPU(极差 {Spread(baseline):F2}) " +
-            $"CPU {baseline.Average(row => row.Cpu):F2}% 驱动 {DescribeDriver(baseline.Average(row => row.DriftRate))}");
+        Log($"[np-gpu]   {baselineLabel,-14} {baselineMean,6:F2}% GPU(极差 {Spread(baseline):F2}) " +
+            $"CPU {baseline.Average(row => row.Cpu):F2}% 驱动 {DescribeDriver(baseline.Average(row => row.DriftRate))} " +
+            $"带模糊行 {baseline.Average(row => row.BlurredItems):F1}/{baseline.Average(row => row.LyricItems):F0}");
 
-        foreach (var variant in s_abVariants.Skip(1))
+        foreach (var variant in s_abVariants)
         {
+            // ⚠ **别用 `Skip(1)` 来跳过基准档** —— 那是在假设"基准档排在变体表第一位"。
+            // 一旦基准档挪到后面(比如把"回归对"排在前头),后果是**双重的**:那个被挪到第一位的
+            // 变体整条漏报,而基准行反倒被这里的循环再匹配一次、打印成一行"相对默认 +0.00%"
+            // (2026-09-21 一次改标签同时踩到这两个)。改成按标签跳过,顺序怎么排都不会错。
+            if (variant.Label.StartsWith("AB·默认", StringComparison.Ordinal)) continue;
             var group = rows.Where(row => row.Label.StartsWith(variant.Label, StringComparison.Ordinal)).ToList();
-            if (group.Count == 0) continue;
+            if (group.Count == 0)
+            {
+                Log($"[np-gpu]   ⚠ 变体「{variant.Label}」一行读数都没有 —— 说明这一格根本没跑或标签对不上");
+                continue;
+            }
             var mean = group.Average(row => row.GpuMean);
             Log($"[np-gpu]   {variant.Label,-14} {mean,6:F2}% GPU(极差 {Spread(group):F2}) " +
                 $"CPU {group.Average(row => row.Cpu):F2}% 驱动 {DescribeDriver(group.Average(row => row.DriftRate))} " +
-                $"⇒ 相对默认 {mean - baselineMean:+0.00;-0.00}%");
+                $"⇒ 相对默认 {mean - baselineMean:+0.00;-0.00}% " +
+                // 带模糊行数是**开关接没接上**的直接证据,和 GPU 读数是两回事:读数变好可能只是
+                // 掉帧压实,而行数从 4 变 0 只可能是样式真的被换掉了。
+                $"带模糊行 {group.Average(row => row.BlurredItems):F1}/{group.Average(row => row.LyricItems):F0}");
             Log($"[np-gpu]       逐行 {Values(group)}");
         }
 

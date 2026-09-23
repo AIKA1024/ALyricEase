@@ -28,29 +28,11 @@ public partial class App : Application
   {
     if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
     {
-      // 启动画面先亮(极轻量),主窗口的重量级构建延后到它渲染出首帧之后;
-      // 关闭语义随之改为主窗口关闭 —— 否则启动画面先关会把应用带崩。
       desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
       desktop.Exit += (_, _) => ServiceLocator.Get<AppStateStore>().Flush();
 
-      var splash = new SplashWindow();
-      splash.Show();
-
-      _ = ShowMainWindowAsync(desktop, splash);
-    }
-
-    base.OnFrameworkInitializationCompleted();
-  }
-
-  /// <summary>等启动画面渲染出首帧后构建/显示主窗口,再收启动画面。
-  /// 构建失败时关掉启动画面并显式关机,避免无窗口挂着退出不去。</summary>
-  private async Task ShowMainWindowAsync(
-      IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splash)
-  {
-    try
-    {
-      await splash.WaitForReadyAsync();
-
+      // 主窗口本身秒开:内部先显示启动画面(标题栏+图标+合成线程旋转指示),
+      // 重内容壳层(MainWindowShell)在其首帧后由 MainWindow 自行挂载并原地收起启动画面。
       var mainWindow = new MainWindow
       {
         DataContext = ServiceLocator.Get<MainViewModel>(),
@@ -71,19 +53,9 @@ public partial class App : Application
 
       // 后台恢复登录态(已存 MUSIC_U 则拉资料+歌单),不阻塞 UI
       _ = RestoreLoginAsync();
+    }
 
-      // 主窗口渲染出首帧后再收启动画面,衔接不留白
-      if (TopLevel.GetTopLevel(mainWindow) is { } topLevel)
-      {
-        var firstFrame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        topLevel.RequestAnimationFrame(_ => firstFrame.TrySetResult());
-        await firstFrame.Task;
-      }
-    }
-    finally
-    {
-      splash.Close();
-    }
+    base.OnFrameworkInitializationCompleted();
   }
 
 #if WINDOWS

@@ -471,10 +471,34 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>清除音乐、封面、歌词和离线歌单索引。</summary>
+    // ---- 清除缓存(模态确认弹窗,见 ClearCacheDialogView) ----
+
+    /// <summary>清理进行中(弹窗切到等待动画态,期间禁止取消/关闭)。</summary>
+    [ObservableProperty] private bool _isClearingCache;
+
+    /// <summary>打开清除缓存确认弹窗。每次打开都回到确认态(上次清理可能已把弹窗留在动画态)。</summary>
     [RelayCommand]
-    private async Task ClearCacheAsync()
+    private void OpenClearCacheDialog()
     {
+        IsClearingCache = false;
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().IsClearCacheDialogOpen = true;
+        }
+        catch
+        {
+            // 无宿主上下文(部分无头探针):不开弹窗
+        }
+    }
+
+    /// <summary>弹窗内点"确认清除":切等待动画态 → 清理 → 落状态文案 → 自动关弹窗。
+    /// 清理若快于 800ms 也把动画态保持满 800ms,让等待被看见而不是一闪而过。</summary>
+    [RelayCommand]
+    private async Task ConfirmClearCacheAsync()
+    {
+        if (IsClearingCache) return;
+        IsClearingCache = true;
+        var minVisible = Task.Delay(800);
         try
         {
             await _musicCache.ClearAsync();
@@ -485,6 +509,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
         catch
         {
             Status = "清除缓存失败,请重试";
+        }
+        await minVisible;
+        IsClearingCache = false;
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().IsClearCacheDialogOpen = false;
+        }
+        catch
+        {
+            // 无宿主上下文:状态已落,弹窗本来就开不了
         }
     }
 

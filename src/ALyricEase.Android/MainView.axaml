@@ -65,5 +65,9 @@
         <!-- 音频输出设备选择弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
         <views:AudioDeviceDialogView IsVisible="{Binding IsAudioDeviceDialogOpen}"
                                      Grid.Row="1" ZIndex="200" />
+
+        <!-- 清除缓存确认弹窗(设置页;声明在设备弹层之后 → 同时可见时盖在最上) -->
+        <views:ClearCacheDialogView IsVisible="{Binding IsClearCacheDialogOpen}"
+                                    Grid.Row="1" ZIndex="200" />
     </Grid>
 </UserControl>

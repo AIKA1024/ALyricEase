@@ -508,6 +508,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
     public bool TryHandleBack()
     {
+        // 清除缓存弹层声明在所有弹层最后(盖在最上) ⇒ 返回链最先消费
+        if (IsClearCacheDialogOpen)
+        {
+            CloseClearCacheDialogCommand.Execute(null);
+            return true;
+        }
+
         // 设备选择弹层声明在所有弹层最后(盖在最上) ⇒ 返回链最先消费
         if (IsAudioDeviceDialogOpen)
         {
@@ -1109,6 +1116,21 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>关闭输出设备选择弹窗(关闭按钮/Esc)。</summary>
     [RelayCommand] private void CloseAudioDeviceDialog() => IsAudioDeviceDialogOpen = false;
+
+    // ---- 清除缓存确认弹窗 ----
+
+    /// <summary>清除缓存确认弹窗(WinUI3 ContentDialog 式窗口内弹层):true=显示。
+    /// 确认/清理状态都在 SettingsViewModel(弹层内层 DataContext 绑 Settings)。</summary>
+    [ObservableProperty] private bool _isClearCacheDialogOpen;
+
+    /// <summary>关闭清除缓存弹窗(取消按钮/Esc)。清理进行中不接受关闭 —— 等待动画阶段
+    /// 弹窗必须留到清理结束(ConfirmClearCacheAsync 完成后自行关闭)。</summary>
+    [RelayCommand]
+    private void CloseClearCacheDialog()
+    {
+        if (Settings.IsClearingCache) return;
+        IsClearCacheDialogOpen = false;
+    }
 
     // ---- 聚合歌单设置对话框 ----
 

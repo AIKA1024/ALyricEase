@@ -324,7 +324,7 @@
             <TextBlock Classes="about-link" Text="关于该选项"
                        ToolTip.Tip="清除音乐、封面、歌词和离线歌单索引,不会删除云端歌单与登录信息。" />
           </StackPanel>
-          <Button Grid.Column="2" Classes="setting-action" Command="{CompiledBinding ClearCacheCommand}">
+          <Button Grid.Column="2" Classes="setting-action" Command="{CompiledBinding OpenClearCacheDialogCommand}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock Text="{DynamicResource IconBroom}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
               <TextBlock Text="清除缓存" />

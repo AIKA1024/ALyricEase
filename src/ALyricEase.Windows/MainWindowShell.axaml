@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             x:Class="ALyricEase.MainWindowShell">
+  <!-- 主窗口的"重内容"壳层:由 MainWindow 在首帧渲染后延迟挂载(启动画面先顶在窗口里)。
+       根 Grid 不设 Background → 空白区域不拦截命中,标题栏(属于 MainWindow)可正常点击;
+       RowDefinitions="48,*" 与窗口网格对齐,Row 0 留给标题栏,覆盖层用 RowSpan 跨两行。 -->
+  <Grid RowDefinitions="48,*">
+    <!-- 内容页 VM→视图映射已收敛至共用壳层 AppShell.axaml 的 UserControl.DataTemplates(桌面/移动单一维护点) -->
+    <views:AppShell Grid.Row="1" />
+
+    <!-- 正在播放覆盖层:整窗 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
+         RenderTransform 目标值由 NowPlayingOverlayController 按 MainViewModel.ShowNowPlaying 切换,
+         过渡(时长/缓动)在这里声明。直接挂在窗口网格并横跨两行 → 渲染盖住标题栏(原版行为);
+         不能放进 AppShell(会被宿主裁剪在其边界内)。不用 TransitioningContentControl
+         (空→有内容会先露末帧再启动动画;关闭时 IsVisible 直接隐藏会杀掉退出动画)。 -->
+    <Grid x:Name="NowPlayingOverlay" Grid.Row="0" Grid.RowSpan="2" ZIndex="100"
+          IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
+      <Grid.Transitions>
+        <Transitions>
+          <!-- 进入与收回均先慢后快；末段斜率收敛，避免标准 ease-in 在最后突然冲刺。 -->
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.45" Easing="0.45,0.08,0.7,0.85" />
+        </Transitions>
+      </Grid.Transitions>
+      <views:NowPlayingView />
+    </Grid>
+
+    <!-- 登录对话框(共享 LoginDialogView):ZIndex 200 高于正在播放覆盖层(100),
+         播放详情页里点红心也能弹登录。 -->
+    <views:LoginDialogView IsVisible="{Binding IsLoginDialogOpen}"
+                           Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 添加聚合歌单对话框(与登录弹层同层,声明在其后 → 同时可见时盖在其上) -->
+    <views:AddAggregateDialogView IsVisible="{Binding IsAggregateDialogOpen}"
+                                  Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 创建歌单对话框(侧栏分组头"+";同层,声明在聚合弹层之后) -->
+    <views:CreatePlaylistDialogView IsVisible="{Binding IsCreatePlaylistDialogOpen}"
+                                    Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 重命名歌单对话框(侧栏歌单子项右键;同层,声明在创建弹层之后) -->
+    <views:RenamePlaylistDialogView IsVisible="{Binding IsRenamePlaylistDialogOpen}"
+                                    Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 删除歌单确认对话框(侧栏歌单子项右键;同层,声明在重命名弹层之后) -->
+    <views:DeletePlaylistDialogView IsVisible="{Binding IsDeletePlaylistDialogOpen}"
+                                    Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 聚合歌单设置对话框(齿轮;同层最末 → 同时可见时盖在最上) -->
+    <views:AggregateSettingsDialogView IsVisible="{Binding IsAggregateSettingsDialogOpen}"
+                                       Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 播放条“添加到歌单”:单击菜单项打开，位于所有页面与播放详情之上。 -->
+    <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
+                                       Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 音频输出设备选择弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
+    <views:AudioDeviceDialogView IsVisible="{Binding IsAudioDeviceDialogOpen}"
+                                 Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 清除缓存确认弹窗(设置页;声明在设备弹层之后 → 同时可见时盖在最上) -->
+    <views:ClearCacheDialogView IsVisible="{Binding IsClearCacheDialogOpen}"
+                                Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+  </Grid>
+</UserControl>

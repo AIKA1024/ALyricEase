@@ -154,60 +154,24 @@
         </StackPanel>
       </Grid>
 
-      <views:AppShell Grid.Row="1" DataContext="{Binding}" />
+      <!-- 重内容壳层:首帧渲染后由代码后置挂载(挂载前是启动画面,见 SplashPane)。
+           RowSpan=2 覆盖两行:壳内 Row 0 留空(透明不拦截命中,标题栏可点),
+           NowPlayingOverlay/各对话框 RowSpan 跨两行盖住标题栏(与拆分前一致)。 -->
+      <ContentControl x:Name="ShellHost" Grid.Row="0" Grid.RowSpan="2" IsVisible="False" Focusable="False" />
 
-      <!-- 正在播放覆盖层:整窗 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
-           RenderTransform 目标值由 NowPlayingOverlayController 按 MainViewModel.ShowNowPlaying 切换,
-           过渡(时长/缓动)在这里声明。直接挂在窗口网格并横跨两行 → 渲染盖住标题栏(原版行为);
-           不能放进 AppShell(会被宿主裁剪在其边界内)。不用 TransitioningContentControl
-           (空→有内容会先露末帧再启动动画;关闭时 IsVisible 直接隐藏会杀掉退出动画)。 -->
-      <Grid x:Name="NowPlayingOverlay" Grid.Row="0" Grid.RowSpan="2" ZIndex="100"
-            IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
-        <Grid.Transitions>
-          <Transitions>
-            <!-- 进入与收回均先慢后快；末段斜率收敛，避免标准 ease-in 在最后突然冲刺。 -->
-            <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.45" Easing="0.45,0.08,0.7,0.85" />
-          </Transitions>
-        </Grid.Transitions>
-        <views:NowPlayingView DataContext="{Binding}" />
-      </Grid>
-
-      <!-- 登录对话框(共享 LoginDialogView):ZIndex 200 高于正在播放覆盖层(100),
-           播放详情页里点红心也能弹登录。 -->
-      <views:LoginDialogView IsVisible="{Binding IsLoginDialogOpen}"
-                             Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 添加聚合歌单对话框(与登录弹层同层,声明在其后 → 同时可见时盖在其上) -->
-      <views:AddAggregateDialogView IsVisible="{Binding IsAggregateDialogOpen}"
-                                    Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 创建歌单对话框(侧栏分组头"+";同层,声明在聚合弹层之后) -->
-      <views:CreatePlaylistDialogView IsVisible="{Binding IsCreatePlaylistDialogOpen}"
-                                      Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 重命名歌单对话框(侧栏歌单子项右键;同层,声明在创建弹层之后) -->
-      <views:RenamePlaylistDialogView IsVisible="{Binding IsRenamePlaylistDialogOpen}"
-                                      Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 删除歌单确认对话框(侧栏歌单子项右键;同层,声明在重命名弹层之后) -->
-      <views:DeletePlaylistDialogView IsVisible="{Binding IsDeletePlaylistDialogOpen}"
-                                      Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 聚合歌单设置对话框(齿轮;同层最末 → 同时可见时盖在最上) -->
-      <views:AggregateSettingsDialogView IsVisible="{Binding IsAggregateSettingsDialogOpen}"
-                                         Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 播放条“添加到歌单”:单击菜单项打开，位于所有页面与播放详情之上。 -->
-      <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
-                                         Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 音频输出设备选择弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
-      <views:AudioDeviceDialogView IsVisible="{Binding IsAudioDeviceDialogOpen}"
-                                   Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
-
-      <!-- 清除缓存确认弹窗(设置页;声明在设备弹层之后 → 同时可见时盖在最上) -->
-      <views:ClearCacheDialogView IsVisible="{Binding IsClearCacheDialogOpen}"
-                                  Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+      <!-- 启动画面:窗口秒开先显示它,壳层挂载完成后由代码后置收起(ZIndex 300 盖全部)。 -->
+      <Panel x:Name="SplashPane" Grid.Row="0" Grid.RowSpan="2" ZIndex="300">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18">
+          <Image Source="avares://ALyricEase/Assets/icon_256.png" Width="88" Height="88"
+                 HorizontalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality" />
+          <TextBlock Text="ALyricEase" FontSize="26" FontWeight="SemiBold" HorizontalAlignment="Center"
+                     Foreground="{DynamicResource TextPrimary}" />
+          <Ellipse x:Name="Spinner" Width="22" Height="22" HorizontalAlignment="Center"
+                   Stroke="#FF5EA9A2" StrokeThickness="3" StrokeDashArray="6,4" />
+          <TextBlock Text="正在加载…" FontSize="13" HorizontalAlignment="Center"
+                     Foreground="{DynamicResource TextSecondary}" />
+        </StackPanel>
+      </Panel>
     </Grid>
   </ExperimentalAcrylicBorder>
 </Window>

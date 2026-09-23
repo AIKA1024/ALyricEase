@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Numerics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Avalonia;
@@ -6,6 +7,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Rendering.Composition;
+using Avalonia.Rendering.Composition.Animations;
 using Avalonia.VisualTree;
 #if WINDOWS
 using Avalonia.Win32;
@@ -62,7 +65,63 @@ public partial class MainWindow : Window
         UpdateFullScreenChrome();
         UpdateMaximizeGlyph();
         // 布局完成、ClientSize 有效:把覆盖层"屏幕外"位置从兜底值更新为真实高度(仍无过渡,不可见)。
+        // ⚠ 壳层此刻还没挂载 → 控制器为 null,挂载后(AttachShell)会再补一次。
         _nowPlayingController?.UpdateClosedPosition();
+
+        // 启动画面已在首帧可见(合成线程旋转指示不受 UI 阻塞影响):
+        // 再过两帧让启动画面确实呈现,然后挂载重内容壳层并收起启动画面。
+        StartSplashSpinner();
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null)
+        {
+            AttachShell();
+            return;
+        }
+        var remaining = 2;
+        void Tick(TimeSpan _)
+        {
+            if (--remaining > 0) topLevel.RequestAnimationFrame(Tick);
+            else AttachShell();
+        }
+        topLevel.RequestAnimationFrame(Tick);
+    }
+
+    private MainWindowShell? _shell;
+
+    /// <summary>首帧渲染后挂载重内容壳层(标题栏之外的 AppShell/覆盖层/对话框)并收起启动画面。
+    /// NowPlayingOverlayController 依赖壳内的 NowPlayingOverlay,在挂载后才建立。</summary>
+    private void AttachShell()
+    {
+        if (_shell is not null) return;
+        _shell = new MainWindowShell { DataContext = DataContext };
+        ShellHost.Content = _shell;
+        ShellHost.IsVisible = true;
+        SplashPane.IsVisible = false;
+        EnsureNowPlayingController();
+        // 壳层刚挂载、布局未落定:补覆盖层屏幕外位置与标题栏按钮可见性
+        _nowPlayingController?.UpdateClosedPosition();
+        UpdateTitleBarHamburgerVisibility();
+        UpdateFullScreenChrome();
+        UpdateMaximizeGlyph();
+    }
+
+    /// <summary>启动画面旋转指示:合成线程驱动,UI 线程被壳层构建阻塞时照样转。</summary>
+    private void StartSplashSpinner()
+    {
+        if (ElementComposition.GetElementVisual(Spinner) is not { } visual) return;
+        visual.CenterPoint = new Vector3(11f, 11f, 0);
+        var rotation = visual.Compositor.CreateScalarKeyFrameAnimation();
+        rotation.Duration = TimeSpan.FromMilliseconds(900);
+        rotation.IterationBehavior = AnimationIterationBehavior.Forever;
+        rotation.InsertKeyFrame(0f, 0f);
+        rotation.InsertKeyFrame(1f, MathF.PI * 2f);
+        visual.StartAnimation("RotationAngle", rotation);
+    }
+
+    private void EnsureNowPlayingController()
+    {
+        if (_shell is null || _vm is null || _nowPlayingController is not null) return;
+        _nowPlayingController = new NowPlayingOverlayController(_shell.NowPlayingOverlay, _vm);
     }
 
     /// <summary>在窗口首次显示前恢复上次会话的大小/位置/最大化，避免默认窗口首帧闪现。
@@ -120,9 +179,9 @@ public partial class MainWindow : Window
         base.OnDataContextChanged(e);
         _vm = DataContext as MainViewModel;
         _nowPlayingController?.Dispose();
-        _nowPlayingController = DataContext is MainViewModel vm
-            ? new NowPlayingOverlayController(NowPlayingOverlay, vm)
-            : null;
+        _nowPlayingController = null;
+        // 控制器依赖壳内的 NowPlayingOverlay:壳挂载前(_shell null)先不建,AttachShell 时补建
+        EnsureNowPlayingController();
     }
 
     private void UpdateTitleBarHamburgerVisibility()

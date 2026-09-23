@@ -45,6 +45,15 @@
                         <TextBlock Text="将清除已缓存的音乐、封面、歌词和离线歌单索引,不会删除云端歌单与登录信息。"
                                    FontSize="13" TextWrapping="Wrap"
                                    Foreground="{DynamicResource TextSecondary}" />
+                        <!-- 用量进度条:已用/上限(上限就是设置"存储区"里的那个值) -->
+                        <StackPanel Spacing="6" Margin="0,2,0,0">
+                            <ProgressBar Height="4" Minimum="0"
+                                         Maximum="{Binding CacheLimitMb}"
+                                         Value="{Binding CacheUsedMb}"
+                                         Foreground="{DynamicResource SystemAccentColor}" />
+                            <TextBlock Text="{Binding CacheUsageText}" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                        </StackPanel>
                         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                             <Button Content="取消" MinWidth="96" Height="32"
                                     HorizontalAlignment="Left"

@@ -255,8 +255,13 @@
       </Border>
 
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <StackPanel>
-          <Grid ColumnDefinitions="Auto,*,Auto">
+        <!-- VerticalAlignment=Center 在这里而不是内层行上:StackPanel 给子元素的槽位就是
+             其期望高度,子元素自己的对齐不生效。头部行 MinHeight=44 = 卡片内容区高
+             (MinHeight 64 - 上下 padding 10):收起时它撑满内容区、内容居中(上下对称);
+             展开时它仍是同样的 44px 区域 ⇒ 开合瞬间头部行纹丝不动,"淡化时长"在下方
+             自己的区域里出现,不会随内容整体上移 -->
+        <StackPanel VerticalAlignment="Center" Spacing="10">
+          <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="44">
             <TextBlock Classes="setting-icon" Text="{DynamicResource IconDeviceEq}" />
             <TextBlock Grid.Column="1" Classes="setting-title" Text="音频交叉淡化" />
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -269,8 +274,9 @@
                          Margin="2,0,0,0" Classes.expanded="{Binding Crossfade}" />
             </StackPanel>
           </Grid>
-          <!-- 开启后展开"淡化时长"行(原版 = 同一卡片内的子行:图标 + 标题 + 时长 + 滑杆) -->
-          <Grid IsVisible="{Binding Crossfade}" Margin="0,10,0,2" ColumnDefinitions="Auto,*,Auto,Auto">
+          <!-- 开启后展开"淡化时长"行(原版 = 同一卡片内的子行:图标 + 标题 + 时长 + 滑杆);
+               行间距由上方 StackPanel 的 Spacing 提供,这里不再写 Margin -->
+          <Grid IsVisible="{Binding Crossfade}" ColumnDefinitions="Auto,*,Auto,Auto">
             <TextBlock Classes="setting-icon" Text="{DynamicResource IconRecents}" />
             <TextBlock Grid.Column="1" Classes="setting-title" Text="淡化时长" VerticalAlignment="Center" />
             <TextBlock Grid.Column="2" Text="{Binding CrossfadeSecondsText}" FontSize="13"
@@ -327,7 +333,7 @@
           <Button Grid.Column="2" Classes="setting-action" Command="{CompiledBinding OpenClearCacheDialogCommand}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock Text="{DynamicResource IconBroom}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="14" />
-              <TextBlock Text="清除缓存" />
+              <TextBlock Text="管理缓存" />
             </StackPanel>
           </Button>
         </Grid>

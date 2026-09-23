@@ -476,11 +476,44 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>清理进行中(弹窗切到等待动画态,期间禁止取消/关闭)。</summary>
     [ObservableProperty] private bool _isClearingCache;
 
-    /// <summary>打开清除缓存确认弹窗。每次打开都回到确认态(上次清理可能已把弹窗留在动画态)。</summary>
+    /// <summary>缓存已用容量(MB)。弹窗里进度条的 Value;打开弹窗时后台扫描刷新。</summary>
+    [ObservableProperty] private double _cacheUsedMb;
+
+    /// <summary>缓存上限(MB)。与"存储区"里设的是同一个值;进度条的 Maximum 用 double。</summary>
+    [ObservableProperty] private double _cacheLimitMb = MusicCacheService.DefaultMaximumSizeMb;
+
+    /// <summary>弹窗里的用量文案。先落"正在统计",扫描回来再替换 —— 统计走后台,
+    /// 真实用户上万缓存文件时全目录扫描实测可到几百 ms,不能卡在打开弹窗的点击路径上。</summary>
+    [ObservableProperty] private string _cacheUsageText = "正在统计缓存用量…";
+
+    /// <summary>刷新令牌:快速关了再开会并发两份统计,只有最新一份允许写回,防旧值晚到覆盖新值。</summary>
+    private int _cacheUsageGeneration;
+
+    /// <summary>打开弹窗时刷新"已用/上限"。扫描在后台线程,UI 属性回到 UI 线程再写。</summary>
+    private async Task RefreshCacheUsageAsync()
+    {
+        var generation = Interlocked.Increment(ref _cacheUsageGeneration);
+        CacheLimitMb = _state.MusicCacheMaximumSizeMb;
+        CacheUsedMb = 0;
+        CacheUsageText = "正在统计缓存用量…";
+        var bytes = await Task.Run(() => _musicCache.GetCurrentSizeBytes()).ConfigureAwait(true);
+        if (generation != Volatile.Read(ref _cacheUsageGeneration)) return; // 已被更新的刷新取代
+        var usedMb = bytes / (1024.0 * 1024.0);
+        CacheUsedMb = usedMb;
+        var limitMb = CacheLimitMb;
+        var percent = limitMb > 0
+            ? (int)Math.Round(usedMb / limitMb * 100, MidpointRounding.AwayFromZero)
+            : 0;
+        CacheUsageText = $"已使用 {usedMb:0.#} MB / 上限 {limitMb:0} MB（{Math.Clamp(percent, 0, 100)}%）";
+    }
+
+    /// <summary>打开清除缓存确认弹窗。每次打开都回到确认态(上次清理可能已把弹窗留在动画态),
+    /// 并重算缓存用量进度条。</summary>
     [RelayCommand]
     private void OpenClearCacheDialog()
     {
         IsClearingCache = false;
+        _ = RefreshCacheUsageAsync();
         try
         {
             ServiceLocator.Get<MainViewModel>().IsClearCacheDialogOpen = true;

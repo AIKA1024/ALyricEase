@@ -5,11 +5,9 @@ using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Media.Transformation;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Animations;
 using Avalonia.Threading;
@@ -39,25 +37,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        // 壳层滑入/启动画面淡出的过渡在 C# 里构造:XAML 声明的 TransformOperationsTransition
-        // (Easing="0,0,0,1")在 XamlIl 运行时填充阶段抛 NRE,C# 路径(SplineEasing 构造)没问题。
-        ShellHost.Transitions = new Transitions
-        {
-            new TransformOperationsTransition
-            {
-                Property = Visual.RenderTransformProperty,
-                Duration = TimeSpan.FromMilliseconds(350),
-                Easing = new SplineEasing(0, 0, 0, 1),
-            },
-        };
-        SplashPane.Transitions = new Transitions
-        {
-            new DoubleTransition
-            {
-                Property = Visual.OpacityProperty,
-                Duration = TimeSpan.FromMilliseconds(200),
-            },
-        };
+        // 壳层滑入/启动画面淡出走合成线程动画(见 AttachShell):不用 UI 线程的 Transitions ——
+        // 挂载壳层后 UI 线程正被全量首布局塞满,UI 线程过渡会被挤掉帧(实测卡顿);
+        // 合成动画在渲染线程独立推进,UI 线程再忙也满帧。也不能把过渡声明进 XAML:
+        // TransformOperationsTransition(Easing="0,0,0,1")在 XamlIl 运行时填充抛 NRE。
         // WindowDecorations="Full"+ExtendClientArea 后顶部 48px 是 OS 层 HTCAPTION 拖拽区
         // (播放详情页全屏遮罩盖住标题栏时仍可拖动窗口)。但该区域内的按钮文本(命中时最顶层元素)
         // 会被当作拖拽,须标记 Win32Properties.NonClientHitTestResult=HTClient 才能点击。
@@ -112,48 +95,51 @@ public partial class MainWindow : Window
     private MainWindowShell? _shell;
 
     /// <summary>首帧渲染后挂载重内容壳层(标题栏之外的 AppShell/覆盖层/对话框)并收起启动画面。
-    /// 壳层以"从窗口底部滑上来"入场(过渡由 ctor 在 ShellHost.Transitions 上构造):
-    /// 初始 RenderTransform 在首次渲染前压到窗口底缘之外 → 首帧即起点不闪现;
-    /// 待起点位真正渲染上屏一帧后,下一帧前归零触发过渡。NowPlayingOverlayController 在挂载后才建立。</summary>
+    /// 壳层以"从窗口底部滑上来"入场、启动画面同步淡出,两者都走【合成线程】动画:
+    /// 此刻 UI 线程正被壳层的全量首布局/首次光栅化塞满,UI 线程过渡必然掉帧;
+    /// 合成动画独立推进,动画全程平滑。NowPlayingOverlayController 在挂载后才建立。</summary>
     private void AttachShell()
     {
         if (_shell is not null) return;
         _shell = new MainWindowShell { DataContext = DataContext };
-
-        // 初始位移必须避开过渡(临时摘掉 Transitions,同 NowPlayingOverlayController 的做法),
-        // 否则"无变换 → 底部之外"这段本身会被动画成一次反向滑出。
-        var shellTransitions = ShellHost.Transitions;
-        ShellHost.Transitions = null;
-        ShellHost.RenderTransform = TransformOperations.Parse($"translateY({ClientSize.Height}px)");
-        ShellHost.Transitions = shellTransitions;
-
         ShellHost.Content = _shell;
         ShellHost.IsVisible = true;
 
+        // 上滑:在首次渲染前启动(起点帧即动画首帧,不闪现最终位置)。
+        // ShellHost 占满窗口网格,布局 Offset 恒为 (0,0) → 动画结束帧 = 捕获的基值,
+        // 播完自动回落到布局值,无缝交接,无需手动 Stop。
+        if (ElementComposition.GetElementVisual(ShellHost) is { } shellVisual)
+        {
+            // Avalonia 12 的 CompositionVisual.Offset 是 Vector3D,合成动画关键帧吃 System.Numerics.Vector3
+            var baseOffset = shellVisual.Offset;
+            var baseVec = new Vector3((float)baseOffset.X, (float)baseOffset.Y, (float)baseOffset.Z);
+            var slide = shellVisual.Compositor.CreateVector3KeyFrameAnimation();
+            slide.Duration = TimeSpan.FromMilliseconds(350);
+            slide.InsertKeyFrame(0f, baseVec + new Vector3(0f, (float)ClientSize.Height, 0f));
+            slide.InsertKeyFrame(1f, baseVec, new SplineEasing(0, 0, 0, 1));
+            shellVisual.StartAnimation("Offset", slide);
+        }
+
         // 启动画面淡出让位(壳层从其下方升起),淡完整体隐藏移出命中/渲染
+        if (ElementComposition.GetElementVisual(SplashPane) is { } splashVisual)
+        {
+            var fade = splashVisual.Compositor.CreateScalarKeyFrameAnimation();
+            fade.Duration = TimeSpan.FromMilliseconds(200);
+            fade.InsertKeyFrame(0f, 1f);
+            fade.InsertKeyFrame(1f, 0f);
+            splashVisual.StartAnimation("Opacity", fade);
+        }
         SplashPane.IsHitTestVisible = false;
-        SplashPane.Opacity = 0;
         DispatcherTimer.RunOnce(() => SplashPane.IsVisible = false, TimeSpan.FromMilliseconds(220));
 
         EnsureNowPlayingController();
         // 壳层刚挂载、布局未落定:补覆盖层屏幕外位置与标题栏按钮可见性
-        // (UpdateClosedPosition 按 _overlay.Bounds.Height 计算,不受壳层 RenderTransform 影响)
+        // (UpdateClosedPosition 按 _overlay.Bounds.Height 计算,不受合成动画的 Offset 影响
+        // —— 动画结束后 Offset 回落为布局值 (0,0))
         _nowPlayingController?.UpdateClosedPosition();
         UpdateTitleBarHamburgerVisibility();
         UpdateFullScreenChrome();
         UpdateMaximizeGlyph();
-
-        // ⚠ 归零必须等"起点位渲染上屏"之后:若只按 Loaded 优先级 Post,启动越快(程序集缓存热)
-        // 归零越可能赶在首帧渲染之前 —— 起点位从未上屏,过渡首尾落在同一帧,动画肉眼不可见
-        // (实测:首次启动看得到,之后重开一直看不到)。用 rAF 保证先渲染一帧起点,再触发过渡。
-        if (TopLevel.GetTopLevel(this) is not { } topLevel)
-        {
-            // 无顶层(理论不可达):退化为直接归零,无动画但功能正常
-            ShellHost.RenderTransform = TransformOperations.Parse("translateY(0px)");
-            return;
-        }
-        topLevel.RequestAnimationFrame(_ =>
-            ShellHost.RenderTransform = TransformOperations.Parse("translateY(0px)"));
     }
 
     /// <summary>启动画面旋转指示:合成线程驱动,UI 线程被壳层构建阻塞时照样转。</summary>

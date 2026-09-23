@@ -47,8 +47,10 @@ public partial class App : Application
       var hwnd = mainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
       ServiceLocator.Get<ISmtcService>().Initialize(hwnd);
 
-      // 任务栏缩略图工具栏:须窗口已显示(关联任务栏按钮)后再注册 → 挂 Opened
-      mainWindow.Opened += (_, _) => InitTaskbarThumbButtons(mainWindow, hwnd);
+      // 任务栏缩略图工具栏:须窗口已显示(关联任务栏按钮)后再注册。
+      // ⚠ 不能挂 Opened —— Opened 在 Show() 内部同步触发,这里的处理器永远不跑
+      // (实测任务栏三键消失的回归);Show() 返回后窗口已显示,前置条件已满足,直接调用。
+      InitTaskbarThumbButtons(mainWindow, hwnd);
 #endif
 
       // 后台恢复登录态(已存 MUSIC_U 则拉资料+歌单),不阻塞 UI

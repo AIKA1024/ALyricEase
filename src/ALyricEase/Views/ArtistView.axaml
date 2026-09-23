@@ -53,6 +53,22 @@
       <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
       <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
     </Style>
+    <!-- 热门歌曲拉取中:网格容器撑到 6 行满列高度(6×(60 行高+2×2 边距)+4 滚动条留白+6/8 内边距+1×2 边框 = 404),
+         避免空集合时塌成一圈边框、数据到位后整页跳高 -->
+    <Style Selector="controls|SongGridView.loading">
+      <Setter Property="MinHeight" Value="404" />
+    </Style>
+    <!-- 加载指示:Ellipse 弧线无限旋转(Avalonia 12 基础包无 ProgressRing,自绘转圈) -->
+    <Style Selector="Ellipse.spinner">
+      <Setter Property="RenderTransform" Value="rotate(0deg)" />
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="Infinite">
+          <KeyFrame Cue="100%">
+            <Setter Property="RotateTransform.Angle" Value="360" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
   </UserControl.Styles>
 
   <ScrollViewer x:Name="PageScroller" Classes="page-scroll"
@@ -93,7 +109,19 @@
             </StackPanel>
           </Button>
         </Grid>
-        <controls:SongGridView ItemsSource="{Binding Songs}" />
+        <!-- loading 类保留满列高度,容器中央叠旋转指示;数据到位后动画随 IsLoadingSongs 一并消失 -->
+        <Grid>
+          <controls:SongGridView Classes.loading="{Binding IsLoadingSongs}" ItemsSource="{Binding Songs}" />
+          <StackPanel IsVisible="{Binding IsLoadingSongs}" Orientation="Horizontal" Spacing="10"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                      AutomationProperties.Name="正在加载热门歌曲">
+            <Ellipse Classes="spinner" Width="20" Height="20" StrokeThickness="3"
+                     Stroke="{DynamicResource LyricEaseTeal}"
+                     StrokeDashArray="8,14" />
+            <TextBlock Text="加载中…" FontSize="14" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondary}" />
+          </StackPanel>
+        </Grid>
       </StackPanel>
 
       <!-- 专辑:横向卡片网格 -->

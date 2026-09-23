@@ -49,6 +49,9 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
     [ObservableProperty] private bool _hasSingles;
     [ObservableProperty] private string _avatarUrl = "";
 
+    /// <summary>热门歌曲首次拉取中(视图据此保留网格满列高度并显示加载动画,避免容器塌陷后跳高)。</summary>
+    [ObservableProperty] private bool _isLoadingSongs;
+
     /// <summary>热门歌曲(横向换行网格,每行 400px TrackRow)。</summary>
     public ObservableCollection<SongItemViewModel> Songs { get; } = new();
 
@@ -78,6 +81,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
             var queue = songs;
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, api: _api, queue: queue, source: info.Name));
+            IsLoadingSongs = false;
 
             var albums = await _api.GetArtistAlbumsAsync(artistId, 50, ct);
             if (!IsCurrentLoad(generation, ct)) return;
@@ -100,7 +104,11 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         }
         finally
         {
-            if (IsCurrentLoad(generation, ct)) _isLoading = false;
+            if (IsCurrentLoad(generation, ct))
+            {
+                _isLoading = false;
+                IsLoadingSongs = false;
+            }
         }
     }
 
@@ -156,6 +164,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
             Name = ResolveSingerName(songs, singerMid);
             foreach (var s in songs)
                 Songs.Add(new SongItemViewModel(s, _player.PlayFromList, queue: songs, source: Name));
+            IsLoadingSongs = false;
 
             var albums = await _qqApi.GetArtistAlbumsAsync(singerMid, 50, ct);
             if (!IsCurrentLoad(generation, ct)) return;
@@ -180,7 +189,11 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         }
         finally
         {
-            if (IsCurrentLoad(generation, ct)) _isLoading = false;
+            if (IsCurrentLoad(generation, ct))
+            {
+                _isLoading = false;
+                IsLoadingSongs = false;
+            }
         }
     }
 
@@ -276,6 +289,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         HasAlbums = Albums.Count > 0;
         HasSingles = Singles.Count > 0;
         _isLoading = false;
+        IsLoadingSongs = false;
         RestorePageScrollState(snapshot.ScrollOffset);
     }
 
@@ -331,7 +345,8 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
     }
 
     /// <summary>清空上一位歌手的内容。歌手页每次进入都重建视图并立即绑定现有内容,
-    /// 不清的话新页面会先渲染出上一位歌手的歌(加载失败时更会整页停在错位数据上)。</summary>
+    /// 不清的话新页面会先渲染出上一位歌手的歌(加载失败时更会整页停在错位数据上)。
+    /// 同时置回"热门歌曲拉取中":视图保留满列高度显示加载态,等数据到位再收回。</summary>
     private void ClearContent()
     {
         Name = "";
@@ -341,6 +356,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         Singles.Clear();
         HasAlbums = false;
         HasSingles = false;
+        IsLoadingSongs = true;
     }
 
     /// <summary>从热门歌曲里取该 mid 对应的歌手展示名(取不到退化为第一首的 Artist)。</summary>

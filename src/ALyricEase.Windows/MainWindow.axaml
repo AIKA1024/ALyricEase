@@ -156,11 +156,20 @@
 
       <!-- 重内容壳层:首帧渲染后由代码后置挂载(挂载前是启动画面,见 SplashPane)。
            RowSpan=2 覆盖两行:壳内 Row 0 留空(透明不拦截命中,标题栏可点),
-           NowPlayingOverlay/各对话框 RowSpan 跨两行盖住标题栏(与拆分前一致)。 -->
-      <ContentControl x:Name="ShellHost" Grid.Row="0" Grid.RowSpan="2" IsVisible="False" Focusable="False" />
+           NowPlayingOverlay/各对话框 RowSpan 跨两行盖住标题栏(与拆分前一致)。
+           入场仿原版:加载完成后壳层从窗口底部滑上来(强 ease-out,前快尾缓);
+           初始位移由代码后置在首次渲染前设置,归零时触发本过渡。 -->
+      <ContentControl x:Name="ShellHost" Grid.Row="0" Grid.RowSpan="2" IsVisible="False" Focusable="False">
+        <ContentControl.Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.35" Easing="0,0,0,1" />
+        </ContentControl.Transitions>
+      </ContentControl>
 
-      <!-- 启动画面:窗口秒开先显示它,壳层挂载完成后由代码后置收起(ZIndex 300 盖全部)。 -->
-      <Panel x:Name="SplashPane" Grid.Row="0" Grid.RowSpan="2" ZIndex="300">
+      <!-- 启动画面:窗口秒开先显示它,壳层滑入时淡出让位(ZIndex 300 盖全部)。 -->
+      <Panel x:Name="SplashPane" Grid.Row="0" Grid.RowSpan="2" ZIndex="300" Opacity="1">
+        <Panel.Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+        </Panel.Transitions>
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18">
           <Image Source="avares://ALyricEase/Assets/icon_256.png" Width="88" Height="88"
                  HorizontalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality" />

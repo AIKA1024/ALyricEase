@@ -7,8 +7,10 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media.Transformation;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Animations;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 #if WINDOWS
 using Avalonia.Win32;
@@ -89,20 +91,41 @@ public partial class MainWindow : Window
     private MainWindowShell? _shell;
 
     /// <summary>首帧渲染后挂载重内容壳层(标题栏之外的 AppShell/覆盖层/对话框)并收起启动画面。
-    /// NowPlayingOverlayController 依赖壳内的 NowPlayingOverlay,在挂载后才建立。</summary>
+    /// 壳层以"从窗口底部滑上来"入场(过渡声明在 MainWindow.axaml 的 ShellHost.Transitions):
+    /// 初始 RenderTransform 在首次渲染前压到窗口底缘之外 → 首帧即起点不闪现;
+    /// 布局落定(Loaded 优先级)后再归零触发过渡。NowPlayingOverlayController 在挂载后才建立。</summary>
     private void AttachShell()
     {
         if (_shell is not null) return;
         _shell = new MainWindowShell { DataContext = DataContext };
+
+        // 初始位移必须避开过渡(临时摘掉 Transitions,同 NowPlayingOverlayController 的做法),
+        // 否则"无变换 → 底部之外"这段本身会被动画成一次反向滑出。
+        var shellTransitions = ShellHost.Transitions;
+        ShellHost.Transitions = null;
+        ShellHost.RenderTransform = TransformOperations.Parse($"translateY({ClientSize.Height}px)");
+        ShellHost.Transitions = shellTransitions;
+
         ShellHost.Content = _shell;
         ShellHost.IsVisible = true;
-        SplashPane.IsVisible = false;
+
+        // 启动画面淡出让位(壳层从其下方升起),淡完整体隐藏移出命中/渲染
+        SplashPane.IsHitTestVisible = false;
+        SplashPane.Opacity = 0;
+        DispatcherTimer.RunOnce(() => SplashPane.IsVisible = false, TimeSpan.FromMilliseconds(220));
+
         EnsureNowPlayingController();
         // 壳层刚挂载、布局未落定:补覆盖层屏幕外位置与标题栏按钮可见性
+        // (UpdateClosedPosition 按 _overlay.Bounds.Height 计算,不受壳层 RenderTransform 影响)
         _nowPlayingController?.UpdateClosedPosition();
         UpdateTitleBarHamburgerVisibility();
         UpdateFullScreenChrome();
         UpdateMaximizeGlyph();
+
+        // 布局在 Layout 优先级完成,Loaded 优先级的回调此时归零变换 → 触发上滑过渡
+        Dispatcher.UIThread.Post(
+            () => ShellHost.RenderTransform = TransformOperations.Parse("translateY(0px)"),
+            DispatcherPriority.Loaded);
     }
 
     /// <summary>启动画面旋转指示:合成线程驱动,UI 线程被壳层构建阻塞时照样转。</summary>

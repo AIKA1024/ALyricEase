@@ -13,7 +13,11 @@ namespace ALyricEase;
 /// 旋转指示走合成线程 —— UI 线程被主窗口构建阻塞时它照样转。</summary>
 public partial class SplashWindow : Window
 {
-  private TaskCompletionSource? _openedTcs;
+  // ⚠ 必须在构造时就创建:Opened 在 Show() 里【同步】触发,而 WaitForReadyAsync 在那之后才被调用 ——
+  //   若等到调用时才 new,Opened 里 TrySetResult 打在 null 上,信号丢失 → await 永久挂起,
+  //   主窗口永不构建(2026-09-23 实测"启动后什么窗口都没有卡住")。
+  private readonly TaskCompletionSource _openedTcs =
+    new(TaskCreationOptions.RunContinuationsAsynchronously);
 
   public SplashWindow()
   {
@@ -21,11 +25,11 @@ public partial class SplashWindow : Window
     Opened += OnOpened;
   }
 
-  /// <summary>等待启动画面完成布局并至少提交一帧,之后才安全地做重量级构建。</summary>
+  /// <summary>等待启动画面完成布局并至少提交一帧,之后才安全地做重量级构建。
+  /// 带 5 秒超时兜底:Opened 万一不来,宁可没有启动动效也不能挂死启动。</summary>
   public async Task WaitForReadyAsync()
   {
-    var opened = _openedTcs ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-    await opened.Task;
+    await _openedTcs.Task;
 
     // 再等两帧:确保启动画面确实被合成呈现过,而不是只在 UI 线程排了队
     if (TopLevel.GetTopLevel(this) is not { } topLevel) return;
@@ -37,7 +41,7 @@ public partial class SplashWindow : Window
       else tcs.TrySetResult();
     }
     topLevel.RequestAnimationFrame(Tick);
-    await tcs.Task;
+    await Task.WhenAny(tcs.Task, Task.Delay(5000));
   }
 
   private void OnOpened(object? sender, EventArgs e)
@@ -63,7 +67,7 @@ public partial class SplashWindow : Window
     }
     finally
     {
-      _openedTcs?.TrySetResult();
+      _openedTcs.TrySetResult();
     }
   }
 }

@@ -112,9 +112,9 @@ public partial class MainWindow : Window
     private MainWindowShell? _shell;
 
     /// <summary>首帧渲染后挂载重内容壳层(标题栏之外的 AppShell/覆盖层/对话框)并收起启动画面。
-    /// 壳层以"从窗口底部滑上来"入场(过渡声明在 MainWindow.axaml 的 ShellHost.Transitions):
+    /// 壳层以"从窗口底部滑上来"入场(过渡由 ctor 在 ShellHost.Transitions 上构造):
     /// 初始 RenderTransform 在首次渲染前压到窗口底缘之外 → 首帧即起点不闪现;
-    /// 布局落定(Loaded 优先级)后再归零触发过渡。NowPlayingOverlayController 在挂载后才建立。</summary>
+    /// 待起点位真正渲染上屏一帧后,下一帧前归零触发过渡。NowPlayingOverlayController 在挂载后才建立。</summary>
     private void AttachShell()
     {
         if (_shell is not null) return;
@@ -143,10 +143,17 @@ public partial class MainWindow : Window
         UpdateFullScreenChrome();
         UpdateMaximizeGlyph();
 
-        // 布局在 Layout 优先级完成,Loaded 优先级的回调此时归零变换 → 触发上滑过渡
-        Dispatcher.UIThread.Post(
-            () => ShellHost.RenderTransform = TransformOperations.Parse("translateY(0px)"),
-            DispatcherPriority.Loaded);
+        // ⚠ 归零必须等"起点位渲染上屏"之后:若只按 Loaded 优先级 Post,启动越快(程序集缓存热)
+        // 归零越可能赶在首帧渲染之前 —— 起点位从未上屏,过渡首尾落在同一帧,动画肉眼不可见
+        // (实测:首次启动看得到,之后重开一直看不到)。用 rAF 保证先渲染一帧起点,再触发过渡。
+        if (TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            // 无顶层(理论不可达):退化为直接归零,无动画但功能正常
+            ShellHost.RenderTransform = TransformOperations.Parse("translateY(0px)");
+            return;
+        }
+        topLevel.RequestAnimationFrame(_ =>
+            ShellHost.RenderTransform = TransformOperations.Parse("translateY(0px)"));
     }
 
     /// <summary>启动画面旋转指示:合成线程驱动,UI 线程被壳层构建阻塞时照样转。</summary>

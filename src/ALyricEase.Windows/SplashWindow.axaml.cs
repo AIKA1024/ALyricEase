@@ -42,18 +42,28 @@ public partial class SplashWindow : Window
 
   private void OnOpened(object? sender, EventArgs e)
   {
-    // 旋转指示走合成线程:回调里设好 CenterPoint 后启动 0→360° 循环
-    if (ElementComposition.GetElementVisual(Spinner) is { } visual)
+    try
     {
-      visual.CenterPoint = new Vector3(11f, 11f, 0);
-      var rotation = visual.Compositor.CreateScalarKeyFrameAnimation();
-      rotation.Duration = TimeSpan.FromMilliseconds(900);
-      rotation.IterationBehavior = AnimationIterationBehavior.Forever;
-      rotation.InsertKeyFrame(0f, 0f);
-      rotation.InsertKeyFrame(1f, 360f);
-      visual.StartAnimation("Rotation", rotation);
+      // Avalonia 组合视觉没有 WinUI 的角度制 "Rotation";RotationAxis 也不暴露(默认即 Z 轴),
+      // 只能动画 RotationAngle(弧度)
+      if (ElementComposition.GetElementVisual(Spinner) is { } visual)
+      {
+        visual.CenterPoint = new Vector3(11f, 11f, 0);
+        var rotation = visual.Compositor.CreateScalarKeyFrameAnimation();
+        rotation.Duration = TimeSpan.FromMilliseconds(900);
+        rotation.IterationBehavior = AnimationIterationBehavior.Forever;
+        rotation.InsertKeyFrame(0f, 0f);
+        rotation.InsertKeyFrame(1f, MathF.PI * 2f);
+        visual.StartAnimation("RotationAngle", rotation);
+      }
     }
-
-    _openedTcs?.TrySetResult();
+    catch
+    {
+      // 旋转指示失败只损失动效,绝不能把启动崩掉
+    }
+    finally
+    {
+      _openedTcs?.TrySetResult();
+    }
   }
 }

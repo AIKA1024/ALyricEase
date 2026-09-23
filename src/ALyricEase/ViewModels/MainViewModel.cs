@@ -277,6 +277,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnActivePageChanging(string? oldValue, string newValue)
     {
+        // 导航到其他页面时自动收起正在播放覆盖层(所有导航路径都汇于 ActivePage 变化:
+        // 侧栏点击/返回键/程序化开页/防御兜底)。此时详情页的退出滑动动画与页面切换并行。
+        ShowNowPlaying = false;
+
         if (!_isGoingBack && !_selectionNavigationInProgress
             && !string.Equals(oldValue, newValue, StringComparison.Ordinal))
             PushCurrentNavigation();

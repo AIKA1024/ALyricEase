@@ -1133,6 +1133,70 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         }
     }
 
+    /// <summary>从当前账号拥有的网易云歌单移除单曲(op=del),通道策略同加歌
+    /// (weapi 优先,被本机 WAF 拦截回落明文)。服务端幂等:重复移除已不在列表的曲目仍返回 200。</summary>
+    public async Task RemoveSongFromPlaylistAsync(Playlist playlist, Song song, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("网易云未登录,无法移除歌曲", -1);
+        if (playlist.Source != MusicSource.NetEase || song.Source != MusicSource.NetEase ||
+            playlist.Id == 0 || song.Id == 0)
+            throw new ApiException("歌曲与歌单音源不匹配", -1);
+        if (!playlist.CanAddTracks)
+            throw new ApiException("不能从收藏的他人歌单移除歌曲", -1);
+
+        var trackIds = $"[{song.Id}]";
+        JsonDocument doc;
+        if (_wafBlocked)
+        {
+            doc = await PostPlainWriteAsync("/api/playlist/manipulate/tracks",
+                new Dictionary<string, string>
+                {
+                    ["op"] = "del",
+                    ["pid"] = playlist.Id.ToString(),
+                    ["trackIds"] = trackIds,
+                    ["imme"] = "true",
+                }, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            try
+            {
+                var csrf = await EnsureCsrfAsync(ct).ConfigureAwait(false);
+                var payload = new Dictionary<string, object?>
+                {
+                    ["op"] = "del",
+                    ["pid"] = playlist.Id,
+                    ["trackIds"] = trackIds,
+                    ["imme"] = "true",
+                    ["csrf_token"] = csrf,
+                };
+                using var req = CreateWeapiRequest("weapi/playlist/manipulate/tracks", payload, includeRealIp: true);
+                doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+            }
+            catch (ApiException ex) when (ex.Code == BlockedCode)
+            {
+                _wafBlocked = true;
+                doc = await PostPlainWriteAsync("/api/playlist/manipulate/tracks",
+                    new Dictionary<string, string>
+                    {
+                        ["op"] = "del",
+                        ["pid"] = playlist.Id.ToString(),
+                        ["trackIds"] = trackIds,
+                        ["imme"] = "true",
+                    }, ct).ConfigureAwait(false);
+            }
+        }
+
+        using (doc)
+        {
+            var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+            if (code != 200)
+                throw new ApiException(
+                    TryMessage(doc.RootElement) is { } msg ? $"从歌单移除失败:{msg}" : $"从歌单移除失败(code={code})", code);
+        }
+    }
+
     /// <summary>删除歌单(IUserMusicApi):网易云用歌单 id。</summary>
     public Task DeletePlaylistAsync(Playlist playlist, CancellationToken ct = default)
         => DeletePlaylistAsync(playlist.Id, ct);

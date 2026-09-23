@@ -295,6 +295,69 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             ? _qqApi.AddSongToPlaylistAsync(playlist, song)
             : _api.AddSongToPlaylistAsync(playlist, song);
 
+    /// <summary>歌曲行菜单"从歌单中移除"(仅自己的歌单注入行,见 AttachRemoveCommandIfNeeded):
+    /// 服务端删曲成功后原地摘行。行列表是 _trackIds 的前缀窗口,同步摘除 trackId 并回退 _materialized;
+    /// 播放队列整体重建(懒队列持 _trackIds 同一引用,原地改会让缓存索引错位),
+    /// 删除点之后的行原地改绑播放委托并重排序号 —— 不重建行容器,避免封面重载(同 ApplyFreshRows 口径)。</summary>
+    [RelayCommand]
+    private async Task RemoveSongFromPlaylistAsync(SongItemViewModel row)
+    {
+        if (SelectedPlaylist is null || !CanRemoveTracksNow) return;
+        var playlist = SelectedPlaylist.Playlist;
+        try
+        {
+            if (playlist.Source == MusicSource.QQ)
+                await _qqApi.RemoveSongFromPlaylistAsync(playlist, row.Song);
+            else
+                await _api.RemoveSongFromPlaylistAsync(playlist, row.Song);
+        }
+        catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
+        {
+            Message = ex is ApiException { Code: NetEaseApiClient.ThrottledCode }
+                ? "网易云限速中,请稍后再试"
+                : $"移除失败:{ex.Message}";
+            return;
+        }
+
+        var rowIndex = _allTrackRows.IndexOf(row);
+        if (rowIndex < 0) return;
+        _allTrackRows.RemoveAt(rowIndex);
+        _queueSongs.Remove(row.Song);
+        _known.Remove(row.Song.Id);
+        if (rowIndex < _trackIds.Count && _trackIds[rowIndex] == row.Song.Id)
+        {
+            _trackIds.RemoveAt(rowIndex);
+            if (rowIndex < _materialized) _materialized--;
+        }
+        if (_playbackQueue is not null)
+            _playbackQueue = new IndexedSongQueue(_trackIds, _queueSongs, _api.GetSongsByIdsAsync);
+
+        // 删除点之后的行:序号 -1,播放委托改绑到新队列/新下标(删除点之前的行下标未变,不用动)
+        var lazyQueue = _playbackQueue;
+        for (var i = rowIndex; i < _allTrackRows.Count; i++)
+        {
+            var remaining = _allTrackRows[i];
+            remaining.Renumber(i + 1);
+            if (lazyQueue is not null)
+            {
+                var queue = lazyQueue;
+                var lazyIndex = i;
+                remaining.RebindPlayback(
+                    (candidate, _, _) => _player.PlayFromLazyList(
+                        candidate, queue, lazyIndex, _queueSongs, PlaylistTitle),
+                    null, PlaylistTitle);
+            }
+            else
+            {
+                remaining.RebindPlayback(
+                    (candidate, _, source) => _player.PlayFromList(candidate, _queueSongs, source),
+                    _queueSongs, PlaylistTitle);
+            }
+        }
+        RefreshVisibleTracks();
+        Message = $"已从「{playlist.Name}」移除「{row.Name}」";
+    }
+
     private bool _qqPlaylistsLoaded;
 
     public RangeObservableCollection<SongItemViewModel> Tracks { get; } = new();
@@ -1293,8 +1356,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _queueSongs.Clear();
             foreach (var song in songs) _queueSongs.Add(song);
             // 与网易云同理:缓存行能原地升级就别重建(重建会让已上屏的封面重新异步加载)
-            ApplyFreshRows(songs, (song, index) => new SongItemViewModel(
-                song, _player.PlayFromList, index + 1, _queueSongs, null, playlist.Name));
+            ApplyFreshRows(songs, (song, index) =>
+            {
+                var row = new SongItemViewModel(
+                    song, _player.PlayFromList, index + 1, _queueSongs, null, playlist.Name);
+                AttachRemoveCommandIfNeeded(row);
+                return row;
+            });
             await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, songs);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1704,6 +1772,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 playlist.Name);
             // 离线快照包含上次已解析的完整曲目元数据，但只有确实存在音频文件的歌曲才能点击。
             row.IsPlayable = cachedAudio[index];
+            // 快渲行不走 CreateTrackRow,移除命令需在此注入(这些行会被 ApplyFreshRows 原地复用,
+            // 网络刷新也不会重建 —— 漏注入的话"我喜欢的音乐"这类必然命中缓存的歌单永远没有移除项)。
+            AttachRemoveCommandIfNeeded(row);
             _allTrackRows.Add(row);
         }
         RefreshVisibleTracks();
@@ -1807,19 +1878,34 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         if (Tracks.Count < _allTrackRows.Count) Tracks.AddRange(_allTrackRows.Skip(Tracks.Count).ToList());
     }
 
+    /// <summary>当前打开的页面是否允许从来源移除歌曲(自己的歌单;云盘/聚合/他人歌单不算)。
+    /// 行菜单"从歌单中移除"据此注入。</summary>
+    private bool CanRemoveTracksNow => !_isCloud && !IsAggregate
+        && SelectedPlaylist?.Playlist.CanAddTracks == true;
+
+    /// <summary>给自己的歌单注入"从歌单中移除"入口;不可移除的页面显式置 null(行 VM 可能来自复用的快照)。</summary>
+    private void AttachRemoveCommandIfNeeded(SongItemViewModel row)
+        => row.RemoveFromSourceCommand = CanRemoveTracksNow ? RemoveSongFromPlaylistCommand : null;
+
     private SongItemViewModel CreateTrackRow(Song song, int zeroBasedIndex, NetEaseApiClient? api)
     {
         var lazyQueue = _playbackQueue;
         if (lazyQueue is null)
-            return new SongItemViewModel(
+        {
+            var row = new SongItemViewModel(
                 song, _player.PlayFromList, zeroBasedIndex + 1, _queueSongs, api, PlaylistTitle);
+            AttachRemoveCommandIfNeeded(row);
+            return row;
+        }
 
         lazyQueue.Remember(zeroBasedIndex, song);
         var source = PlaylistTitle;
-        return new SongItemViewModel(song,
+        var lazyRow = new SongItemViewModel(song,
             candidate => _player.PlayFromLazyList(
                 candidate, lazyQueue, zeroBasedIndex, _queueSongs, source),
             zeroBasedIndex + 1, api);
+        AttachRemoveCommandIfNeeded(lazyRow);
+        return lazyRow;
     }
 
     /// <summary>头部「播放全部」:从首个可播行开始；懒歌单只物化首屏，播放器按需解析完整逻辑队列。</summary>

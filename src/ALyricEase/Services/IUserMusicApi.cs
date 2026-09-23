@@ -39,6 +39,10 @@ public interface IUserMusicApi : IMusicApi
     /// <summary>把同音源歌曲追加到当前账号拥有的歌单。重复歌曲、无写权限或登录失效时抛 ApiException。</summary>
     Task AddSongToPlaylistAsync(Playlist playlist, Song song, CancellationToken ct = default);
 
+    /// <summary>从当前账号拥有的歌单移除同音源歌曲(歌曲行菜单"从歌单中移除")。
+    /// 网易云幂等(重复移除仍返回成功);QQ 与 AddSonglist 同通道的 DelSonglist。失败抛 ApiException。</summary>
+    Task RemoveSongFromPlaylistAsync(Playlist playlist, Song song, CancellationToken ct = default);
+
     /// <summary>当前登录态能否执行红心操作(未登录/无法定位喜欢集合时为 false,UI 应引导登录)。</summary>
     bool CanToggleLike { get; }
 

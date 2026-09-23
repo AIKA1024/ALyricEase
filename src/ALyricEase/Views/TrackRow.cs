@@ -17,6 +17,7 @@ public class TrackRow : TemplatedControl
 {
     private Button? _artistAlbumButton;
     private Button? _artistButton;
+    private Button? _moreButton;
 
     public TrackRow()
     {
@@ -33,6 +34,23 @@ public class TrackRow : TemplatedControl
         {
             AddHandler(InputElement.DoubleTappedEvent, OnRowActivated, RoutingStrategies.Bubble, handledEventsToo: true);
         }
+
+        // 右键(桌面)/长按(触控)统一走 ContextRequested:弹歌曲菜单(与播放条同一份)
+        AddHandler(InputElement.ContextRequestedEvent, OnRowContextRequested, RoutingStrategies.Bubble);
+    }
+
+    /// <summary>整行右键(桌面)/长按(触控)→ 弹歌曲菜单(与播放条同一份,构造见 SongContextMenu)。
+    /// 桌面右键在"松开"时触发,且按下期间指针被隐式捕获到行上:按住拖出行外再松开也会路由到这里,
+    /// 但语义应同按钮点击("按下+抬起都在其上才算"),松开点已不在行内就不弹。键盘 Menu 键
+    /// 请求时 TryGetPosition 返回 false,照常弹出。更多按钮点击则贴按钮展开(见 OnMoreButtonClick)。</summary>
+    private void OnRowContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (DataContext is not SongItemViewModel song) return;
+        if (e.TryGetPosition(this, out var pt)
+            && (pt.X < 0 || pt.Y < 0 || pt.X > Bounds.Width || pt.Y > Bounds.Height))
+            return;
+        SongContextMenu.Create(this, song.Song, song.SourceName, row: song).ShowAt(this, true);
+        e.Handled = true;
     }
 
     protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
@@ -42,6 +60,8 @@ public class TrackRow : TemplatedControl
             oldButton.RemoveHandler(Button.ClickEvent, OnArtistAlbumClick);
         if (_artistButton is { } oldArtist)
             oldArtist.RemoveHandler(Button.ClickEvent, OnArtistButtonClick);
+        if (_moreButton is { } oldMore)
+            oldMore.RemoveHandler(Button.ClickEvent, OnMoreButtonClick);
 
         base.OnApplyTemplate(e);
 
@@ -66,6 +86,17 @@ public class TrackRow : TemplatedControl
         {
             _artistButton = null;
         }
+
+        // "更多"(三个点)按钮:三个主题都有,点击弹歌曲菜单(与右键/长按同一份);无此部件即跳过
+        if (e.NameScope.Find("MoreButton") is Button moreButton)
+        {
+            _moreButton = moreButton;
+            moreButton.AddHandler(Button.ClickEvent, OnMoreButtonClick);
+        }
+        else
+        {
+            _moreButton = null;
+        }
     }
 
     /// <summary>点击(抬起)歌手/专辑按钮 → 展开按钮下方的 MenuFlyout。
@@ -86,6 +117,15 @@ public class TrackRow : TemplatedControl
         if (button.DataContext is not SongItemViewModel { HasMultipleArtists: true }) return; // 单歌手:走 Command
         if (button.Resources["ArtistMenuFlyout"] is not MenuFlyout flyout) return;
         flyout.ShowAt(button);
+        e.Handled = true;
+    }
+
+    /// <summary>点击(抬起)"更多"按钮 → 贴按钮展开歌曲菜单。Click 无指针坐标,统一贴按钮展开。</summary>
+    private void OnMoreButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if (_moreButton is not { } button) return;
+        if (DataContext is not SongItemViewModel song) return;
+        SongContextMenu.Create(this, song.Song, song.SourceName, row: song).ShowAt(button);
         e.Handled = true;
     }
 

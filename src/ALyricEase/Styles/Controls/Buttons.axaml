@@ -150,12 +150,13 @@
         <Setter Property="Foreground" Value="White" />
     </Style>
 
-    <!-- 通用"更多/展开"圆按钮(歌手页/专辑页/各处复用):悬停 SystemBaseLow、按下 SystemBaseMediumLow -->
+    <!-- 通用"更多/展开"圆按钮(歌手页/专辑页/播放条等处复用):悬停 SystemBaseLow、按下 SystemBaseMediumLow。
+         圆角用 1000 而非 18:按钮实例可能本地改尺寸(播放条为 40×40),写死 18 在非 36px 尺寸上不是正圆 -->
     <Style Selector="Button.more-button">
         <Setter Property="Width" Value="36" />
         <Setter Property="Height" Value="36" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="CornerRadius" Value="18" />
+        <Setter Property="CornerRadius" Value="1000" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />

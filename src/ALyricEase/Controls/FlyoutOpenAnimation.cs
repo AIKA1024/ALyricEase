@@ -16,8 +16,14 @@ using Avalonia.VisualTree;
 namespace ALyricEase.Controls;
 
 /// <summary>
-/// 仿原版 WinUI3 的菜单/Flyout 打开动画(合成动画,走合成器线程):
-/// 160ms 线性淡入 + 280ms ease-out 滑入。
+/// 仿原版 WinUI3 的菜单/Flyout 打开动画(合成动画,走合成器线程)。
+/// 参数与 WinUI3 框架源码 MenuPopupThemeTransition 对齐(2026-09-23 从
+/// microsoft-ui-xaml 仓库 LayoutTransition_partial.cpp / MenuPopupThemeTransition_Partial.h / MenuFlyout_Partial.cpp 考据):
+/// · 滑入 250ms(s_OpenDuration),缓动 cubic-bezier(0,0,0,1)(强 ease-out:起步速度无穷大,长减速尾);
+/// · 位移 = 弹层高度 × ClosedRatio(0.5)(原版 initialTranslateY = OpenedLength × ClosedRatio);
+/// · 菜单表面全程不透明 —— 原版只对遮罩层(overlay)做 83ms 淡入,表面靠裁剪揭示;
+/// · 揭示 = 表面平移 + ClipTranslate 反向 + Border ScaleY 0.5→1,我们用弹窗窗口裁剪近似前两者。
+/// </summary>
 ///
 /// 起始偏移取弹层的完整高度,使首帧整个表面都在弹窗窗口的裁剪区外。
 /// 揭示效果靠"弹窗窗口裁掉越界部分"实现,所以开局露出多少取决于【偏移 / 弹层高度】:
@@ -43,15 +49,20 @@ public class FlyoutOpenAnimation
     {
     }
 
-    /// <summary>无法取到弹层高度时的兜底偏移。</summary>
-    private const double Offset = 50;
+    /// <summary>无法取到弹层高度时的兜底偏移(= 50 × ClosedRatio)。</summary>
+    private const double Offset = 25;
 
-    private static readonly TimeSpan SlideDuration = TimeSpan.FromMilliseconds(280);
-    private static readonly TimeSpan FadeDuration = TimeSpan.FromMilliseconds(160);
-
-    // 原 WinUI 曲线在 50ms 已完成约 80%,对高弹层观感过于突然;
-    // 标准 ease-out cubic 保留减速收尾,同时让前 100ms 的揭示过程真正可见。
-    private static readonly SplineEasing SlideEasing = new() { X1 = 0.33, Y1 = 1.0, X2 = 0.68, Y2 = 1.0 };
+    // WinUI3 原版参数(2026-09-23 考据自 microsoft-ui-xaml 仓库,并经用户对原版实测确认):
+    // · 时长 s_OpenDuration = 250ms(MenuPopupThemeTransition_Partial.h);
+    // · 缓动 cubic-bezier(0, 0, 0, 1)(LayoutTransition_partial.cpp:easing.cp3.X = 0.0f,注释原文同款;
+    //   强 ease-out —— 起步速度无穷大、长减速尾:前 20% 时间走完 ~63%,前 32% 时间 ~80%);
+    // · 位移 = 弹层高度 × ClosedRatio = 0.5(MenuFlyout 传入 closedRatioConstant=0.5):
+    //   原版的 ClipTranslateY(+0.5H→0)与表面 TranslateY(-0.5H→0)互相抵消,净可见效果就是
+    //   "首帧露出半张菜单 → 表面滑 0.5H 到位"(用户实测原版确认),窗口裁剪下单通道 0.5H 位移即等效。
+    // ⚠ 位移别按"双向对开"改成全高:全高首帧全空,和原版"露半张"观感不符(2026-09-23 实测过一轮)。
+    private static readonly TimeSpan SlideDuration = TimeSpan.FromMilliseconds(250);
+    private static readonly SplineEasing SlideEasing = new() { X1 = 0, Y1 = 0, X2 = 0, Y2 = 1 };
+    private const double ClosedRatio = 0.5;
 
     public static readonly AttachedProperty<bool> IsEnabledProperty =
         AvaloniaProperty.RegisterAttached<FlyoutOpenAnimation, Visual, bool>("IsEnabled");
@@ -217,7 +228,8 @@ public class FlyoutOpenAnimation
             return Offset;
         }
 
-        return surfaceHeight;
+        // 半高(ClosedRatio=0.5):首帧露出半张菜单,表面滑 0.5H 到位 —— 原版净可见运动学(见类注释)。
+        return surfaceHeight * ClosedRatio;
     }
 
     /// <summary>
@@ -288,18 +300,14 @@ public class FlyoutOpenAnimation
         var baseOffset = visual.Offset;
         var baseOpacity = RestorePrimedOpacity(surface, visual);
 
-        // 结束帧 = 基值:动画播完自动移出时钟并回落基值,无缝交接,无需手动 Stop
+        // 结束帧 = 基值:动画播完自动移出时钟并回落基值,无缝交接,无需手动 Stop。
+        // 原版菜单表面全程不透明(只有遮罩层 83ms 淡入,我们没有遮罩层),靠裁剪揭示即可:
+        // 恢复基透明度后只播位移动画,首帧即全不透明的半张菜单从锚边滑出。
         var slide = compositor.CreateVector3KeyFrameAnimation();
         slide.Duration = SlideDuration;
         slide.InsertKeyFrame(0f, new Vector3((float)(baseOffset.X + dx), (float)(baseOffset.Y + dy), 0f));
         slide.InsertKeyFrame(1f, new Vector3((float)baseOffset.X, (float)baseOffset.Y, 0f), SlideEasing);
         visual.StartAnimation("Offset", slide);
-
-        var fade = compositor.CreateScalarKeyFrameAnimation();
-        fade.Duration = FadeDuration;
-        fade.InsertKeyFrame(0f, 0f);
-        fade.InsertKeyFrame(1f, baseOpacity);
-        visual.StartAnimation("Opacity", fade);
     }
 
     /// <summary>在表面 attach 前用可撤销的动画优先级值预隐藏；不会替换原有样式或绑定。</summary>

@@ -887,6 +887,32 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }, "添加到歌单", ct);
     }
 
+    /// <summary>从当前账号拥有的 QQ 音乐资产歌单移除单曲。与 AddSonglist 同通道同参数形状,
+    /// 写动作名 DelSonglist(参考实现 PlayNext/DelSonglist 用法;失败抛 ApiException)。</summary>
+    public Task RemoveSongFromPlaylistAsync(Playlist playlist, Song song, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("QQ音乐未登录,无法移除歌曲", -1);
+        if (playlist.Source != MusicSource.QQ || song.Source != MusicSource.QQ || song.Id == 0)
+            throw new ApiException("歌曲与歌单音源不匹配", -1);
+        if (!playlist.CanAddTracks || playlist.DirId == 0)
+            throw new ApiException("不能从收藏的他人歌单移除歌曲", -1);
+
+        return SecureAssetWriteAsync("music.musicasset.PlaylistDetailWrite", "DelSonglist", p =>
+        {
+            p.WriteNumber("dirId", playlist.DirId);
+            p.WriteNumber("tid", 0);
+            p.WriteBoolean("bFmtUtf8", true);
+            p.WriteStartArray("v_songInfo");
+            p.WriteStartObject();
+            p.WriteNumber("songType", 0);
+            p.WriteNumber("songId", song.Id);
+            if (song.Mid.Length > 0) p.WriteString("songMid", song.Mid);
+            p.WriteEndObject();
+            p.WriteEndArray();
+        }, "从歌单移除", ct);
+    }
+
     /// <summary>删除歌单(IUserMusicApi):QQ 用资产目录 dirId(列表侧值,新建歌单为小序号;
     /// 收藏歌单无 dirId 时以 tid 兜底,服务端会拒绝非本人歌单)。</summary>
     public Task DeletePlaylistAsync(Playlist playlist, CancellationToken ct = default)

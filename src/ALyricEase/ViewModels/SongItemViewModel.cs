@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
@@ -154,6 +155,9 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     public Song Song { get; }
 
+    /// <summary>队列来源名(歌单名/歌手名等,构造时传入):歌曲行右键菜单"来源"项展示用;未传则按音源显示平台名。</summary>
+    public string? SourceName => _source;
+
     public string Name => Song.Name;
 
     public string Artist => Song.Artist;
@@ -189,7 +193,20 @@ public sealed partial class SongItemViewModel : ViewModelBase
     public bool HasArtistOrAlbumName => HasArtistName || HasAlbumName;
 
     /// <summary>歌单内序号(1 起);非歌单场景为 0。</summary>
-    public int Index { get; }
+    public int Index { get; private set; }
+
+    /// <summary>来源列表(自己的歌单)删歌后行序号前移:原地改号并通知,行容器与行对象都不重建。</summary>
+    public void Renumber(int newIndex)
+    {
+        if (Index == newIndex) return;
+        Index = newIndex;
+        OnPropertyChanged(nameof(Index));
+        OnPropertyChanged(nameof(DisplayIndex));
+    }
+
+    /// <summary>宿主页面注入的"从当前来源移除该曲"命令(仅自己的歌单,歌曲行菜单据此显隐);
+    /// null = 来源不可移除(他人歌单/云盘/聚合/歌手页等)。参数为本行 VM。</summary>
+    public ICommand? RemoveFromSourceCommand { get; set; }
 
     public string DisplayIndex => Index > 0 ? Index.ToString() : "";
 

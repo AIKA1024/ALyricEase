@@ -153,8 +153,9 @@
                   </Flyout>
                 </Button.Flyout>
               </Button>
-              <!-- 更多 -->
-              <Button Classes="player-button more-button" RenderTransform="none" Width="40" Height="40" IsEnabled="False">
+              <!-- 更多:点击弹出当前歌曲菜单(与整条右键/长按同一份;narrow 模式隐藏) -->
+              <Button x:Name="MoreButton" Classes="player-button more-button" RenderTransform="none"
+                      Width="40" Height="40" ToolTip.Tip="更多操作">
                 <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
               </Button>
             </StackPanel>

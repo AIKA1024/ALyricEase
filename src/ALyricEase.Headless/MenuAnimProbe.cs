@@ -47,21 +47,23 @@ public static class MenuAnimProbe
     public static void Run()
     {
         // ---- 0. 入场偏移:整个弹层从裁剪区外滑入,首帧不再直接露出一半 ----
-        AssertOffset("极短弹层(比 50 还矮,整体滑入)", 40, 40);
-        AssertOffset("每日推荐 歌手/专辑(2 项 ~90px)", 90, 90);
-        AssertOffset("侧栏歌单右键(3 项 ~130px)", 130, 130);
-        AssertOffset("播放条歌曲菜单(10 项 ~300px)", 300, 300);
-        AssertOffset("超长弹层", 900, 900);
-        AssertOffset("高度不可用时的兜底", 0, 50);
+        // 偏移 = 弹层高度 × ClosedRatio(0.5):首帧露出半张菜单,对齐 WinUI3 MenuPopupThemeTransition
+        AssertOffset("极短弹层(比 25 还矮,整体滑入)", 40, 20);
+        AssertOffset("每日推荐 歌手/专辑(2 项 ~90px)", 90, 45);
+        AssertOffset("侧栏歌单右键(3 项 ~130px)", 130, 65);
+        AssertOffset("播放条歌曲菜单(10 项 ~300px)", 300, 150);
+        AssertOffset("超长弹层", 900, 450);
+        AssertOffset("高度不可用时的兜底", 0, 25);
 
         // ---- 1. 方向规则纯函数断言(仅纵向,与原版 MenuPopupThemeTransition 的 Top/Bottom 一致) ----
-        AssertDir("下方打开", new PixelRect(100, 200, 200, 100), new PixelRect(90, 90, 220, 100), 0, -100);
-        AssertDir("上方打开(下方空间不足翻转)", new PixelRect(100, 0, 200, 100), new PixelRect(90, 150, 220, 100), 0, 100);
-        AssertDir("右侧子菜单(顶部与父项对齐)向下滑", new PixelRect(320, 50, 200, 200), new PixelRect(100, 50, 200, 200), 0, -200);
-        AssertDir("左侧翻转子菜单(顶部对齐)向下滑", new PixelRect(0, 50, 200, 200), new PixelRect(210, 50, 200, 200), 0, -200);
-        AssertDir("子菜单被屏幕底部顶起(下端点在目标内)向上滑", new PixelRect(320, -50, 200, 140), new PixelRect(100, 50, 200, 150), 0, 140);
-        AssertDir("指针放置下开(上端点在目标内)", new PixelRect(50, 100, 200, 300), new PixelRect(40, 90, 320, 40), 0, -300);
-        AssertDir("指针放置上开(下端点在目标内)", new PixelRect(50, 0, 200, 120), new PixelRect(40, 100, 320, 40), 0, 120);
+        // 期望位移 = 弹窗高度 × ClosedRatio(0.5)
+        AssertDir("下方打开", new PixelRect(100, 200, 200, 100), new PixelRect(90, 90, 220, 100), 0, -50);
+        AssertDir("上方打开(下方空间不足翻转)", new PixelRect(100, 0, 200, 100), new PixelRect(90, 150, 220, 100), 0, 50);
+        AssertDir("右侧子菜单(顶部与父项对齐)向下滑", new PixelRect(320, 50, 200, 200), new PixelRect(100, 50, 200, 200), 0, -100);
+        AssertDir("左侧翻转子菜单(顶部对齐)向下滑", new PixelRect(0, 50, 200, 200), new PixelRect(210, 50, 200, 200), 0, -100);
+        AssertDir("子菜单被屏幕底部顶起(下端点在目标内)向上滑", new PixelRect(320, -50, 200, 140), new PixelRect(100, 50, 200, 150), 0, 70);
+        AssertDir("指针放置下开(上端点在目标内)", new PixelRect(50, 100, 200, 300), new PixelRect(40, 90, 320, 40), 0, -150);
+        AssertDir("指针放置上开(下端点在目标内)", new PixelRect(50, 0, 200, 120), new PixelRect(40, 100, 320, 40), 0, 60);
 
         // ---- 2. 真实打开诊断 ----
         var flyout = new CapturingMenuFlyout { Placement = PlacementMode.Bottom };

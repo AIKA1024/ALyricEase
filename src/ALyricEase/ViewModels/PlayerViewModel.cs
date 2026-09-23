@@ -388,6 +388,30 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         return true;
     }
 
+    /// <summary>"下一首播放":把歌曲插到当前曲目之后,正在播放页"接下来播放"立即生效。
+    /// 什么都没在放时退化为直接播放;歌已在队列里则先移出原位置再插到当前曲后(等价"移到下一首")。
+    /// 懒队列下插入物化窗口并标记逻辑下标 -1(该歌不属于懒歌单,取歌逻辑不会重复供给)。</summary>
+    public void PlaySongNext(Song song)
+    {
+        if (!CanAttemptPlayback(song)) return;
+        if (CurrentSong is null || _queue.Count == 0)
+        {
+            _ = PlayFromList(song, null);
+            return;
+        }
+
+        var existing = FindQueueIndex(song);
+        if (existing == _queueIndex) return; // 就是当前曲,无需处理
+        if (existing >= 0) RemoveQueueEntryAt(existing);
+
+        var insertIndex = _queueIndex + 1;
+        _queue.Insert(insertIndex, song);
+        _queueVms.Insert(insertIndex, new QueueItemViewModel(song, PlayQueueItem, RemoveFromQueue));
+        if (_lazyQueue is not null)
+            _lazyQueueVmIndices.Insert(insertIndex, -1);
+        RefreshUpcomingItems();
+    }
+
     // ---------- 私人FM ----------
 
     /// <summary>开始私人FM:拉一批(约 3 首)入队播放第一首;之后"下一曲/播完自动切"持续从 FM 取歌。

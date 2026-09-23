@@ -550,13 +550,26 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         if (_lazyQueue is not null)
         {
             // 详情页仍只展示已物化窗口；排序按完整歌单逻辑下标从当前曲之后循环。
+            // 哨兵(逻辑位 -1,"下一首播放"插入)视为当前曲之后立刻播放:排序键取 _queueIndex+0.5。
             foreach (var pair in _lazyQueueVmIndices
                          .Select((logicalIndex, vmIndex) => (logicalIndex, vmIndex))
                          .Where(pair => pair.logicalIndex != _queueIndex
+                                        && pair.logicalIndex != -1
                                         && !_excludedLazyIndices.Contains(pair.logicalIndex))
-                         .OrderBy(pair => pair.logicalIndex > _queueIndex ? 0 : 1)
-                         .ThenBy(pair => pair.logicalIndex))
+                         .Select(pair => (orderKey: pair.logicalIndex > _queueIndex ? (double)pair.logicalIndex
+                                              : pair.logicalIndex + (double)_lazyQueueVmIndices.Count,
+                                          vmIndex: pair.vmIndex))
+                         .Where(pair => pair.orderKey != _queueIndex)
+                         .OrderBy(pair => pair.orderKey > _queueIndex ? 0 : 1)
+                         .ThenBy(pair => pair.orderKey))
                 UpcomingItems.Add(_queueVms[pair.vmIndex]);
+            // 哨兵固定插在最前(它就是"下一首")
+            foreach (var vm in _queueVms
+                         .Select((vm, vmIndex) => (vm, vmIndex))
+                         .Where(pair => _lazyQueueVmIndices[pair.vmIndex] == -1)
+                         .OrderByDescending(pair => pair.vmIndex)
+                         .Select(pair => pair.vm))
+                UpcomingItems.Insert(0, vm);
             return;
         }
         for (var i = 1; i < _queueVms.Count; i++)
@@ -616,6 +629,19 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         if (_lazyQueue is not null)
         {
             var logicalIndex = _lazyQueueVmIndices[idx];
+            if (logicalIndex == -1)
+            {
+                // 哨兵(-1,"下一首播放"插入):不属于懒歌单,直接从三个显示列表同步摘除即可
+                _lazyQueueVmIndices.RemoveAt(idx);
+                _queue.RemoveAt(idx);
+                _queueVms.RemoveAt(idx);
+                var playingIdx = CurrentSong is null ? -1 : FindQueueIndex(CurrentSong);
+                _queueIndex = playingIdx >= 0
+                    ? playingIdx
+                    : _queue.Count == 0 ? -1 : Math.Min(idx - 1, _queue.Count - 1);
+                RefreshUpcomingItems();
+                return;
+            }
             ExcludeLazyIndex(logicalIndex);
             return;
         }
@@ -851,6 +877,25 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             return;
         }
         if (_queue.Count == 0 && _lazyQueue is null) return;
+        // "下一首播放"哨兵(逻辑位 -1)在当前曲之后:下一曲/自动连播优先播它,播完摘除并回到懒歌单顺位。
+        // 播放失败(Unavailable)也摘除跳过,避免永久卡住;TransientFailure(临时网络问题)保留重试。
+        if (_lazyQueue is not null
+            && _lazyQueueVmIndices.Count > _queueIndex + 1
+            && _lazyQueueVmIndices[_queueIndex + 1] == -1)
+        {
+            var pending = _queue[_queueIndex + 1];
+            var pendingResult = await TryPlayAsync(pending);
+            if (pendingResult == PlayAttemptResult.TransientFailure) return;
+            _lazyQueueVmIndices.RemoveAt(_queueIndex + 1);
+            _queue.RemoveAt(_queueIndex + 1);
+            _queueVms.RemoveAt(_queueIndex + 1);
+            if (pendingResult == PlayAttemptResult.Started)
+            {
+                // _queueIndex 保持指向当前曲不动:下一曲继续走懒歌单顺位
+                RefreshUpcomingItems();
+                return;
+            }
+        }
         switch (PlaybackMode)
         {
             case PlaybackMode.SingleLoop when CurrentSong is not null:

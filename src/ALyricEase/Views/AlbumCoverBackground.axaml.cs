@@ -71,6 +71,9 @@ public partial class AlbumCoverBackground : UserControl
 
     private static readonly TimeSpan s_motionCycle = TimeSpan.FromSeconds(26);
 
+    // 色团漂移路标间必须恒速:显式线性缓动(不带 easing 的 InsertKeyFrame 默认行为不可靠)。
+    private static readonly LinearEasing s_linearEasing = new();
+
     private bool _showingLayerA = true;
     private bool _motionStarted;
     private bool _motionStartQueued;
@@ -259,13 +262,14 @@ public partial class AlbumCoverBackground : UserControl
                 (float)(ellipse.Bounds.Height / 2),
                 0);
 
-            // 椭圆轨道:长轴沿 Burst 方向,幅值取其 0.75 倍;8 个路标线性插值(不传 easing 即线性),
-            // 速度恒定、闭合回路首尾相接 —— 任何时刻都在动,且无方向/速度突跳。
+            // 椭圆轨道:长轴沿 Burst 方向,幅值取其 0.75 倍。
             var burst = paths[pathIndex];
             var dir = Vector3.Normalize(new Vector3(burst.X, burst.Y, 0));
             var perp = new Vector3(-dir.Y, dir.X, 0);
             var amp = new Vector3(burst.X, burst.Y, 0).Length() * 0.75f;
 
+            // ⚠ 每个路标必须显式传 LinearEasing:不带 easing 的 InsertKeyFrame 不能假定是线性,
+            //   段内减速会造成"走一段慢下来"的脉动感(2026-09-23 用户实测)。
             // ⚠ 必须包含进度 0 的原点路标(k=0):漏掉它会让动画在第一个路标上冻住 1/8 周期,
             // 且循环回卷时从终点瞬移回起点 —— 实测观感"一顿一顿"(2026-09-23)。
             var drift = visual.Compositor.CreateVector3DKeyFrameAnimation();
@@ -279,23 +283,11 @@ public partial class AlbumCoverBackground : UserControl
                     (float)((Math.Sin(angle) * dir.X - (1 - Math.Cos(angle)) * perp.X) * amp),
                     (float)((Math.Sin(angle) * dir.Y - (1 - Math.Cos(angle)) * perp.Y) * amp),
                     0);
-                drift.InsertKeyFrame(k / 8f, offset);
+                drift.InsertKeyFrame(k / 8f, offset, s_linearEasing);
             }
             visual.StartAnimation("Translation", drift);
-
-            // 椭圆本身没有方向感，轻微呼吸比旋转更自然，也能让大面积同色封面看出动态。
-            // 每周期两次呼吸,线性插值保持全程有变化。
-            var scalePeak = 1.03f + pathIndex * 0.003f;
-            var breath = visual.Compositor.CreateVector3DKeyFrameAnimation();
-            breath.Target = "Scale";
-            breath.Duration = s_motionCycle;
-            breath.IterationBehavior = AnimationIterationBehavior.Forever;
-            breath.InsertKeyFrame(0, Vector3.One);
-            breath.InsertKeyFrame(0.25f, new Vector3(scalePeak, scalePeak - 0.005f, 1));
-            breath.InsertKeyFrame(0.5f, Vector3.One);
-            breath.InsertKeyFrame(0.75f, new Vector3(1.01f, scalePeak - 0.01f, 1));
-            breath.InsertKeyFrame(1, Vector3.One);
-            visual.StartAnimation("Scale", breath);
+            // 不再叠加缩放呼吸:胀缩脉动会让匀速漂移读成"走一段慢下来"(2026-09-23 用户反馈)。
+            // (visual.Scale 已在上面复位为 1,不再启动 Scale 动画。)
         }
 
         _motionStarted = true;

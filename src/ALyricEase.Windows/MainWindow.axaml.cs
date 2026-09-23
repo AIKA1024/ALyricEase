@@ -5,6 +5,8 @@ using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Animation;
+using Avalonia.Animation.Easings;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Transformation;
@@ -37,6 +39,25 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // 壳层滑入/启动画面淡出的过渡在 C# 里构造:XAML 声明的 TransformOperationsTransition
+        // (Easing="0,0,0,1")在 XamlIl 运行时填充阶段抛 NRE,C# 路径(SplineEasing 构造)没问题。
+        ShellHost.Transitions = new Transitions
+        {
+            new TransformOperationsTransition
+            {
+                Property = Visual.RenderTransformProperty,
+                Duration = TimeSpan.FromMilliseconds(350),
+                Easing = new SplineEasing(0, 0, 0, 1),
+            },
+        };
+        SplashPane.Transitions = new Transitions
+        {
+            new DoubleTransition
+            {
+                Property = Visual.OpacityProperty,
+                Duration = TimeSpan.FromMilliseconds(200),
+            },
+        };
         // WindowDecorations="Full"+ExtendClientArea 后顶部 48px 是 OS 层 HTCAPTION 拖拽区
         // (播放详情页全屏遮罩盖住标题栏时仍可拖动窗口)。但该区域内的按钮文本(命中时最顶层元素)
         // 会被当作拖拽,须标记 Win32Properties.NonClientHitTestResult=HTClient 才能点击。

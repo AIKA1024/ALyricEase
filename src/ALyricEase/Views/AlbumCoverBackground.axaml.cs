@@ -69,9 +69,6 @@ public partial class AlbumCoverBackground : UserControl
         Color.FromRgb(106, 53, 91),
     ];
 
-    private static readonly SplineEasing s_slowEasing = new(0.62, 0.03, 0.38, 0.97);
-    // 加速段也从低速平顺进入，避免关键帧一切换就突然前冲。
-    private static readonly SplineEasing s_burstEasing = new(0.42, 0, 0.58, 1);
     private static readonly TimeSpan s_motionCycle = TimeSpan.FromSeconds(26);
 
     private bool _showingLayerA = true;
@@ -238,16 +235,13 @@ public partial class AlbumCoverBackground : UserControl
         var visuals = all.Select(ElementComposition.GetElementVisual).ToArray();
         if (visuals.Any(visual => visual is null)) return false;
 
-        // 统一周期让所有色团共享一次整体呼吸：约 12.5 秒缓移后才短暂提速，随后长时间回缓。
-        // 旧实现为 13~17 秒错峰循环且每圈有两次加速，多个色团叠加后会显得加速过于频繁。
-        // A/B 调色层使用同一轨迹，切歌交叉淡化时不会跳位。
-        var paths = new (Vector3 Hold, Vector3 Burst, Vector3 Drift)[]
+        // 26s 周期改为"椭圆轨道匀速循环"(8 路标 + 线性插值,闭合回路):
+        // 旧实现前 12.5s 是 Hold 段(仅 12px),肉眼里就是"有些时间不动"。
+        // 椭圆长轴沿各色团主方向(Burst 方向),短轴 0.6 倍,周长 ~500px / 26s ≈ 20px/s —— 全程恒速可见。
+        // A/B 调色层使用同一轨道,切歌交叉淡化时不会跳位。
+        var paths = new Vector3[]
         {
-            (new Vector3(12, 5, 0), new Vector3(148, 58, 0), new Vector3(64, 142, 0)),
-            (new Vector3(-7, 13, 0), new Vector3(-86, 146, 0), new Vector3(-154, 32, 0)),
-            (new Vector3(-14, -6, 0), new Vector3(-152, -70, 0), new Vector3(22, -154, 0)),
-            (new Vector3(9, -12, 0), new Vector3(108, -128, 0), new Vector3(158, 28, 0)),
-            (new Vector3(-10, 8, 0), new Vector3(-104, 92, 0), new Vector3(82, 132, 0)),
+            new(148, 58, 0), new(-86, 146, 0), new(-152, -70, 0), new(108, -128, 0), new(-104, 92, 0),
         };
 
         for (var i = 0; i < all.Length; i++)
@@ -255,7 +249,6 @@ public partial class AlbumCoverBackground : UserControl
             var ellipse = all[i];
             var visual = visuals[i]!;
             var pathIndex = i % paths.Length;
-            var path = paths[pathIndex];
 
             visual.StopAnimation("Translation");
             visual.StopAnimation("Scale");
@@ -266,27 +259,40 @@ public partial class AlbumCoverBackground : UserControl
                 (float)(ellipse.Bounds.Height / 2),
                 0);
 
+            // 椭圆轨道:长轴沿 Burst 方向,幅值取其 0.75 倍;8 个路标线性插值(不传 easing 即线性),
+            // 速度恒定、闭合回路首尾相接 —— 任何时刻都在动,且无方向/速度突跳。
+            var burst = paths[pathIndex];
+            var dir = Vector3.Normalize(new Vector3(burst.X, burst.Y, 0));
+            var perp = new Vector3(-dir.Y, dir.X, 0);
+            var amp = new Vector3(burst.X, burst.Y, 0).Length() * 0.75f;
+
             var drift = visual.Compositor.CreateVector3DKeyFrameAnimation();
             drift.Target = "Translation";
             drift.Duration = s_motionCycle;
             drift.IterationBehavior = AnimationIterationBehavior.Forever;
-            drift.InsertKeyFrame(0, default);
-            drift.InsertKeyFrame(0.48f, path.Hold, s_slowEasing);
-            drift.InsertKeyFrame(0.62f, path.Burst, s_burstEasing);
-            drift.InsertKeyFrame(0.82f, path.Drift, s_slowEasing);
-            drift.InsertKeyFrame(1, default, s_slowEasing);
+            for (var k = 1; k <= 8; k++)
+            {
+                var angle = k * Math.PI / 4;
+                var offset = new Vector3(
+                    (float)((Math.Sin(angle) * dir.X - (1 - Math.Cos(angle)) * perp.X) * amp),
+                    (float)((Math.Sin(angle) * dir.Y - (1 - Math.Cos(angle)) * perp.Y) * amp),
+                    0);
+                drift.InsertKeyFrame(k / 8f, offset);
+            }
             visual.StartAnimation("Translation", drift);
 
             // 椭圆本身没有方向感，轻微呼吸比旋转更自然，也能让大面积同色封面看出动态。
+            // 每周期两次呼吸,线性插值保持全程有变化。
+            var scalePeak = 1.03f + pathIndex * 0.003f;
             var breath = visual.Compositor.CreateVector3DKeyFrameAnimation();
             breath.Target = "Scale";
             breath.Duration = s_motionCycle;
             breath.IterationBehavior = AnimationIterationBehavior.Forever;
             breath.InsertKeyFrame(0, Vector3.One);
-            breath.InsertKeyFrame(0.48f, new Vector3(1.02f, 1.015f, 1), s_slowEasing);
-            breath.InsertKeyFrame(0.62f, new Vector3(1.055f + pathIndex * 0.004f, 1.04f, 1), s_burstEasing);
-            breath.InsertKeyFrame(0.82f, new Vector3(0.985f, 1.025f, 1), s_slowEasing);
-            breath.InsertKeyFrame(1, Vector3.One, s_slowEasing);
+            breath.InsertKeyFrame(0.25f, new Vector3(scalePeak, scalePeak - 0.005f, 1));
+            breath.InsertKeyFrame(0.5f, Vector3.One);
+            breath.InsertKeyFrame(0.75f, new Vector3(1.01f, scalePeak - 0.01f, 1));
+            breath.InsertKeyFrame(1, Vector3.One);
             visual.StartAnimation("Scale", breath);
         }
 

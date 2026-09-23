@@ -562,6 +562,17 @@ public static class Program
             return;
         }
 
+        // eapi 播放地址端到端:验证三段式 eapi + Android 身份能否拿到目标音质档(--neplayurl [id] [level])
+        if (args.Length > 0 && args[0] == "--neplayurl")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(
+                    () => NetEasePlayUrlProbe.RunAsync(
+                        args.Length > 1 && long.TryParse(args[1], out var pid) ? pid : 3406947013,
+                        args.Length > 2 ? args[2] : "lossless"))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 官方客户端代理登录端到端:CopycatProxy MITM 捕获伪造 eapi 请求的 MUSIC_U(验证器注入,不碰存档)
         if (args.Length > 0 && args[0] == "--neproxy")
         {

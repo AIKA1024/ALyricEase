@@ -23,6 +23,12 @@ internal static class MusicCacheProbe
                 || MusicCacheService.GetQualityRank(MusicSource.QQ, "F000")
                     <= MusicCacheService.GetQualityRank(MusicSource.QQ, "M800"))
                 return Fail("音源音质等级顺序错误");
+            if (MusicCacheService.GetQualityRankFromBr(999000) != 4
+                || MusicCacheService.GetQualityRankFromBr(320000) != 3
+                || MusicCacheService.GetQualityRankFromBr(192000) != 2
+                || MusicCacheService.GetQualityRankFromBr(128000) != 1
+                || MusicCacheService.GetQualityRankFromBr(0) != 0)
+                return Fail("码率反推音质等级错误");
 
             var song = new Song
             {

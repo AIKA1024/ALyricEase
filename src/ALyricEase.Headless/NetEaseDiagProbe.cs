@@ -226,7 +226,8 @@ public static class NetEaseDiagProbe
             ["description"] = "",
             ["work"] = "",
         };
-        var hex = crypto.EncryptEapi("/api/playlist/create", payload, header);
+        var hex = crypto.EncryptEapi("/api/playlist/create",
+            MergeHeader(payload, header));
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{host}/eapi/playlist/create");
         req.Headers.TryAddWithoutValidation("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
@@ -260,7 +261,8 @@ public static class NetEaseDiagProbe
             ["deviceId"] = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(26)),
             ["X-anticheattoken"] = AnticheatToken.Generate("eapi"),
         };
-        var hex = crypto.EncryptEapi(apiPath, payload, header);
+        var hex = crypto.EncryptEapi(apiPath,
+            MergeHeader(payload, header));
         using var req = new HttpRequestMessage(HttpMethod.Post, host + "/eapi/" + apiPath["/api/".Length..]);
         req.Headers.TryAddWithoutValidation("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
@@ -270,6 +272,14 @@ public static class NetEaseDiagProbe
             [new KeyValuePair<string, string>("params", hex)]);
         using var resp = await http.SendAsync(req);
         return ((int)resp.StatusCode, await resp.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>把内嵌 header 合进 payload(新 eapi 格式:header 是 payload 的一个键)。</summary>
+    private static Dictionary<string, object?> MergeHeader(
+        Dictionary<string, object?> payload, Dictionary<string, object?> header)
+    {
+        payload["header"] = header;
+        return payload;
     }
 
     private static HttpClient BuildHttp(string musicU)

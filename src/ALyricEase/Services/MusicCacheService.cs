@@ -423,6 +423,18 @@ public sealed class MusicCacheService
         };
     }
 
+    /// <summary>按实际码率反推音质等级(旧版明文端点只回 br 不回 level)。
+    /// 999000 是网易对无损及以上各档(含空间音频)统一使用的码率值,这里按保守的无损(4)计;
+    /// 缺失/未知返回 0 —— 只会低估、不会高估服务端档位,误判的代价是多走一次在线流而不是丢音质。</summary>
+    internal static int GetQualityRankFromBr(int br) => br switch
+    {
+        >= 999000 => 4,
+        >= 320000 => 3,
+        >= 192000 => 2,
+        > 0 => 1,
+        _ => 0,
+    };
+
     private async Task DownloadAndStoreAudioAsync(
         string downloadKey,
         string songKey,

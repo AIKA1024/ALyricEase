@@ -16,6 +16,15 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 {
     private const string BaseUrl = "https://music.163.com";
 
+    /// <summary>eapi 专用网关(参考 Cirrus 的 Audio/Search/Batch 接口)。
+    /// 实测 music.163.com 的 eapi 在同网络下被风控拦成空响应,interface 域名不拦。</summary>
+    private const string InterfaceBaseUrl = "https://interface.music.163.com";
+
+    /// <summary>eapi 请求声称的客户端身份:Android 客户端才有无损/臻音档的播放权益,
+    /// 缺省(web 形状)会被服务端封顶 exhigh/320k。与 Cookie 里的 os/appver/versioncode 配套。</summary>
+    private const string EapiAppVer = "8.10.05";
+    private const string EapiVersionCode = "140";
+
     /// <summary>网易云批量详情接口的限速响应码(405"操作频繁",账号级);调用方可据此退避重试。</summary>
     public const int ThrottledCode = 405;
 
@@ -78,7 +87,26 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         _http.Timeout = TimeSpan.FromSeconds(20);
 
         RestoreCookies();
+
+        // eapi 的客户端身份 cookie(os=android 档位权益的判定依据之一),对所有请求无副作用。
+        // __remember_me 是官方客户端恒带的 cookie。
+        foreach (var (name, value) in new[]
+                 {
+                     ("os", "android"),
+                     ("appver", EapiAppVer),
+                     ("versioncode", EapiVersionCode),
+                     ("__remember_me", "true"),
+                 })
+        {
+            if (_cookieContainer.GetCookies(new Uri(BaseUrl))[name] is null)
+                _cookieContainer.Add(new Uri(BaseUrl), new Cookie(name, value) { Path = "/" });
+        }
     }
+
+    /// <summary>eapi 内嵌 header:放进 payload 的 "header" 键,与服务端识别客户端档位权益相关。
+    /// deviceId 每实例随机(无状态;真实客户端是设备绑定,这里随机即可通过)。</summary>
+    private readonly string _deviceId =
+        Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
     public bool IsLoggedIn => _cookie.MusicU is { Length: > 0 };
 
@@ -340,18 +368,53 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private async Task<PlayUrlItem?> TryPlayUrlEapiAsync(long id, string level, CancellationToken ct)
     {
+        // 与参考实现(Cirrus)对齐:encodeType 固定 flac,空间音频档附 immerseType=c51;
+        // 客户端身份(header + cookie)决定档位权益,缺省会掉到 web 档(封顶 320k)。
         var payload = new Dictionary<string, object?>
         {
             ["ids"] = $"[{id}]",
             ["level"] = level,
+            ["encodeType"] = "flac",
+            ["header"] = BuildEapiIdentityHeader(),
         };
-        // 播放地址走 eapi,带随机 CN IP 防海外风控
-        using var req = CreateEapiRequest("/api/song/enhance/player/url/v1", payload, includeRealIp: true);
+        if (string.Equals(level, "sky", StringComparison.OrdinalIgnoreCase))
+            payload["immerseType"] = "c51";
+        // 播放地址走 eapi(interface 网关),带随机 CN IP 防海外风控
+        using var req = CreateEapiRequest(
+            "/api/song/enhance/player/url/v1", payload, includeRealIp: true, useInterfaceHost: true);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
         var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.PlayUrlResponse);
         if (resp is null || resp.Code != 200 || resp.Data is null)
             return null;
         return resp.Data.FirstOrDefault(i => i.Id == id) ?? resp.Data.FirstOrDefault();
+    }
+
+    /// <summary>构建 eapi payload 的内嵌 header(Android 客户端身份)。MUSIC_U/MUSIC_A 取自当前
+    /// cookie 容器,登录态变化随请求刷新;__remember_me 是官方客户端恒带项。</summary>
+    private Dictionary<string, object?> BuildEapiIdentityHeader()
+    {
+        var cookies = _cookieContainer.GetCookies(new Uri(BaseUrl));
+        string? PickCookie(string name) => cookies[name]?.Value;
+        var header = new Dictionary<string, object?>
+        {
+            ["osver"] = PickCookie("osver") ?? string.Empty,
+            ["deviceId"] = _deviceId,
+            ["appver"] = PickCookie("appver") ?? EapiAppVer,
+            ["versioncode"] = PickCookie("versioncode") ?? EapiVersionCode,
+            ["mobilename"] = PickCookie("mobilename") ?? string.Empty,
+            ["buildver"] = DateTimeOffset.Now.ToUnixTimeSeconds().ToString(),
+            ["resolution"] = "1920x1080",
+            ["__csrf"] = PickCookie("__csrf") ?? string.Empty,
+            ["os"] = PickCookie("os") ?? "android",
+            ["channel"] = PickCookie("channel") ?? string.Empty,
+            ["requestId"] =
+                $"{DateTimeOffset.Now.ToUnixTimeMilliseconds()}_{Random.Shared.Next(1000):D4}",
+        };
+        if (PickCookie("MUSIC_U") is { Length: > 0 } musicU)
+            header["MUSIC_U"] = musicU;
+        if (PickCookie("MUSIC_A") is { Length: > 0 } musicA)
+            header["MUSIC_A"] = musicA;
+        return header;
     }
 
     // ---------- weapi 主路径 ----------
@@ -1422,20 +1485,21 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         return req;
     }
 
-    private HttpRequestMessage CreateEapiRequest(string apiUrlPath, IReadOnlyDictionary<string, object?> payload, bool includeRealIp,
-        IReadOnlyDictionary<string, object?>? eapiHeader = null)
+    private HttpRequestMessage CreateEapiRequest(string apiUrlPath, IReadOnlyDictionary<string, object?> payload,
+        bool includeRealIp, bool useInterfaceHost = false)
     {
-        var params_ = _crypto.EncryptEapi(apiUrlPath, payload, eapiHeader);
+        var params_ = _crypto.EncryptEapi(apiUrlPath, payload);
         // 明文里的 url 保留 /api/...;实际 HTTP 请求打到 /eapi/...
         var httpPath = apiUrlPath.StartsWith("/api/", StringComparison.Ordinal)
             ? "/eapi/" + apiUrlPath["/api/".Length..]
             : apiUrlPath;
-        var req = new HttpRequestMessage(HttpMethod.Post, BaseUrl + httpPath);
+        var baseUrl = useInterfaceHost ? InterfaceBaseUrl : BaseUrl;
+        var req = new HttpRequestMessage(HttpMethod.Post, baseUrl + httpPath);
         ApplyCommonHeaders(req, includeRealIp);
-        req.Content = new FormUrlEncodedContent(new[]
-        {
+        req.Content = new FormUrlEncodedContent(
+        [
             new KeyValuePair<string, string>("params", params_),
-        });
+        ]);
         return req;
     }
 

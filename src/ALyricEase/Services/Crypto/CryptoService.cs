@@ -35,16 +35,31 @@ public sealed class CryptoService
         return (@params, encSecKey);
     }
 
-    /// <summary>eapi 加密,返回单个 params(encSecKey 空串)。
+    /// <summary>eapi 加密,返回单个 params(参考实现 Cirrus/NeteaseCloudMusicApi 的三段式格式)。
     /// urlPath 为明文里的 /api/... 路径,如 /api/song/enhance/player/url/v1。
-    /// header 可选(eapi 明文体顶层附 header,服务端取其 MUSIC_U/deviceId 注入请求上下文),
-    /// 写类端点(如 playlist/create)需要。</summary>
-    public string EncryptEapi(string urlPath, IReadOnlyDictionary<string, object?> payload,
-        IReadOnlyDictionary<string, object?>? header = null)
+    /// payload 是接口参数(客户端身份 header 作为其中的 "header" 键一并放入)。
+    /// 旧实现把 {method,url,params,header} 包一层再拼 "nobody{use}{this}" 前缀,与真实客户端
+    /// 抓包格式(nobody{url}use{json}md5forencrypt 签名 + {url}-36cd479b6b5-{json}-36cd479b6b5-{md5})
+    /// 对不上,实测被服务端风控拦成空响应 —— 换成标准格式后同一网络直接 200。</summary>
+    public string EncryptEapi(string urlPath, IReadOnlyDictionary<string, object?> payload)
     {
-        var text = SerializeEapiBody(urlPath, payload, header);
-        var message = "nobody{use}{this}" + text;
-        return AesEcbEncryptToHex(message, EapiKey);
+        var text = SerializeEapiPayload(payload);
+        var message = $"nobody{urlPath}use{text}md5forencrypt";
+        var digest = Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes(message))).ToLowerInvariant();
+        var body = $"{urlPath}-36cd479b6b5-{text}-36cd479b6b5-{digest}";
+        return AesEcbEncryptToHex(body, EapiKey);
+    }
+
+    /// <summary>把 eapi 接口参数(含内嵌 header)序列化为紧凑 JSON。
+    /// 手写序列化与 weapi 一致:NativeAOT 兼容、字典项恒写、值仅基本类型/嵌套字典。</summary>
+    public string SerializeEapiPayload(IReadOnlyDictionary<string, object?> payload)
+    {
+        using var ms = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(ms))
+        {
+            WriteObject(writer, payload);
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
     }
 
     /// <summary>手写紧凑 JSON 序列化 Dictionary(NativeAOT 兼容,替代 JsonSerializer 反射;payload 值仅基本类型)。
@@ -59,28 +74,6 @@ public sealed class CryptoService
             {
                 writer.WritePropertyName(key);
                 WriteValue(writer, value);
-            }
-            writer.WriteEndObject();
-        }
-        return Encoding.UTF8.GetString(ms.ToArray());
-    }
-
-    /// <summary>eapi body:{ method="POST", url=urlPath, params=payload, header=header? }。</summary>
-    private static string SerializeEapiBody(string urlPath, IReadOnlyDictionary<string, object?> payload,
-        IReadOnlyDictionary<string, object?>? header)
-    {
-        using var ms = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(ms))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("method", "POST");
-            writer.WriteString("url", urlPath);
-            writer.WritePropertyName("params");
-            WriteObject(writer, payload);
-            if (header is not null)
-            {
-                writer.WritePropertyName("header");
-                WriteObject(writer, header);
             }
             writer.WriteEndObject();
         }
@@ -144,7 +137,8 @@ public sealed class CryptoService
         using var enc = aes.CreateEncryptor();
         var data = Encoding.UTF8.GetBytes(text);
         var result = enc.TransformFinalBlock(data, 0, data.Length);
-        return Convert.ToHexString(result).ToLowerInvariant();
+        // eapi 请求体是大写十六进制(与真实客户端一致)
+        return Convert.ToHexString(result);
     }
 
     private static string CreateSecretKey(int length)

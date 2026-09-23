@@ -724,6 +724,21 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
             song.IsPlaybackUnavailable = false;
             PrepareSongPlayback(song);
+
+            // 服务器实际给的档位不高于磁盘已有缓存 ⇒ 直接播缓存,省一次完整在线流。
+            // 否则"偏好 sky(等级6)但歌曲最高只有 exhigh(等级3)"的歌:TryAcquire 要求
+            // 缓存≥请求档位永远 miss,CacheAsync 又因同档位已存在被去重跳过 ⇒
+            // 缓存文件一直躺在磁盘上,每次播放却都重新下载整首歌(320k 一首约 9MB)。
+            var servedRank = Math.Max(
+                MusicCacheService.GetQualityRank(song.Source, item.Level),
+                MusicCacheService.GetQualityRankFromBr(item.Br));
+            if (offlineFallback is not null && servedRank <= offlineFallback.QualityRank)
+            {
+                await StartPlayerAsync(offlineFallback.FilePath, offlineFallback, allowCrossfade);
+                offlineFallback = null;
+                return PlayAttemptResult.Started;
+            }
+
             if (item.IsTrial == true)
                 Message = "VIP 歌曲仅试听 30 秒";
             offlineFallback?.Dispose();

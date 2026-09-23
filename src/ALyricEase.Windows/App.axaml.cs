@@ -1,4 +1,7 @@
+using System;
+using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using ALyricEase.Infrastructure;
@@ -25,32 +28,62 @@ public partial class App : Application
   {
     if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
     {
-      // 窗口关闭通常已经保存几何；Exit 再刷新一次尚未触发的音量/时长延迟保存。
+      // 启动画面先亮(极轻量),主窗口的重量级构建延后到它渲染出首帧之后;
+      // 关闭语义随之改为主窗口关闭 —— 否则启动画面先关会把应用带崩。
+      desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
       desktop.Exit += (_, _) => ServiceLocator.Get<AppStateStore>().Flush();
+
+      var splash = new SplashWindow();
+      splash.Show();
+
+      _ = ShowMainWindowAsync(desktop, splash);
+    }
+
+    base.OnFrameworkInitializationCompleted();
+  }
+
+  /// <summary>等启动画面渲染出首帧后构建/显示主窗口,再收启动画面。
+  /// 构建失败时关掉启动画面并显式关机,避免无窗口挂着退出不去。</summary>
+  private async Task ShowMainWindowAsync(
+      IClassicDesktopStyleApplicationLifetime desktop, SplashWindow splash)
+  {
+    try
+    {
+      await splash.WaitForReadyAsync();
 
       var mainWindow = new MainWindow
       {
         DataContext = ServiceLocator.Get<MainViewModel>(),
       };
-      // ClassicDesktop lifetime 会在初始化完成后显示 MainWindow；在赋值前恢复几何，
-      // 确保 Win32 窗口的第一个可见帧就是上次关闭时的大小、位置和状态。
+      // 在显示前恢复几何,确保 Win32 窗口的第一个可见帧就是上次关闭时的大小、位置和状态。
       mainWindow.RestorePersistedWindowBounds();
       desktop.MainWindow = mainWindow;
+      mainWindow.Show();
 
 #if WINDOWS
       // SMTC 需要前台窗口 HWND,须在窗口创建后于 UI 线程初始化
-      var hwnd = desktop.MainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+      var hwnd = mainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
       ServiceLocator.Get<ISmtcService>().Initialize(hwnd);
 
       // 任务栏缩略图工具栏:须窗口已显示(关联任务栏按钮)后再注册 → 挂 Opened
-      desktop.MainWindow.Opened += (_, _) => InitTaskbarThumbButtons(desktop.MainWindow, hwnd);
+      mainWindow.Opened += (_, _) => InitTaskbarThumbButtons(mainWindow, hwnd);
 #endif
 
       // 后台恢复登录态(已存 MUSIC_U 则拉资料+歌单),不阻塞 UI
       _ = RestoreLoginAsync();
-    }
 
-    base.OnFrameworkInitializationCompleted();
+      // 主窗口渲染出首帧后再收启动画面,衔接不留白
+      if (TopLevel.GetTopLevel(mainWindow) is { } topLevel)
+      {
+        var firstFrame = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        topLevel.RequestAnimationFrame(_ => firstFrame.TrySetResult());
+        await firstFrame.Task;
+      }
+    }
+    finally
+    {
+      splash.Close();
+    }
   }
 
 #if WINDOWS

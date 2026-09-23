@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ALyricEase.SplashWindow"
+        Title="ALyricEase"
+        Width="420" Height="300"
+        CanResize="False" ShowInTaskbar="False"
+        WindowDecorations="None"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        WindowStartupLocation="CenterScreen">
+  <Panel>
+    <Border Width="380" Height="260" HorizontalAlignment="Center" VerticalAlignment="Center"
+            Background="#FF101418" CornerRadius="14"
+            BorderBrush="#22FFFFFF" BorderThickness="1"
+            BoxShadow="0 8 28 0 #66000000">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18">
+        <Image Source="avares://ALyricEase/Assets/icon_256.png" Width="88" Height="88"
+               HorizontalAlignment="Center" RenderOptions.BitmapInterpolationMode="HighQuality" />
+        <TextBlock Text="ALyricEase" FontSize="26" FontWeight="SemiBold" Foreground="White"
+                   HorizontalAlignment="Center" />
+        <Ellipse x:Name="Spinner" Width="22" Height="22" HorizontalAlignment="Center"
+                 Stroke="#FF5EA9A2" StrokeThickness="3" StrokeDashArray="6,4" />
+        <TextBlock Text="正在加载…" FontSize="13" Foreground="#99FFFFFF" HorizontalAlignment="Center" />
+      </StackPanel>
+    </Border>
+  </Panel>
+</Window>

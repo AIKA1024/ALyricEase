@@ -288,9 +288,10 @@ public partial class NowPlayingView : UserControl
     UpdateDesktopLayout();
   }
 
-  /// <summary>收起按钮:常规顶部居中;中屏无面板时信息区占窗口正上方,故挪到左上(原版行为)。</summary>
+  /// <summary>收起按钮:顶部居中(y=48,与右上"更多"按钮对齐,都让位窗口控制三键浮层);
+  /// 与封面顶部冲突的布局(大屏/小屏无面板、中屏无面板)改放左上(12,48) —— 原版让位行为。</summary>
   private void PlaceCollapseButton(double w, bool topLeft)
-    => MoveTo(CollapseButton, topLeft ? 12 : w / 2 - 25, 32);
+    => MoveTo(CollapseButton, topLeft ? 12 : w / 2 - 25, 48);
 
   /// <summary>信息区文本对齐:中屏无面板时居中(窗口正上方),其余状态左对齐。</summary>
   private void SetInfoCentered(bool centered)
@@ -349,7 +350,7 @@ public partial class NowPlayingView : UserControl
     var infoWidth = Math.Min(600, w - 160);
     SetRect(InfoPanel, (w - infoWidth) / 2, 36, infoWidth, 54);
     SetInfoCentered(true);
-    MoveTo(CollapseButton, 0, 32);
+    MoveTo(CollapseButton, 0, 48);
 
     // 以下 Y 坐标锚定窗口底部，避免 1300×584 时切换按钮落到屏幕外。
     var togglesY = h - 65;
@@ -417,7 +418,8 @@ public partial class NowPlayingView : UserControl
 
     Artwork.CornerRadius = new CornerRadius(16);
     PlaceFullColumn(colX, colTop, cover);
-    PlaceCollapseButton(w, topLeft: false);
+    // 收起按钮让位窗口控制三键后降到 y=48,顶部居中会压住封面顶(colTop 可低至 ~92)→ 挪左上
+    PlaceCollapseButton(w, topLeft: true);
     SetInfoCentered(false);
     SetVisibility(progress: true, prev: true, play: true, next: true, like: true, mode: true, volume: true,
       queueToggle: true);
@@ -430,32 +432,38 @@ public partial class NowPlayingView : UserControl
     var margin = Math.Clamp(w * 0.06, 24, 64);
     if (!panelOpen)
     {
-      // 信息在窗口正上方(水平居中);收起按钮让位到左上
+      // 信息在窗口正上方(水平居中);收起按钮让位到左上。
+      // 控制栈(进度→切换)锚定窗口底部(与小屏一致),封面在「按钮行底(102)」与
+      // 「进度条顶-18」之间垂直居中 —— 高窗口的多余空间不再全部堆在封面上方。
       var infoW = Math.Min(w - margin * 2, 420);
       SetRect(InfoPanel, (w - infoW) / 2, 16, infoW, 54);
       PlaceCollapseButton(w, topLeft: true);
       SetInfoCentered(true);
-      var cover = Math.Clamp(Math.Min(h - 560, w * 0.45), 160, 380);
+      const double buttonsBottom = 102;
+      var togglesY = h - 62;
+      var secondaryY = togglesY - 94;
+      var transportY = secondaryY - 92;
+      var progressY = transportY - 86;
+      var availableCover = Math.Max(160, progressY - 18 - buttonsBottom - 44);
+      var cover = Math.Clamp(Math.Min(w * 0.45, availableCover), 160, 380);
+      var centered = buttonsBottom + Math.Max(0, (progressY - 18 - buttonsBottom - cover) / 2);
+      // 极矮窗口兜底:居中位可能低于按钮行或压住进度条,按序夹紧
+      var colTop = Math.Min(Math.Max(centered, buttonsBottom), Math.Max(buttonsBottom, progressY - 18 - cover));
       var colX = (w - cover) / 2;
-      const double below = 266; // 进度52+14+控制60+16+次级50+24+切换32+间距18
-      var colTop = 164 + Math.Max(0, (h - 164 - below - cover) / 2);
+      var center = w / 2;
       Artwork.CornerRadius = new CornerRadius(16);
       SetRect(Artwork, colX, colTop, cover, cover);
-      var center = colX + cover / 2;
-      var y = colTop + cover + 18;
-      SetRect(ProgressArea, colX, y, cover, 52);
-      y += 52 + 14;
-      MoveTo(PrevButton, center - 110, y + 5);
-      MoveTo(PlayButton, center - 30, y);
-      MoveTo(NextButton, center + 60, y + 5);
-      y += 60 + 16;
-      MoveTo(ModeButton, colX, y);
-      MoveTo(LikeButton, center - 25, y);
-      MoveTo(VolumeButton, colX + cover - 50, y);
-      y += 50 + 24;
-      MoveTo(LyricsToggle, colX, y);
-      MoveTo(FullScreenToggle, center - 24, y);
-      MoveTo(QueueToggle, colX + cover - 48, y);
+      // 控制栈锚定窗口底部(与小屏一致):进度/播放控制/次级/切换各归各位,不随封面漂移
+      SetRect(ProgressArea, colX, progressY, cover, 52);
+      MoveTo(PrevButton, center - 110, transportY + 5);
+      MoveTo(PlayButton, center - 30, transportY);
+      MoveTo(NextButton, center + 60, transportY + 5);
+      MoveTo(ModeButton, colX, secondaryY);
+      MoveTo(LikeButton, center - 25, secondaryY);
+      MoveTo(VolumeButton, colX + cover - 50, secondaryY);
+      MoveTo(LyricsToggle, colX, togglesY);
+      MoveTo(FullScreenToggle, center - 24, togglesY);
+      MoveTo(QueueToggle, colX + cover - 48, togglesY);
       SetVisibility(progress: true, prev: true, play: true, next: true, like: true, mode: true, volume: true,
         queueToggle: true);
     }
@@ -528,8 +536,9 @@ public partial class NowPlayingView : UserControl
   {
     if (!panelOpen)
     {
-      // 500×1000 原版实测基准:左右各 40、420px 正方形封面、封面顶 120；
-      // 下方各行不是等距紧凑栈，而是 584/666/752/844/938 的节奏。
+      // 500×1000 原版实测基准:左右各 40、下方各行是 584/666/752/844/938 的节奏。
+      // 封面不再贴顶:在「顶部按钮行(收起/更多,y 48~98)」与「歌名区 infoY」之间垂直居中 ——
+      // 高窄窗口不再出现封面下方的大片空白;空间不足时封面按需收缩并保底 160。
       var rowX = SmallSideMargin;
       var rowW = w - SmallSideMargin * 2;
       var togglesY = h - 62;
@@ -537,9 +546,10 @@ public partial class NowPlayingView : UserControl
       var transportY = secondaryY - 92;
       var progressY = transportY - 86;
       var infoY = progressY - 82;
-      var coverTop = Math.Clamp(h * 0.12, 86, 120);
-      var availableCover = Math.Max(160, infoY - coverTop - 44);
+      const double buttonsBottom = 102; // 收起/更多按钮行底(48+50)+4 间隙
+      var availableCover = Math.Max(160, infoY - buttonsBottom - 44);
       var cover = Math.Clamp(Math.Min(rowW, availableCover), 160, 600);
+      var coverTop = Math.Max(buttonsBottom, buttonsBottom + (infoY - buttonsBottom - cover) / 2);
       Artwork.CornerRadius = new CornerRadius(16);
       SetRect(Artwork, rowX + (rowW - cover) / 2, coverTop, cover, cover);
       var center = rowX + rowW / 2;
@@ -554,6 +564,7 @@ public partial class NowPlayingView : UserControl
       MoveTo(LyricsToggle, rowX, togglesY);
       MoveTo(FullScreenToggle, center - 24, togglesY);
       MoveTo(QueueToggle, rowX + rowW - 48, togglesY);
+      // 封面已垂直居中(顶 ≥102),按钮行(48~98)不再与之重叠 → 收起按钮回水平居中
       PlaceCollapseButton(w, topLeft: false);
       SetInfoCentered(false);
       SetVisibility(progress: true, prev: true, play: true, next: true, like: true, mode: true, volume: true,

@@ -119,9 +119,11 @@
 
   <ExperimentalAcrylicBorder Material="{DynamicResource AppAcrylicMaterial}">
     <Grid RowDefinitions="48,*">
-      <!-- 原版风格自绘标题栏：左侧拖拽区，右侧窗口控制。 -->
+      <!-- 原版风格自绘标题栏：左侧拖拽区，右侧窗口控制。
+           窗口控制三键已上浮为独立层(见下方 WindowControls):详情页打开时三键保持最上层,
+           同 UWP 原生 caption buttons;标题栏其余部分(返回/汉堡/标题)照旧被覆盖层盖住。 -->
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent" PointerPressed="OnTitleBarPointerPressed"
-            ColumnDefinitions="Auto,*,Auto">
+            ColumnDefinitions="Auto,*">
         <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0" VerticalAlignment="Center">
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
@@ -138,21 +140,26 @@
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
                      Foreground="{DynamicResource TextPrimary}" />
         </StackPanel>
-        <StackPanel Grid.Column="2" x:Name="WindowControls" Orientation="Horizontal">
-          <Button Classes="window-control" Click="OnMinimizeClick" ToolTip.Tip="最小化">
-            <TextBlock x:Name="MinGlyph" Text="{DynamicResource IconWindowMinimize}"
-                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
-          </Button>
-          <Button Classes="window-control" Click="OnMaximizeClick" ToolTip.Tip="最大化">
-            <TextBlock x:Name="MaxGlyph" Text="{DynamicResource IconWindowMaximize}"
-                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
-          </Button>
-          <Button Classes="window-control close-control" Click="OnCloseClick" ToolTip.Tip="关闭">
-            <TextBlock x:Name="CloseGlyph" Text="{DynamicResource IconClose}"
-                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
-          </Button>
-        </StackPanel>
       </Grid>
+
+      <!-- 窗口控制三键(独立浮层):ZIndex 200 高于播放详情页覆盖层(壳内 100),详情页打开时三键仍最上层可点,
+           同 UWP 原生 caption buttons;低于启动画面(300)。全屏时由代码后置隐藏(WindowControls.IsVisible)。
+           顶部 48px 仍属 OS 拖拽区,三键按钮已由 MarkClientHitTest 标记为 HTCLIENT 可点击。 -->
+      <StackPanel x:Name="WindowControls" Grid.Row="0" ZIndex="200" Height="48"
+                  Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+        <Button Classes="window-control" Click="OnMinimizeClick" ToolTip.Tip="最小化">
+          <TextBlock x:Name="MinGlyph" Text="{DynamicResource IconWindowMinimize}"
+                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
+        </Button>
+        <Button Classes="window-control" Click="OnMaximizeClick" ToolTip.Tip="最大化">
+          <TextBlock x:Name="MaxGlyph" Text="{DynamicResource IconWindowMaximize}"
+                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
+        </Button>
+        <Button Classes="window-control close-control" Click="OnCloseClick" ToolTip.Tip="关闭">
+          <TextBlock x:Name="CloseGlyph" Text="{DynamicResource IconClose}"
+                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
+        </Button>
+      </StackPanel>
 
       <!-- 重内容壳层:首帧渲染后由代码后置挂载(挂载前是启动画面,见 SplashPane)。
            RowSpan=2 覆盖两行:壳内 Row 0 留空(透明不拦截命中,标题栏可点),

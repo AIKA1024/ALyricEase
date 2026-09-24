@@ -8,6 +8,7 @@ internal enum DetailPageKind
     Album,
     ArtistSongs,
     ArtistAlbums,
+    User,
 }
 
 /// <summary>详情页导航历史中的轻量状态；列表、队列与卡片只存在一次性内存快照中。</summary>

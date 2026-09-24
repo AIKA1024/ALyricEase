@@ -29,6 +29,9 @@
     <DataTemplate DataType="vm:PlaylistViewModel">
       <views:PlaylistView />
     </DataTemplate>
+    <DataTemplate DataType="vm:UserProfileViewModel">
+      <views:UserProfileView />
+    </DataTemplate>
     <DataTemplate DataType="vm:ArtistViewModel">
       <views:ArtistView />
     </DataTemplate>

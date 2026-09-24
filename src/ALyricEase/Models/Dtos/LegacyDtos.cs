@@ -33,6 +33,7 @@ public sealed record LegacyAccountResponse
     public LegacyProfile? Profile { get; init; }
 }
 
+[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
 public sealed record LegacyProfile
 {
     [JsonPropertyName("userId")] public long UserId { get; init; }
@@ -43,6 +44,19 @@ public sealed record LegacyProfile
 
     /// <summary>会员类型:0=无,10/11=音乐包,111=黑胶VIP(非 0 即开通了某种会员)。</summary>
     [JsonPropertyName("vipType")] public int VipType { get; init; }
+
+    /// <summary>个性签名(用户详情接口;登录概要接口可能缺失)。</summary>
+    [JsonPropertyName("signature")] public string Signature { get; init; } = "";
+
+    /// <summary>用户页背景图(用户详情接口)。</summary>
+    [JsonPropertyName("backgroundUrl")] public string BackgroundUrl { get; init; } = "";
+
+    /// <summary>关注数/粉丝数/歌单数(用户详情接口;部分账号返回字符串数字,AllowReadingFromString 兼容)。</summary>
+    [JsonPropertyName("follows")] public int? Follows { get; init; }
+
+    [JsonPropertyName("followeds")] public int? Followeds { get; init; }
+
+    [JsonPropertyName("playlistCount")] public int? PlaylistCount { get; init; }
 }
 
 public sealed record LegacyUserDetailResponse
@@ -95,6 +109,12 @@ public sealed record LegacyPlaylistItem
 
     /// <summary>true 表示收藏的他人歌单，不能向其中写入歌曲。</summary>
     [JsonPropertyName("subscribed")] public bool Subscribed { get; init; }
+
+    /// <summary>歌单创建者(用户页 参与创作/收藏 分组用)。</summary>
+    [JsonPropertyName("creator")] public SearchCreatorDto? Creator { get; init; }
+
+    /// <summary>累计播放次数(科学计数法,用户页角标用)。</summary>
+    [JsonPropertyName("playCount")] public double PlayCount { get; init; }
 }
 
 public sealed record LegacyPlaylistDetailResponse

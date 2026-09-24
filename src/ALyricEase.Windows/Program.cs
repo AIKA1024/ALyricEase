@@ -76,6 +76,19 @@ class Program
       return;
     }
 
+    if (args.Length > 0 && args[0] == "--selftest-creator")
+    {
+      var creatorTask = SelfTest.RunCreatorProbeAsync();
+      while (!creatorTask.IsCompleted)
+      {
+        Dispatcher.UIThread.RunJobs();
+        Thread.Sleep(5);
+      }
+
+      creatorTask.GetAwaiter().GetResult();
+      return;
+    }
+
     if (args.Length > 0 && args[0] == "--selftest")
     {
       SelfTest.RunAsync().GetAwaiter().GetResult();
@@ -124,6 +137,7 @@ class Program
     services.AddSingleton<AlbumViewModel>();
     services.AddSingleton<ArtistSongsPageViewModel>();
     services.AddSingleton<ArtistAlbumsPageViewModel>();
+    services.AddSingleton<UserProfileViewModel>();
     services.AddSingleton<RecentPlaybackViewModel>();
     services.AddSingleton<SettingsViewModel>();
     services.AddSingleton<AccountViewModel>();

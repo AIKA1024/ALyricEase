@@ -495,6 +495,16 @@ public static class Program
             return;
         }
 
+        // 推荐歌单创建者验证:v6 概览的 creator.nickname 映射(--necreator [id])
+        if (args.Length > 0 && args[0] == "--necreator")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(
+                    () => NetEaseCreatorProbe.RunAsync(
+                        args.Length > 1 && long.TryParse(args[1], out var cid) ? cid : null))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 凭证过期诊断:同一份 Cookie 打 校验/账号摘要/红心写入 三条链路,打印真实错误码
         if (args.Length > 0 && args[0] == "--qqdiag")
         {

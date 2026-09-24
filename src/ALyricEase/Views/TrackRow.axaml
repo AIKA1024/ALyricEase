@@ -362,22 +362,8 @@
     <Setter Property="Grid.ColumnSpan" Value="1" />
   </Style>
 
-  <!-- 圆形操作按钮(32px,仿原版 32 列宽):控件级 Background(自定义 RowButtonTheme 无 Fluent 模板内
-       状态样式,控件级 setter 可靠生效;`/template/` 选择器带 TrackRow 祖先会匹配不到,勿用)。
-       基础 RowButton(浅色半透明叠行背景/深色实色 #404040),悬停 RowButtonHover 变浅,按下 RowButtonPressed 更深 -->
-  <Style Selector="views|TrackRow Button.row-action">
-    <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" />
-    <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="16" />
-    <Setter Property="Background" Value="{DynamicResource RowButton}" /><Setter Property="BorderThickness" Value="0" />
-    <Setter Property="HorizontalContentAlignment" Value="Center" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
-  </Style>
-  <Style Selector="views|TrackRow Button.row-action:pointerover">
-    <Setter Property="Background" Value="{DynamicResource RowButtonHover}" />
-  </Style>
-  <Style Selector="views|TrackRow Button.row-action:pressed">
-    <Setter Property="Background" Value="{DynamicResource RowButtonPressed}" />
-  </Style>
+  <!-- 圆形操作按钮(播放/更多)的几何与配色已升为全局 Button.row-action 样式(Styles/Controls/Buttons.axaml),
+       歌曲行与用户页歌单行共用;此处仅保留行内浮现(row-ops)与红心/文本链接等行专属样式 -->
 
   <!-- 歌手/专辑文本链接按钮:仿原版(Background #00FFFFFF CornerRadius4 Padding4),内容靠左、不撑满整列;
        悬停 SystemBaseLow、按下 SystemBaseMediumLow。同 row-action,控件级 setter 可靠生效 -->

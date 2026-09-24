@@ -39,6 +39,10 @@
             <SolidColorBrush x:Key="AppControlStrokePressed" Color="#0F000000" />
             <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
             <SolidColorBrush x:Key="ListCardBorder" Color="#0F000000" />
+            <!-- 用户页(亮):小屏分组卡片底/标题分隔线/行悬停(对齐原版 UWP 暗色 #232323/#393939/#343434 的亮色等价) -->
+            <SolidColorBrush x:Key="UserSectionCardBackground" Color="#F7F7F7" />
+            <SolidColorBrush x:Key="UserSectionCardDivider" Color="#0F000000" />
+            <SolidColorBrush x:Key="UserSectionRowHover" Color="#0D000000" />
             <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#C8F3F3F3" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#10000000" />
@@ -92,6 +96,10 @@
             <SolidColorBrush x:Key="AppControlStrokePressed" Color="#12FFFFFF" />
             <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
             <SolidColorBrush x:Key="ListCardBorder" Color="#1AFFFFFF" />
+            <!-- 用户页(暗):小屏分组卡片底/标题分隔线/行悬停,取自原版 UWP 实测色 -->
+            <SolidColorBrush x:Key="UserSectionCardBackground" Color="#232323" />
+            <SolidColorBrush x:Key="UserSectionCardDivider" Color="#393939" />
+            <SolidColorBrush x:Key="UserSectionRowHover" Color="#343434" />
             <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#D0181818" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#12FFFFFF" />

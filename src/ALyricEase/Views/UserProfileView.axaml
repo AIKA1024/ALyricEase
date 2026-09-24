@@ -1,0 +1,470 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:UserProfileViewModel"
+             x:CompileBindings="True"
+             mc:Ignorable="d" d:DesignWidth="928" d:DesignHeight="1000"
+             x:Class="ALyricEase.Views.UserProfileView">
+  <UserControl.Styles>
+    <!-- 页边距:宽/中 48,窄 16 -->
+    <Style Selector="StackPanel.page-root">
+      <Setter Property="Margin" Value="48,20,32,116" />
+    </Style>
+    <Style Selector=".narrow StackPanel.page-root">
+      <Setter Property="Margin" Value="16,12,16,116" />
+    </Style>
+    <!-- 分区形态切换:默认(宽/中)显示"标题+横向卡片网格"区块,窄屏显示单个分组大卡片。
+         ⚠ 分组标题必须放进对应容器内:放在容器外会窄屏/宽屏各显一份(实测标题重复)。
+         空分组由内层 HasTaste/HasCreated/HasCollected 绑定隐藏(本地 IsVisible 优先级高于样式,
+         所以形态切换和空隐藏必须分层,不能写同一元素上)。 -->
+    <Style Selector="StackPanel.section-wide">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="Border.section-narrow">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow StackPanel.section-wide">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow Border.section-narrow">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="TextBlock.section-title-narrow">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <!-- 英雄卡文字(照片面:白字约定,同播放详情页) -->
+    <Style Selector="TextBlock.hero-text">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="TextBlock.hero-sub">
+      <Setter Property="Foreground" Value="#B3FFFFFF" />
+    </Style>
+    <!-- 横向卡片(宽/中):与推荐页卡片同构 200x250 -->
+    <Style Selector="Button.card">
+      <Setter Property="Width" Value="200" />
+      <Setter Property="Height" Value="250" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="Border.card-art">
+      <Setter Property="Width" Value="200" />
+      <Setter Property="Height" Value="200" />
+      <!-- CornerRadius 必写:ClipToBounds 只按矩形裁,圆角靠 Border 自身的圆角裁剪(推荐页同款) -->
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <!-- 卡片悬停浮现的操作按钮(左下 ▶ 播放 / 右下 ••• 菜单):几何/配色复用全局 row-action
+         (32px 圆,同歌曲行),此处只管"悬停浮现";48px 大圆钮已废弃(实测过大) -->
+    <Style Selector="Button.card-op">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.card:pointerover Button.card-op">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Border.card-mask">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.card:pointerover Border.card-mask">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+    <Style Selector="Button.card:pressed Border.card-mask">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <!-- 播放量角标(右上) -->
+    <Style Selector="Border.play-count-badge">
+      <Setter Property="Background" Value="#59000000" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="5,1" />
+      <Setter Property="Margin" Value="6" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+    <Style Selector="Border.play-count-badge StackPanel">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="3" />
+    </Style>
+    <!-- 换行容器(WrapPanel)无 Spacing:卡片间距由 ContentPresenter 右/下边距提供 -->
+    <Style Selector="ItemsControl.hcards > ContentPresenter">
+      <Setter Property="Margin" Value="0,0,12,12" />
+    </Style>
+    <!-- 窄屏分组行:48px 瓦片 + 文本 + 悬停浮现操作按钮 -->
+    <Style Selector="Button.user-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.user-row /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="Button.user-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource UserSectionRowHover}" />
+    </Style>
+    <!-- 悬停浮现操作按钮(同 TrackRow row-ops):用 IsVisible 而非 Opacity ——
+         非悬停时不占布局空间,歌名列多出一截;浮现/收起无过渡(TrackRow 同款瞬时切换) -->
+    <Style Selector="StackPanel.row-actions">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="6" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.user-row:pointerover StackPanel.row-actions">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <!-- ▶/••• 圆形按钮复用全局 Button.row-action 样式 + RowButtonTheme(与歌曲行同一套) -->
+  </UserControl.Styles>
+
+  <ScrollViewer x:Name="PageScroller" Classes="page-scroll"
+                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Classes="page-root" Spacing="28" IsVisible="{Binding !IsLoading}">
+      <!-- 英雄卡:背景 = 头像放大模糊(即"头像采样")+ PlaybackOverlay 暗化,白字可读。
+           背景图装在 OverlayPanel 里:它不参与测量,卡片高度完全由内容(头像/文字)决定,
+           大图结构上不可能撑爆卡片 —— 此前两次 SizeChanged 回写方案都死于正反馈
+           (回写的"卡片尺寸"正是被图片撑大的值),勿改回。 -->
+      <Border x:Name="HeroCard" CornerRadius="12" ClipToBounds="True" Background="{DynamicResource AppSurface}"
+              MinHeight="180">
+        <Panel>
+          <infra:OverlayPanel>
+            <Image x:Name="HeroBackground" Stretch="UniformToFill"
+                   infra:ManagedCoverImage.DecodeSize="240"
+                   infra:ManagedCoverImage.Source="{Binding AvatarUrl}"
+                   IsVisible="{Binding AvatarUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <Image.Effect>
+                <BlurEffect Radius="40" />
+              </Image.Effect>
+            </Image>
+            <Border Background="{DynamicResource PlaybackOverlay}" />
+          </infra:OverlayPanel>
+          <StackPanel Margin="24" Spacing="12">
+              <StackPanel Orientation="Horizontal" Spacing="18">
+                <Border Width="88" Height="88" CornerRadius="100" ClipToBounds="True"
+                        Background="{DynamicResource ArtFallback}">
+                  <Image infra:ManagedCoverImage.DecodeSize="240"
+                         infra:ManagedCoverImage.Source="{Binding AvatarUrl}" Stretch="UniformToFill" />
+                </Border>
+                <StackPanel VerticalAlignment="Center" Spacing="8">
+                  <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Classes="hero-text" Text="{Binding Nickname}" FontSize="26" FontWeight="Bold"
+                               TextTrimming="CharacterEllipsis" MaxLines="1" VerticalAlignment="Center" />
+                    <Border Classes="level-chip" IsVisible="{Binding Level}"
+                            Background="{DynamicResource AppSurfaceHover}"
+                            BorderBrush="{DynamicResource AppBorderStrong}" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding LevelText}" FontSize="12" Classes="hero-text" />
+                    </Border>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Classes="hero-sub" Text="关注" VerticalAlignment="Center" />
+                      <TextBlock Classes="hero-text" Text="{Binding Follows}" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Classes="hero-sub" Text="粉丝" VerticalAlignment="Center" />
+                      <TextBlock Classes="hero-text" Text="{Binding Followeds}" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" />
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
+              <TextBlock Classes="hero-sub" Text="{Binding Signature}" FontSize="13" TextWrapping="Wrap" MaxLines="2"
+                         IsVisible="{Binding Signature, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+        </Panel>
+      </Border>
+
+      <!-- ===== 宽/中屏:三个独立区块(标题 + 横向卡片网格),空分组整体隐藏 ===== -->
+      <StackPanel Classes="section-wide" Spacing="28">
+        <StackPanel IsVisible="{Binding HasTaste}" Spacing="14">
+          <TextBlock Classes="section-title" Text="音乐品味" />
+          <ItemsControl Classes="hcards" ItemsSource="{Binding TasteRows}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:UserTasteRowViewModel">
+                  <Button Classes="card" Click="OnTasteRowClick">
+                    <StackPanel>
+                      <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                        <Grid>
+                          <!-- 听歌排行/年度歌单等无封面的特殊歌单 = 灰底图标瓦片 -->
+                          <StackPanel Orientation="Horizontal" Spacing="5"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      IsVisible="{Binding !Playlist.CoverUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <Border Width="9" Height="26" CornerRadius="4" Background="White" />
+                            <Border Width="9" Height="38" CornerRadius="4" Background="White" VerticalAlignment="Center" />
+                            <Border Width="9" Height="18" CornerRadius="4" Background="White" VerticalAlignment="Bottom" />
+                          </StackPanel>
+                          <Image infra:ManagedCoverImage.DecodeSize="240"
+                                 infra:ManagedCoverImage.Source="{Binding Playlist.CoverUrl}"
+                                 Stretch="UniformToFill" />
+                          <!-- 喜欢的音乐:封面 + 大♥ -->
+                          <TextBlock Text="♥" FontSize="46" Foreground="White" IsVisible="{Binding ShowHeart}"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          <Border Classes="play-count-badge">
+                            <StackPanel>
+                              <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                                         FontSize="12" Foreground="White" />
+                              <TextBlock Text="{Binding Playlist.PlayCountText}" FontSize="11" FontWeight="SemiBold"
+                                         Foreground="White" />
+                            </StackPanel>
+                          </Border>
+                          <Border Classes="card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+                        <!-- 悬停浮现:左下 ▶ 播放歌单,右下 ••• more 菜单(卡片其余区域进详情页) -->
+                        <Button Classes="row-action card-op" Click="OnCardPlayClick" HorizontalAlignment="Left"
+                                VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="播放歌单">
+                          <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+                        </Button>
+                        <Button Classes="row-action card-op" Click="OnCardMoreClick" HorizontalAlignment="Right"
+                                VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="更多操作">
+                          <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIcons}" />
+                        </Button>
+                        </Grid>
+                      </Border>
+                      <TextBlock Margin="0,8,0,0" Text="{Binding Playlist.Name}" FontSize="14" FontWeight="SemiBold"
+                                 TextTrimming="CharacterEllipsis" MaxLines="1" />
+                      <TextBlock Text="{Binding TrackCountText}" FontSize="12"
+                                 Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis"
+                                 MaxLines="1" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+        <StackPanel IsVisible="{Binding HasCreated}" Spacing="14">
+          <TextBlock Classes="section-title" Text="参与创作的歌单" />
+          <ItemsControl Classes="hcards" ItemsSource="{Binding CreatedPlaylists}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+                  <Button Classes="card" Click="OnPlaylistRowClick">
+                    <StackPanel>
+                      <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                        <Grid>
+                          <Image infra:ManagedCoverImage.DecodeSize="240"
+                                 infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                                 Stretch="UniformToFill" />
+                          <Border Classes="play-count-badge">
+                            <StackPanel>
+                              <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                                         FontSize="12" Foreground="White" />
+                              <TextBlock Text="{Binding PlayCountText}" FontSize="11" FontWeight="SemiBold"
+                                         Foreground="White" />
+                            </StackPanel>
+                          </Border>
+                          <Border Classes="card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+                          <!-- 悬停浮现:左下 ▶ 播放歌单,右下 ••• more 菜单(卡片其余区域进详情页) -->
+                          <Button Classes="row-action card-op" Click="OnCardPlayClick" HorizontalAlignment="Left"
+                                  VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="播放歌单">
+                            <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                                       FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+                          </Button>
+                          <Button Classes="row-action card-op" Click="OnCardMoreClick" HorizontalAlignment="Right"
+                                  VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="更多操作">
+                            <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                                       FontFamily="{DynamicResource LyricEaseIcons}" />
+                          </Button>
+                        </Grid>
+                      </Border>
+                      <TextBlock Margin="0,8,0,0" Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
+                                 TextTrimming="CharacterEllipsis" MaxLines="1" />
+                      <TextBlock Text="{Binding TrackCountText}" FontSize="12"
+                                 Foreground="{DynamicResource TextSecondary}" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+        <StackPanel IsVisible="{Binding HasCollected}" Spacing="14">
+          <TextBlock Classes="section-title" Text="收藏的歌单" />
+          <ItemsControl Classes="hcards" ItemsSource="{Binding CollectedPlaylists}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+                  <Button Classes="card" Click="OnPlaylistRowClick">
+                    <StackPanel>
+                      <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+                        <Grid>
+                          <Image infra:ManagedCoverImage.DecodeSize="240"
+                                 infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                                 Stretch="UniformToFill" />
+                          <Border Classes="play-count-badge">
+                            <StackPanel>
+                              <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                                         FontSize="12" Foreground="White" />
+                              <TextBlock Text="{Binding PlayCountText}" FontSize="11" FontWeight="SemiBold"
+                                         Foreground="White" />
+                            </StackPanel>
+                          </Border>
+                          <Border Classes="card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+                          <!-- 悬停浮现:左下 ▶ 播放歌单,右下 ••• more 菜单(卡片其余区域进详情页) -->
+                          <Button Classes="row-action card-op" Click="OnCardPlayClick" HorizontalAlignment="Left"
+                                  VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="播放歌单">
+                            <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                                       FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+                          </Button>
+                          <Button Classes="row-action card-op" Click="OnCardMoreClick" HorizontalAlignment="Right"
+                                  VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="更多操作">
+                            <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                                       FontFamily="{DynamicResource LyricEaseIcons}" />
+                          </Button>
+                        </Grid>
+                      </Border>
+                      <TextBlock Margin="0,8,0,0" Text="{Binding Name}" FontSize="14" FontWeight="SemiBold"
+                                 TextTrimming="CharacterEllipsis" MaxLines="1" />
+                      <TextBlock Text="{Binding TrackCountText}" FontSize="12"
+                                 Foreground="{DynamicResource TextSecondary}" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+      </StackPanel>
+
+      <!-- ===== 窄屏:单个分组大卡片,内含三个分组(标题+分隔线+行),空分组隐藏 ===== -->
+      <Border Classes="section-narrow user-section-card" CornerRadius="8" Padding="16"
+              Background="{DynamicResource UserSectionCardBackground}">
+        <StackPanel Spacing="18">
+          <StackPanel IsVisible="{Binding HasTaste}" Spacing="10">
+            <TextBlock Classes="section-title-narrow" Text="音乐品味" />
+            <Border Height="1" Background="{DynamicResource UserSectionCardDivider}" />
+            <ItemsControl ItemsSource="{Binding TasteRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:UserTasteRowViewModel">
+                  <Button Classes="user-row" Click="OnTasteRowClick">
+                    <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+                      <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
+                              Background="{DynamicResource ArtFallback}">
+                        <Panel>
+                          <Image Stretch="UniformToFill" IsVisible="{Binding !ShowHeart}"
+                                 infra:ManagedCoverImage.DecodeSize="96"
+                                 infra:ManagedCoverImage.Source="{Binding Playlist.CoverUrl}" />
+                          <TextBlock Text="♥" FontSize="20" Foreground="White"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     IsVisible="{Binding ShowHeart}" />
+                        </Panel>
+                      </Border>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Classes="row-title" Text="{Binding Playlist.Playlist.Name}" />
+                        <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
+                      </StackPanel>
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <StackPanel IsVisible="{Binding HasCreated}" Spacing="10">
+            <TextBlock Classes="section-title-narrow" Text="参与创作的歌单" />
+            <Border Height="1" Background="{DynamicResource UserSectionCardDivider}" />
+            <ItemsControl ItemsSource="{Binding CreatedPlaylists}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+                  <Button Classes="user-row" Click="OnPlaylistRowClick">
+                    <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+                      <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
+                              Background="{DynamicResource ArtFallback}">
+                        <Image Stretch="UniformToFill"
+                               infra:ManagedCoverImage.DecodeSize="96"
+                               infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
+                      </Border>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Classes="row-title" Text="{Binding Name}" />
+                        <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Classes="row-actions">
+                        <!-- ▶ = 播放歌单(非打开);••• = 原版歌单 more 菜单(播放/收藏/创建者/分享/复制链接) -->
+                        <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                                Click="OnRowPlayClick" ToolTip.Tip="播放歌单">
+                          <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+                        </Button>
+                        <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                                Click="OnRowMoreClick" ToolTip.Tip="更多操作">
+                          <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIcons}" />
+                        </Button>
+                      </StackPanel>
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <StackPanel IsVisible="{Binding HasCollected}" Spacing="10">
+            <TextBlock Classes="section-title-narrow" Text="收藏的歌单" />
+            <Border Height="1" Background="{DynamicResource UserSectionCardDivider}" />
+            <ItemsControl ItemsSource="{Binding CollectedPlaylists}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+                  <Button Classes="user-row" Click="OnPlaylistRowClick">
+                    <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+                      <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
+                              Background="{DynamicResource ArtFallback}">
+                        <Image Stretch="UniformToFill"
+                               infra:ManagedCoverImage.DecodeSize="96"
+                               infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
+                      </Border>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Classes="row-title" Text="{Binding Name}" />
+                        <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Classes="row-actions">
+                        <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                                Click="OnRowPlayClick" ToolTip.Tip="播放歌单">
+                          <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+                        </Button>
+                        <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                                Click="OnRowMoreClick" ToolTip.Tip="更多操作">
+                          <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIcons}" />
+                        </Button>
+                      </StackPanel>
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

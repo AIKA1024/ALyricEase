@@ -95,6 +95,48 @@ internal static class SelfTest
         player.Dispose();
     }
 
+    /// <summary>创建者显示探针:用真实 Cookie 走 OpenPlaylistAsync 完整链路(个性推荐→歌单详情),
+    /// 打印 UserName / CreatorName / 接口侧创建者,定位"推荐歌单作者显示为自己"的问题。</summary>
+    public static async Task RunCreatorProbeAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var services = new ServiceCollection();
+        services.AddSingleton<DispatcherService>();
+        services.AddSingleton<AppStateStore>();
+        services.AddSingleton<MusicCacheService>();
+        services.AddSingleton<CookieStore>();
+        services.AddSingleton<CnIpPool>();
+        services.AddSingleton<CryptoService>();
+        services.AddSingleton<NetEaseApiClient>();
+        services.AddSingleton<QQMusicApiClient>();
+        services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<NetEaseApiClient>());
+        services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
+        services.AddSingleton<MusicApiProvider>();
+        services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
+        services.AddSingleton<ISmtcService, SmtcServiceStub>();
+        services.AddSingleton<LyricViewModel>();
+        services.AddSingleton<PlayerViewModel>();
+        services.AddSingleton<PlaylistViewModel>();
+        var sp = services.BuildServiceProvider();
+
+        var api = sp.GetRequiredService<NetEaseApiClient>();
+        var vm = sp.GetRequiredService<PlaylistViewModel>();
+
+        var personalized = await api.GetPersonalizedPlaylistsAsync(2);
+        Console.WriteLine($"[creator] 推荐歌单 {personalized.Count} 个;UserName={vm.UserName}");
+        foreach (var item in personalized)
+        {
+            var pvm = new PlaylistItemViewModel(new Playlist
+            {
+                Id = item.Id, Name = item.Title, CoverUrl = item.CoverUrl, TrackCount = item.TrackCount,
+            });
+            await vm.OpenPlaylistCommand.ExecuteAsync(pvm);
+            var direct = await api.GetPlaylistTrackOverviewAsync(item.Id);
+            Console.WriteLine(
+                $"[creator] {item.Title} | UserName={vm.UserName} | CreatorName={vm.CreatorName} | 接口侧创建者={direct.CreatorNickname}");
+        }
+    }
+
     /// <summary>M2 无头播放验证:真实拉流第一条搜索结果,确认 Playing 状态到达且进度前进。</summary>
     public static async Task RunPlayAsync()
     {

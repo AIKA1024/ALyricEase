@@ -162,6 +162,23 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>歌单详情页 hero 显示的创建者:网易云歌单 = 网易云昵称,QQ 歌单 = QQ 昵称。</summary>
     [ObservableProperty] private string _creatorName = "";
 
+    /// <summary>当前展示歌单的创建者用户 id(v6 接口返回;0 = 未知/QQ 歌单,创建者按钮禁用)。</summary>
+    [ObservableProperty] private long _creatorId;
+
+    /// <summary>创建者按钮可点(有可跳转的用户 id)。</summary>
+    public bool CanOpenCreator => CreatorId > 0;
+
+    partial void OnCreatorIdChanged(long value) => OnPropertyChanged(nameof(CanOpenCreator));
+
+    /// <summary>创建者按钮 → 用户页(经 MainViewModel 统一导航;无头/探针环境静默)。</summary>
+    [RelayCommand]
+    private void OpenCreator()
+    {
+        if (CreatorId <= 0) return;
+        try { ServiceLocator.Get<MainViewModel>().OpenUserCommand.Execute(CreatorId); }
+        catch { /* SelfTest/Headless 等无宿主环境 */ }
+    }
+
     public bool IsNetEaseLoginTab => !IsQQLoginTab;
     partial void OnIsQQLoginTabChanged(bool value)
     {
@@ -1277,11 +1294,22 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         try
         {
             hasCachedTracks = await RestoreCachedTracksAsync(playlist, generation, ct);
-            if (!IsCurrentLoad(generation, ct)) return;
+            if (!IsCurrentLoad(generation, ct))
+            {
+                return;
+            }
             Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
             var overview = await _api.GetPlaylistTrackOverviewAsync(playlist.Id, ct);
-            if (!IsCurrentLoad(generation, ct)) return;
+            if (!IsCurrentLoad(generation, ct))
+            {
+                return;
+            }
             playlist.RefreshCover(overview.CoverUrl); // 封面随曲目变化(如"我喜欢的音乐"),URL 变了才重载
+            // 创建者显示真实昵称(v6 响应自带);自己的歌单该值与 UserName 一致,离线缓存失败时保留 UserName 兜底
+            // 创建者显示真实昵称(v6 响应自带);自己的歌单该值与 UserName 一致,为空时保留占位兜底
+            if (overview.CreatorNickname.Length > 0)
+                CreatorName = overview.CreatorNickname;
+            CreatorId = overview.CreatorId;
             _trackIds = overview.TrackIds.ToList();
             foreach (var s in overview.PrefixTracks)
                 if (s.Id != 0) _known[s.Id] = s;
@@ -2068,7 +2096,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             IsLoggedIn = true;
             _netEaseRestoredFromCache = false;
             UserName = profile.Nickname;
-            CreatorName = profile.Nickname;
+            // 有正在展示/加载中的具体歌单(如刚点了个性推荐的卡片)时不得覆盖创建者,
+            // 也不得自动打开"我喜欢的音乐" —— 否则会与该歌单的加载代次竞争,
+            // 把用户点开的歌单顶掉、创建者显示成自己(实测)。
+            if (SelectedPlaylist is null)
+                CreatorName = profile.Nickname;
             AvatarUrl = profile.AvatarUrl;
 
             var playlists = await _api.GetUserPlaylistsAsync(profile.UserId);
@@ -2080,7 +2112,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             await _musicCache.CachePlaylistListAsync(MusicSource.NetEase, UserName, playlists);
 
             // 网易云通常把“我喜欢的音乐”放在首位；自动打开它，使该入口直接呈现可用的歌单详情。
-            if (Playlists.Count > 0)
+            // 仅在当前没有展示任何具体歌单时才自动打开(见上方守卫)。
+            if (Playlists.Count > 0 && SelectedPlaylist is null)
                 await OpenPlaylistAsync(Playlists[0]);
         }
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))

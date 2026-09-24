@@ -778,6 +778,25 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>用户创建/收藏的歌单列表。</summary>
     public async Task<List<Playlist>> GetUserPlaylistsAsync(long uid, int limit = 50, CancellationToken ct = default)
     {
+        var items = await GetUserPlaylistItemsAsync(uid, limit, ct).ConfigureAwait(false);
+        return items.Select(item => new Playlist
+        {
+            Id = item.Id,
+            Name = item.Name,
+            CoverUrl = item.CoverUrl,
+            TrackCount = item.TrackCount,
+            Source = MusicSource.NetEase,
+            CanAddTracks = !item.Subscribed,
+            PlayCount = item.PlayCount,
+        }).ToList();
+    }
+
+    /// <summary>用户创建/收藏的歌单原始条目(含 specialType/创建者,用户页分组分类用)。
+    /// specialType:5 = 喜欢的音乐,20 = 年度歌单;creator.userId 用于 参与创作/收藏 分组。
+    /// 顺带识别"我喜欢的音乐"(红心集合):specialType=5,兜底按名字。
+    /// 请求期间换过号 ⇒ 识别结果属于旧账号,不能写回(否则新账号会用旧歌单 id 判红心)。</summary>
+    public async Task<List<LegacyPlaylistItem>> GetUserPlaylistItemsAsync(long uid, int limit = 1000, CancellationToken ct = default)
+    {
         var generation = _accountGeneration;
         var url = $"{BaseUrl}/api/user/playlist?uid={uid}&limit={limit}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
@@ -787,8 +806,6 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (resp is null || resp.Code != 200 || resp.Playlist is null)
             throw new ApiException("获取歌单失败", resp?.Code ?? -1);
 
-        // 识别"我喜欢的音乐"(红心集合):specialType=5,兜底按名字。
-        // 请求期间换过号 ⇒ 识别结果属于旧账号,不能写回(否则新账号会用旧歌单 id 判红心)。
         if (generation == _accountGeneration)
         {
             _likedPlaylistId = resp.Playlist.FirstOrDefault(p => p.SpecialType == 5)?.Id
@@ -796,16 +813,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
                 ?? 0;
         }
 
-        return resp.Playlist
-            .Select(p => new Playlist
-            {
-                Id = p.Id,
-                Name = p.Name,
-                TrackCount = p.TrackCount,
-                CoverUrl = p.CoverUrl,
-                CanAddTracks = !p.Subscribed,
-            })
-            .ToList();
+        return resp.Playlist;
     }
 
     /// <summary>云盘歌曲分页(明文 POST /api/v1/cloud/get,需 MUSIC_U 登录态)。
@@ -834,7 +842,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     /// <summary>歌单轨道概览：v6 单次请求即可拿到全量 trackIds(权威顺序) + 前段曲目(登录态约 150 首)。
     /// 不做任何 song/detail 补齐,供歌单页增量加载使用。CoverUrl = 当前封面(随曲目变化)。</summary>
-    public sealed record PlaylistTrackOverview(IReadOnlyList<long> TrackIds, IReadOnlyList<Song> PrefixTracks, string CoverUrl);
+    public sealed record PlaylistTrackOverview(IReadOnlyList<long> TrackIds, IReadOnlyList<Song> PrefixTracks, string CoverUrl, string CreatorNickname, long CreatorId);
 
     /// <summary>私人 FM 拉一批曲目(约 3 首;明文 GET /api/v1/radio/get,需 MUSIC_U 登录态。
     /// weapi 同端点被风控拦截,与云盘一致走明文;每次调用返回一批新的推荐)。</summary>
@@ -869,7 +877,20 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         var prefix = new List<Song>();
         foreach (var t in playlist.Tracks ?? Enumerable.Empty<SearchSong>())
             if (t.Id != 0) prefix.Add(MapSearchSong(t));
-        return new PlaylistTrackOverview(trackIds, prefix, playlist.CoverImgUrl ?? "");
+        return new PlaylistTrackOverview(trackIds, prefix, playlist.CoverImgUrl ?? "", playlist.Creator?.Nickname ?? "", playlist.Creator?.UserId ?? 0);
+    }
+
+    /// <summary>用户详情(昵称/头像/签名/等级/关注粉丝;匿名可用,用户页数据源)。</summary>
+    public async Task<LegacyUserDetailResponse> GetUserDetailAsync(long uid, CancellationToken ct = default)
+    {
+        var url = $"{BaseUrl}/api/v1/user/detail/{uid}";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyUserDetailResponse);
+        if (resp is null || resp.Code != 200 || resp.Profile is null)
+            throw new ApiException("获取用户信息失败", resp?.Code ?? -1);
+        return resp;
     }
 
     /// <summary>明文 /api/song/detail 批量取曲目元数据，单批 ≤100 首。供歌单增量加载补齐缺失段。</summary>
@@ -1058,6 +1079,53 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
                 Source = MusicSource.NetEase,
                 CanAddTracks = true,
             };
+        }
+    }
+
+    /// <summary>收藏/取消收藏歌单(需登录):t=1 收藏,t=2 取消。与创建歌单同走
+    /// weapi→明文回落双通道(写操作明文通道同样要求 cookie 带 __csrf)。</summary>
+    public async Task SubscribePlaylistAsync(long playlistId, bool subscribe = true, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn)
+            throw new ApiException("未登录,无法收藏歌单", -1);
+        if (playlistId == 0)
+            throw new ApiException("歌单 id 无效", -1);
+
+        var t = subscribe ? "1" : "2";
+        var form = new Dictionary<string, string> { ["t"] = t, ["id"] = playlistId.ToString() };
+
+        JsonDocument doc;
+        if (_wafBlocked)
+        {
+            doc = await PostPlainWriteAsync("/api/playlist/subscribe", form, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            try
+            {
+                var csrf = await EnsureCsrfAsync(ct).ConfigureAwait(false);
+                var weapiPayload = new Dictionary<string, object?>
+                {
+                    ["t"] = t,
+                    ["id"] = playlistId.ToString(),
+                    ["csrf_token"] = csrf,
+                };
+                using var req = CreateWeapiRequest("weapi/playlist/subscribe", weapiPayload, includeRealIp: true);
+                doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+            }
+            catch (ApiException ex) when (ex.Code == BlockedCode)
+            {
+                doc = await PostPlainWriteAsync("/api/playlist/subscribe", form, ct).ConfigureAwait(false);
+            }
+        }
+
+        using (doc)
+        {
+            var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+            // 200 成功;501/502 = 已收藏/未收藏等幂等场景也按成功处理
+            if (code != 200)
+                throw new ApiException(
+                    TryMessage(doc.RootElement) is { } msg ? $"收藏歌单失败:{msg}" : $"收藏歌单失败(code={code})", code);
         }
     }
 

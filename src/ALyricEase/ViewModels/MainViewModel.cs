@@ -24,7 +24,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -35,6 +35,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Album = album;
         ArtistSongsPage = artistSongsPage;
         ArtistAlbumsPage = artistAlbumsPage;
+        UserProfile = userProfile;
         RecentPlayback = recentPlayback;
         Settings = settings;
         Account = account;
@@ -76,6 +77,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public AlbumViewModel Album { get; }
     public ArtistSongsPageViewModel ArtistSongsPage { get; }
     public ArtistAlbumsPageViewModel ArtistAlbumsPage { get; }
+    public UserProfileViewModel UserProfile { get; }
     public RecentPlaybackViewModel RecentPlayback { get; }
     public SettingsViewModel Settings { get; }
     public AccountViewModel Account { get; }
@@ -268,6 +270,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "Album" => Album,
         "ArtistSongs" => ArtistSongsPage,
         "ArtistAlbums" => ArtistAlbumsPage,
+        "User" => UserProfile,
         "Recents" => RecentPlayback,
         "Settings" => Settings,
         "Account" => Account,
@@ -681,6 +684,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "Album" => Album.CaptureAndReleaseNavigationSnapshot(),
         "ArtistSongs" => ArtistSongsPage.CaptureAndReleaseNavigationSnapshot(),
         "ArtistAlbums" => ArtistAlbumsPage.CaptureAndReleaseNavigationSnapshot(),
+        "User" => UserProfile.CaptureAndReleaseNavigationSnapshot(),
         _ => null,
     };
 
@@ -692,6 +696,7 @@ public sealed partial class MainViewModel : ViewModelBase
             case "Album": Album.ReleaseCurrentPageData(); break;
             case "ArtistSongs": ArtistSongsPage.ReleaseCurrentPageData(); break;
             case "ArtistAlbums": ArtistAlbumsPage.ReleaseCurrentPageData(); break;
+            case "User": UserProfile.ReleaseCurrentPageData(); break;
         }
     }
 
@@ -703,6 +708,7 @@ public sealed partial class MainViewModel : ViewModelBase
             DetailPageKind.Album => Album.RestoreNavigationSnapshotAsync(snapshot),
             DetailPageKind.ArtistSongs => ArtistSongsPage.RestoreNavigationSnapshotAsync(snapshot),
             DetailPageKind.ArtistAlbums => ArtistAlbumsPage.RestoreNavigationSnapshotAsync(snapshot),
+            DetailPageKind.User => UserProfile.RestoreNavigationSnapshotAsync(snapshot),
             _ => Task.CompletedTask,
         };
     }
@@ -716,6 +722,7 @@ public sealed partial class MainViewModel : ViewModelBase
             case DetailPageKind.Album: Album.DiscardNavigationSnapshot(snapshot); break;
             case DetailPageKind.ArtistSongs: ArtistSongsPage.DiscardNavigationSnapshot(snapshot); break;
             case DetailPageKind.ArtistAlbums: ArtistAlbumsPage.DiscardNavigationSnapshot(snapshot); break;
+            case DetailPageKind.User: UserProfile.DiscardNavigationSnapshot(snapshot); break;
         }
     }
 
@@ -770,6 +777,16 @@ public sealed partial class MainViewModel : ViewModelBase
         ActivePage = "Artist";
         try { await Artist.LoadAsync(artistId.Value); }
         catch { /* 网络失败:停留在歌手页空内容 */ }
+    }
+
+    /// <summary>打开用户页:uid=0 视为"自己"(按登录态解析;未登录时停留在空内容页)。</summary>
+    [RelayCommand]
+    private async Task OpenUserAsync(long? uid)
+    {
+        PreserveDetailBeforeReplacement("User", UserProfile.HasRetainedPageData);
+        ActivePage = "User";
+        try { await UserProfile.LoadAsync(uid ?? 0); }
+        catch { /* 网络失败:停留在用户页空内容 */ }
     }
 
     /// <summary>QQ 音乐曲目点击歌手 → 歌手页(按 singer mid)。</summary>

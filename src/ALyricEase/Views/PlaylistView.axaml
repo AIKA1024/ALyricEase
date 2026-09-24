@@ -96,6 +96,29 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
+    <!-- 创建者按钮(两个 hero 变体共用):Fluent 2 subtle 芯片 —— 透明底、teal 前景,
+         悬停/按下浮起微底色;点击进用户页(CreatorId=0 时禁用,如 QQ 歌单) -->
+    <Style Selector="Button.creator-chip">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
+    <Style Selector="Button.creator-chip /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.creator-chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.creator-chip:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+    </Style>
+    <Style Selector="Button.creator-chip:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
   </UserControl.Styles>
   <Grid>
     <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller page-scroll" VerticalScrollBarVisibility="Auto"
@@ -117,9 +140,11 @@
               <StackPanel x:Name="HeroCopy" Grid.Column="1" Margin="20,0,10,0" VerticalAlignment="Center" Spacing="8">
                 <TextBlock x:Name="HeroTitle" Text="{Binding SelectedPlaylist.Name}" FontSize="28" FontWeight="Bold"
                            TextTrimming="CharacterEllipsis" MaxLines="2" />
-                <Button x:Name="HeroCreator" Content="{Binding CreatorName}" HorizontalAlignment="Left"
-                        Background="Transparent" BorderThickness="0" Padding="0"
-                        Foreground="{DynamicResource LyricEaseTeal}" FontSize="18" ToolTip.Tip="打开用户页（后续接入）" />
+                <!-- 创建者芯片(Fluent 2 subtle):点击进用户页;QQ 歌单等无创建者 id 时禁用 -->
+                <Button x:Name="HeroCreator" Classes="creator-chip" Content="{Binding CreatorName}"
+                        HorizontalAlignment="Left" Margin="-8,0"
+                        Command="{Binding OpenCreatorCommand}" IsEnabled="{Binding CanOpenCreator}"
+                        ToolTip.Tip="打开用户页" />
                 <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="16"
                            FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" />
                 <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="14"
@@ -179,9 +204,11 @@
               </Border>
               <TextBlock Text="{Binding SelectedPlaylist.Name}" FontSize="24" FontWeight="Bold"
                          TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxLines="2" />
-              <Button Content="{Binding UserName}" HorizontalAlignment="Center"
-                      Background="Transparent" BorderThickness="0" Padding="0"
-                      Foreground="{DynamicResource LyricEaseTeal}" FontSize="16" ToolTip.Tip="打开用户页（后续接入）" />
+              <!-- 创建者芯片(Fluent 2 subtle,小屏居中):点击进用户页;无创建者 id 时禁用 -->
+              <Button Classes="creator-chip" Content="{Binding CreatorName}" HorizontalAlignment="Center"
+                      HorizontalContentAlignment="Center" Margin="-8,0"
+                      Command="{Binding OpenCreatorCommand}" IsEnabled="{Binding CanOpenCreator}"
+                      ToolTip.Tip="打开用户页" />
               <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="14"
                          FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center" />
               <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="13"

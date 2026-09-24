@@ -34,6 +34,14 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
 
     public string TrackCountText => $"{TrackCount} 首";
 
+    /// <summary>累计播放次数格式化文本(用户页角标用;0 显示 "0")。</summary>
+    public string PlayCountText => Services.NetEase.NetEaseApiClient.FormatPlayCount(Playlist.PlayCount);
+
+    /// <summary>歌单创建者(用户页 more 菜单"创建者"项/跳用户页用;非用户页入口为 null)。</summary>
+    public string? CreatorName { get; init; }
+
+    public long CreatorId { get; init; }
+
     /// <summary>流式加载页面更新已物化数量，不必反复替换整个 VM 或重新加载头部封面。</summary>
     public void UpdateTrackCount(int value)
     {

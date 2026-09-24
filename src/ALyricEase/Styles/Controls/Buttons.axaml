@@ -205,4 +205,25 @@
     <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot">
         <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
     </Style>
+
+    <!-- 行内圆形操作按钮(歌曲行 TrackRow / 用户页歌单行共用):32px 圆。
+         必须配合 RowButtonTheme(TrackRow.axaml 定义、应用级可见)使用 —— 它是无状态自定义模板,
+         控件级 Background 才能可靠生效(默认 Fluent 模板的伪类状态色会盖掉控件级 setter)。
+         默认 RowButton(浅色半透明叠行背景/深色实色 #404040),悬停 RowButtonHover 变浅,按下 RowButtonPressed 更深 -->
+    <Style Selector="Button.row-action">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Background" Value="{DynamicResource RowButton}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.row-action:pointerover">
+        <Setter Property="Background" Value="{DynamicResource RowButtonHover}" />
+    </Style>
+    <Style Selector="Button.row-action:pressed">
+        <Setter Property="Background" Value="{DynamicResource RowButtonPressed}" />
+    </Style>
 </Styles>

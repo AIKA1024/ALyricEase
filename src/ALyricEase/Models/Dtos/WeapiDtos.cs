@@ -77,6 +77,9 @@ public sealed record SearchPlaylistItemDto
 public sealed record SearchCreatorDto
 {
     [JsonPropertyName("nickname")] public string Nickname { get; init; } = "";
+
+    /// <summary>创建者用户 id(用户页跳转用;个别响应缺失时为 0)。</summary>
+    [JsonPropertyName("userId")] public long UserId { get; init; }
 }
 
 /// <summary>type=1002 用户条目。</summary>
@@ -351,6 +354,9 @@ public sealed record PlaylistDetail
 
     /// <summary>歌单内全量曲目 id(v6 接口 trackIds,权威顺序)。</summary>
     public List<TrackIdItem>? TrackIds { get; init; }
+
+    /// <summary>歌单创建者(v6 响应自带;推荐歌单详情页显示真实创建者用)。</summary>
+    [JsonPropertyName("creator")] public SearchCreatorDto? Creator { get; init; }
 
     /// <summary>接口顺带返回的前段完整曲目(登录态约 150 首,匿名约 10 首)。</summary>
     public List<SearchSong>? Tracks { get; init; }

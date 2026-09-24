@@ -11,19 +11,13 @@
     <!-- 内容页 VM→视图映射已收敛至共用壳层 AppShell.axaml 的 UserControl.DataTemplates(桌面/移动单一维护点) -->
     <views:AppShell Grid.Row="1" />
 
-    <!-- 正在播放覆盖层:整窗 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
-         RenderTransform 目标值由 NowPlayingOverlayController 按 MainViewModel.ShowNowPlaying 切换,
-         过渡(时长/缓动)在这里声明。直接挂在窗口网格并横跨两行 → 渲染盖住标题栏(原版行为);
+    <!-- 正在播放覆盖层:整窗 Grid 常驻,靠合成线程的 Translation 动画(驱动见 NowPlayingOverlayController)
+         在"原位/屏幕外"间滑入滑出——不用 UI 线程过渡,因首次打开时 UI 线程正被详情页首实化塞满会掉帧。
+         直接挂在窗口网格并横跨两行 → 渲染盖住标题栏(原版行为);
          不能放进 AppShell(会被宿主裁剪在其边界内)。不用 TransitioningContentControl
          (空→有内容会先露末帧再启动动画;关闭时 IsVisible 直接隐藏会杀掉退出动画)。 -->
     <Grid x:Name="NowPlayingOverlay" Grid.Row="0" Grid.RowSpan="2" ZIndex="100"
           IsHitTestVisible="{Binding ShowNowPlaying}" ClipToBounds="True">
-      <Grid.Transitions>
-        <Transitions>
-          <!-- 进入与收回均先慢后快；末段斜率收敛，避免标准 ease-in 在最后突然冲刺。 -->
-          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.45" Easing="0.45,0.08,0.7,0.85" />
-        </Transitions>
-      </Grid.Transitions>
       <views:NowPlayingView />
     </Grid>
 

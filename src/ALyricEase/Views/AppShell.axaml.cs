@@ -1,11 +1,13 @@
 using System;
 using System.ComponentModel;
+using System.Numerics;
 using Avalonia;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Media.Transformation;
+using Avalonia.Rendering.Composition;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using ALyricEase.ViewModels;
@@ -19,6 +21,12 @@ namespace ALyricEase.Views;
 public partial class AppShell : UserControl
 {
     private MainViewModel? _vm;
+
+    // 抽屉滑动的合成动画状态:当前逻辑位(开=0 / 关=-320)。属性 getter 不反映动画末帧,
+    // 起点必须自维护(同 NowPlayingOverlayController 的 _current)。
+    private Vector3 _drawerCurrent = new(-320f, 0f, 0f);
+    // 抽屉上次的开合状态:null=未初始化(首帧/刚离开宽屏,只钉位不播动画)
+    private bool? _lastDrawerOpen;
 
     public AppShell()
     {
@@ -88,8 +96,64 @@ public partial class AppShell : UserControl
         // 桌面端 title-bar 汉堡仅 narrow 时可见,compact 时无汉堡,因此必须保留侧栏汉堡。
         CompactHamburger.IsVisible = !(IsMobile && compact);
         DrawerRoot.IsHitTestVisible = drawerOpen;
-        DrawerScrim.Opacity = drawerOpen ? 1 : 0;
-        NavigationDrawer.RenderTransform = drawerOpen ? TranslateX(0) : TranslateX(-320);
+        AnimateDrawer(compact || narrow, drawerOpen);
+    }
+
+    /// <summary>抽屉滑入/滑出:合成线程 Translation 动画(抽屉)+ Opacity 动画(遮罩)。
+    /// 不用 UI 线程 Transitions:与壳层/详情页入场同理,UI 线程忙时过渡会掉帧。
+    /// ⚠ 只在开合状态真正变化时播动画:本方法由每次尺寸变化/属性变化触发,若无条件重播,
+    /// 关闭态的遮罩会反复重播 1→0 淡出而"一直闪动"(实测)。状态未变时只钉位。
+    /// DrawerRoot 隐藏(宽屏)时不做任何动画,只记账。</summary>
+    private void AnimateDrawer(bool rootVisible, bool open)
+    {
+        if (!rootVisible)
+        {
+            _drawerCurrent = new Vector3(0f, -320f, 0f);
+            _lastDrawerOpen = null;
+            return;
+        }
+
+        var drawer = ElementComposition.GetElementVisual(NavigationDrawer);
+        var scrim = ElementComposition.GetElementVisual(DrawerScrim);
+        if (drawer is null || scrim is null)
+        {
+            _lastDrawerOpen = null; // 未挂载:下次挂载后按钉位处理
+            return;
+        }
+
+        // 状态未变(初始化/尺寸变化):只钉位,不播动画
+        var animate = _lastDrawerOpen is bool prev && prev != open;
+        _lastDrawerOpen = open;
+
+        var to = new Vector3(open ? 0f : -320f, 0f, 0f);
+        if (!animate)
+        {
+            drawer.StopAnimation("Translation");
+            drawer.Translation = to;
+            _drawerCurrent = to;
+            scrim.StopAnimation("Opacity");
+            scrim.Opacity = open ? 1f : 0f;
+            return;
+        }
+
+        var from = _drawerCurrent;
+        _drawerCurrent = to;
+
+        // 基值先设为目标位(结束帧=基值,回落无缝),动画从旧位起播;同批次应用无闪帧
+        drawer.Translation = to;
+        var slide = drawer.Compositor.CreateVector3KeyFrameAnimation();
+        slide.Duration = TimeSpan.FromMilliseconds(250);
+        slide.InsertKeyFrame(0f, from);
+        slide.InsertKeyFrame(1f, to, new SplineEasing(0.215, 0.61, 0.355, 1));
+        drawer.StartAnimation("Translation", slide);
+
+        var targetScrim = open ? 1f : 0f;
+        scrim.Opacity = targetScrim;
+        var fade = scrim.Compositor.CreateScalarKeyFrameAnimation();
+        fade.Duration = TimeSpan.FromMilliseconds(200);
+        fade.InsertKeyFrame(0f, open ? 0f : 1f);
+        fade.InsertKeyFrame(1f, targetScrim);
+        scrim.StartAnimation("Opacity", fade);
     }
 
     /// <summary>图标栏(侧边栏收起态)点击导航。</summary>
@@ -135,11 +199,4 @@ public partial class AppShell : UserControl
 
     private void OnPlayerLoginRequired(MusicSource? source, string? expiredHint)
         => _vm?.OpenLoginDialogFor(source, expiredHint);
-
-    private static TransformOperations TranslateX(double x)
-    {
-        var builder = TransformOperations.CreateBuilder(1);
-        builder.AppendTranslate(x, 0);
-        return builder.Build();
-    }
 }

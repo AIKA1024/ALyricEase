@@ -265,23 +265,13 @@
            (平移/透明度目标值均由代码设置,避免 XAML 字符串解析在部分版本抛 FormatException。) -->
       <Grid x:Name="DrawerRoot" Grid.Row="1" ZIndex="60"
             IsVisible="False">
+        <!-- 遮罩与抽屉的开合动画由代码后置走合成线程(AppShell.axaml.cs AnimateDrawer):
+             不用 UI 线程 Transitions,与壳层/详情页入场动画同理,避开 UI 线程忙时掉帧 -->
         <Border x:Name="DrawerScrim" Background="#66000000" Opacity="0"
-                PointerPressed="OnDrawerScrimPointerPressed">
-          <Border.Transitions>
-            <Transitions>
-              <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
-            </Transitions>
-          </Border.Transitions>
-        </Border>
+                PointerPressed="OnDrawerScrimPointerPressed" />
         <Border x:Name="NavigationDrawer" Width="320" HorizontalAlignment="Left"
                 Background="{DynamicResource AppSurface}"
                 BorderThickness="0,0,1,0" BorderBrush="{DynamicResource AppBorderStrong}">
-          <Border.Transitions>
-            <Transitions>
-              <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25"
-                                             Easing="0.215,0.61,0.355,1" />
-            </Transitions>
-          </Border.Transitions>
           <views:NavigationPaneView />
         </Border>
       </Grid>

@@ -128,7 +128,9 @@
         <ItemsControl ItemsSource="{Binding Sections}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:RecommendSectionViewModel">
-              <StackPanel Spacing="12" Margin="0,0,0,0">
+              <!-- 区块间距靠底部 Margin(62,与各内容页 Spacing 统一值一致):
+                   所有区块在一个 ItemsControl 里,PageContent 的 Spacing 作用不到它们之间 -->
+              <StackPanel Spacing="12" Margin="0,0,0,62">
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBlock Text="{Binding Title}" Classes="section-title" VerticalAlignment="Center" />
                   <Button Grid.Column="1" Classes="play-all" Command="{Binding PlayAllCommand}"

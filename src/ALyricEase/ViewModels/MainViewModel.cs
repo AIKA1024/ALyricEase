@@ -24,7 +24,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -36,6 +36,7 @@ public sealed partial class MainViewModel : ViewModelBase
         ArtistSongsPage = artistSongsPage;
         ArtistAlbumsPage = artistAlbumsPage;
         UserProfile = userProfile;
+        Collected = collected;
         RecentPlayback = recentPlayback;
         Settings = settings;
         Account = account;
@@ -63,7 +64,14 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(NowPlayingMotionEnabled));
             OnPropertyChanged(nameof(LyricBlurEnabled));
         };
-        _selectedNav = ShellNavItems.First(item => item.Key == _activePage);
+        // 启动页是用户页(非侧栏项) → SelectedNav 为 null,侧栏无高亮(同详情页打开时的行为)
+        _selectedNav = ShellNavItems.FirstOrDefault(item => item.Key == _activePage);
+        // 启动页数据:自己的用户页(uid=0 按登录态解析;未登录停留空态,登录后可再进)。
+        // 直接 LoadAsync 不走 OpenUser 命令 —— 不进返回历史,启动即"首页",无页可返回。
+        _ = UserProfile.LoadAsync(0);
+        // 登录恢复完成后"自动打开我喜欢的音乐"会切走 ActivePage —— 仅当用户真的停在收藏页
+        // 等待时才兜底打开,否则启动即被顶离用户页(实测)。
+        Playlist.AutoOpenFavoritesGuard = () => ActivePage == "Favorites";
         _ = Recommend.EnsureLoadedAsync(); // 启动即拉首页区块(幂等,失败静默)
         _ = Playlist.EnsureQqLoadedAsync(); // 启动恢复 QQ 登录态并拉侧边栏"QQ音乐"分组(失败静默)
     }
@@ -78,6 +86,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public ArtistSongsPageViewModel ArtistSongsPage { get; }
     public ArtistAlbumsPageViewModel ArtistAlbumsPage { get; }
     public UserProfileViewModel UserProfile { get; }
+    public CollectedPlaylistsViewModel Collected { get; }
     public RecentPlaybackViewModel RecentPlayback { get; }
     public SettingsViewModel Settings { get; }
     public AccountViewModel Account { get; }
@@ -143,8 +152,9 @@ public sealed partial class MainViewModel : ViewModelBase
     public IReadOnlyList<NavItemViewModel> CompactNavItems =>
         ShellNavItems.Where(item => item.IsItem && !item.IsPlaylistChild).ToArray();
 
-    /// <summary>当前导航页键(Home/Recommend/Library/Recents/Favorites/Search/Account/Settings)。</summary>
-    [ObservableProperty] private string _activePage = "Recommend";
+    /// <summary>当前导航页键(Home/Recommend/Library/Recents/Favorites/Search/Account/Settings)。
+    /// 启动页 = 自己的用户页(uid=0,构造尾部加载);用户页无侧栏选中态(SelectedNav 为 null)。</summary>
+    [ObservableProperty] private string _activePage = "User";
 
     /// <summary>Android 顶部横幅显示当前页名称:优先用导航项文本,歌单子项显示歌单名。</summary>
     public string CurrentPageTitle
@@ -166,6 +176,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 "Favorites" => "我喜欢的音乐",
                 "Account" => "账号",
                 "Settings" => "设置",
+                "User" => "个人主页",
                 "Artist" => "歌手",
                 "Album" => "专辑",
                 "Debug" => "Debug",
@@ -271,6 +282,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "ArtistSongs" => ArtistSongsPage,
         "ArtistAlbums" => ArtistAlbumsPage,
         "User" => UserProfile,
+        "Library" => Collected,
         "Recents" => RecentPlayback,
         "Settings" => Settings,
         "Account" => Account,
@@ -615,15 +627,15 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
-        // 防御性兜底：只要视觉上不在首页，就绝不能因历史缺失直接退出界面。
+        // 防御性兜底：只要视觉上不在首页(启动页 = 用户页),就绝不能因历史缺失直接退出界面。
         // 正常导航都会命中上面的历史；该分支覆盖恢复状态或后续新增页面漏记历史的情况。
-        if (!string.Equals(ActivePage, "Recommend", StringComparison.Ordinal))
+        if (!string.Equals(ActivePage, "User", StringComparison.Ordinal))
         {
             _isGoingBack = true;
             try
             {
-                ActivePage = "Recommend";
-                SetSelectedNavWithoutNavigation(ShellNavItems.FirstOrDefault(n => n.Key == "Recommend"));
+                ActivePage = "User";
+                SetSelectedNavWithoutNavigation(ShellNavItems.FirstOrDefault(n => n.Key == "User"));
             }
             finally
             {

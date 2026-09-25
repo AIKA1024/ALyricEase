@@ -43,6 +43,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 由探针挂载后才会创建 Stopwatch,生产路径不付任何成本。</summary>
     internal static Action<string>? RestoreTimingTrace;
 
+    /// <summary>登录恢复完成后"自动打开我喜欢的音乐"的守卫(由 MainViewModel 注入):
+    /// 返回 false 时跳过自动打开 —— 启动页改为用户页后,恢复流程不得把用户顶离用户页。</summary>
+    public Func<bool>? AutoOpenFavoritesGuard { get; set; }
+
     private readonly NetEaseApiClient _api;
     private readonly QQMusicApiClient _qqApi;
     private readonly CookieStore _cookie;
@@ -302,6 +306,37 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public bool ShowPlaylistContent => HasAnyLogin || SelectedPlaylist is not null;
 
     public ObservableCollection<PlaylistItemViewModel> Playlists { get; } = new();
+
+    /// <summary>网易云里收藏的他人歌单(Subscribed=true):不进侧栏分组,「我的收藏」页消费。
+    /// 离线缓存无创建者信息,恢复期间收藏歌单暂留侧栏,在线刷新后纠正。</summary>
+    public ObservableCollection<PlaylistItemViewModel> NetEaseCollectedPlaylists { get; } = new();
+
+    /// <summary>按 Subscribed 拆分网易云用户歌单:自己创建的进侧栏(Playlists),
+    /// 收藏的他人歌单进「我的收藏」页。替换两个集合的全部内容。</summary>
+    private void SplitNetEasePlaylists(System.Collections.Generic.IEnumerable<Models.Dtos.LegacyPlaylistItem> items)
+    {
+        Playlists.Clear();
+        NetEaseCollectedPlaylists.Clear();
+        foreach (var item in items)
+        {
+            var pvm = new PlaylistItemViewModel(new Playlist
+            {
+                Id = item.Id,
+                Name = item.Name,
+                CoverUrl = item.CoverUrl,
+                TrackCount = item.TrackCount,
+                PlayCount = item.PlayCount,
+                Source = MusicSource.NetEase,
+                CanAddTracks = !item.Subscribed,
+            })
+            {
+                CreatorName = item.Creator?.Nickname,
+                CreatorId = item.Creator?.UserId ?? 0,
+            };
+            if (item.Subscribed) NetEaseCollectedPlaylists.Add(pvm);
+            else Playlists.Add(pvm);
+        }
+    }
 
     /// <summary>QQ 登录用户的歌单(侧边栏"QQ音乐"分组;一次全量拉取,失败静默可重试)。</summary>
     public ObservableCollection<PlaylistItemViewModel> QqPlaylists { get; } = new();
@@ -2066,12 +2101,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         {
             var profile = await _api.GetUserProfileAsync();
             UserName = profile.Nickname;
-            var playlists = await _api.GetUserPlaylistsAsync(profile.UserId);
-            Playlists.Clear();
-            foreach (var p in playlists)
-                Playlists.Add(new PlaylistItemViewModel(p));
+            var items = await _api.GetUserPlaylistItemsAsync(profile.UserId);
+            SplitNetEasePlaylists(items);
             _netEaseRestoredFromCache = false;
-            await _musicCache.CachePlaylistListAsync(MusicSource.NetEase, UserName, playlists);
+            await _musicCache.CachePlaylistListAsync(MusicSource.NetEase, UserName,
+                items.Select(i => new Playlist
+                {
+                    Id = i.Id, Name = i.Name, CoverUrl = i.CoverUrl, TrackCount = i.TrackCount,
+                    PlayCount = i.PlayCount, Source = MusicSource.NetEase, CanAddTracks = !i.Subscribed,
+                }).ToList());
         }
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
@@ -2103,17 +2141,21 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 CreatorName = profile.Nickname;
             AvatarUrl = profile.AvatarUrl;
 
-            var playlists = await _api.GetUserPlaylistsAsync(profile.UserId);
+            var items = await _api.GetUserPlaylistItemsAsync(profile.UserId);
+            SplitNetEasePlaylists(items);
             // 此刻"我喜欢的音乐"歌单 id 已按新账号刷新,播放条可以重新判红心
             NotifyAccountChanged();
-            Playlists.Clear();
-            foreach (var p in playlists)
-                Playlists.Add(new PlaylistItemViewModel(p));
-            await _musicCache.CachePlaylistListAsync(MusicSource.NetEase, UserName, playlists);
+            await _musicCache.CachePlaylistListAsync(MusicSource.NetEase, UserName,
+                items.Select(i => new Playlist
+                {
+                    Id = i.Id, Name = i.Name, CoverUrl = i.CoverUrl, TrackCount = i.TrackCount,
+                    PlayCount = i.PlayCount, Source = MusicSource.NetEase, CanAddTracks = !i.Subscribed,
+                }).ToList());
 
             // 网易云通常把“我喜欢的音乐”放在首位；自动打开它，使该入口直接呈现可用的歌单详情。
-            // 仅在当前没有展示任何具体歌单时才自动打开(见上方守卫)。
-            if (Playlists.Count > 0 && SelectedPlaylist is null)
+            // 仅在当前没有展示任何具体歌单、且用户正停在收藏页等待时才自动打开
+            // (守卫由 MainViewModel 注入)—— 启动页是用户页,登录恢复不得把用户顶离。
+            if (Playlists.Count > 0 && SelectedPlaylist is null && AutoOpenFavoritesGuard?.Invoke() != false)
                 await OpenPlaylistAsync(Playlists[0]);
         }
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))

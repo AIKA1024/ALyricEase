@@ -36,7 +36,7 @@ internal static class PlaylistContextMenu
         {
             try
             {
-                ServiceLocator.Get<UserProfileViewModel>().PlayPlaylistCommand.Execute(playlist);
+                ServiceLocator.Get<PlayerViewModel>().PlayPlaylistCommand.Execute(playlist);
             }
             catch { /* 设计器/无头宿主没有应用 DI,仅保留菜单结构。 */ }
         };

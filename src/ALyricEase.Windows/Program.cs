@@ -151,6 +151,7 @@ class Program
     services.AddSingleton<ArtistSongsPageViewModel>();
     services.AddSingleton<ArtistAlbumsPageViewModel>();
     services.AddSingleton<UserProfileViewModel>();
+    services.AddSingleton<CollectedPlaylistsViewModel>();
     services.AddSingleton<RecentPlaybackViewModel>();
     services.AddSingleton<SettingsViewModel>();
     services.AddSingleton<AccountViewModel>();

@@ -9,12 +9,13 @@
              mc:Ignorable="d" d:DesignWidth="928" d:DesignHeight="1000"
              x:Class="ALyricEase.Views.UserProfileView">
   <UserControl.Styles>
-    <!-- 页边距:宽/中 48,窄 16 -->
+    <!-- 页边距:宽/中 48,窄 16。底部播放条预留 = 内容根 margin bottom(PlayerBarReserve 120,
+         计入滚动范围,滚到底才空出);page-scroll 不再设 Padding(padding 压缩视口,内容进不了播放条后面) -->
     <Style Selector="StackPanel.page-root">
-      <Setter Property="Margin" Value="48,20,32,116" />
+      <Setter Property="Margin" Value="48,20,32,120" />
     </Style>
     <Style Selector=".narrow StackPanel.page-root">
-      <Setter Property="Margin" Value="16,12,16,116" />
+      <Setter Property="Margin" Value="16,12,16,120" />
     </Style>
     <!-- 分区形态切换:默认(宽/中)显示"标题+横向卡片网格"区块,窄屏显示单个分组大卡片。
          ⚠ 分组标题必须放进对应容器内:放在容器外会窄屏/宽屏各显一份(实测标题重复)。
@@ -400,6 +401,19 @@
                       <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                         <TextBlock Classes="row-title" Text="{Binding Playlist.Playlist.Name}" />
                         <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
+                      </StackPanel>
+                      <!-- 悬停浮现:▶ 播放 / ••• 菜单,与参与创作/收藏行一致 -->
+                      <StackPanel Grid.Column="2" Classes="row-actions">
+                        <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                                Click="OnRowPlayClick" ToolTip.Tip="播放歌单">
+                          <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+                        </Button>
+                        <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                                Click="OnRowMoreClick" ToolTip.Tip="更多操作">
+                          <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                                     FontFamily="{DynamicResource LyricEaseIcons}" />
+                        </Button>
                       </StackPanel>
                     </Grid>
                   </Button>

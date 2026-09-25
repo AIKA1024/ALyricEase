@@ -39,7 +39,7 @@ public partial class UserProfileView : UserControl
     {
         e.Handled = true;
         ResolveCardPlaylist(sender, pvm =>
-            ServiceLocator.Get<UserProfileViewModel>().PlayPlaylistCommand.Execute(pvm));
+            ServiceLocator.Get<PlayerViewModel>().PlayPlaylistCommand.Execute(pvm));
     }
 
     /// <summary>宽/中屏卡片悬停浮现的 ••• 圆钮:原版歌单 more 菜单,贴按钮弹出。</summary>
@@ -63,19 +63,19 @@ public partial class UserProfileView : UserControl
         if (pvm is not null) action(pvm);
     }
 
-    /// <summary>窄屏行内 ▶:播放歌单(打开详情页由行本身承担)。</summary>
+    /// <summary>窄屏行内 ▶:播放歌单(打开详情页由行本身承担)。品味行/普通歌单行共用。</summary>
     private void OnRowPlayClick(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if (sender is Button { DataContext: PlaylistItemViewModel pvm })
-            ServiceLocator.Get<UserProfileViewModel>().PlayPlaylistCommand.Execute(pvm);
+        ResolveCardPlaylist(sender, pvm =>
+            ServiceLocator.Get<PlayerViewModel>().PlayPlaylistCommand.Execute(pvm));
     }
 
     /// <summary>窄屏行内 •••:原版歌单 more 菜单(播放/收藏/创建者/分享/复制链接),贴按钮弹出。</summary>
     private void OnRowMoreClick(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if (sender is Button { DataContext: PlaylistItemViewModel pvm } button)
-            PlaylistContextMenu.Create(button, pvm).ShowAt(button);
+        if (sender is Button button)
+            ResolveCardPlaylist(button, pvm => PlaylistContextMenu.Create(button, pvm).ShowAt(button));
     }
 }

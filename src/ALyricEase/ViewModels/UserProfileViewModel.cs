@@ -149,26 +149,6 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         }
     }
 
-    /// <summary>直接播放歌单(行内 ▶ / more 菜单"播放"):拉全量曲目后以首个可播曲目起步,
-    /// 完整列表作为队列传入(与专辑页"播放全部"同语义)。失败静默(按钮语境无错误面板)。</summary>
-    [RelayCommand]
-    private async Task PlayPlaylistAsync(PlaylistItemViewModel? pvm)
-    {
-        if (pvm is null || pvm.Id == 0 || pvm.Playlist.Source != MusicSource.NetEase) return;
-        try
-        {
-            var songs = await _api.GetPlaylistDetailAsync(pvm.Id).ConfigureAwait(true);
-            // 可播性预判是行 VM 概念(PlaybackAvailability 需要红心 API),这里直接交给播放器实测兜底
-            var first = songs.FirstOrDefault();
-            if (first is not null)
-                await _player.PlayFromList(first, songs, pvm.Name).ConfigureAwait(true);
-        }
-        catch
-        {
-            // 拉取/播放失败静默:菜单/行内按钮没有错误呈现面
-        }
-    }
-
     private void ClearContent()
     {
         Nickname = "";

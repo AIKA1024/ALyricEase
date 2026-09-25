@@ -862,6 +862,27 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnSmtcPlayPause() => TogglePlayPauseCommand.Execute(null);
 
+    /// <summary>直接播放一个歌单(用户页/收藏页行内 ▶ 与歌单 more 菜单共用):
+    /// 拉全量曲目后以首个可播曲目起步,完整列表作为队列传入(与专辑页"播放全部"同语义)。
+    /// 失败静默 —— 按钮语境没有错误呈现面。</summary>
+    [RelayCommand]
+    private async Task PlayPlaylistAsync(PlaylistItemViewModel? pvm)
+    {
+        if (pvm is null || pvm.Id == 0 || pvm.Playlist.Source != MusicSource.NetEase) return;
+        try
+        {
+            var songs = await _api.GetPlaylistDetailAsync(pvm.Id).ConfigureAwait(true);
+            // 可播性预判是行 VM 概念(PlaybackAvailability 需要红心 API),这里交给播放器实测兜底
+            var first = songs.FirstOrDefault();
+            if (first is not null)
+                await PlayFromList(first, songs, pvm.Name).ConfigureAwait(true);
+        }
+        catch
+        {
+            // 拉取/播放失败静默
+        }
+    }
+
     private void OnSmtcNext() => _ = PlayNextAsync();
 
     private void OnSmtcPrevious() => _ = PlayPreviousAsync();

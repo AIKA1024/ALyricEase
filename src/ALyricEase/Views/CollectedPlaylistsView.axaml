@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:CollectedPlaylistsViewModel"
+             x:CompileBindings="True"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.CollectedPlaylistsView">
+  <UserControl.Styles>
+    <!-- 底部播放条预留:内容根 margin bottom = PlayerBarReserve(120,计入滚动范围,滚到底才空出);
+         page-scroll 不再设 Padding(padding 会压缩视口,内容永远进不了播放条后面,亚克力失效) -->
+    <Style Selector="StackPanel.page-root">
+      <Setter Property="Margin" Value="48,20,32,120" />
+    </Style>
+    <Style Selector=".narrow StackPanel.page-root">
+      <Setter Property="Margin" Value="16,12,16,120" />
+    </Style>
+    <Style Selector="TextBlock.page-title">
+      <Setter Property="FontSize" Value="28" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="TextBlock.page-sub">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <!-- 歌单行:48px 瓦片 + 标题/曲数,悬停高亮浮现操作(与用户页窄屏行同款) -->
+    <Style Selector="Button.user-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.user-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource UserSectionRowHover}" />
+    </Style>
+    <Style Selector="StackPanel.row-actions">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="6" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.user-row:pointerover StackPanel.row-actions">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <!-- ▶/••• 圆钮复用全局 row-action + RowButtonTheme(与歌曲行同一套) -->
+  </UserControl.Styles>
+
+  <ScrollViewer Classes="page-scroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Classes="page-root" Spacing="18">
+      <StackPanel Orientation="Vertical" Spacing="4">
+        <TextBlock Classes="page-title" Text="我的收藏" />
+        <TextBlock Classes="page-sub" Text="网易云里收藏的他人歌单；侧栏分组只显示你自己创建的歌单。" />
+      </StackPanel>
+
+      <!-- 空态:未收藏任何歌单 -->
+      <StackPanel Spacing="6" Margin="0,40,0,0" IsVisible="False"
+                  x:Name="EmptyState">
+        <TextBlock Text="还没有收藏的歌单" FontSize="16" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextSecondary}" />
+        <TextBlock Text="在歌单的“更多”菜单里选择“收藏”，就会出现在这里。"
+                   FontSize="13" Foreground="{DynamicResource TextSecondary}" />
+      </StackPanel>
+
+      <ItemsControl x:Name="Rows" ItemsSource="{Binding Playlists}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+            <Button Classes="user-row" Click="OnPlaylistRowClick">
+              <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+                <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
+                        Background="{DynamicResource ArtFallback}">
+                  <Image Stretch="UniformToFill"
+                         infra:ManagedCoverImage.DecodeSize="96"
+                         infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                  <TextBlock Classes="row-title" Text="{Binding Name}" />
+                  <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Classes="row-actions">
+                  <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                          Click="OnRowPlayClick" ToolTip.Tip="播放歌单">
+                    <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                               FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+                  </Button>
+                  <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
+                          Click="OnRowMoreClick" ToolTip.Tip="更多操作">
+                    <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                               FontFamily="{DynamicResource LyricEaseIcons}" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

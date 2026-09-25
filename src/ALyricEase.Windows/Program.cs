@@ -32,6 +32,19 @@ class Program
       return;
     }
 
+    if (args.Length > 0 && args[0] == "--selftest-smtc")
+    {
+      var task = SelfTest.RunSmtcProbeAsync();
+      while (!task.IsCompleted)
+      {
+        Dispatcher.UIThread.RunJobs();
+        Thread.Sleep(5);
+      }
+
+      task.GetAwaiter().GetResult();
+      return;
+    }
+
     if (args.Length > 0 && args[0] == "--selftest-play")
     {
       var task = SelfTest.RunPlayAsync();

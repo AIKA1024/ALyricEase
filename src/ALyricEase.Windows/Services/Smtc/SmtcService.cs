@@ -38,6 +38,9 @@ public sealed class SmtcService : ISmtcService, IDisposable
     private string _lastCoverUrl = "";
     private bool _hasMetadata;
 
+    /// <summary>诊断:WinRT 互操作是否成功建立(Initialize 后检查;失败时系统无任何媒体会话)。</summary>
+    public bool IsAvailable => _enabled && _controls is not null;
+
     /// <summary>SMTC 按钮(播放/暂停)按下 → UI 线程。</summary>
     public event Action? PlayPauseRequested;
 

@@ -15,6 +15,13 @@ namespace ALyricEase;
 /// <summary>M1 验证入口:命令行跑 --selftest 时执行,打印加密/匿名/搜索/播放地址/歌词结果到控制台。</summary>
 internal static class SelfTest
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern System.IntPtr CreateWindowExW(
+        uint exStyle, string className, string? windowName, uint style,
+        int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern System.Boolean ShowWindow(System.IntPtr hWnd, int nCmdShow);
     /// <summary>内存泄漏自测:连续播放多首,报告 GC/进程内存,定位是否按播放线性增长。</summary>
     public static async Task RunLeakTestAsync()
     {
@@ -93,6 +100,33 @@ internal static class SelfTest
             Console.WriteLine($"[leak] 长播 +{s + 5}s GC={GcMb()}MB WS={WsMb()}MB");
         }
         player.Dispose();
+    }
+
+    /// <summary>SMTC 无头验证:真实窗口句柄 + Initialize,报告 WinRT 互操作是否建立、
+    /// 元数据推送是否可调。背景: f3b0a3e 关闭 MediaPlayer 自动集成后 SMTC 全靠
+    /// SmtcService 手动驱动 —— 互操作一旦失败,系统将完全没有媒体会话(静默降级难察觉)。</summary>
+    public static async Task RunSmtcProbeAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        // 后台/重定向环境没有控制台窗口(hwnd=0):建一个真实顶层窗口供 GetForWindow 关联
+        var hwnd = CreateWindowExW(0, "STATIC", "ALyricEase smtc probe", 0x00CF0000 /*WS_OVERLAPPEDWINDOW*/,
+            0, 0, 200, 100, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        ShowWindow(hwnd, 5 /*SW_SHOW*/);
+        Console.WriteLine($"[smtc] hwnd: 0x{hwnd:X}");
+        var services = new ServiceCollection();
+        services.AddSingleton<DispatcherService>();
+        services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
+        services.AddSingleton<ISmtcService, SmtcService>();
+        await using var sp = services.BuildServiceProvider();
+        var smtc = (SmtcService)sp.GetRequiredService<ISmtcService>();
+        smtc.Initialize(hwnd);
+        Console.WriteLine($"[smtc] IsAvailable: {smtc.IsAvailable}");
+        if (smtc.IsAvailable)
+        {
+            smtc.SetNowPlaying("SMTC 探针测试曲", "探针艺术家", "ALyricEase", "");
+            Console.WriteLine("[smtc] SetNowPlaying: 已调用(无异常)");
+            Thread.Sleep(1500); // 交互环境下留出观察系统音量浮层的时间
+        }
     }
 
     /// <summary>创建者显示探针:用真实 Cookie 走 OpenPlaylistAsync 完整链路(个性推荐→歌单详情),

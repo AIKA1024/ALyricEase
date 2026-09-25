@@ -16,6 +16,11 @@
             <SolidColorBrush x:Key="RowButton" Color="#33000000" />
             <SolidColorBrush x:Key="RowButtonHover" Color="#1A000000" />
             <SolidColorBrush x:Key="RowButtonPressed" Color="#66000000" />
+            <!-- 封面悬浮操作按钮:盖在照片上(照片面 scrim 色系,明暗主题同值),白图标。
+                 Fluent 2 方向:悬停比默认更实(加深),与行内 RowButton 的"叠层变浅"语义相反 -->
+            <SolidColorBrush x:Key="CardOverlayButton" Color="#73000000" />
+            <SolidColorBrush x:Key="CardOverlayButtonHover" Color="#A6000000" />
+            <SolidColorBrush x:Key="CardOverlayButtonPressed" Color="#CC000000" />
             <!-- 歌单行悬停背景:浅色半透明 / 深色实色 #343434(原版) -->
             <SolidColorBrush x:Key="RowHoverBackground" Color="#33000000" />
             <SolidColorBrush x:Key="AppListBackground" Color="#B3FFFFFF" />
@@ -76,6 +81,10 @@
             <SolidColorBrush x:Key="RowButton" Color="#FF404040" />
             <SolidColorBrush x:Key="RowButtonHover" Color="#FF454545" />
             <SolidColorBrush x:Key="RowButtonPressed" Color="#FF3A3A3A" />
+            <!-- 封面悬浮操作按钮:盖在照片上(照片面 scrim 色系,明暗主题同值),白图标 -->
+            <SolidColorBrush x:Key="CardOverlayButton" Color="#73000000" />
+            <SolidColorBrush x:Key="CardOverlayButtonHover" Color="#A6000000" />
+            <SolidColorBrush x:Key="CardOverlayButtonPressed" Color="#CC000000" />
             <!-- 歌单行悬停背景:深色实色 #343434(原版) -->
             <SolidColorBrush x:Key="RowHoverBackground" Color="#FF343434" />
             <SolidColorBrush x:Key="AppListBackground" Color="#0DFFFFFF" />

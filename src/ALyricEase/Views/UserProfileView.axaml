@@ -63,15 +63,32 @@
       <!-- CornerRadius 必写:ClipToBounds 只按矩形裁,圆角靠 Border 自身的圆角裁剪(推荐页同款) -->
       <Setter Property="CornerRadius" Value="8" />
     </Style>
-    <!-- 卡片悬停浮现的操作按钮(左下 ▶ 播放 / 右下 ••• 菜单):几何/配色复用全局 row-action
-         (32px 圆,同歌曲行),此处只管"悬停浮现";48px 大圆钮已废弃(实测过大) -->
+    <!-- 卡片悬停浮现的操作按钮(左下 ▶ 播放 / 右下 ••• 菜单):盖在封面照片上,
+         用 CardOverlayButton scrim 色系(白图标),Fluent 2 方向 = 悬停比默认更实;
+         不复用 row-action —— 那套三态是"叠在行背景上的半透明叠层"(浅色主题 hover
+         反而更透明),直接盖封面上会出现"默认重/hover 透明"的反直觉观感(实测) -->
     <Style Selector="Button.card-op">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButton}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Opacity" Value="0" />
       <Setter Property="Transitions">
         <Transitions>
           <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
         </Transitions>
       </Setter>
+    </Style>
+    <Style Selector="Button.card-op:pointerover">
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButtonHover}" />
+    </Style>
+    <Style Selector="Button.card-op:pressed">
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButtonPressed}" />
     </Style>
     <Style Selector="Button.card:pointerover Button.card-op">
       <Setter Property="Opacity" Value="1" />
@@ -234,12 +251,12 @@
                           </Border>
                           <Border Classes="card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
                         <!-- 悬停浮现:左下 ▶ 播放歌单,右下 ••• more 菜单(卡片其余区域进详情页) -->
-                        <Button Classes="row-action card-op" Click="OnCardPlayClick" HorizontalAlignment="Left"
+                        <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" Click="OnCardPlayClick" HorizontalAlignment="Left"
                                 VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="播放歌单">
                           <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
                                      FontFamily="{DynamicResource LyricEaseIconsFilled}" />
                         </Button>
-                        <Button Classes="row-action card-op" Click="OnCardMoreClick" HorizontalAlignment="Right"
+                        <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" Click="OnCardMoreClick" HorizontalAlignment="Right"
                                 VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="更多操作">
                           <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
                                      FontFamily="{DynamicResource LyricEaseIcons}" />
@@ -284,12 +301,12 @@
                           </Border>
                           <Border Classes="card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
                           <!-- 悬停浮现:左下 ▶ 播放歌单,右下 ••• more 菜单(卡片其余区域进详情页) -->
-                          <Button Classes="row-action card-op" Click="OnCardPlayClick" HorizontalAlignment="Left"
+                          <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" Click="OnCardPlayClick" HorizontalAlignment="Left"
                                   VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="播放歌单">
                             <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
                                        FontFamily="{DynamicResource LyricEaseIconsFilled}" />
                           </Button>
-                          <Button Classes="row-action card-op" Click="OnCardMoreClick" HorizontalAlignment="Right"
+                          <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" Click="OnCardMoreClick" HorizontalAlignment="Right"
                                   VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="更多操作">
                             <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
                                        FontFamily="{DynamicResource LyricEaseIcons}" />
@@ -333,12 +350,12 @@
                           </Border>
                           <Border Classes="card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
                           <!-- 悬停浮现:左下 ▶ 播放歌单,右下 ••• more 菜单(卡片其余区域进详情页) -->
-                          <Button Classes="row-action card-op" Click="OnCardPlayClick" HorizontalAlignment="Left"
+                          <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" Click="OnCardPlayClick" HorizontalAlignment="Left"
                                   VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="播放歌单">
                             <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
                                        FontFamily="{DynamicResource LyricEaseIconsFilled}" />
                           </Button>
-                          <Button Classes="row-action card-op" Click="OnCardMoreClick" HorizontalAlignment="Right"
+                          <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" Click="OnCardMoreClick" HorizontalAlignment="Right"
                                   VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="更多操作">
                             <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
                                        FontFamily="{DynamicResource LyricEaseIcons}" />

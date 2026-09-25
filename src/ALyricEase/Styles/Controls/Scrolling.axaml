@@ -376,12 +376,13 @@
   </Style>
 
   <!-- 内容页底部为常驻播放条预留安全距离:播放条覆盖在内容上方(z-index 1),
-       所有内容页根 ScrollViewer 加 page-scroll 后,滚动内容从播放条下方穿过(覆盖式),
-       滚到底时最后一行抬到播放条之上(ScrollViewer.Padding 计入滚动范围,所以滚到底才空出这段)。
-       同时把纵向滚动条底部抬起同样高度,避免滑块/轨道延伸到播放条后面。
-       数值来自 Dimensions.PlayerBarReserve,集中维护、各页统一(取代原先各页散落的 28/90/110/116 等硬编码)。 -->
+       页面 ScrollViewer 视口全高 —— 内容延伸到播放条后面穿过(亚克力背景透出模糊内容)。
+       ⚠ 预留不能走 ScrollViewer.Padding:padding 会压缩视口,内容永远进不了播放条后面
+       (实测亚克力失效、内容被硬切在播放条上缘)。抬升由各内容页内容根的
+       Margin bottom = PlayerBarReserve 承担(计入滚动范围,滚到底才空出这段)。
+       ScrollBar 底部同步抬起,避免滑块/轨道延伸到播放条后面。
+       数值来自 Dimensions.PlayerBarReserve,集中维护、各页统一。 -->
   <Style Selector="ScrollViewer.page-scroll">
-    <Setter Property="Padding" Value="{DynamicResource PlayerBarReserve}" />
   </Style>
   <!-- ⚠ 必须用 /template/ + :vertical 收窄,不能写成 `ScrollViewer.page-scroll ScrollBar`:
        空格是**后代**选择器,会连页内嵌套滚动容器的滚动条一起命中 —— 个性推荐里横向卡片区

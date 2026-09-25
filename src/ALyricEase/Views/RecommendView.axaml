@@ -50,11 +50,7 @@
 
   <UserControl.Styles>
     <Style Selector="StackPanel#PageContent">
-      <Setter Property="Margin" Value="48,0,32,116" />
-    </Style>
-    <!-- 与歌单页一致：滚动条避开覆盖在内容区底部的 100px 播放条。 -->
-    <Style Selector="ScrollViewer.recommend-scroller /template/ ScrollBar#PART_VerticalScrollBar">
-      <Setter Property="Margin" Value="0,0,0,100" />
+      <Setter Property="Margin" Value="48,0,32,120" />
     </Style>
     <!-- 卡片:固定尺寸(断点缩放由 compact/narrow 覆盖),整卡为透明按钮,悬停/按下用黑遮罩反馈 -->
     <Style Selector="Button.card">
@@ -95,7 +91,7 @@
     </Style>
     <!-- 每日歌曲行的悬停高亮/操作浮现/圆形按钮等样式已统一到共享 TrackRow 控件(Views/TrackRow.axaml) -->
     <Style Selector=".compact StackPanel#PageContent">
-      <Setter Property="Margin" Value="28,0,24,116" />
+      <Setter Property="Margin" Value="28,0,24,120" />
     </Style>
     <Style Selector=".compact Button.card">
       <Setter Property="Width" Value="168" /><Setter Property="Height" Value="218" />
@@ -125,12 +121,19 @@
     <ScrollViewer Grid.Row="1" Classes="recommend-scroller page-scroll"
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel x:Name="PageContent" Spacing="62">
+        <!-- 区块间距用 ItemsPanel 的 StackPanel.Spacing(62,与各内容页 Spacing 统一值一致):
+             所有区块在一个 ItemsControl 里,PageContent 的 Spacing 作用不到它们之间;
+             用 Spacing 而非项模板 Margin 的原因:Margin 会在最后一个区块后再垫一份,
+             与页面根的底部播放条预留(120)叠加成双份(实测猜你喜欢下方间距偏大) -->
         <ItemsControl ItemsSource="{Binding Sections}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Spacing="62" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:RecommendSectionViewModel">
-              <!-- 区块间距靠底部 Margin(62,与各内容页 Spacing 统一值一致):
-                   所有区块在一个 ItemsControl 里,PageContent 的 Spacing 作用不到它们之间 -->
-              <StackPanel Spacing="12" Margin="0,0,0,62">
+              <StackPanel Spacing="12">
                 <Grid ColumnDefinitions="*,Auto">
                   <TextBlock Text="{Binding Title}" Classes="section-title" VerticalAlignment="Center" />
                   <Button Grid.Column="1" Classes="play-all" Command="{Binding PlayAllCommand}"

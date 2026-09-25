@@ -13,7 +13,7 @@
   <!-- 整页滚动(歌单页同构):网格延伸到播放条下方, clearance 由内容底部 margin 提供 -->
   <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller page-scroll" VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled">
-    <Grid Margin="48,20,32,0" RowDefinitions="Auto,Auto,Auto,*">
+    <Grid Margin="48,20,32,120" RowDefinitions="Auto,Auto,Auto,*">
       <!-- 页头:歌手名(随内容滚动,同歌单页 hero) -->
       <TextBlock Grid.Row="0" Text="{Binding Name}" Classes="page-title" Margin="0,0,0,12" />
 

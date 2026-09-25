@@ -128,7 +128,7 @@
   </UserControl.Styles>
 
   <ScrollViewer Classes="page-scroll">
-    <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="28,16,24,0">
+    <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="28,16,24,120">
 
       <TextBlock Text="设置" FontSize="26" FontWeight="Bold" Margin="0,0,0,4"
                  Foreground="{DynamicResource TextPrimary}" />

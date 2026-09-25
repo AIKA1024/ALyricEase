@@ -41,7 +41,7 @@
 
   <ScrollViewer Classes="tracks-scroller page-scroll" VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled">
-    <Grid x:Name="PageLayout" Margin="48,20,32,0" RowDefinitions="Auto,*">
+    <Grid x:Name="PageLayout" Margin="48,20,32,120" RowDefinitions="Auto,*">
       <Grid x:Name="PageHeader" Grid.Row="0" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
         <StackPanel VerticalAlignment="Center" Spacing="2">
           <TextBlock Text="最近播放" Classes="page-title" />

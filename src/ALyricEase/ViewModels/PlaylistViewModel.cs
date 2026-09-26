@@ -302,6 +302,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>歌单详情页内容可见性:任一音源登录即可(只登 QQ 时网易云未登录也要能看 QQ 歌单)。</summary>
     public bool HasAnyLogin => IsLoggedIn || IsQqLoggedIn;
 
+    /// <summary>本地是否存有任一音源的登录凭证(CookieStore 在构造函数同步读盘,构造期即可用)。
+    /// 区别于 HasAnyLogin(异步恢复后的在线登录态):决定启动页 —— 有凭证走用户页(等异步恢复),
+    /// 完全没有则启动即打开账号页+登录弹层。</summary>
+    public bool HasStoredCredentials =>
+        _cookie.MusicU is { Length: > 0 } || _cookie.QQCookieRaw is { Length: > 0 };
+
     /// <summary>登录后保留歌单页的“请选择”空态；未登录时只要从推荐/搜索打开了公共歌单也应显示详情。</summary>
     public bool ShowPlaylistContent => HasAnyLogin || SelectedPlaylist is not null;
 

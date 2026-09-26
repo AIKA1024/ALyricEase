@@ -64,11 +64,20 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(NowPlayingMotionEnabled));
             OnPropertyChanged(nameof(LyricBlurEnabled));
         };
-        // 启动页是用户页(非侧栏项) → SelectedNav 为 null,侧栏无高亮(同详情页打开时的行为)
+        // 启动页:本地存有任一音源登录凭证 → 自己的用户页(登录态异步恢复);
+        // 完全没有 → 账号页 + 自动弹出登录弹层(与侧栏"账号"未登录的行为一致)。
+        // CookieStore 构造函数同步读盘,此处判定可靠。
+        _activePage = Playlist.HasStoredCredentials ? "User" : "Account";
+        // 用户页非侧栏项 → SelectedNav 为 null,侧栏无高亮(同详情页打开时的行为);
+        // 账号页也不是侧栏项(侧栏"账号"是按钮),同样无高亮。
         _selectedNav = ShellNavItems.FirstOrDefault(item => item.Key == _activePage);
-        // 启动页数据:自己的用户页(uid=0 按登录态解析;未登录停留空态,登录后可再进)。
+        // 启动页数据:自己的用户页(uid=0 按登录态解析)。
         // 直接 LoadAsync 不走 OpenUser 命令 —— 不进返回历史,启动即"首页",无页可返回。
-        _ = UserProfile.LoadAsync(0);
+        // 未登录(账号页启动)不拉取:uid=0 无意义,登录成功后由用户自行进入用户页。
+        if (_activePage == "User")
+            _ = UserProfile.LoadAsync(0);
+        else
+            IsLoginDialogOpen = true; // 无账号:启动即呈现登录页
         // 登录恢复完成后"自动打开我喜欢的音乐"会切走 ActivePage —— 仅当用户真的停在收藏页
         // 等待时才兜底打开,否则启动即被顶离用户页(实测)。
         Playlist.AutoOpenFavoritesGuard = () => ActivePage == "Favorites";

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -297,25 +298,44 @@ public partial class AlbumCoverBackground : UserControl
     private static Color[] ExtractPalette(IImage cover)
     {
         const int size = 48;
-        const int stride = size * 4;
-        var image = new Image { Source = cover, Stretch = Stretch.UniformToFill, Width = size, Height = size };
-        image.Measure(new Size(size, size));
-        image.Arrange(new Rect(0, 0, size, size));
+        // 直接读 Bitmap 像素采样(居中方裁剪,等价于原 UniformToFill):
+        // 旧实现经"离屏 Image + RenderTargetBitmap 渲染 + CopyPixels"取像素 —— 该离屏渲染
+        // 路径在 Android 上不可靠(渲染为空/全透明,像素全被 alpha 过滤),导致取色数不足,
+        // 频繁落入默认蓝紫调色板或 Shift 的固定混色,出现封面里完全没有的颜色(真机实测)。
+        if (cover is not Bitmap bitmap)
+            return [.. s_defaultPalette];
 
-        using var bitmap = new RenderTargetBitmap(new PixelSize(size, size), new Avalonia.Vector(96, 96));
-        bitmap.Render(image);
-        var buffer = Marshal.AllocHGlobal(stride * size);
+        var srcW = bitmap.PixelSize.Width;
+        var srcH = bitmap.PixelSize.Height;
+        if (srcW <= 0 || srcH <= 0) return [.. s_defaultPalette];
+
+        var stride = srcW * 4;
+        var buffer = Marshal.AllocHGlobal(stride * srcH);
         try
         {
-            bitmap.CopyPixels(new PixelRect(0, 0, size, size), buffer, stride * size, stride);
+            bitmap.CopyPixels(new PixelRect(0, 0, srcW, srcH), buffer, stride * srcH, stride);
+
+            // ⚠ CopyPixels 按位图自身格式输出字节 —— Skia 解码格式随平台 N32:Windows=Bgra8888、
+            //   Android=Rgba8888。字节序固定按 BGRA 读会在 Android 上 R/B 对调,红色封面提取成
+            //   蓝色色团(真机实测)。红色通道偏移由 1×1 纯红 PNG 的解码结果自校准(结果缓存)。
+            var redOffset = GetRedByteOffset();
+            var blueOffset = 2 - redOffset;
+
+            // UniformToFill 居中方裁剪:取中心 side×side 区域,在 48×48 网格上隔行采样
+            var side = Math.Min(srcW, srcH);
+            var offsetX = (srcW - side) / 2;
+            var offsetY = (srcH - side) / 2;
+
             var bins = new Dictionary<int, PaletteBin>();
             for (var y = 0; y < size; y += 2)
             for (var x = 0; x < size; x += 2)
             {
-                var offset = y * stride + x * 4;
-                var b = Marshal.ReadByte(buffer, offset);
+                var sx = offsetX + x * side / size;
+                var sy = offsetY + y * side / size;
+                var offset = sy * stride + sx * 4;
+                var b = Marshal.ReadByte(buffer, offset + blueOffset);
                 var g = Marshal.ReadByte(buffer, offset + 1);
-                var r = Marshal.ReadByte(buffer, offset + 2);
+                var r = Marshal.ReadByte(buffer, offset + redOffset);
                 var a = Marshal.ReadByte(buffer, offset + 3);
                 if (a < 160) continue;
                 var max = Math.Max(r, Math.Max(g, b));
@@ -340,6 +360,8 @@ public partial class AlbumCoverBackground : UserControl
 
             if (selected.Count == 0) return [.. s_defaultPalette];
             var extractedCount = selected.Count;
+            // 补齐缺失槽位只在已提取的色系内做明暗变体(同色相家族):
+            // 旧实现往固定蓝/紫色混(Shift),会给红/绿色封面掺出封面没有的蓝紫色团(真机实测)。
             while (selected.Count < 4)
             {
                 var source = selected[selected.Count % extractedCount];
@@ -355,6 +377,62 @@ public partial class AlbumCoverBackground : UserControl
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    /// <summary>红色通道在 CopyPixels 输出中的字节偏移(0=Rgba8888 / 2=Bgra8888),进程内缓存。
+    /// 自校准:程序内生成 1×1 纯红 PNG(编码像素确定),经平台 Skia 解码后 CopyPixels 读回,
+    /// 看 255 落在字节 0(Rgba)还是字节 2(Bgra) —— 与封面位图的解码格式同源,平台差异自动适配。</summary>
+    private static int? _redByteOffset;
+
+    private static int GetRedByteOffset()
+    {
+        if (_redByteOffset.HasValue) return _redByteOffset.Value;
+
+        var buffer = Marshal.AllocHGlobal(4);
+        try
+        {
+            // 生成 1×1 纯红 PNG:裸 BGRA 红 → 平台编码器出 PNG(PNG 无歧义,R=255,G=B=0)
+            Marshal.WriteByte(buffer, 0, 0);
+            Marshal.WriteByte(buffer, 1, 0);
+            Marshal.WriteByte(buffer, 2, 255);
+            Marshal.WriteByte(buffer, 3, 255);
+            byte[] png;
+            using (var src = new Bitmap(
+                       Avalonia.Platform.PixelFormat.Bgra8888,
+                       Avalonia.Platform.AlphaFormat.Opaque,
+                       buffer,
+                       new PixelSize(1, 1), new Avalonia.Vector(96, 96), 4))
+            using (var ms = new MemoryStream())
+            {
+                src.Save(ms, PngBitmapEncoderOptions.Default);
+                png = ms.ToArray();
+            }
+
+            // 经平台解码(与封面同一 N32 路径)后读回,定位红色字节
+            using var decoded = new Bitmap(new MemoryStream(png));
+            var check = Marshal.AllocHGlobal(4);
+            try
+            {
+                decoded.CopyPixels(new PixelRect(0, 0, 1, 1), check, 4, 4);
+                var b0 = Marshal.ReadByte(check, 0);
+                var b2 = Marshal.ReadByte(check, 2);
+                _redByteOffset = b0 == 255 ? 0 : 2;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(check);
+            }
+        }
+        catch
+        {
+            _redByteOffset = 2; // 校准失败保守回落 BGRA(桌面端正确)
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+
+        return _redByteOffset.Value;
     }
 
     private sealed class PaletteBin
@@ -402,12 +480,12 @@ public partial class AlbumCoverBackground : UserControl
         (byte)((first.G + second.G) / 2),
         (byte)((first.B + second.B) / 2));
 
-    private static Color Shift(Color color, int index)
-    {
-        var mix = index % 2 == 0 ? Color.FromRgb(45, 94, 128) : Color.FromRgb(112, 52, 116);
-        return Color.FromRgb(
-            (byte)((color.R * 2 + mix.R) / 3),
-            (byte)((color.G * 2 + mix.G) / 3),
-            (byte)((color.B * 2 + mix.B) / 3));
-    }
+    /// <summary>补齐第 3/4 色团:在已提取色的色相家族内做明暗变体(亮/暗交替)。
+    /// ⚠ 不得往固定色相混(旧实现混固定蓝/紫) —— 会给暖色封面掺出封面里没有的冷色色团。</summary>
+    private static Color Shift(Color color, int index) => index % 2 == 0
+        ? Color.FromRgb(
+            (byte)(color.R + (255 - color.R) * 0.25),
+            (byte)(color.G + (255 - color.G) * 0.25),
+            (byte)(color.B + (255 - color.B) * 0.25))
+        : Color.FromRgb((byte)(color.R * 0.62), (byte)(color.G * 0.62), (byte)(color.B * 0.62));
 }

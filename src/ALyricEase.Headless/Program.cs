@@ -24,6 +24,23 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 封面取色回归(--palette):直接像素采样路径 + 缺失槽位同色相变体规则。
+        if (args.Length > 0 && args[0] == "--palette")
+        {
+            var paletteBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            HeadlessApp.ConfigureServices();
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { PaletteProbe.Run(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[palette] 异常: {ex}"); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            paletteBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            return;
+        }
+
         // TEMP-DIAG:真窗口+真合成器变体(--lyricswitch-real):GDI 抓屏对比
         if (args.Length > 0 && args[0] == "--lyricswitch-real")
         {

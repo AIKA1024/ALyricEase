@@ -35,6 +35,10 @@
             <SolidColorBrush x:Key="DangerActionBackgroundPressed" Color="#1FC42B1C" />
             <SolidColorBrush x:Key="AppBorder" Color="#12000000" />
             <SolidColorBrush x:Key="AppBorderStrong" Color="#24000000" />
+            <!-- 设置页 Expander 行头三态(浅色):头部与卡片同面,悬停/按下轻微加深 -->
+            <SolidColorBrush x:Key="SettingsExpanderHeader" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="SettingsExpanderHeaderHover" Color="#F2F2F2" />
+            <SolidColorBrush x:Key="SettingsExpanderHeaderPressed" Color="#ECECEC" />
             <!-- 控件填充/描边:对齐 WinUI Fluent2 Button 默认(ControlFillColorDefault/Secondary/Tertiary,
                  描边取 ControlElevationBorderBrush 1px 可见段=ControlStrokeColorSecondary) -->
             <SolidColorBrush x:Key="AppControlFill" Color="#B3FFFFFF" />
@@ -98,6 +102,10 @@
             <SolidColorBrush x:Key="DangerActionBackgroundPressed" Color="#28FF99A4" />
             <SolidColorBrush x:Key="AppBorder" Color="#14FFFFFF" />
             <SolidColorBrush x:Key="AppBorderStrong" Color="#28FFFFFF" />
+            <!-- 设置页 Expander 行头三态(暗):取自原版 UWP 实测色(#242424/#303030/#2C2C2C) -->
+            <SolidColorBrush x:Key="SettingsExpanderHeader" Color="#242424" />
+            <SolidColorBrush x:Key="SettingsExpanderHeaderHover" Color="#303030" />
+            <SolidColorBrush x:Key="SettingsExpanderHeaderPressed" Color="#2C2C2C" />
             <SolidColorBrush x:Key="AppControlFill" Color="#0FFFFFFF" />
             <SolidColorBrush x:Key="AppControlFillHover" Color="#15FFFFFF" />
             <SolidColorBrush x:Key="AppControlFillPressed" Color="#08FFFFFF" />

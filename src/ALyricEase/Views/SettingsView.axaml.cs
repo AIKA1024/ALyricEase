@@ -1,3 +1,4 @@
+using System;
 using ALyricEase.ViewModels;
 using Avalonia.Controls;
 
@@ -17,5 +18,17 @@ public partial class SettingsView : UserControl
     private void RefreshAudioDevices()
     {
         if (DataContext is SettingsViewModel vm) _ = vm.RefreshAudioDevicesCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>淡化时长滑杆宽 = min(280, 行宽 - 图标/标题/时长文本实际宽度)。
+    /// 写死 280 窄屏溢出卡片;Stretch+MaxWidth 会被居中(实测,宽屏不靠右)。
+    /// 行宽变化驱动,滑杆宽度不反推行宽,无布局反馈回路。子元素 Bounds 在行 arrange 时
+    /// 已同步更新,首帧即正确。</summary>
+    private void OnCrossfadeRowSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        var fixedParts = CrossfadeIcon.Bounds.Width + CrossfadeTitle.Bounds.Width
+            + CrossfadeSecondsText.Bounds.Width + CrossfadeSecondsText.Margin.Left
+            + CrossfadeSecondsText.Margin.Right;
+        CrossfadeSlider.Width = Math.Clamp(e.NewSize.Width - fixedParts, 0, 280);
     }
 }

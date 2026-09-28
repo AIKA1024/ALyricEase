@@ -24,10 +24,26 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 滑杆对齐行为探针(--slideralign):量 *列+MaxWidth 下 Slider 的实际排布。
+        if (args.Length > 0 && args[0] == "--slideralign")
+        {
+            var alignBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            HeadlessApp.ConfigureServices();
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { SliderAlignProbe.Run(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[slideralign] 异常: {ex}"); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            alignBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            return;
+        }
+
         // 封面取色回归(--palette):直接像素采样路径 + 缺失槽位同色相变体规则。
         if (args.Length > 0 && args[0] == "--palette")
-        {
-            var paletteBuilder = AppBuilder.Configure<HeadlessApp>()
+        {            var paletteBuilder = AppBuilder.Configure<HeadlessApp>()
                 .UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
             HeadlessApp.ConfigureServices();

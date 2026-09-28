@@ -276,13 +276,18 @@
           </Grid>
           <!-- 开启后展开"淡化时长"行(原版 = 同一卡片内的子行:图标 + 标题 + 时长 + 滑杆);
                行间距由上方 StackPanel 的 Spacing 提供,这里不再写 Margin -->
-          <Grid IsVisible="{Binding Crossfade}" ColumnDefinitions="Auto,*,Auto,Auto">
-            <TextBlock Classes="setting-icon" Text="{DynamicResource IconRecents}" />
-            <TextBlock Grid.Column="1" Classes="setting-title" Text="淡化时长" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="2" Text="{Binding CrossfadeSecondsText}" FontSize="13"
-                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
-                       Margin="0,0,12,0" />
-            <Slider Grid.Column="3" Width="280" Minimum="0" Maximum="12" TickFrequency="0.5"
+          <!-- 滑杆宽度由 code-behind 按行宽动态设置(= min(280, 行宽-固定件)):
+               写死 Width 窄屏溢出卡片;Stretch+MaxWidth 会在宽屏被居中(实测)都不行 -->
+          <Grid x:Name="CrossfadeRow" IsVisible="{Binding Crossfade}" ColumnDefinitions="Auto,Auto,Auto,*"
+                SizeChanged="OnCrossfadeRowSizeChanged">
+            <TextBlock x:Name="CrossfadeIcon" Classes="setting-icon" Text="{DynamicResource IconRecents}" />
+            <TextBlock x:Name="CrossfadeTitle" Grid.Column="1" Classes="setting-title" Text="淡化时长"
+                       VerticalAlignment="Center" />
+            <TextBlock x:Name="CrossfadeSecondsText" Grid.Column="2" Text="{Binding CrossfadeSecondsText}"
+                       FontSize="13" Foreground="{DynamicResource TextSecondary}"
+                       VerticalAlignment="Center" Margin="0,0,12,0" />
+            <Slider x:Name="CrossfadeSlider" Grid.Column="3" HorizontalAlignment="Right"
+                    Minimum="0" Maximum="12" TickFrequency="0.5"
                     Value="{Binding CrossfadeSeconds}" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>

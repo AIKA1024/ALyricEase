@@ -118,6 +118,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private CancellationTokenSource? _qqPhoneOperationCancellation;
     private CancellationTokenSource? _qqPhoneCountdownCancellation;
 
+    /// <summary>QQ 音乐风控返回的安全验证页(腾讯防水墙 securityURL),UI 层订阅 <see cref="QqCaptchaOpenRequested"/> 后弹出验证窗口。</summary>
+    [ObservableProperty] private string? _qqCaptchaUrl;
+
+    /// <summary>触发于发送验证码被风控拦截(20276):桌面端应弹出验证窗口,无窗口平台回退系统浏览器。</summary>
+    public event EventHandler? QqCaptchaOpenRequested;
+
+    private void RaiseQqCaptchaOpenRequested() => QqCaptchaOpenRequested?.Invoke(this, EventArgs.Empty);
+
     /// <summary>QQ 音乐客户端原生登录二维码与当前扫码状态。</summary>
     [ObservableProperty] private IImage? _qqQrImage;
     [ObservableProperty] private bool _isQqQrLoginActive;
@@ -618,8 +626,18 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     break;
                 case QQMusicPhoneCodeStage.CaptchaRequired:
                     IsQqPhoneCodeSent = false;
-                    QqPhoneStatus = "当前号码触发了安全验证，请改用扫码登录";
-                    Message = "QQ 音乐要求额外安全验证，手机客户端扫码登录更稳妥。";
+                    if (!string.IsNullOrEmpty(result.SecurityUrl))
+                    {
+                        QqCaptchaUrl = result.SecurityUrl;
+                        QqPhoneStatus = "触发了安全验证，请在弹出的验证窗口中完成滑块";
+                        Message = null;
+                        RaiseQqCaptchaOpenRequested();
+                    }
+                    else
+                    {
+                        QqPhoneStatus = "当前号码触发了安全验证，请改用扫码登录";
+                        Message = "QQ 音乐要求额外安全验证，手机客户端扫码登录更稳妥。";
+                    }
                     break;
                 case QQMusicPhoneCodeStage.FrequencyLimited:
                     IsQqPhoneCodeSent = false;
@@ -850,6 +868,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         QqPhoneNumber = "";
         QqPhoneCode = "";
         IsQqPhoneCodeSent = false;
+        QqCaptchaUrl = null;
         QqPhoneStatus = "验证码将发送到你的手机";
         IsBusy = false;
     }

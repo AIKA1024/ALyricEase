@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.QqCaptchaOverlay"
+             AutomationProperties.Name="QQ 音乐安全验证">
+    <!-- 安卓没有模态窗口:覆盖层盖在登录卡片上,布局与桌面 QqCaptchaWindow 保持一致 -->
+    <Border Background="{DynamicResource AppSurface}" CornerRadius="16"
+            BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="20,16,14,12">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="完成滑块安全验证" FontSize="17" FontWeight="SemiBold" />
+                    <TextBlock x:Name="StatusText" FontSize="12"
+                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"
+                               Text="完成验证后会自动重新发送短信验证码；若未自动发送，请点击下方按钮。" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="✕" Width="36" Height="36" Padding="0"
+                        Background="Transparent" BorderThickness="0" Click="OnCloseClick"
+                        AutomationProperties.Name="关闭安全验证" />
+            </Grid>
+
+            <!-- 腾讯防水墙 securityURL:安卓系统 WebView -->
+            <NativeWebView x:Name="WebView" Grid.Row="1" />
+
+            <Border Grid.Row="2" Padding="20,14"
+                    BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,1,0,0">
+                <!-- WrapPanel:窄屏放不下两枚按钮时自动换行 -->
+                <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="OpenBrowserButton" Content="在系统浏览器中打开"
+                            Height="36" Margin="0,0,10,6" Click="OnOpenBrowserClick"
+                            AutomationProperties.Name="在系统浏览器中打开安全验证页面" />
+                    <Button x:Name="ResendButton" Classes="accent" Content="完成验证，重新发送验证码"
+                            MinWidth="200" Height="36" Margin="0,0,0,6" Click="OnResendClick"
+                            AutomationProperties.Name="完成验证后重新发送短信验证码" />
+                </WrapPanel>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using Avalonia;
@@ -11,6 +12,10 @@ namespace ALyricEase.Views;
 /// <summary>登录对话框视图：打开时淡入，并把焦点放到当前登录方式的首要控件。</summary>
 public partial class LoginDialogView : UserControl
 {
+    private PlaylistViewModel? _subscribedPlaylist;
+    private QqCaptchaWindow? _captchaWindow;
+    private QqCaptchaOverlay? _captchaOverlay;
+
     public LoginDialogView()
     {
         InitializeComponent();
@@ -24,6 +29,102 @@ public partial class LoginDialogView : UserControl
                 Dispatcher.UIThread.Post(FocusActiveInput, DispatcherPriority.Render);
             }
         };
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        SubscribeQqCaptcha();
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        // 绑定推送 DataContext 可能晚于可视树附着,两处都订阅保证不漏
+        SubscribeQqCaptcha();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        HideCaptchaOverlay();
+        UnsubscribeQqCaptcha();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void SubscribeQqCaptcha()
+    {
+        var playlist = (DataContext as MainViewModel)?.Playlist;
+        if (ReferenceEquals(playlist, _subscribedPlaylist))
+            return;
+        UnsubscribeQqCaptcha();
+        if (playlist is null)
+            return;
+        playlist.QqCaptchaOpenRequested += OnQqCaptchaOpenRequested;
+        _subscribedPlaylist = playlist;
+    }
+
+    private void UnsubscribeQqCaptcha()
+    {
+        if (_subscribedPlaylist is null)
+            return;
+        _subscribedPlaylist.QqCaptchaOpenRequested -= OnQqCaptchaOpenRequested;
+        _subscribedPlaylist = null;
+    }
+
+    /// <summary>
+    /// QQ 音乐风控(20276):桌面弹模态验证窗口;其余情况(安卓/异常宿主)一律内嵌覆盖层。
+    /// 浏览器只作为覆盖层里的手动兜底按钮,不再自动打开。
+    /// </summary>
+    private async void OnQqCaptchaOpenRequested(object? sender, EventArgs e)
+    {
+        if (sender is not PlaylistViewModel playlist || string.IsNullOrEmpty(playlist.QqCaptchaUrl))
+            return;
+        var uri = new Uri(playlist.QqCaptchaUrl, UriKind.Absolute);
+
+        if (!OperatingSystem.IsAndroid())
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel is Window owner)
+            {
+                // 发送验证码再次被拦截时,复用已打开的窗口换新会话,避免叠窗
+                if (_captchaWindow is { } existing)
+                {
+                    existing.UpdateCaptchaUrl(uri);
+                    return;
+                }
+                var window = new QqCaptchaWindow(uri);
+                window.Verified += (_, _) => playlist.SendQqPhoneCodeCommand.Execute(null);
+                window.Closed += (_, _) => _captchaWindow = null;
+                _captchaWindow = window;
+                await window.ShowDialog(owner);
+                return;
+            }
+        }
+        ShowCaptchaOverlay(uri, playlist);
+    }
+
+    private void ShowCaptchaOverlay(Uri uri, PlaylistViewModel playlist)
+    {
+        if (_captchaOverlay is { } existing)
+        {
+            existing.UpdateCaptchaUrl(uri);
+            return;
+        }
+        var overlay = new QqCaptchaOverlay(uri);
+        overlay.Verified += (_, _) => playlist.SendQqPhoneCodeCommand.Execute(null);
+        overlay.CloseRequested += (_, _) => HideCaptchaOverlay();
+        _captchaOverlay = overlay;
+        CaptchaHost.Children.Add(overlay);
+        CaptchaHost.IsVisible = true;
+    }
+
+    private void HideCaptchaOverlay()
+    {
+        if (_captchaOverlay is null)
+            return;
+        _captchaOverlay = null;
+        CaptchaHost.Children.Clear();
+        CaptchaHost.IsVisible = false;
     }
 
     private void FocusActiveInput()

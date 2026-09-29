@@ -404,6 +404,9 @@
                         <Button Grid.Column="1" Content="关闭" MinWidth="88" Height="36"
                                 Command="{Binding $parent[views:LoginDialogView].((vm:MainViewModel)DataContext).CloseLoginDialogCommand}" />
                     </Grid>
+
+                    <!-- 安卓等无窗口平台的安全验证覆盖层:代码按需放入 QqCaptchaOverlay,盖在卡片内容之上 -->
+                    <Panel x:Name="CaptchaHost" Grid.Row="0" Grid.RowSpan="4" IsVisible="False" />
                 </Grid>
             </Border>
         </Grid>

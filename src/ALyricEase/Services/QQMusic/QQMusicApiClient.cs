@@ -473,31 +473,58 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     // ---------- 端点方法 ----------
 
+    /// <summary>歌曲搜索:musicu.fcg SearchCgiService/DoSearchForQQMusicDesktop(search_type=0)。
+    /// 旧 client_search_cp(c.y.qq.com 明文 GET)已被服务端下线 —— 一律 HTTP 500(2026-09-30 实测)。
+    /// comm 必须 ct=19/cv=1859(与网页端一致):复用 PostMusicuAsync 的 ct=24/cv=4747474 会 code=0
+    /// 但全空列表(与 SearchPlaylistsAsync 同一坑)。响应条目 songid/songmid 平铺形态,复用 MapTrack。</summary>
     public async Task<List<Song>> SearchAsync(string keyword, int limit = 30, int offset = 0, CancellationToken ct = default)
     {
         var page = offset / Math.Max(limit, 1) + 1;
-        var query = new Dictionary<string, string?>
+        string json;
+        using (var ms = new MemoryStream())
         {
-            ["w"] = keyword,
-            ["ct"] = "24",
-            ["qqmusic_ver"] = "1298",
-            ["remoteplace"] = "txt.yqq.song",
-            ["t"] = "0",
-            ["aggr"] = "1",
-            ["cr"] = "1",
-            ["lossless"] = "0",
-            ["flag_qc"] = "0",
-            ["p"] = page.ToString(),
-            ["n"] = limit.ToString(),
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                w.WriteStartObject("comm");
+                w.WriteNumber("ct", 19);
+                w.WriteNumber("cv", 1859);
+                w.WriteString("uin", "");
+                w.WriteEndObject();
+                w.WriteStartObject("req_0");
+                w.WriteString("module", "music.search.SearchCgiService");
+                w.WriteString("method", "DoSearchForQQMusicDesktop");
+                w.WriteStartObject("param");
+                w.WriteNumber("search_type", 0);
+                w.WriteString("query", keyword);
+                w.WriteNumber("page_num", page);
+                w.WriteNumber("num_per_page", limit);
+                w.WriteEndObject();
+                w.WriteEndObject();
+                w.WriteEndObject();
+            }
+            json = Encoding.UTF8.GetString(ms.ToArray());
+        }
+        using var httpReq = new HttpRequestMessage(HttpMethod.Post, MusicuUrl)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
-        using var doc = await GetCAsync("/soso/fcgi-bin/client_search_cp", query, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQSearchResponse);
-        if (resp is null || resp.Code != 0 || resp.Data?.Song?.List is null)
-            throw new ApiException("搜索失败", resp?.Code ?? -1);
-        return resp.Data.Song.List.Select(MapTrack).ToList();
+        httpReq.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/n/ryqq/search");
+        if (IsLoggedIn) httpReq.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
+        using var respMsg = await _http.SendAsync(httpReq, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(respMsg, ct).ConfigureAwait(false);
+        var respBody = await respMsg.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        using var doc = ParseJson(respBody);
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQMusicuSearchSongResponse);
+        if (resp is null || resp.Code != 0 || resp.Req0 is not { Code: 0 })
+            throw new ApiException("搜索失败", resp?.Req0?.Code ?? resp?.Code ?? -1);
+        var list = resp.Req0.Data?.Body?.Song?.List;
+        if (list is null)
+            throw new ApiException("搜索失败(响应缺少歌曲列表)", -1);
+        return list.Select(MapTrack).ToList();
     }
 
-    /// <summary>多类型搜索:歌曲复用 client_search_cp;歌单走 musicu.fcg SearchCgiService。
+    /// <summary>多类型搜索:歌曲复用 SearchCgiService 歌曲通道;歌单走 SearchCgiService 歌单通道。
     /// client_search_cp 的专辑/歌手通道已废(实测 t=8/9 对热词恒空),musicu 匿名仅放行歌单,
     /// 故本源只支持 全部(歌曲+歌单)/歌曲/歌单 三类,其余 kind 返回 null。</summary>
     public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
@@ -522,9 +549,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return result;
     }
 
-    /// <summary>搜索歌单(musicu.fcg SearchCgiService,search_type=3;匿名可用)。
+    /// <summary>搜索歌单(musicu.fcg SearchCgiService,search_type=3)。
     /// 注意:comm 版本必须用 ct=19/cv=1859(与网页端一致)——复用 PostMusicuAsync 的 ct=24/cv=4747474
-    /// 会得到 code=0 但全空列表(实测 2026-08),故此处在客户端外单独构造请求体。</summary>
+    /// 会得到 code=0 但全空列表(实测 2026-08),故此处在客户端外单独构造请求体。
+    /// 登录态必须带 Cookie + comm uin:匿名请求只有头 1~2 次配额,之后一律回 2001(响应内附
+    /// 登录页 feedbackURL,实测 2026-09-30);登录态连续 6 发全部 code=0(见 --qqsearch)。</summary>
     private async Task<List<SearchPlaylistItem>> SearchPlaylistsAsync(string keyword, int limit, CancellationToken ct)
     {
         string json;
@@ -536,7 +565,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 w.WriteStartObject("comm");
                 w.WriteNumber("ct", 19);
                 w.WriteNumber("cv", 1859);
-                w.WriteString("uin", "");
+                w.WriteString("uin", IsLoggedIn ? _uin : "");
                 w.WriteEndObject();
                 w.WriteStartObject("req_1");
                 w.WriteString("module", "music.search.SearchCgiService");
@@ -557,6 +586,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
         httpReq.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/n/ryqq/search");
+        if (IsLoggedIn) httpReq.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
         using var respMsg = await _http.SendAsync(httpReq, ct).ConfigureAwait(false);
         await EnsureSuccessAsync(respMsg, ct).ConfigureAwait(false);
         var respBody = await respMsg.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

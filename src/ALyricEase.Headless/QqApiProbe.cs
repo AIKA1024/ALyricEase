@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.NetEase;
@@ -92,6 +93,166 @@ public static class QqApiProbe
 
         Console.WriteLine(exit == 0 ? "[qqapi] 全部通过" : "[qqapi] 存在失败项");
         return exit;
+    }
+
+    /// <summary>搜索冒烟探针(--qqsearch):client_search_cp 已死(HTTP 500,2026-09-30 实测),
+    /// 对上游 SearchCgiService/DoSearchForQQMusicMobile 做传输变体二分,打印各变体真实服务端码。</summary>
+    public static async Task<int> RunSearchProbeAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var api = new QQMusicApiClient(new CookieStore());
+        Console.WriteLine($"[qqsearch] IsLoggedIn={api.IsLoggedIn}");
+        var cookie = new CookieStore();
+        var raw = cookie.QQCookieRaw ?? "";
+        var musicKey = Cv(raw, "qm_keyst") ?? Cv(raw, "qqmusic_key") ?? "";
+        var uin = (Cv(raw, "uin") ?? Cv(raw, "qqmusic_uin") ?? "0").TrimStart('o');
+        var loginType = long.TryParse(Cv(raw, "tmeLoginType"), out var lt) ? lt : 0;
+
+        string SearchParam(string keyword, int num, int page) =>
+            "{\"searchid\":\"" + (Random.Shared.NextInt64(1, 21) * 18014398509481984 +
+                Random.Shared.NextInt64(0, 4194304) * 4294967296 + Random.Shared.NextInt64(1, int.MaxValue)) +
+                "\",\"query\":\"" + keyword + "\",\"search_type\":0,\"num_per_page\":" + num +
+                ",\"page_num\":" + page + ",\"highlight\":true,\"grp\":true,\"selectors\":{},\"vec_selectors\":[]}";
+
+        string AndroidComm() => "{" +
+            $"\"ct\":11,\"cv\":14090008,\"v\":14090008,\"chid\":\"10003505\",\"qq\":\"{uin}\"," +
+            $"\"authst\":\"{musicKey}\",\"tmeAppID\":\"qqmusic\",\"tmeLoginType\":{loginType}," +
+            "\"QIMEI36\":\"\",\"OpenUDID\":\"0123456789abcdef0123456789abcdef\",\"udid\":\"0123456789abcdef0123456789abcdef\"}";
+
+        string WebComm() => "{\"ct\":24,\"cv\":4747474,\"format\":\"json\",\"inCharset\":\"utf-8\"," +
+            $"\"outCharset\":\"utf-8\",\"notice\":0,\"platform\":\"yqq.json\",\"needNewCode\":1,\"uin\":\"{uin}\"}}";
+
+        string DesktopComm() => "{\"ct\":19,\"cv\":1859,\"uin\":\"\"}";
+
+        async Task TestAsync(string tag, string method, string comm, string ua)
+        {
+            try
+            {
+                var json = "{\"comm\":" + comm + ",\"req_0\":{\"module\":\"music.search.SearchCgiService\"," +
+                           "\"method\":\"" + method + "\",\"param\":" + SearchParam("任然", 10, 1) + "}}";
+                using var http = new System.Net.Http.HttpClient();
+                using var req = new System.Net.Http.HttpRequestMessage(
+                    System.Net.Http.HttpMethod.Post, "https://u.y.qq.com/cgi-bin/musicu.fcg")
+                {
+                    Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+                };
+                req.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/n/ryqq/search");
+                req.Headers.TryAddWithoutValidation("User-Agent", ua);
+                if (api.IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", raw);
+                using var resp = await http.SendAsync(req);
+                var body = await resp.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                var code = root.TryGetProperty("req_0", out var r0) && r0.TryGetProperty("code", out var c)
+                    ? c.GetInt32() : -1;
+                var count = 0;
+                string? first = null;
+                if (code == 0 &&
+                    root.TryGetProperty("req_0", out var r0b) && r0b.TryGetProperty("data", out var d) &&
+                    d.TryGetProperty("body", out var b) && b.TryGetProperty("song", out var sg) &&
+                    sg.TryGetProperty("list", out var list) && list.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    count = list.GetArrayLength();
+                    if (count > 0 && list[0].TryGetProperty("name", out var n1))
+                        first = n1.GetString();
+                }
+                else if (code == 0)
+                {
+                    // 形状漂移:打印 req_0 下的键帮助定位
+                    var keys = root.TryGetProperty("req_0", out var r0c) && r0c.TryGetProperty("data", out var dc)
+                        ? string.Join(",", dc.EnumerateObject().Select(p => p.Name))
+                        : "(无 data)";
+                    Console.WriteLine($"[qqsearch] {tag}: code=0 但形状异常 data 键=[{keys}]");
+                    return;
+                }
+                Console.WriteLine($"[qqsearch] {tag}: HTTP {(int)resp.StatusCode} code={code} 数量={count} 首曲=[{first}]");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[qqsearch] {tag}: FAIL {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        await TestAsync("V1 Mobile+Android comm+QQ UA", "DoSearchForQQMusicMobile", AndroidComm(),
+            "QQMusic 14090008(android 14)");
+        await TestAsync("V2 Mobile+web comm+Chrome UA", "DoSearchForQQMusicMobile", WebComm(),
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
+        await TestAsync("V3 Desktop+ct19cv1859 comm(匿名)", "DoSearchForQQMusicDesktop", DesktopComm(),
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
+
+        // 4) 生产路径端到端:修复后的 SearchAsync / SearchAllAsync
+        try
+        {
+            var songs = await api.SearchAsync("任然", 10);
+            Console.WriteLine($"[qqsearch] 生产 SearchAsync: {songs.Count} 首,首曲=[{songs.FirstOrDefault()?.Name} - {songs.FirstOrDefault()?.Artist}]");
+            var all = await api.SearchAllAsync("任然", SearchKind.All, 10);
+            Console.WriteLine($"[qqsearch] 生产 SearchAllAsync: 歌曲 {all?.Songs.Count ?? -1} 首 / 歌单 {all?.Playlists.Count ?? -1} 个");
+            // 歌单通道稳定性:多关键词 × 重复,定位"搜索歌单失败"的触发条件
+            foreach (var kw in new[] { "流行", "周杰伦", "粤语", "睡前", "任然" })
+            {
+                try
+                {
+                    var pls = await api.SearchAllAsync(kw, SearchKind.Playlist, 10);
+                    Console.WriteLine($"[qqsearch] 歌单Tab[{kw}] limit10: {pls?.Playlists.Count ?? -1} 个,首个=[{pls?.Playlists.FirstOrDefault()?.Name}]");
+                }
+                catch (ApiException ex)
+                {
+                    Console.WriteLine($"[qqsearch] 歌单Tab[{kw}] FAIL code={ex.Code}: {ex.Message}");
+                }
+            }
+
+            // 登录态歌单搜索:带 Cookie + comm uin(生产 SearchPlaylistsAsync 目前匿名)连续 6 发
+            for (var i = 1; i <= 6; i++)
+            {
+                try
+                {
+                    var json = "{\"comm\":{\"ct\":19,\"cv\":1859,\"uin\":\"" + uin + "\"},\"req_1\":{\"module\":\"music.search.SearchCgiService\"," +
+                               "\"method\":\"DoSearchForQQMusicDesktop\",\"param\":{\"search_type\":3,\"query\":\"歌单" + i + "\"," +
+                               "\"page_num\":1,\"num_per_page\":10}}}";
+                    using var http = new System.Net.Http.HttpClient();
+                    using var req = new System.Net.Http.HttpRequestMessage(
+                        System.Net.Http.HttpMethod.Post, "https://u.y.qq.com/cgi-bin/musicu.fcg")
+                    {
+                        Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+                    };
+                    req.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/n/ryqq/search");
+                    if (api.IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", raw);
+                    using var resp = await http.SendAsync(req);
+                    var body = await resp.Content.ReadAsStringAsync();
+                    using var doc = System.Text.Json.JsonDocument.Parse(body);
+                    var code = doc.RootElement.TryGetProperty("req_1", out var r1) && r1.TryGetProperty("code", out var c)
+                        ? c.GetInt32() : -1;
+                    var n = 0;
+                    if (code == 0 &&
+                        doc.RootElement.TryGetProperty("req_1", out var r1b) && r1b.TryGetProperty("data", out var d) &&
+                        d.TryGetProperty("body", out var b) && b.TryGetProperty("songlist", out var sl) &&
+                        sl.TryGetProperty("list", out var list) && list.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        n = list.GetArrayLength();
+                    Console.WriteLine($"[qqsearch] 登录态歌单第{i}发: code={code} 数量={n}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[qqsearch] 登录态歌单第{i}发 FAIL: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+            return songs.Count > 0 ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[qqsearch] 生产路径 FAIL {ex.GetType().Name}: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static string? Cv(string raw, string name)
+    {
+        foreach (var part in raw.Split(';'))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length == 2 && kv[0].Trim().Equals(name, StringComparison.OrdinalIgnoreCase))
+                return kv[1].Trim();
+        }
+        return null;
     }
 
     /// <summary>红心端到端探针(--qqlike):取"我喜欢"tid → 对一首未喜欢曲目 AddSonglist → 云端复检 →

@@ -605,14 +605,22 @@ public sealed record QQVipUserInfoDto
 }
 
 
-// ---------- musicu.fcg music.search.SearchCgiService(搜索歌单) ----------
+// ---------- musicu.fcg music.search.SearchCgiService(搜索歌单/歌曲) ----------
 
-/// <summary>musicu 复合响应外壳(req_1 节点)。</summary>
+/// <summary>musicu 复合响应外壳(req_1 节点,SearchCgiService 歌单通道)。</summary>
 public sealed record QQMusicuSearchPlaylistResponse
 {
     public int Code { get; init; }
 
     [JsonPropertyName("req_1")] public QQMusicuSearchNode? Req1 { get; init; }
+}
+
+/// <summary>musicu 复合响应外壳(req_0 节点,SearchCgiService 歌曲通道)。</summary>
+public sealed record QQMusicuSearchSongResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQMusicuSearchNode? Req0 { get; init; }
 }
 
 public sealed record QQMusicuSearchNode
@@ -631,6 +639,9 @@ public sealed record QQMusicuSearchBody
 {
     /// <summary>search_type=3 返回的歌单容器(body.songlist.list)。</summary>
     [JsonPropertyName("songlist")] public QQMusicuPlaylistContainer? Songlist { get; init; }
+
+    /// <summary>search_type=0 返回的歌曲容器(body.song.list;条目为 songid/songmid 平铺形态,复用 QQTrackDto)。</summary>
+    [JsonPropertyName("song")] public QQSearchSongContainer? Song { get; init; }
 }
 
 public sealed record QQMusicuPlaylistContainer

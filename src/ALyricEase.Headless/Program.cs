@@ -504,6 +504,14 @@ public static class Program
             return;
         }
 
+        // QQ 搜索冒烟:歌曲(client_search_cp)+ 歌单(musicu SearchCgiService)各打一发,打印真实错误
+        if (args.Length > 0 && args[0] == "--qqsearch")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqApiProbe.RunSearchProbeAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 创建/删除歌单端到端实测(需本机有效 Cookie):两平台 Create→复检→Delete 还原
         if (args.Length > 0 && args[0] == "--createpl")
         {

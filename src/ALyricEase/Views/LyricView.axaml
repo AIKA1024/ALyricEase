@@ -38,6 +38,39 @@
                 </TextBlock>
             </StackPanel>
         </DataTemplate>
+    <!-- ── 手动滚动期的模糊渐变(2026-09-30)────────────────────────────
+         四个模糊档位的**共享** BlurEffect 实例:detail 各样式 Setter 引用的都是这几个对象,
+         LyricView.axaml.cs 在手动滚动暂停期只改它们的 Radius,所有挂着的行一起渐变
+         (Effect 自身实现 IAffectsRender ⇒ Radius 变化会 InvalidateVisual,回归探针 lyrblur)。
+         Transitions 负责渐变本身:滚下时 5→0 慢慢取消,4 秒过期后 0→档位值慢慢模糊回去。 -->
+    <BlurEffect x:Key="LyricBlurFar" Radius="5">
+        <BlurEffect.Transitions>
+            <Transitions>
+                <DoubleTransition Property="Radius" Duration="0:0:0.35" Easing="SineEaseInOut" />
+            </Transitions>
+        </BlurEffect.Transitions>
+    </BlurEffect>
+    <BlurEffect x:Key="LyricBlurAbove" Radius="1.5">
+        <BlurEffect.Transitions>
+            <Transitions>
+                <DoubleTransition Property="Radius" Duration="0:0:0.35" Easing="SineEaseInOut" />
+            </Transitions>
+        </BlurEffect.Transitions>
+    </BlurEffect>
+    <BlurEffect x:Key="LyricBlurBelow1" Radius="1">
+        <BlurEffect.Transitions>
+            <Transitions>
+                <DoubleTransition Property="Radius" Duration="0:0:0.35" Easing="SineEaseInOut" />
+            </Transitions>
+        </BlurEffect.Transitions>
+    </BlurEffect>
+    <BlurEffect x:Key="LyricBlurBelow2" Radius="2.5">
+        <BlurEffect.Transitions>
+            <Transitions>
+                <DoubleTransition Property="Radius" Duration="0:0:0.35" Easing="SineEaseInOut" />
+            </Transitions>
+        </BlurEffect.Transitions>
+    </BlurEffect>
     </UserControl.Resources>
     <UserControl.Styles>
         <Style Selector="ListBox#LyricList">
@@ -119,11 +152,10 @@
                     <BrushTransition Property="Background" Duration="0:0:0.2" />
                 </Transitions>
             </Setter>
-            <!-- InteractiveLyricControl2.Default:未来较远歌词 40% + 5px 模糊 -->
+            <!-- InteractiveLyricControl2.Default:未来较远歌词 40% + 5px 模糊
+                 (共享实例,手动滚动暂停期由代码渐变 Radius,见资源区注释) -->
             <Setter Property="Opacity" Value="0.4" />
-            <Setter Property="Effect">
-                <BlurEffect Radius="5" />
-            </Setter>
+            <Setter Property="Effect" Value="{StaticResource LyricBlurFar}" />
             <!-- ⚠ 这里试过 CacheMode="BitmapCache"(把每行栅格化进中间位图复用),已撤回。
                  收益是真的:同轮 A/B 省 2.97~4.46% GPU(1920x1080,摘掉缓存那一档
                  16.55% vs 带上 13.43%)。但**副作用更大**:挂上缓存后,后续改 Effect
@@ -137,21 +169,15 @@
              下二句 BelowPresent2=0.6/2.5px；其余未来歌词沿用 Default。 -->
         <Style Selector="views|LyricView.detail ListBoxItem.above">
             <Setter Property="Opacity" Value="0.7" />
-            <Setter Property="Effect">
-                <BlurEffect Radius="1.5" />
-            </Setter>
+            <Setter Property="Effect" Value="{StaticResource LyricBlurAbove}" />
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem.below1">
             <Setter Property="Opacity" Value="0.8" />
-            <Setter Property="Effect">
-                <BlurEffect Radius="1" />
-            </Setter>
+            <Setter Property="Effect" Value="{StaticResource LyricBlurBelow1}" />
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem.below2">
             <Setter Property="Opacity" Value="0.6" />
-            <Setter Property="Effect">
-                <BlurEffect Radius="2.5" />
-            </Setter>
+            <Setter Property="Effect" Value="{StaticResource LyricBlurBelow2}" />
         </Style>
         <!-- 性能档「最佳性能」:整个歌词面板不挂模糊(设置里「性能与体验」选「最佳质量」才开)。
              为什么值得给这个开关:挂 Effect 的行都走"离屏层 + 图像过滤",而整窗每帧都在重画
@@ -161,6 +187,13 @@
              否则那三条会把模糊又加回来(ListBoxItem 无 CSS 特异性)。
              开关来自 LyricView.BlurEnabled —— 它往自身挂/摘 no-blur 类,见 LyricView.axaml.cs。 -->
         <Style Selector="views|LyricView.detail.no-blur ListBoxItem">
+            <Setter Property="Effect" Value="{x:Null}" />
+        </Style>
+        <!-- 手动滚动暂停期(第二阶段):半径已渐变到 0 后由代码挂上 blur-suspended 整档摘掉 Effect。
+             为什么不就停在半径 0:半径 0 仍让行走「离屏层 + 图像过滤」管线(见上面 selected 的注释),
+             暂停期最长 4 秒,必须真正置 null 才不白烧 GPU。
+             ⚠ 必须声明在上面四条 Effect 规则之后(同一优先级下后声明者生效)。 -->
+        <Style Selector="views|LyricView.detail.blur-suspended ListBoxItem">
             <Setter Property="Effect" Value="{x:Null}" />
         </Style>
         <Style Selector="views|LyricView.detail ListBoxItem:selected">
@@ -197,9 +230,14 @@
              压在真实那句上,就是用户报的"同一句歌词重复、重叠";模型塌成单个元素时则表现为"只剩当前句"。
              ⚠ 去掉 IsVisible 不会让空态变脏:没有歌词时列表本就是空的(自身 Background=Transparent、
              无边框 ⇒ 一个像素都不画),空态文字由下面那个 Message 覆盖层负责。
-             输入行为保持不变:`IsHitTestVisible` 跟随 `HasLyric`,与原来 `IsVisible=false` 时不可点等价。 -->
+             输入行为保持不变:`IsHitTestVisible` 跟随 `HasLyric`,与原来 `IsVisible=false` 时不可点等价。
+             ⚠ `AutoScrollToSelectedItem="False"` 是手动滚动暂停跟随(4 秒)的**前置条件**:
+             默认 true 时,选中项变化会由 **ListBox 自己** ScrollIntoView,完全绕过 LyricView 的
+             抑制逻辑(探针实测:滚轮打标生效、补间已掐,列表仍被框架拽回新句)。
+             居中滚动只允许由 OnSelectionChanged → Recenter 一条路径驱动。 -->
         <ListBox x:Name="LyricList" ItemsSource="{Binding Lines}"
                  SelectedIndex="{Binding CurrentIndex, Mode=OneWay}"
+                 AutoScrollToSelectedItem="False"
                  IsHitTestVisible="{Binding HasLyric}"
                  Background="Transparent" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"

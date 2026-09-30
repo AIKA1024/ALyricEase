@@ -326,6 +326,20 @@ public static class Program
             return;
         }
 
+        // 歌词手动滚动暂停跟随回归：滚轮打标 → 4 秒内切句不拉回，过期后恢复。
+        if (args.Length > 0 && args[0] == "--lyrscroll")
+        {
+            Environment.ExitCode = LyricUserScrollProbe.Run();
+            return;
+        }
+
+        // 歌词手动滚动模糊渐隐/渐显回归：共享 BlurEffect 半径渐变 + blur-suspended 摘 Effect。
+        if (args.Length > 0 && args[0] == "--lyrblur")
+        {
+            Environment.ExitCode = LyricUserScrollProbe.RunBlur();
+            return;
+        }
+
         // 播放进度条回归：60 FPS 渲染推进、拖动 seek 与 hover 气泡必须使用同一视觉坐标。
         if (args.Length > 0 && args[0] == "--player-progress")
         {

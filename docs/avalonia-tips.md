@@ -1566,3 +1566,65 @@ D 重载后 `8@0` 稳定 → 首次定位 `8~9@1888`、E 段稳定 ⇒ **`内容
 但跨次读数受机器上其它负载影响(本项目自己的教训:同构建跨次能差十几点)⇒ **"12.1.2 是否带来
 0.7% 的 GPU 代价"与"删掉 `CacheLength` 省了多少"都没结论**,要判就得另做同轮对照。本轮只有
 **轮内差**可信(模糊 −1.47%、面板 −2.31%)。
+
+## `AutoScrollToSelectedItem` 默认 true:框架会在选中变化时自己滚,应用侧抑制拦不住
+
+(2026-09-30,`--lyrscroll` 探针实证)
+
+**症状**:歌词面板"手动滚动后 4 秒暂停自动跟随"从未生效 —— 打标、抑制分支全走对了,
+下一句变化列表还是被拽回。拉回源头根本不在应用代码:`ListBox.AutoScrollToSelectedItem`
+**默认 true**(挂在 `SelectingItemsControl` 上),`SelectedIndex` 一变 ListBox 自己
+`ScrollIntoView`,绕过一切自定义滚动逻辑。
+
+**修法**:`LyricView.axaml` 的 LyricList 显式 `AutoScrollToSelectedItem="False"`,
+居中滚动只允许 `OnSelectionChanged → Recenter` 一条路径驱动(它自己会先 ScrollIntoView 物化
+容器再做 420ms 补间,不依赖框架那一下)。
+
+**教训**:在自绘滚动列表上,先数清**所有**会写 `ScrollViewer.Offset` 的路径 —— 应用补间、
+框架自动跟随、快照恢复(`DetailPageScrollController`)、`ScrollIntoView` —— 再谈抑制。
+"自己代码里没人拉"不等于"没人拉"。
+
+## 样式里的 Effect 是共享实例:运行时改它的属性 = 全部匹配行一起渐变
+
+(2026-10-01,`--lyrblur` 探针实证)
+
+`Style` Setter 里的 `<BlurEffect Radius="5"/>` 只创建**一个**实例,所有匹配该样式的控件引用的是
+同一个对象。由此得到一个便宜的"批量渐变"手法:把 Effect 抽成 `UserControl.Resources` 里的共享
+资源、样式用 `StaticResource` 引用,运行时只改共享实例的属性,全体行一起变。
+
+三个前提都成立(已验证):
+1. **`BlurEffect : Animatable`** ⇒ 可以在 XAML 里给它挂 `DoubleTransition`(Property="Radius"),
+   改一次目标值自动 0.35s 渐变;
+2. **改半径会重绘**:`Visual.EffectProperty` 注册在 `AffectsRender` 里,Effect 实现了
+   `IAffectsRender.Invalidated` 弱事件 ⇒ 共享实例 Radius 一变,每个引用它的 Visual 都 `InvalidateVisual`;
+3. **Composition 动画做不了这件事**:Composition 只能驱动合成器属性(Translation/Opacity/Scale 等),
+   Effect 在 Skia 元素渲染侧,没有暴露成合成器可动画属性。
+
+⚠ 两个坑:
+- **半径 0 ≠ 免费**:半径 0 的 Effect 仍走「离屏层 + 图像过滤」管线。渐变到 0 之后必须再挂一个
+  `Effect=x:Null` 的类(同优先级、声明在后)把 Effect 真正摘掉,长时间停留状态才不白烧 GPU;
+- **XML 注释里不能出现双连字符**(如探针名 `--lyrblur`),AVLN1001 "An XML comment cannot contain '--'"。
+
+## Effect 渐变:共享 BlurEffect 实例 + DoubleTransition,不是 Composition 动画
+
+(2026-10-01,`--lyrblur` 探针实证)
+
+**问题**:歌词"手动滚动时模糊要有动画地取消、4 秒后动画地恢复"。`Effect` 属性本身没有
+Transition 类型(WPF 也没有),Composition 动画只能驱动合成器属性(Translation/Opacity/Scale),
+`BlurEffect` 在 Skia 元素渲染侧、未暴露成合成器属性,Avalonia 也没有 EffectGraph ⇒ 只能在元素侧做。
+
+**机制**(三个前提都能立住):
+1. 样式 Setter 引用的对象是**共享实例** —— 把各模糊档位抽成 `UserControl.Resources` 里的
+   `BlurEffect` 资源,样式 `<Setter Property="Effect" Value="{StaticResource ...}"/>`,
+   全部匹配行引用同一个对象;改一个 `Radius` 全体生效。
+2. `BlurEffect` 是 `Animatable`,可以直接在 XAML 里挂 `<BlurEffect.Transitions><DoubleTransition .../>`,
+   属性值一变动画自动跑(改变目标值会从当前值续跑,连续打标不会跳变)。
+3. `Visual.EffectProperty` 注册在 `AffectsRender` 里,且 Effect 自身实现 `IAffectsRender.Invalidated`
+   弱事件 ⇒ 实例的 `Radius` 变化会自动让挂它的 Visual 重绘,不用手动 InvalidateVisual。
+
+**别忘了第二阶段**:半径 0 ≠ 免费 —— Effect 挂着(哪怕半径 0)就走「离屏层 + 图像过滤」管线。
+渐变到 0 之后要用类把 Effect 真正置 `x:Null`(本项目 `blur-suspended` / `no-blur` 两兄弟);
+恢复时先摘类(共享实例以半径 0 重新挂上)再让 Transition 把半径渐回档位值,即得渐显。
+
+**注意**:XML 注释里不能出现 `--`(探针名写成 `lyrblur`,别带横线,AVLN1001);
+判"行为对不对"先证伪探针(打印了过期变量 → 假失败),诊断打点看 gen/定时器时序最快。

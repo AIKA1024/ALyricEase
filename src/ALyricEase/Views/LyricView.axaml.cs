@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ALyricEase.Models;
@@ -20,6 +21,8 @@ public partial class LyricView : UserControl
     /// <summary>
     /// 手动滚动(滚轮/滚动条拖拽/触摸平移)后自动跟随的暂停时长:暂停期只高亮不拉回,
     /// 到点后的下一句变化恢复跟随。修"滚到一半被下一句拉回去"(2026-09-23)。
+    /// ⚠ 依赖 XAML 侧 <c>AutoScrollToSelectedItem="False"</c>:默认 true 时 ListBox 会在
+    /// 选中变化时自己 ScrollIntoView,这条抑制拦不住框架的拉回(--lyrscroll 实测复现,2026-09-30 修)。
     /// </summary>
     private const long AutoFollowPauseMs = 4000;
     private long _lastUserScrollTimestamp;
@@ -232,11 +235,95 @@ public partial class LyricView : UserControl
     {
         _lastUserScrollTimestamp = Environment.TickCount64;
         _scrollAnimationVersion++;
+        SuspendBlurForUserScroll();
     }
 
-    /// <summary>把目标行带入视口,再在下次布局后做居中补间(仅在有效可见时调用)。</summary>
+    // ── 手动滚动期的模糊渐隐/渐显(2026-10-01)─────────────────────────────
+    //
+    // 找歌词时逐行模糊碍事 ⇒ 手动滚动期间把模糊"慢慢"取消,自动跟随**真正拉回**时再"慢慢"模糊回去。
+    // 机制:detail 的四个模糊档位是 UserControl.Resources 里的**共享** BlurEffect
+    // (样式 Setter 引用同一实例,见 LyricView.axaml 资源区注释)——只改它们的 Radius,
+    // 所有挂着的行一起渐变,Transitions(0.35s)负责动画。
+    //
+    // 两阶段摘除:① Radius 渐变到 0;② 350ms 后挂 blur-suspended 类把 Effect 真正置 null
+    // (半径 0 仍走「离屏层 + 图像过滤」管线,不置 null 就是白烧 GPU)。
+    // 恢复时机:**不在固定 4 秒** —— 4 秒只是自动跟随解除抑制的门槛,到点后若还没切句,
+    // 列表本来就没动,模糊保持摘除;等下一次切句真正拉回(Recenter)才把模糊渐变回去。
+    // _blurGeneration 防"滚动前安排的渐隐定时器把已恢复的状态又摘掉":每次滚动 +1,定时器校验。
+
+    private const double BlurRadiusFar = 5;
+    private const double BlurRadiusAbove = 1.5;
+    private const double BlurRadiusBelow1 = 1;
+    private const double BlurRadiusBelow2 = 2.5;
+    private static readonly TimeSpan BlurFadeDuration = TimeSpan.FromMilliseconds(350);
+
+    private BlurEffect? _blurFar;
+    private BlurEffect? _blurAbove;
+    private BlurEffect? _blurBelow1;
+    private BlurEffect? _blurBelow2;
+    private int _blurGeneration;
+    private bool _blurSuspended;
+
+    /// <summary>手动滚动开始:模糊渐隐(性能档/非 detail 本来就没模糊,无事发生)。</summary>
+    private void SuspendBlurForUserScroll()
+    {
+        if (!BlurEnabled || !Classes.Contains("detail")) return;
+        EnsureBlurResources();
+        if (_blurFar is null || _blurAbove is null || _blurBelow1 is null || _blurBelow2 is null) return;
+
+        _blurSuspended = true;
+        var gen = ++_blurGeneration;
+        SetSharedBlurRadius(0);
+
+        // 渐变完成后整档摘 Effect(半径 0 ≠ 免费,见类注释)。generation 校验:期间又滚动则新轮接管。
+        DispatcherTimer.RunOnce(
+            () =>
+            {
+                if (gen != _blurGeneration) return;
+                Classes.Set("blur-suspended", true);
+            },
+            BlurFadeDuration + TimeSpan.FromMilliseconds(50));
+
+        // 恢复不在固定 4 秒:由 Recenter(自动跟随真正拉回)触发,见 ResumeBlurFromUserScroll。
+    }
+
+    /// <summary>自动跟随拉回(Recenter)时把模糊渐变回去:先摘 blur-suspended
+    /// (共享实例以 Radius=0 重新挂上),再把半径渐回档位值 ⇒ 渐显而非跳变。</summary>
+    private void ResumeBlurFromUserScroll()
+    {
+        _blurSuspended = false;
+        Classes.Set("blur-suspended", false);
+        if (!BlurEnabled || !Classes.Contains("detail")) return;
+        EnsureBlurResources();
+        if (_blurFar is null || _blurAbove is null || _blurBelow1 is null || _blurBelow2 is null) return;
+
+        SetSharedBlurRadius(null);
+    }
+
+    /// <summary>factor=null = 恢复各档位标称值;0 = 全部渐隐到无。</summary>
+    private void SetSharedBlurRadius(double? factor)
+    {
+        if (_blurFar is not null) _blurFar.Radius = factor is null ? BlurRadiusFar : factor.Value;
+        if (_blurAbove is not null) _blurAbove.Radius = factor is null ? BlurRadiusAbove : factor.Value;
+        if (_blurBelow1 is not null) _blurBelow1.Radius = factor is null ? BlurRadiusBelow1 : factor.Value;
+        if (_blurBelow2 is not null) _blurBelow2.Radius = factor is null ? BlurRadiusBelow2 : factor.Value;
+    }
+
+    private void EnsureBlurResources()
+    {
+        if (_blurFar is not null) return;
+        _blurFar = Resources["LyricBlurFar"] as BlurEffect;
+        _blurAbove = Resources["LyricBlurAbove"] as BlurEffect;
+        _blurBelow1 = Resources["LyricBlurBelow1"] as BlurEffect;
+        _blurBelow2 = Resources["LyricBlurBelow2"] as BlurEffect;
+    }
+
+
+    /// <summary>把目标行带入视口,再在下次布局后做居中补间(仅在有效可见时调用)。
+    /// 也是手动滚动模糊的恢复点:只有这里代表"列表真的被拉回去跟歌词了"。</summary>
     private void Recenter(int index)
     {
+        if (_blurSuspended) ResumeBlurFromUserScroll();
         LyricList.ScrollIntoView(index);
         var version = ++_scrollAnimationVersion;
         Dispatcher.UIThread.Post(() => AnimateSelectedToCenter(index, version), DispatcherPriority.Loaded);

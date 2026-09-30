@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -16,19 +17,23 @@ public sealed record UserTasteRowViewModel(PlaylistItemViewModel Playlist, bool 
 
 /// <summary>用户页(原版 UWP 结构):英雄卡(头像采样背景/昵称/关注粉丝)+ 三个分组
 /// —— 音乐品味(喜欢的音乐/年度歌单,图标瓦片行)、参与创作的歌单、收藏的歌单(封面行)。
-/// uid=0 表示"自己"(按登录态解析);网易云歌单详情页的创建者按钮带创建者 id 跳入。
-/// 数据轻量,导航快照只记 uid/昵称/滚动位,恢复时重新拉取。</summary>
+/// 双音源:网易云 uid=0 表示"自己"(按登录态解析),创建者按钮带创建者 id 跳入;
+/// QQ 仅"自己"(QQ 歌单创建者恒为登录账号,协议无他人主页跳转入口),按登录态解析。
+/// 数据轻量,导航快照只记 source/uid/昵称/滚动位,恢复时重新拉取。</summary>
 public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 {
     private readonly NetEaseApiClient _api;
+    private readonly QQMusicApiClient _qqApi;
     private readonly PlayerViewModel _player;
+    private MusicSource _source = MusicSource.NetEase;
     private long _userId;
     private CancellationTokenSource? _loadCancellation;
     private int _loadGeneration;
 
-    public UserProfileViewModel(NetEaseApiClient api, PlayerViewModel player)
+    public UserProfileViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player)
     {
         _api = api;
+        _qqApi = qqApi;
         _player = player;
     }
 
@@ -79,6 +84,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
     /// <summary>打开用户页:uid=0 视为"自己"(按登录态解析;未登录时页面停在空态)。</summary>
     public async Task LoadAsync(long uid)
     {
+        _source = MusicSource.NetEase;
         var (generation, ct) = BeginLoad();
         ClearContent();
         try
@@ -149,6 +155,50 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         }
     }
 
+    /// <summary>打开 QQ 自己的用户页:头像/昵称/等级走账号摘要,歌单与侧栏同源。
+    /// 分组口径:我喜欢(dirId=201)进音乐品味行;有 dirId = 自建;无 dirId = 收藏的他人歌单。
+    /// 关注/粉丝 QQ 侧无轻量协议,保持 0(页面照常渲染)。</summary>
+    public async Task LoadQqAsync()
+    {
+        _source = MusicSource.QQ;
+        var (generation, ct) = BeginLoad();
+        ClearContent();
+        try
+        {
+            var summary = await _qqApi.GetAccountSummaryAsync(ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            _userId = summary.UserId;
+            Nickname = summary.Nickname;
+            AvatarUrl = summary.AvatarUrl;
+            Level = summary.AccountLevel; // QQ 音乐等级,0 级徽标自动隐藏
+
+            var playlists = await _qqApi.GetUserPlaylistsAsync(ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            foreach (var p in playlists)
+            {
+                var pvm = new PlaylistItemViewModel(p);
+                if (p.DirId == QQMusicApiClient.LikedDirId)
+                    TasteRows.Add(new UserTasteRowViewModel(pvm, ShowHeart: true));
+                else if (p.DirId != 0)
+                    CreatedPlaylists.Add(pvm);
+                else
+                    CollectedPlaylists.Add(pvm);
+            }
+            HasTaste = TasteRows.Count > 0;
+            HasCreated = CreatedPlaylists.Count > 0;
+            HasCollected = CollectedPlaylists.Count > 0;
+            IsLoading = false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            // 网络失败静默:停在空态,不崩
+            if (IsCurrentLoad(generation, ct)) IsLoading = false;
+        }
+    }
+
     private void ClearContent()
     {
         Nickname = "";
@@ -174,7 +224,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         var snapshot = new DetailNavigationSnapshot(
             Guid.NewGuid().ToString("N"),
             DetailPageKind.User,
-            MusicSource.NetEase,
+            _source,
             _userId,
             "",
             Nickname,
@@ -191,13 +241,17 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         CancelCurrentLoad();
         ClearContent();
         _userId = 0;
+        _source = MusicSource.NetEase;
         ResetPageScrollState();
     }
 
     internal async Task RestoreNavigationSnapshotAsync(DetailNavigationSnapshot snapshot)
     {
-        // 用户页数据轻量:不落音乐缓存,恢复时按 uid 重新拉取
-        await LoadAsync(snapshot.Id);
+        // 用户页数据轻量:不落音乐缓存,恢复时按 source/uid 重新拉取
+        if (snapshot.Source == MusicSource.QQ)
+            await LoadQqAsync();
+        else
+            await LoadAsync(snapshot.Id);
         RestorePageScrollState(snapshot.ScrollOffset);
     }
 

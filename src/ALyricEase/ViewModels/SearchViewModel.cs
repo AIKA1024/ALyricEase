@@ -252,6 +252,7 @@ public sealed partial class SearchViewModel : ViewModelBase
             Name = item.Item.Name,
             CoverUrl = item.Item.CoverUrl,
             TrackCount = item.Item.TrackCount,
+            CreatorName = item.Item.Creator, // 真实创建者;歌单详情页创建者芯片显示它而非登录昵称
             Source = item.Item.Source,
         };
         if (item.IsQq)

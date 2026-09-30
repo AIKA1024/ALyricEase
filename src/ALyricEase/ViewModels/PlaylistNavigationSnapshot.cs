@@ -23,4 +23,6 @@ internal sealed record PlaylistNavigationSnapshot(
     int SelectedSortIndex,
     string SearchText,
     bool IsFilterExpanded,
-    double ScrollOffset);
+    double ScrollOffset,
+    // 默认 0 兼容旧构造点(Headless 探针):0 = 创建者不可跳转,与生产语义一致
+    long CreatorId = 0);

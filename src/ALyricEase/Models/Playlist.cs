@@ -25,6 +25,9 @@ public sealed class Playlist
     /// 播放条“添加到歌单”只展示可写歌单，避免点选后才由服务端拒绝。</summary>
     public bool CanAddTracks { get; init; }
 
+    /// <summary>创建者昵称(搜索结果等他人歌单场景;空 = 当前登录账号自己的歌单)。</summary>
+    public string CreatorName { get; init; } = "";
+
     /// <summary>累计播放次数(用户页卡片播放量角标用;仅部分接口返回,默认 0)。</summary>
     public double PlayCount { get; init; }
 }

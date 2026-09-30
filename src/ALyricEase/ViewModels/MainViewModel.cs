@@ -75,7 +75,12 @@ public sealed partial class MainViewModel : ViewModelBase
         // 直接 LoadAsync 不走 OpenUser 命令 —— 不进返回历史,启动即"首页",无页可返回。
         // 未登录(账号页启动)不拉取:uid=0 无意义,登录成功后由用户自行进入用户页。
         if (_activePage == "User")
-            _ = UserProfile.LoadAsync(0);
+        {
+            // 启动页数据:自己的用户页,按本地凭证音源解析(有网易云凭证走网易云;
+            // 仅 QQ 凭证走 QQ 用户页 —— 旧逻辑恒走网易云,QQ 单独登录的用户启动只见空页)。
+            // 直接 Load 不走 OpenUser 命令 —— 不进返回历史,启动即"首页",无页可返回。
+            _ = Playlist.HasNetEaseCredential ? UserProfile.LoadAsync(0) : UserProfile.LoadQqAsync();
+        }
         else
             IsLoginDialogOpen = true; // 无账号:启动即呈现登录页
         // 登录恢复完成后"自动打开我喜欢的音乐"会切走 ActivePage —— 仅当用户真的停在收藏页
@@ -807,6 +812,17 @@ public sealed partial class MainViewModel : ViewModelBase
         PreserveDetailBeforeReplacement("User", UserProfile.HasRetainedPageData);
         ActivePage = "User";
         try { await UserProfile.LoadAsync(uid ?? 0); }
+        catch { /* 网络失败:停留在用户页空内容 */ }
+    }
+
+    /// <summary>打开 QQ 自己的用户页(QQ 歌单创建者按钮):QQ 歌单创建者恒为登录账号,
+    /// 协议无他人主页跳转入口,恒解析"自己"。与网易云用户页共用同一视图。</summary>
+    [RelayCommand]
+    private async Task OpenQqUserAsync()
+    {
+        PreserveDetailBeforeReplacement("User", UserProfile.HasRetainedPageData);
+        ActivePage = "User";
+        try { await UserProfile.LoadQqAsync(); }
         catch { /* 网络失败:停留在用户页空内容 */ }
     }
 

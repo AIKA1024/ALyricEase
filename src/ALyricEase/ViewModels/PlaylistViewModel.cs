@@ -174,20 +174,29 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>歌单详情页 hero 显示的创建者:网易云歌单 = 网易云昵称,QQ 歌单 = QQ 昵称。</summary>
     [ObservableProperty] private string _creatorName = "";
 
-    /// <summary>当前展示歌单的创建者用户 id(v6 接口返回;0 = 未知/QQ 歌单,创建者按钮禁用)。</summary>
+    /// <summary>当前展示歌单的创建者用户 id(v6 接口返回;0 = 未知,QQ 歌单恒 0 —— 创建者是登录账号自己)。</summary>
     [ObservableProperty] private long _creatorId;
 
-    /// <summary>创建者按钮可点(有可跳转的用户 id)。</summary>
-    public bool CanOpenCreator => CreatorId > 0;
+    /// <summary>创建者按钮可点:网易云歌单有创建者 id;QQ 仅"自己的歌单"(有资产目录 dirId,
+    /// 创建者 = 登录账号)可跳 QQ 用户页 —— 搜索结果等他人歌单没有跳转协议入口,禁用。</summary>
+    public bool CanOpenCreator => CreatorId > 0
+        || (SelectedPlaylist?.Playlist is { Source: MusicSource.QQ } p && p.DirId != 0);
 
     partial void OnCreatorIdChanged(long value) => OnPropertyChanged(nameof(CanOpenCreator));
 
-    /// <summary>创建者按钮 → 用户页(经 MainViewModel 统一导航;无头/探针环境静默)。</summary>
+    /// <summary>创建者按钮 → 用户页:QQ 歌单走 QQ 用户页(自己),网易云按创建者 id 进他人主页。
+    /// 经 MainViewModel 统一导航;无头/探针环境静默。</summary>
     [RelayCommand]
     private void OpenCreator()
     {
-        if (CreatorId <= 0) return;
-        try { ServiceLocator.Get<MainViewModel>().OpenUserCommand.Execute(CreatorId); }
+        try
+        {
+            var main = ServiceLocator.Get<MainViewModel>();
+            if (SelectedPlaylist?.Playlist.Source == MusicSource.QQ)
+                main.OpenQqUserCommand.Execute(null);
+            else if (CreatorId > 0)
+                main.OpenUserCommand.Execute(CreatorId);
+        }
         catch { /* SelfTest/Headless 等无宿主环境 */ }
     }
 
@@ -315,6 +324,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 完全没有则启动即打开账号页+登录弹层。</summary>
     public bool HasStoredCredentials =>
         _cookie.MusicU is { Length: > 0 } || _cookie.QQCookieRaw is { Length: > 0 };
+
+    /// <summary>本地是否存有网易云登录凭证(启动页选用户页音源用;与 HasStoredCredentials 同口径)。</summary>
+    public bool HasNetEaseCredential => _cookie.MusicU is { Length: > 0 };
 
     /// <summary>登录后保留歌单页的“请选择”空态；未登录时只要从推荐/搜索打开了公共歌单也应显示详情。</summary>
     public bool ShowPlaylistContent => HasAnyLogin || SelectedPlaylist is not null;
@@ -463,6 +475,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(ShowPlaylistContent));
         OnPropertyChanged(nameof(CanShareCurrentPlaylist));
+        OnPropertyChanged(nameof(CanOpenCreator)); // 按钮可用性随当前歌单音源变化
     }
 
     /// <summary>进入页面时调用:恢复本地登录态(网易云拉资料,不阻塞 UI,失败静默),QQ 侧由 EnsureQqLoadedAsync 处理。</summary>
@@ -928,6 +941,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         PlaylistTitle = "";
         CreatorName = "";
+        CreatorId = 0;
         SelectedPlaylist = null;
         ClearTrackRows();
         Filters.Reset();
@@ -1072,7 +1086,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Filters.SelectedSortIndex,
             Filters.SearchText,
             Filters.IsExpanded,
-            _pageScrollOffset);
+            _pageScrollOffset,
+            CreatorId: CreatorId);
 
         var queued = new HashSet<Song>(_queueSongs);
         var tracks = _allTrackRows.Select(row => new NavigationPageCacheTrack(
@@ -1126,6 +1141,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         SelectedPlaylist = null;
         PlaylistTitle = "";
         CreatorName = "";
+        CreatorId = 0;
         Message = null;
         Filters.Reset();
         _pageScrollOffset = 0;
@@ -1149,6 +1165,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         Filters.Reset();
         PlaylistTitle = snapshot.PlaylistTitle;
         CreatorName = snapshot.CreatorName;
+        CreatorId = snapshot.CreatorId;
         _trackIds = [];
         _known.Clear();
         _queueSongs.Clear();
@@ -1425,7 +1442,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         ClearTrackRows();
         Filters.Reset();
         PlaylistTitle = playlist.Name;
-        CreatorName = QqUserName;
+        // 创建者显示:搜索结果等他人歌单带真实创建者名(模型字段,非空);自己侧栏的歌单为空 → 登录昵称兜底
+        CreatorName = playlist.Playlist.CreatorName.Length > 0 ? playlist.Playlist.CreatorName : QqUserName;
+        CreatorId = 0; // QQ 他人歌单无跳转协议入口(QQ 用户页仅支持"自己"),创建者芯片按 DirId 判定可用性
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
@@ -1491,6 +1510,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         Filters.Reset();
         PlaylistTitle = aggregate.Name;
         CreatorName = $"聚合歌单 · {aggregate.Members.Count} 个歌单";
+        CreatorId = 0; // 聚合歌单无单一创建者
         _trackIds = new List<long>();
         _known.Clear();
         _queueSongs.Clear();
@@ -2105,6 +2125,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         SelectedPlaylist = null;
         PlaylistTitle = "";
         CreatorName = "";
+        CreatorId = 0;
         ClearTrackRows();
         Filters.Reset();
         _trackIds = new List<long>();
@@ -2163,7 +2184,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             // 也不得自动打开"我喜欢的音乐" —— 否则会与该歌单的加载代次竞争,
             // 把用户点开的歌单顶掉、创建者显示成自己(实测)。
             if (SelectedPlaylist is null)
+            {
                 CreatorName = profile.Nickname;
+                CreatorId = profile.UserId;
+            }
             AvatarUrl = profile.AvatarUrl;
 
             var items = await _api.GetUserPlaylistItemsAsync(profile.UserId);

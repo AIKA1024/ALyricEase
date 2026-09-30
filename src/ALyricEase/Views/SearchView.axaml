@@ -241,6 +241,9 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Padding" Value="6" />
+            <!-- Avalonia 12 Fluent2 把 Button 默认 HorizontalAlignment 改成 Left(缩成内容宽),
+                 整行可点行必须显式拉伸;HorizontalContentAlignment 同理不能依赖默认值 -->
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         </Style>
         <Style Selector="Button.result-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">

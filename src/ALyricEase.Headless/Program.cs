@@ -592,6 +592,13 @@ public static class Program
             return;
         }
 
+        // 行拉伸排查(不触网):搜索结果歌单行 + 添加到歌单弹窗行,输出 PNG 供人工核对
+        if (args.Length > 0 && args[0] == "--stretch")
+        {
+            StretchProbe.Run();
+            return;
+        }
+
         // 播放条歌曲菜单结构自查(不触网):菜单分组、多歌手子菜单、来源与公开链接
         if (args.Length > 0 && args[0] == "--playerbarmenu")
         {

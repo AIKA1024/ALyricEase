@@ -126,6 +126,9 @@ public partial class HeadlessApp : Application
         services.AddSingleton<RecentPlaybackViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<AccountViewModel>();
+        // 用户页/收藏页 VM:MainViewModel 构造注入(此前缺失,凡取 MainViewModel 的探针都会解析失败)
+        services.AddSingleton<UserProfileViewModel>();
+        services.AddSingleton<CollectedPlaylistsViewModel>();
         services.AddSingleton<MainViewModel>();
         ServiceLocator.Provider = services.BuildServiceProvider();
         CoverImagePipeline.Configure(ServiceLocator.Get<MusicCacheService>());

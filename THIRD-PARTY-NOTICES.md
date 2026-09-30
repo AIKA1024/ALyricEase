@@ -34,3 +34,14 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## QQ Music API protocol reference
+
+The QQ Music API client `src/ALyricEase/Services/QQMusic/QQMusicApiClient.cs`
+is a C# re-implementation whose upstream protocol (endpoints, `musicu.fcg`
+module layout, plain-text signed transport) references
+[L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi),
+licensed under the GNU General Public License v3.0.
+No source code from the original project is included; this notice is provided
+as a courtesy attribution of the protocol reference. The upstream license text
+is available at the repository linked above.

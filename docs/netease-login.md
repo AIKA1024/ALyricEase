@@ -32,3 +32,14 @@
 不要拿 `EncryptEapi` 的输出直接去比对。
 
 回归线 `--neproxy` 覆盖代理登录这条链路。
+
+## 3. QQ 音乐 ag-1 写通道:Add 必须带 Android 客户端身份 comm(2026-09-30)
+
+红心收藏(PlaylistDetailWrite/**AddSonglist**)与向自有歌单加歌必须用 **Android comm**
+(ct=11/cv=14090008 + authst=musickey + tmeLoginType/qq,见 QQMusicApiClient.WriteAndroidClientComm);
+web comm(cv=4747474/uin+g_tk)打 Add 一律被拒 —— 服务端回 80105 或 500026(随轮次波动),
+而 **80105 会被 UI 误判成登录过期弹重登**(ShouldPromptRelogin)。
+DelSonglist 对两种 comm 都放行;PlaylistBaseWrite/AddPlaylist(创建歌单)也不受限。
+参数形状(dirId/tid/bFmtUtf8、songMid 有无、布尔 vs 整型)实测全部无关 —— 别往参数方向排查。
+坑:写操作落库有秒级延迟,Add 后立刻 Del 回 2001(暂不存在),不是错误,延迟重试即可。
+回归线 --qqadd(分变体诊断 + 生产路径端到端 + 终态校验);参考实现 L-1124/QQMusicApi(GPL-3.0)。

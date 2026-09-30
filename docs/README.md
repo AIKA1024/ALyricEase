@@ -87,8 +87,10 @@
 [**`icon-fonts.md`**](icon-fonts.md) —— 三套图标字体的来源/分工/码位映射、`Icons.axaml` 之外的码位字面量(改码位必须同步)、
 维护规则(踩坑记录)、发布期子集化(TODO)、验证方法。
 
-仓库根的 [**`THIRD-PARTY-NOTICES.md`**](../THIRD-PARTY-NOTICES.md) —— 第三方许可声明(`AsyncImageLoader.Avalonia`、
-QQ 音乐 native 扫码登录协议改编自 `qq-music-api`)。新增/替换第三方依赖或改编外部实现时**同步这里**。
+仓库根的 [**`THIRD-PARTY-NOTICES.md`**](../THIRD-PARTY-NOTICES.md) —— 第三方许可声明(`AsyncImageLoader.Avalonia`;
+QQ 音乐 native 扫码登录协议改编自 `yakult-green-tea/qq-music-api`(MIT);
+QQ 音乐 API 客户端(`QQMusicApiClient`)上游协议参考 `L-1124/QQMusicApi`(GPL-3.0))。
+新增/替换第三方依赖或改编外部实现时**同步这里**。
 
 ---
 

@@ -546,6 +546,14 @@ public static class Program
             return;
         }
 
+        // QQ 收藏(AddSonglist)被拒分变体诊断:固定曲目逐个参数形状打 Add,打印真实错误码
+        if (args.Length > 0 && args[0] == "--qqadd")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqAddDiagProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 音乐歌单重命名逆向:盲试 PlaylistBaseWrite 下的候选 method(建→改名→复检→删除还原)
         if (args.Length > 0 && args[0] == "--qqrename")
         {

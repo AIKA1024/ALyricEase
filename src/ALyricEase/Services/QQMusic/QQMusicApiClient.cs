@@ -9,7 +9,7 @@ using ALyricEase.Services.NetEase;
 namespace ALyricEase.Services.QQMusic;
 
 /// <summary>QQ 音乐 API 客户端:u.y.qq.com musicu.fcg(JSON POST,一次一模块)+ c.y.qq.com fcg 明文 GET。
-/// 上游协议参考开源 qq-music-api(Koa 版)。支持 Cookie 登录(网页版 QQ 音乐的 uin + qqmusic_key,
+/// 上游协议参考开源 L-1124/QQMusicApi(GPL-3.0,Python)。支持 Cookie 登录(网页版 QQ 音乐的 uin + qqmusic_key,
 /// SetCookie 粘贴整段 cookie 即可):登录后 VIP/320k 可播;匿名仅免费歌 128k。失败抛 ApiException。</summary>
 public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 {
@@ -36,6 +36,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     /// <summary>登录密钥 qqmusic_key 的值(vkey 请求 authst 参数 + Cookie 头)。</summary>
     private string _authst = "";
+
+    /// <summary>Android 写通道(WriteAndroidClientComm)的合成设备标识(会话内随机,服务端不校验)。</summary>
+    private readonly string _androidUdid = Guid.NewGuid().ToString("N");
 
     /// <summary>登录态下随请求发送的完整 Cookie 头原文。</summary>
     private string _cookieHeader = "";
@@ -753,6 +756,17 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return _likedLoadTask = LoadLikedIdsAsync(ct);
     }
 
+    /// <summary>探针专用(--qqadd 终态校验):丢弃已喜欢集合缓存并重载,返回最新集合
+    /// (null = 未登录/未加载)。internal 仅供 Headless 诊断探针,生产路径勿用。</summary>
+    internal async Task<IReadOnlyCollection<long>?> ReloadLikedIdsForProbeAsync()
+    {
+        if (!IsLoggedIn) return null;
+        _likedIds = null;
+        _likedLoading = false;
+        await EnsureLikedIdsAsync().ConfigureAwait(false);
+        return _likedIds;
+    }
+
     private async Task LoadLikedIdsAsync(CancellationToken ct)
     {
         var generation = _accountGeneration;
@@ -795,7 +809,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>切换红心:返回切换后的状态;失败抛 ApiException(调用方回滚 UI)。
     /// 协议参考开源 multiPlatformMusicApi 的 qqmusic like 模块:music.musicasset.PlaylistDetailWrite
     /// 的 AddSonglist/DelSonglist,param 为 { dirId:201("我喜欢"), v_songInfo:[{songType:0,songId}] }。
-    /// 注意 QQ 的红心不是"加入某个用户歌单",而是音乐资产的固定喜欢目录操作:
+    /// 传输均为 ag-1 加密通道;Add 需 Android 客户端身份 comm(见 WriteAndroidClientComm),
+    /// Del 用 web comm 即可。注意 QQ 的红心不是"加入某个用户歌单",而是音乐资产的固定喜欢目录操作:
     /// 写目标恒为 dirId=201,"我喜欢"歌单 tid 只用于读取已喜欢集合,绝不能当写目标
     /// (AddSonglist 按资产目录定位,传 tid 会指向不存在的目录或误写其他歌单)。</summary>
     public async Task<bool> LikeToggleAsync(long id, CancellationToken ct = default)
@@ -822,7 +837,10 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             if (mid.Length > 0) p.WriteString("songMid", mid);
             p.WriteEndObject();
             p.WriteEndArray();
-        }, target ? "红心收藏" : "红心取消", ct).ConfigureAwait(false);
+        }, target ? "红心收藏" : "红心取消", ct,
+            // 2026-09-30 实测:收藏(AddSonglist)必须 Android 客户端身份 comm,web comm(uin+g_tk)
+            // 一律被拒(80105/500026)且被 UI 误判为登录过期;取消(DelSonglist)宽松,维持 web comm。
+            writeComm: target ? WriteAndroidClientComm : null).ConfigureAwait(false);
 
         _likedIds ??= new HashSet<long>();
         if (target) _likedIds.Add(id); else _likedIds.Remove(id);
@@ -884,7 +902,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             if (song.Mid.Length > 0) p.WriteString("songMid", song.Mid);
             p.WriteEndObject();
             p.WriteEndArray();
-        }, "添加到歌单", ct);
+        }, "添加到歌单", ct, writeComm: WriteAndroidClientComm);
     }
 
     /// <summary>从当前账号拥有的 QQ 音乐资产歌单移除单曲。与 AddSonglist 同通道同参数形状,
@@ -966,12 +984,15 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// AES-128-GCM 加密 → zzcSign 派生签名 → POST u6.y.qq.com/cgi-bin/musics.fcg?encoding=ag-1&sign=...;
     /// 响应体按固定 21B 密钥循环 XOR 解出明文 JSON。业务码非 0 抛 ApiException(带 actionText 与
     /// 服务端文案);成功返回解密后的响应文档(调用方负责释放)。
-    /// internal 而非 private:逆向探针(如 --qqrename)需要以任意 module/method 打这条通道。</summary>
+    /// internal 而非 private:逆向探针(如 --qqrename)需要以任意 module/method 打这条通道。
+    /// sendCookie=false 供诊断:上游 L-1124/QQMusicApi 的 CGI 一律不带 Cookie,仅靠 comm
+    /// uin+g_tk 鉴权 —— 用于区分"Cookie 里的 key 被写接口拒"还是"凭证整体无写权限"。</summary>
     internal async Task<JsonDocument> SecureAssetWriteAsync(string module, string method,
-        Action<Utf8JsonWriter> writeParam, string actionText, CancellationToken ct)
+        Action<Utf8JsonWriter> writeParam, string actionText, CancellationToken ct,
+        bool sendCookie = true, Action<Utf8JsonWriter>? writeComm = null)
     {
         // 1) 明文 JSON:comm 全量字段(参考实现) + req_0(module/method/param)
-        var dataStr = BuildAg1Json(module, method, writeParam).Replace("\r", "").Replace("\n", "");
+        var dataStr = BuildAg1Json(module, method, writeParam, writeComm).Replace("\r", "").Replace("\n", "");
         var sign = BuildZzcSign(dataStr);
 
         // 2) AES-128-GCM 加密 → base64(IV||CT||TAG)
@@ -981,7 +1002,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         req.Headers.TryAddWithoutValidation("Accept", "application/octet-stream");
         req.Headers.TryAddWithoutValidation("Content-Type", "text/plain");
         req.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/");
-        if (IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
+        if (sendCookie && IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
         req.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(body));
 
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
@@ -1010,18 +1031,23 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>明文签名写通道(参考 L-1124/QQMusicApi 的实现):与 ag-1 同 body(comm + req_0)、
     /// 同 zzcSign,但**不加密**,POST u.y.qq.com/cgi-bin/musics.fcg?_=&amp;sign=...,响应为普通 JSON。
     /// 2026-09 引入:ag-1 加密通道对刷新补发的 key 一律回 80105(校验/读接口全通过),此通道用于
-    /// 对照验证"是加密传输层被拒还是凭证本身被拒"。仅供诊断探针调用。</summary>
+    /// 对照验证"是加密传输层被拒还是凭证本身被拒"。仅供诊断探针调用。
+    /// sign=false 时改为 POST musicu.fcg 且不带 sign(上游 add_songs 的实际形状);
+    /// sendCookie=false 复刻上游"CGI 不带 Cookie、仅 comm uin+g_tk 鉴权"的形状。</summary>
     internal async Task<JsonDocument> ProbeSignedPlaintextWriteAsync(string module, string method,
-        Action<Utf8JsonWriter> writeParam, CancellationToken ct)
+        Action<Utf8JsonWriter> writeParam, CancellationToken ct, bool sign = true, bool sendCookie = true)
     {
         var dataStr = BuildAg1Json(module, method, writeParam).Replace("\r", "").Replace("\n", "");
-        var sign = BuildZzcSign(dataStr);
 
-        using var req = new HttpRequestMessage(HttpMethod.Post,
-            $"https://u.y.qq.com/cgi-bin/musics.fcg?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}&sign={sign}");
+        var url = sign
+            ? $"https://u.y.qq.com/cgi-bin/musics.fcg?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}&sign={BuildZzcSign(dataStr)}"
+            : $"https://u.y.qq.com/cgi-bin/musicu.fcg?_={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        using var req = new HttpRequestMessage(HttpMethod.Post, url);
         req.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         req.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/");
-        if (IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
+        req.Headers.TryAddWithoutValidation("User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        if (sendCookie && IsLoggedIn) req.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
         req.Content = new StringContent(dataStr, Encoding.UTF8, "application/json");
 
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
@@ -1056,24 +1082,53 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// 红心为 dirId + tid(恒 0)+ bFmtUtf8:true(必须保留布尔原形,服务端按真布尔校验,
     /// 缺失/整型会回 80105/500026)+ v_songInfo;songMid 尽量带上:服务端对部分资产目录
     /// 要求 mid,否则回 500026。</summary>
-    private string BuildAg1Json(string module, string method, Action<Utf8JsonWriter> writeParam)
+    /// <summary>Android 客户端身份 comm(ag-1 写请求用):PlaylistDetailWrite/AddSonglist 实测必须
+    /// (2026-09-30 探针 --qqadd)—— web comm(uin+g_tk)打 Add 一律被拒(80105/500026),
+    /// Android comm(ct=11/cv=14090008 + authst=musickey + tmeLoginType/qq)code=0;
+    /// DelSonglist 对两种 comm 都放行,AddPlaylist 亦不受限。形状对齐上游 L-1124/QQMusicApi
+    /// VersionPolicy.build_comm(ANDROID);设备类字段合成(服务端不校验),uid/sid/QIMEI 省略。</summary>
+    private void WriteAndroidClientComm(Utf8JsonWriter w)
+    {
+        w.WriteNumber("ct", 11);
+        w.WriteNumber("cv", 14090008);
+        w.WriteNumber("v", 14090008);
+        w.WriteString("chid", "10003505");
+        w.WriteString("qq", _uin);
+        w.WriteString("authst", _authst);
+        w.WriteString("tmeAppID", "qqmusic");
+        var loginType = ParseCookieLong("tmeLoginType");
+        if (loginType > 0) w.WriteNumber("tmeLoginType", loginType);
+        w.WriteString("QIMEI36", "");
+        w.WriteString("OpenUDID", _androidUdid);
+        w.WriteString("udid", _androidUdid);
+    }
+
+    private string BuildAg1Json(string module, string method, Action<Utf8JsonWriter> writeParam,
+        Action<Utf8JsonWriter>? writeComm = null)
     {
         using var ms = new MemoryStream();
         using (var w = new Utf8JsonWriter(ms))
         {
             w.WriteStartObject();
             w.WriteStartObject("comm");
-            w.WriteNumber("cv", 4747474);
-            w.WriteNumber("ct", 24);
-            w.WriteString("format", "json");
-            w.WriteString("inCharset", "utf-8");
-            w.WriteString("outCharset", "utf-8");
-            w.WriteNumber("notice", 0);
-            w.WriteString("platform", "yqq.json");
-            w.WriteNumber("needNewCode", 1);
-            w.WriteString("uin", _uin);
-            w.WriteNumber("g_tk_new_20200303", ComputeGtk());
-            w.WriteNumber("g_tk", ComputeGtk());
+            if (writeComm is not null)
+            {
+                writeComm(w); // 诊断:整体替换 comm(如 Android 客户端身份形状)
+            }
+            else
+            {
+                w.WriteNumber("cv", 4747474);
+                w.WriteNumber("ct", 24);
+                w.WriteString("format", "json");
+                w.WriteString("inCharset", "utf-8");
+                w.WriteString("outCharset", "utf-8");
+                w.WriteNumber("notice", 0);
+                w.WriteString("platform", "yqq.json");
+                w.WriteNumber("needNewCode", 1);
+                w.WriteString("uin", _uin);
+                w.WriteNumber("g_tk_new_20200303", ComputeGtk());
+                w.WriteNumber("g_tk", ComputeGtk());
+            }
             w.WriteEndObject();
             w.WriteStartObject("req_0");
             w.WriteString("module", module);

@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           android:versionCode="1"
-          android:versionName="1.0"
+          android:versionName="0.0.1"
           package="com.aika1024.alyricease">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 应用自更新:调起系统安装器安装下载的 APK(Android 8.0+ 必需声明) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
     <!-- 明确启用 Android 13+ 的返回分发器。MainActivity 直接注册平台
          OnBackInvokedCallback，手势导航与三键导航不依赖厂商是否继续派发 KEYCODE_BACK。 -->
@@ -21,5 +23,15 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+        <!-- 应用自更新:把 CacheDir/update 下的 APK 经 content:// URI 交给系统安装器
+             (Android 7.0+ 不允许把 file:// URI 直接发给别的组件)。authority 与
+             AndroidUpdateService 里的 包名 + ".fileprovider" 对应 -->
+        <provider android:name="androidx.core.content.FileProvider"
+                  android:authorities="com.aika1024.alyricease.fileprovider"
+                  android:exported="false"
+                  android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                       android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

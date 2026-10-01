@@ -375,6 +375,47 @@
         </ItemsControl>
       </Expander>
 
+      <!-- 详细信息:应用名/版本(含"检查更新")/安装日期;参考原版"详细信息"卡片,无开发者行 -->
+      <Expander Classes="setting-expander">
+        <Expander.Header>
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Classes="setting-icon" FontFamily="{DynamicResource LyricEaseIconsOutline}"
+                       Text="{DynamicResource IconInfo}" />
+            <TextBlock Grid.Column="1" Classes="setting-title" Text="详细信息" />
+            <!-- 占位:标题过长时不顶到 chevron 下方 -->
+            <TextBlock Grid.Column="2" MinWidth="24" />
+          </Grid>
+        </Expander.Header>
+        <Grid Margin="20,4,0,10" ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto">
+          <Grid.Styles>
+            <Style Selector="TextBlock.info-label">
+              <Setter Property="FontSize" Value="13" />
+              <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+              <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style Selector="TextBlock.info-value">
+              <Setter Property="FontSize" Value="13" />
+              <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+          </Grid.Styles>
+          <!-- 应用名 + 一句话简介 -->
+          <TextBlock Grid.Row="0" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,8,0,0"
+                     Text="ALyricEase" FontWeight="SemiBold"/>
+          <!-- 版本 + 检查更新 -->
+          <TextBlock Grid.Row="1" Grid.Column="0" Classes="info-label" Text="版本" Margin="0,12,0,12" />
+          <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="12"
+                      VerticalAlignment="Center">
+            <TextBlock Classes="info-value" Text="{Binding AppVersionText}" />
+            <Button Classes="setting-action" MinWidth="96" Height="28" Content="检查更新"
+                    IsVisible="{Binding UpdateSupported}"
+                    Command="{Binding CheckForUpdatesCommand}" />
+          </StackPanel>
+          <!-- 安装日期 -->
+          <TextBlock Grid.Row="2" Grid.Column="0" Classes="info-label" Text="安装日期" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Classes="info-value" Text="{Binding InstallDateText}" />
+        </Grid>
+      </Expander>
+
       <!-- APPEND -->
     </StackPanel>
   </ScrollViewer>

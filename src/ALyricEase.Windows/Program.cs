@@ -10,8 +10,10 @@ using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
 using ALyricEase.Services.Sharing;
 using ALyricEase.Services.Smtc;
+using ALyricEase.Services.Update;
 using ALyricEase.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Velopack;
 
 namespace ALyricEase;
 
@@ -23,6 +25,9 @@ class Program
   [STAThread]
   public static void Main(string[] args)
   {
+    // Velopack 启动钩子:处理 Update.exe 的安装/更新/卸载回调参数(--squirrel-*),
+    // 必须在任何其它逻辑前调用;未安装(开发目录直跑)时只记警告不阻断。
+    VelopackApp.Build().Run();
     // selftest(无 UI)模式下:先在主线程钉住 UIThread,保证 DispatcherService.Post 能排队
     _ = Avalonia.Threading.Dispatcher.UIThread;
 
@@ -128,6 +133,8 @@ class Program
     services.AddSingleton<MusicApiProvider>();
     services.AddSingleton<MusicCacheService>();
     services.AddSingleton<IPlatformShareService, WindowsShareService>();
+    // 应用自更新(Velopack + GitHub Releases;开发目录直跑 IsSupported=false)
+    services.AddSingleton<IAppUpdateService, VelopackUpdateService>();
 #if ANDROID
     services.AddSingleton<AndroidMediaPlayer>();
     services.AddSingleton<IAudioPlayer>(sp => new CrossfadeAudioPlayer(

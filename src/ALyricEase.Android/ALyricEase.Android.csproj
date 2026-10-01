@@ -9,7 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.aika1024.alyricease</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>0.0.1</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <!-- Some Android Automotive images run a 32-bit userspace on 64-bit ARM
@@ -18,6 +18,19 @@
     <RuntimeIdentifiers Condition="'$(Configuration)' == 'Release' and '$(AndroidTargetAbi)' == 'arm64-v8a'">android-arm64</RuntimeIdentifiers>
     <RuntimeIdentifiers Condition="'$(Configuration)' == 'Release' and '$(AndroidTargetAbi)' == 'armeabi-v7a'">android-arm</RuntimeIdentifiers>
     <RuntimeIdentifiers Condition="'$(Configuration)' == 'Release' and '$(AndroidTargetAbi)' == '' and '$(RuntimeIdentifier)' == ''">android-arm;android-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- Release 用自有签名密钥(2026-10-01 起;此前是 debug key)。
+       密钥和密码都在用户目录、不进仓库:
+         %USERPROFILE%\.android\alyricease-release.keystore  (RSA-4096, alias=alyricease)
+         %USERPROFILE%\.android\alyricease-release.pwd       (store/key 同一密码)
+       ⚠ 这两份文件必须备份:换了密钥,老用户的更新会签名冲突,只能卸载重装。 -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and Exists('$(USERPROFILE)\.android\alyricease-release.keystore')">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(USERPROFILE)\.android\alyricease-release.keystore</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias>alyricease</AndroidSigningKeyAlias>
+    <AndroidSigningStorePass>$([System.IO.File]::ReadAllText('$(USERPROFILE)\.android\alyricease-release.pwd').Trim())</AndroidSigningStorePass>
+    <AndroidSigningKeyPass>$([System.IO.File]::ReadAllText('$(USERPROFILE)\.android\alyricease-release.pwd').Trim())</AndroidSigningKeyPass>
   </PropertyGroup>
 
   <ItemGroup>

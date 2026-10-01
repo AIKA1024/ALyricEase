@@ -86,5 +86,6 @@
     <x:String x:Key="IconBroom">&#xF202;</x:String>
     <x:String x:Key="IconOpen">&#xF58D;</x:String>
     <x:String x:Key="IconDelete">&#xF34D;</x:String>
+    <x:String x:Key="IconInfo">&#xF4A4;</x:String> <!-- info_24_regular,细线字形,须配 LyricEaseIconsOutline -->
 
 </ResourceDictionary>

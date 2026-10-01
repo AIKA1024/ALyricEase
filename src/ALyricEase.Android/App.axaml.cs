@@ -79,6 +79,9 @@ public partial class App : Avalonia.Application
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
         services.AddSingleton<IPlatformShareService, AndroidShareService>();
+        // Android 自更新:GitHub releases/latest 检查 → 下载 APK → 调系统安装器(不走 Velopack)
+        services.AddSingleton<ALyricEase.Services.Update.IAppUpdateService,
+            ALyricEase.Services.AndroidUpdateService>();
         services.AddSingleton<AndroidMediaPlayer>();
         services.AddSingleton<IAudioPlayer>(sp => new CrossfadeAudioPlayer(
             sp.GetRequiredService<AndroidMediaPlayer>(),

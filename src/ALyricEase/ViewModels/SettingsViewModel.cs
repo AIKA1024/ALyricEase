@@ -1,9 +1,12 @@
 using System.Diagnostics;
+using System.Reflection;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using ALyricEase.Services.Audio;
+using ALyricEase.Services.Update;
 using Avalonia;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -23,6 +26,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly AppStateStore _state;
     private readonly MusicCacheService _musicCache;
     private readonly IAudioPlayer _player;
+    /// <summary>应用自更新服务(Windows=Velopack 实现;Android/无头探针=空实现或 null)。</summary>
+    private readonly IAppUpdateService? _update;
 
     /// <summary>当前枚举到的输出设备(不含"跟随系统默认设备"伪项);索引 i 对应下拉第 i+1 项。</summary>
     private readonly List<AudioOutputDevice> _devices = new();
@@ -32,11 +37,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>操作结果反馈(清除缓存/占位入口提示),显示在存储分区下方。</summary>
     [ObservableProperty] private string? _status;
 
-    public SettingsViewModel(AppStateStore state, MusicCacheService musicCache, IAudioPlayer player)
+    public SettingsViewModel(AppStateStore state, MusicCacheService musicCache, IAudioPlayer player,
+        IAppUpdateService? updateService = null)
     {
         _state = state;
         _musicCache = musicCache;
         _player = player;
+        _update = updateService;
         ApplyTheme(_state.Theme); // 启动恢复已保存的主题
 
         // 输出设备:启动就把上次选的设备贴回播放器(不必等用户打开设置页)。
@@ -557,6 +564,162 @@ public sealed partial class SettingsViewModel : ViewModelBase
         catch
         {
             // 无宿主上下文:状态已落,弹窗本来就开不了
+        }
+    }
+
+    // ---- 关于:详细信息(版本/安装日期/检查更新) ----
+
+    /// <summary>当前宿主是否具备自更新条件(Velopack 只认 vpk 安装后的目录结构;
+    /// 开发目录直跑与 Android 均为 false,"检查更新"按钮随之隐藏)。</summary>
+    public bool UpdateSupported => _update is { IsSupported: true };
+
+    /// <summary>展示用版本号:优先 Velopack 记录的安装版本,未打包回退程序集 InformationalVersion。</summary>
+    public string AppVersionText
+    {
+        get
+        {
+            var v = _update?.CurrentVersion;
+            if (v is not null) return v;
+            return Assembly.GetEntryAssembly()?
+                       .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                       .InformationalVersion
+                   ?? "-";
+        }
+    }
+
+    /// <summary>安装日期(取自 Velopack 实现;未知展示"-")。</summary>
+    public string InstallDateText => _update?.InstallDate is { } d ? d.ToString("yyyy/M/d") : "-";
+
+    /// <summary>检查更新进行中(按钮禁用,AsyncRelayCommand 本身也防重入,此标记供 UI 展示)。</summary>
+    [ObservableProperty] private bool _isCheckingUpdate;
+
+    /// <summary>下载更新进行中(更新弹窗切进度条态,期间禁止关闭弹窗)。</summary>
+    [ObservableProperty] private bool _isDownloadingUpdate;
+
+    /// <summary>下载进度 0-100(回调来自 Velopack 的后台线程,已切回 UI 线程再写)。</summary>
+    [ObservableProperty] private double _updateProgress;
+
+    /// <summary>更新已下载完成(弹窗切"立即重启"态)。</summary>
+    [ObservableProperty] private bool _isUpdateReady;
+
+    /// <summary>检查到的目标版本号(弹窗标题用)。</summary>
+    [ObservableProperty] private string? _pendingVersion;
+
+    /// <summary>更新说明(release notes 原文压成的纯文本;拉取失败时为"暂无更新说明")。</summary>
+    [ObservableProperty] private string? _releaseNotes;
+
+    /// <summary>下载完成态的说明文案(桌面=重启完成安装;安卓=调起系统安装器,可能需授权)。</summary>
+    public string UpdateReadyDescription => OperatingSystem.IsAndroid()
+        ? $"新版本 {PendingVersion} 已下载,点击「立即安装」调起系统安装器;" +
+          "若系统询问,请允许本应用安装未知应用。"
+        : $"新版本 {PendingVersion} 已下载完成,重启应用以完成安装。";
+
+    /// <summary>下载完成态主按钮文案(安卓不重启,直接装)。</summary>
+    public string UpdateApplyText => OperatingSystem.IsAndroid() ? "立即安装" : "立即重启";
+
+    partial void OnPendingVersionChanged(string? value) => OnPropertyChanged(nameof(UpdateReadyDescription));
+
+    /// <summary>点"检查更新":只在用户点击后联网检查(不做启动自动检查)。
+    /// 无更新在设置页提示;有更新填好弹窗数据并打开模态弹层。</summary>
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        if (_update is not { IsSupported: true } update || IsCheckingUpdate) return;
+        IsCheckingUpdate = true;
+        try
+        {
+            var info = await update.CheckForUpdatesAsync();
+            if (info is null)
+            {
+                Status = "当前已是最新版本";
+                return;
+            }
+
+            PendingVersion = info.Version;
+            ReleaseNotes = string.IsNullOrWhiteSpace(info.ReleaseNotes)
+                ? "暂无更新说明"
+                : info.ReleaseNotes;
+            UpdateProgress = 0;
+            IsUpdateReady = false;
+            OpenUpdateDialog();
+        }
+        catch (Exception ex)
+        {
+            Status = $"检查更新失败:{ex.Message}";
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    /// <summary>打开更新弹窗(承载在 MainViewModel 的模态弹层;无宿主上下文的探针不开)。</summary>
+    private void OpenUpdateDialog()
+    {
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().IsUpdateDialogOpen = true;
+        }
+        catch
+        {
+            // 无宿主上下文(部分无头探针):不开弹窗
+        }
+    }
+
+    /// <summary>弹窗内点"更新":下载(增量优先,Velopack 失败自动回退全量),
+    /// 期间弹窗显示进度且不可关闭;完成切"立即重启"态。</summary>
+    [RelayCommand]
+    private async Task ConfirmUpdateAsync()
+    {
+        if (_update is not { IsSupported: true } update || IsDownloadingUpdate) return;
+        IsDownloadingUpdate = true;
+        UpdateProgress = 0;
+        try
+        {
+            await update.DownloadUpdatesAsync(p =>
+                Dispatcher.UIThread.Post(() => UpdateProgress = p));
+            UpdateProgress = 100;
+            IsUpdateReady = true;
+        }
+        catch (Exception ex)
+        {
+            IsUpdateReady = false;
+            TryCloseUpdateDialog();
+            Status = $"下载更新失败:{ex.Message}";
+        }
+        finally
+        {
+            IsDownloadingUpdate = false;
+        }
+    }
+
+    /// <summary>弹窗内点"立即重启":应用已下载的更新并重启进程(调用后进程退出,不返回)。</summary>
+    [RelayCommand]
+    private void RestartToUpdate()
+    {
+        if (_update is not { IsSupported: true } update) return;
+        try
+        {
+            // 更新器会强杀进程,窗口关闭路径的 Flush 未必执行,先把偏好落盘
+            _state.Flush();
+            update.ApplyUpdatesAndRestart();
+        }
+        catch (Exception ex)
+        {
+            TryCloseUpdateDialog();
+            Status = $"应用更新失败:{ex.Message}";
+        }
+    }
+
+    private void TryCloseUpdateDialog()
+    {
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().IsUpdateDialogOpen = false;
+        }
+        catch
+        {
+            // 无宿主上下文:本就没有弹窗
         }
     }
 

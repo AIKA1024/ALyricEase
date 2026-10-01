@@ -106,6 +106,9 @@ public partial class HeadlessApp : Application
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
         services.AddSingleton<IPlatformShareService, PlatformShareServiceStub>();
+        // 无头探针无自更新能力:注册空实现占位(SettingsViewModel 构造解析需要)
+        services.AddSingleton<ALyricEase.Services.Update.IAppUpdateService,
+            ALyricEase.Services.Update.NullAppUpdateService>();
         // 歌词 VM 用独立临时目录缓存,避免探针歌曲写进真实用户缓存
         services.AddSingleton<LyricViewModel>(sp => new LyricViewModel(
             new MusicApiProvider(new IMusicApi[] { new OfflineProbeApi() }),

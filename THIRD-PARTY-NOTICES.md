@@ -1,5 +1,11 @@
 # Third-party notices
 
+## Velopack
+
+This application uses [velopack/velopack](https://github.com/velopack/velopack)
+(application auto-update framework, NuGet package `Velopack`),
+licensed under the MIT License.
+
 ## AsyncImageLoader.Avalonia
 
 This application uses

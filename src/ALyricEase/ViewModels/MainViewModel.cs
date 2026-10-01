@@ -553,6 +553,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
     public bool TryHandleBack()
     {
+        // 更新弹窗声明在所有弹层最后(盖在最上) ⇒ 返回链最先消费
+        if (IsUpdateDialogOpen)
+        {
+            CloseUpdateDialogCommand.Execute(null);
+            return true;
+        }
+
         // 清除缓存弹层声明在所有弹层最后(盖在最上) ⇒ 返回链最先消费
         if (IsClearCacheDialogOpen)
         {
@@ -1200,6 +1207,21 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (Settings.IsClearingCache) return;
         IsClearCacheDialogOpen = false;
+    }
+
+    // ---- 应用更新弹窗 ----
+
+    /// <summary>应用更新弹窗(WinUI3 ContentDialog 式窗口内弹层):true=显示。
+    /// 版本/更新说明/下载状态都在 SettingsViewModel(弹层内层 DataContext 绑 Settings)。</summary>
+    [ObservableProperty] private bool _isUpdateDialogOpen;
+
+    /// <summary>关闭更新弹窗(取消/Esc/稍后)。下载进行中不接受关闭 —— 下载要么完成转
+    /// "立即重启"态,要么失败由 ConfirmUpdateAsync 自行收尾关闭。</summary>
+    [RelayCommand]
+    private void CloseUpdateDialog()
+    {
+        if (Settings.IsDownloadingUpdate) return;
+        IsUpdateDialogOpen = false;
     }
 
     // ---- 聚合歌单设置对话框 ----

@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- 与 vpk pack -v / GitHub release tag 保持一致(检查更新按版本比对) -->
+    <Version>0.0.1</Version>
     <ApplicationIcon>..\ALyricEase\Assets\app.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
@@ -55,5 +57,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.12" />
+    <!-- 应用自更新:vpk 打包 + GitHub Releases 更新源(见 docs/updates.md) -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 </Project>

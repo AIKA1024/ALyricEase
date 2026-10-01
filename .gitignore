@@ -17,3 +17,6 @@ tmpandroid/
 bin_vcheck/
 tmp_app_out.txt
 
+
+# Velopack vpk pack 输出(发布时上传 GitHub Releases,不入仓)
+/Releases/

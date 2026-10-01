@@ -57,5 +57,9 @@
     <!-- 清除缓存确认弹窗(设置页;声明在设备弹层之后 → 同时可见时盖在最上) -->
     <views:ClearCacheDialogView IsVisible="{Binding IsClearCacheDialogOpen}"
                                 Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 应用更新弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
+    <views:UpdateDialogView IsVisible="{Binding IsUpdateDialogOpen}"
+                            Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
   </Grid>
 </UserControl>

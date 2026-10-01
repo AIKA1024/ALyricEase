@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 路径配置:只暴露 CacheDir/update/(自更新 APK 下载目录),
+     authority 与暴露范围见 AndroidManifest.xml 的 provider 声明 -->
+<paths>
+    <cache-path name="update" path="update/" />
+</paths>

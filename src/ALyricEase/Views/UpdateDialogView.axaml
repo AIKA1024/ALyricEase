@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.UpdateDialogView">
+    <!-- 应用更新弹窗(设置页"检查更新"发现新版本后打开,WinUI3 ContentDialog 式窗口内弹层):
+         确认态 = 新版本号 + 更新说明 + 取消/更新;更新后切下载态 = 确定进度条(不可关闭);
+         下载完成切待重启态 = 立即重启/稍后。三态都在 SettingsViewModel。 -->
+    <Grid x:Name="Root">
+        <Grid.Styles>
+            <!-- 打开时 0→1 淡入由 code-behind 触发(IsVisible 翻转不跑过渡,先置 0 下一帧再置 1) -->
+            <Style Selector="Grid#Root">
+                <Setter Property="Transitions">
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                    </Transitions>
+                </Setter>
+            </Style>
+            <!-- 三态面板切换淡入 -->
+            <Style Selector="StackPanel.dialog-state">
+                <Setter Property="Transitions">
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+                    </Transitions>
+                </Setter>
+            </Style>
+        </Grid.Styles>
+        <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
+        <Panel Background="#99000000" />
+        <Grid DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Border MaxWidth="460" MinWidth="380" Margin="24" Padding="24" CornerRadius="8"
+                    Background="{DynamicResource AppSurface}"
+                    BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                    BoxShadow="0 32 64 #66000000">
+                <Panel>
+                    <!-- 确认态:新版本 + 更新说明 -->
+                    <StackPanel Classes="dialog-state" Spacing="12"
+                                IsVisible="{Binding !IsDownloadingUpdate}">
+                        <StackPanel IsVisible="{Binding !IsUpdateReady}" Spacing="12">
+                            <TextBlock Text="发现新版本" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock FontSize="13">
+                                <Run Text="新版本 " Foreground="{DynamicResource TextSecondary}" /><Run
+                                    Text="{Binding PendingVersion}" FontWeight="SemiBold" /><Run
+                                    Text=" 可用,是否现在更新?" Foreground="{DynamicResource TextSecondary}" />
+                            </TextBlock>
+                            <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto">
+                                <TextBlock Text="{Binding ReleaseNotes}" FontSize="13" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSecondary}" />
+                            </ScrollViewer>
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <Button Content="取消" MinWidth="96" Height="32"
+                                        HorizontalAlignment="Left"
+                                        HotKeyManager.HotKey="Escape"
+                                        Command="{Binding $parent[views:UpdateDialogView].((vm:MainViewModel)DataContext).CloseUpdateDialogCommand}" />
+                                <Button Grid.Column="1" Classes="accent" Content="更新"
+                                        MinWidth="96" Height="32"
+                                        Command="{Binding ConfirmUpdateCommand}" />
+                            </Grid>
+                        </StackPanel>
+                        <!-- 待重启/安装态:下载完成(桌面=重启安装,安卓=调起系统安装器,文案随平台) -->
+                        <StackPanel IsVisible="{Binding IsUpdateReady}" Spacing="12">
+                            <TextBlock Text="更新已就绪" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding UpdateReadyDescription}" FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextSecondary}" />
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <Button Content="稍后" MinWidth="96" Height="32"
+                                        HorizontalAlignment="Left"
+                                        HotKeyManager.HotKey="Escape"
+                                        Command="{Binding $parent[views:UpdateDialogView].((vm:MainViewModel)DataContext).CloseUpdateDialogCommand}" />
+                                <Button Grid.Column="1" Classes="accent"
+                                        Content="{Binding UpdateApplyText}"
+                                        MinWidth="96" Height="32"
+                                        Command="{Binding RestartToUpdateCommand}" />
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                    <!-- 下载态:进度条(确定进度,来自 Velopack 0-100 回调);无按钮、Esc 无落点 -->
+                    <StackPanel Classes="dialog-state" Spacing="16" IsVisible="{Binding IsDownloadingUpdate}"
+                                HorizontalAlignment="Center">
+                        <ProgressBar Width="240" Height="4" Minimum="0" Maximum="100"
+                                     Value="{Binding UpdateProgress}"
+                                     Foreground="{DynamicResource SystemAccentColor}" />
+                        <TextBlock FontSize="13" Foreground="{DynamicResource TextSecondary}"
+                                   HorizontalAlignment="Center">
+                            <Run Text="正在下载更新… " /><Run Text="{Binding UpdateProgress, Mode=OneWay}" /><Run Text="%" />
+                        </TextBlock>
+                    </StackPanel>
+                </Panel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

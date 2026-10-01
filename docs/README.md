@@ -26,6 +26,7 @@
 | 要改曲目行的样式 | [original-track-row-styles.md](original-track-row-styles.md)(改完对照 [TrackRow.axaml](../src/ALyricEase/Views/TrackRow.axaml)) |
 | 要加或改图标码位 | [icon-fonts.md](icon-fonts.md) |
 | 登录相关(代理登录 / MUSIC_U / eapi 两种格式) | [netease-login.md](netease-login.md) |
+| 要发新版本 / 自更新不工作 / delta 没生成 | [updates.md](updates.md)(vpk pack 流程、tag=版本号约定、验证清单) |
 | 要加网易云端点 / 排查 400 空响应 / 防封号 | [netease-api/](netease-api/)(先读它的 README,再过 [03-antiban.md](netease-api/03-antiban.md) 的检查清单) |
 | 自问"原版 UWP 为什么占用更低" | [original-uwp-notes.md](original-uwp-notes.md)(账记在 `dwm.exe` 里,别承诺做到同读数) |
 | 要写或改性能探针 | [perf-notes.md](perf-notes.md) §四「写性能探针的坑」+ §七探针清单 |
@@ -82,7 +83,10 @@
 - [**`original-track-row-styles.md`**](original-track-row-styles.md) —— 曲目行(`TrackListItem`)样式原值、UWP SystemBase 色值、
   与当前实现(`TrackRow.axaml`)的对照。
 
-## 八、资源
+## 八、资源与发布
+
+[**`updates.md`**](updates.md) —— 应用自更新(Velopack + GitHub Releases):代码落点、
+vpk pack/publish 命令、tag=版本号与 full+delta 资产约定、发布期验证清单。
 
 [**`icon-fonts.md`**](icon-fonts.md) —— 三套图标字体的来源/分工/码位映射、`Icons.axaml` 之外的码位字面量(改码位必须同步)、
 维护规则(踩坑记录)、发布期子集化(TODO)、验证方法。

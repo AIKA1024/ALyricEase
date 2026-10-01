@@ -1100,19 +1100,9 @@ public sealed class MusicCacheService
 
     private static string GetDefaultCacheDirectory()
     {
-        // ⚠️ 这里的 #if ANDROID 是**死分支**:核心库只面向 net10.0,ANDROID 常量由 Android SDK
-        // 只对 net*-android 工程定义,所以 Android 上实际走 #else(缓存落在
-        // <应用私有 files 目录>/.local/share/ALyricEase/cache/music)。
-        // 功能上没问题,但要知道它不在 FilesDir 下;改路径会孤立已有缓存,需要一并迁移。
-#if ANDROID
-        var root = Path.Combine(
-            global::Android.App.Application.Context.FilesDir!.AbsolutePath, "ALyricEase");
-#else
-        var root = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ALyricEase");
-#endif
-        // 沿用既有 music 目录，旧版缓存仍会被统一容量统计/清理，不在升级后留下孤儿文件。
-        return Path.Combine(root, "cache", "music");
+        // Android 上 LocalApplicationData = <应用私有 files 目录>/.local/share;
+        // Windows 的实际目录见 AppDataRoot(⚠ 不能落在 Velopack 安装根里,重装会连缓存一起清空)
+        return Path.Combine(AppDataRoot.Path, "cache", "music");
     }
 
     /// <summary>一次性页面快照的内存 LRU:纯数据(不含视觉树、不含 ViewModel),按"页面数"限容。

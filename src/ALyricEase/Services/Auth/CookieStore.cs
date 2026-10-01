@@ -33,20 +33,10 @@ public sealed class CookieStore
 
     public CookieStore()
     {
-        // ⚠️ 这里的 #if ANDROID 是**死分支**:核心库只面向 net10.0,ANDROID 常量由 Android SDK
-        // 只对 net*-android 工程定义,所以 Android 上实际走 #else。
-        // 实测 Android 的 LocalApplicationData 并非空串(=.NET 里 <应用私有 files 目录>/.local/share),
-        // 路径可写、登录态能落盘,所以下面那句"返回空串"并不成立;两分支只是路径不同。
-        // 若要真正切到 FilesDir,请用 OperatingSystem.IsAndroid() 或从平台入口注入根目录,
-        // 并处理旧路径的数据迁移(否则升级后用户会"退出登录")。
-#if ANDROID
-        var root = Path.Combine(
-            global::Android.App.Application.Context.FilesDir!.AbsolutePath, "ALyricEase");
-#else
-        var root = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ALyricEase");
-#endif
+        // Android 上 LocalApplicationData = <应用私有 files 目录>/.local/share,
+        // 登录态落盘正常;Windows 的实际目录见 AppDataRoot
+        // (⚠ 不能落在 Velopack 安装根里,重装会被清空、用户被踢下线)。
+        var root = AppDataRoot.Path;
         Directory.CreateDirectory(Path.Combine(root, "config"));
         _path = Path.Combine(root, "config", "cookie.json");
         Load();

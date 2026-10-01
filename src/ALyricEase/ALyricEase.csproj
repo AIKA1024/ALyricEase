@@ -19,7 +19,7 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.3" />
     <!-- 官方原生 WebView(Windows=WebView2, Android=系统 WebView),用于 QQ 登录安全验证窗口 -->
     <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.0" />
-    <PackageReference Include="AsyncImageLoader.Avalonia" Version="4.0.0-preview1" />
+    <PackageReference Include="AsyncImageLoader.Avalonia" Version="4.0.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- 官方客户端代理登录:Go MITM 代理(仅 win-x64/win-arm64 native),入口按平台守卫 -->
     <PackageReference Include="ProjectCirrus.Copycat" Version="0.1.0" />

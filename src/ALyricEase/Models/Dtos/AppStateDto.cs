@@ -53,7 +53,7 @@ public sealed class AppStateFile
     /// <summary>兼容的视觉效果(低端设备关掉重动效)。</summary>
     public bool? CompatibilityVisual { get; set; }
 
-    /// <summary>统一音频质量选项(0-4；播放时按音源映射)。</summary>
+    /// <summary>统一音频质量选项(0-3；播放时按音源映射)。缺省视为 3 = 无损。</summary>
     public int? AudioQuality { get; set; }
 
     /// <summary>传统播放控制(点击行直接播放/双击入队等老式行为,当前仅存储偏好)。</summary>

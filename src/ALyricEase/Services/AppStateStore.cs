@@ -94,8 +94,8 @@ public sealed class AppStateStore
     /// <summary>兼容的视觉效果。</summary>
     public bool CompatibilityVisual { get; set; } = true;
 
-    /// <summary>统一音频质量选项(0-3；旧值 4 加载时自动归一为无损)。</summary>
-    public int AudioQuality { get; set; }
+    /// <summary>统一音频质量选项(0-3;旧值 4 加载时自动归一)。默认 3 = 无损。</summary>
+    public int AudioQuality { get; set; } = 3;
 
     /// <summary>传统播放控制。</summary>
     public bool LegacyPlaybackControl { get; set; }
@@ -164,7 +164,7 @@ public sealed class AppStateStore
                 : "Quality";
             DynamicBackground = dto.DynamicBackground ?? true;
             CompatibilityVisual = dto.CompatibilityVisual ?? true;
-            AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 0);
+            AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 3);
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
             Crossfade = dto.Crossfade ?? false;
             CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;

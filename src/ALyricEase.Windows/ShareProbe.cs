@@ -1,22 +1,29 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using ALyricEase.Services.Sharing;
 using Windows.ApplicationModel.DataTransfer;
 using WinRT;
 
 namespace ALyricEase;
 
-/// <summary>--sharetest [direct|flyout|closed]:Windows 分享面板真机探针。
+/// <summary>--sharetest [direct|flyout|closed|click|clickraw]:Windows 分享面板真机探针。
 /// 生产路径(WindowsShareService)把所有异常吞成 false,且 ShowShareUIForWindow 不抛异常 ≠ 面板真的弹出;
 /// 唯一可靠观测量是 DataRequested 事件(面板真正打开时 Windows 才回调)。
-/// 三个场景分进程跑(分享面板互斥,同进程连调会被 RETRYLATER 干扰):
-///   direct = 直接对可见前台窗口调 ShowShareUIForWindow(基线,应弹出)
-///   flyout = 先展开 MenuFlyout(模拟真实"点菜单项"时弹窗开着)再调
-///   closed = 展开 MenuFlyout 后 Hide,等弹窗关闭再调
-/// DataRequested=True 即面板弹出;False = 调用成功但面板没出现(即用户看到的"点击没反应")。</summary>
+/// 场景分进程跑(分享面板互斥,同进程连调会被 RETRYLATER 干扰):
+///   direct    = 直接对可见前台窗口调 ShowShareUIForWindow(基线)
+///   flyout    = 展开 MenuFlyout(程序化 ShowAt,无真实点击)后走生产 ShareUriAsync
+///   closed    = 展开 MenuFlyout 后 Hide 再走生产 ShareUriAsync
+///   click     = SendInput **真实鼠标点击**菜单项,处理器走生产 ShareUriAsync(含 SetForegroundWindow 修复)
+///   clickraw  = 同 click 但处理器直接调 ShowShareUIForWindow(无 SetForegroundWindow,复现旧代码行为)
+/// click/clickraw 的意义:真实点击会让 Avalonia Popup 获得激活 ⇒ 主窗口可能不再是前台,
+/// 这才是"早期版本(12.1.1)能分享、现在(12.1.3)不行"最可能的回归点。</summary>
 internal static class ShareProbe
 {
     private static readonly Guid DataTransferManagerIid =
@@ -41,6 +48,16 @@ internal static class ShareProbe
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, nint dwExtraInfo);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, nint dwExtraInfo);
+
+    private const uint MouseEventfLeftdown = 0x0002;
+    private const uint MouseEventfLeftup = 0x0004;
+
     private static void ForceForeground(nint hwnd)
     {
         // 探针从后台控制台启动 ⇒ Windows 抢焦点防护会让 SetForegroundWindow 失败;
@@ -49,6 +66,15 @@ internal static class ShareProbe
         var ok = SetForegroundWindow(hwnd);
         keybd_event(0x12, 0, 2, 0); // VK_MENU up
         Console.WriteLine($"[share] ForceForeground → {ok}, 现在前台=0x{GetForegroundWindow():X}");
+    }
+
+    private static void RealClick(int screenX, int screenY)
+    {
+        SetCursorPos(screenX, screenY);
+        Thread.Sleep(80);
+        mouse_event(MouseEventfLeftdown, 0, 0, 0, 0);
+        Thread.Sleep(40);
+        mouse_event(MouseEventfLeftup, 0, 0, 0, 0);
     }
 
     public static async Task RunAsync(string mode)
@@ -106,12 +132,12 @@ internal static class ShareProbe
                     menu.Items.Add(new MenuItem { Header = "分享" });
                     button.ContextFlyout = menu;
                     menu.ShowAt(button);
-                    await Task.Delay(600); // 等弹窗完全展开(此刻 Popup 是前台窗口)
+                    await Task.Delay(600);
                     Console.WriteLine($"[share] 弹窗已展开,前台=0x{GetForegroundWindow():X}");
                     if (mode == "closed")
                     {
                         menu.Hide();
-                        await Task.Delay(800); // 等弹窗完全关闭
+                        await Task.Delay(800);
                         Console.WriteLine($"[share] 弹窗已关闭,前台=0x{GetForegroundWindow():X}");
                     }
 
@@ -122,6 +148,82 @@ internal static class ShareProbe
                     Console.WriteLine($"[share] 生产 ShareUriAsync → {ok}");
                     break;
                 }
+
+                case "click":
+                case "clickraw":
+                {
+                    Console.WriteLine($"[share] 进入真实点击分支 (mode={mode})");
+                    window.Topmost = true; // 后台启动抢不到前台 ⇒ 置顶保证 SendInput 的点击落在菜单上
+                    // 真实点击菜单项:复现"用户手点"时的窗口激活状态。
+                    // click     = 走生产 ShareUriAsync(含修复)
+                    // clickraw  = 处理器里直接 interop.ShowShareUIForWindow(等价修复前的行为)
+                    var button = new Button
+                    {
+                        Content = "菜单锚点",
+                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top,
+                        Margin = new Thickness(60, 60, 0, 0),
+                    };
+                    window.Content = button;
+                    Dispatcher.UIThread.RunJobs();
+
+                    MenuItem? shareItem = null;
+                    menu = new MenuFlyout();
+                    shareItem = new MenuItem { Header = "分享" };
+                    shareItem.Click += (_, _) =>
+                    {
+                        var fg = GetForegroundWindow();
+                        var popupRoot = (TopLevel.GetTopLevel(shareItem!))?.TryGetPlatformHandle()?.Handle ?? 0;
+                        Console.WriteLine($"[share] 菜单项 Click: 前台=0x{fg:X} 主窗口=0x{hwnd:X} " +
+                            $"弹窗HWND=0x{popupRoot:X} (前台是弹窗={fg == popupRoot && popupRoot != 0})");
+                        try
+                        {
+                            if (mode == "clickraw")
+                            {
+                                interop.ShowShareUIForWindow(hwnd);
+                                Console.WriteLine("[share] clickraw: ShowShareUIForWindow 已调(无 SetForegroundWindow)");
+                            }
+                            else
+                            {
+                                using var svc = new WindowsShareService();
+                                var ok = svc.ShareUriAsync(
+                                    hwnd, "分享歌曲:测试", "真实点击", new Uri("https://music.163.com/song?id=186016"));
+                                Console.WriteLine($"[share] click: 生产 ShareUriAsync → {ok}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[share] 处理器异常: {ex.Message} (0x{ex.HResult:X8})");
+                        }
+                    };
+                    menu.Items.Add(shareItem);
+                    button.ContextFlyout = menu;
+                    menu.ShowAt(button);
+                    await Task.Delay(600); // 弹窗完全展开
+
+                    // 菜单项屏幕坐标:弹窗根 TopLevel.PointToScreen(项中心)
+                    if (TopLevel.GetTopLevel(shareItem) is { } popup
+                        && shareItem.TranslatePoint(
+                            new Point(shareItem.Bounds.Width / 2, shareItem.Bounds.Height / 2), popup)
+                            is { } pt)
+                    {
+                        var screen = popup.PointToScreen(pt);
+                        Console.WriteLine($"[share] 真实点击菜单项 屏幕=({screen.X},{screen.Y}) 前台=0x{GetForegroundWindow():X}");
+                        RealClick(screen.X, screen.Y);
+                    }
+                    else
+                    {
+                        Console.WriteLine("[share] FAIL 拿不到菜单项坐标");
+                    }
+
+                    await Task.Delay(1500);
+                    break;
+                }
+
+                default:
+                    Console.WriteLine("[share] 直接调用 ShowShareUIForWindow(主窗口)...");
+                    interop.ShowShareUIForWindow(hwnd);
+                    break;
             }
 
             for (var i = 0; i < 15 && !dataRequested; i++)

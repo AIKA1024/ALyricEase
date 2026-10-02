@@ -5,6 +5,7 @@ using ALyricEase.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using System.IO;
 using Avalonia.VisualTree;
 
 namespace ALyricEase.Views;
@@ -204,13 +205,42 @@ internal static class SongContextMenu
         {
             var topLevel = TopLevel.GetTopLevel(anchor);
             var ownerHandle = topLevel?.TryGetPlatformHandle()?.Handle ?? 0;
+            ShareDiag($"菜单分享点击: song={song.Source}#{song.Id}/{song.Mid} link={link} " +
+                $"topLevel={(topLevel is null ? "null(anchor 已脱离)" : "ok")} ownerHandle=0x{ownerHandle:X}");
             var description = string.IsNullOrWhiteSpace(song.Artist)
                 ? song.Name
                 : $"{song.Name} - {song.Artist}";
             await ServiceLocator.Get<IPlatformShareService>().ShareUriAsync(
                 ownerHandle, $"分享歌曲：{song.Name}", description, new Uri(link));
         }
-        catch { /* 当前宿主不支持系统分享时静默返回，浏览器入口仍可用。 */ }
+        catch (Exception ex)
+        {
+            ShareDiag($"菜单分享异常: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>分享链路诊断:写 %TEMP%\aly-share-diag.log(与 WindowsShareService 同一文件;
+    /// ALY_SHARE_DIAG=1 或 Debug 构建开启)。生产路径吞异常,UI 上"点击没反应"时靠它定位。</summary>
+    internal static void ShareDiag(string message)
+    {
+        try
+        {
+            var env = Environment.GetEnvironmentVariable("ALY_SHARE_DIAG");
+            var enabled = env == "1" || (env != "0" &&
+#if DEBUG
+                true
+#else
+                false
+#endif
+                );
+            if (!enabled) return;
+            var text = $"{DateTime.Now:HH:mm:ss.fff} [menu] {message}{Environment.NewLine}";
+            File.AppendAllText(Path.Combine(Path.GetTempPath(), "aly-share-diag.log"), text);
+        }
+        catch
+        {
+            // 诊断绝不影响分享
+        }
     }
 
     private static async Task OpenBrowserAsync(Visual anchor, string link)

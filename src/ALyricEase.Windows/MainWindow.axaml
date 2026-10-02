@@ -147,15 +147,15 @@
            顶部 48px 仍属 OS 拖拽区,三键按钮已由 MarkClientHitTest 标记为 HTCLIENT 可点击。 -->
       <StackPanel x:Name="WindowControls" Grid.Row="0" ZIndex="200" Height="48"
                   Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
-        <Button Classes="window-control" Click="OnMinimizeClick" ToolTip.Tip="最小化">
+        <Button Classes="window-control" Click="OnMinimizeClick">
           <TextBlock x:Name="MinGlyph" Text="{DynamicResource IconWindowMinimize}"
                      FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
         </Button>
-        <Button Classes="window-control" Click="OnMaximizeClick" ToolTip.Tip="最大化">
+        <Button Classes="window-control" Click="OnMaximizeClick">
           <TextBlock x:Name="MaxGlyph" Text="{DynamicResource IconWindowMaximize}"
                      FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
         </Button>
-        <Button Classes="window-control close-control" Click="OnCloseClick" ToolTip.Tip="关闭">
+        <Button Classes="window-control close-control" Click="OnCloseClick">
           <TextBlock x:Name="CloseGlyph" Text="{DynamicResource IconClose}"
                      FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="10" />
         </Button>

@@ -973,6 +973,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
     private CancellationTokenSource? _loadCancellation;
     private bool _isCloud;              // 当前展示的是音乐云盘(而非用户歌单)
+    private long _netEaseUserId;        // 登录网易云账号的用户 id(云盘页创建者芯片跳自己主页用)
 
     private sealed class AggregateLoadState
     {
@@ -1295,6 +1296,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _aggregateLoad = null;
         IsAggregate = false;
         SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘" });
+        // 云盘 = 登录用户自己的空间,创建者芯片显示自己并可跳自己主页
+        // (此前漏赋值,进场重置把 CreatorName 清空,hero 渲染成空芯片)
+        CreatorName = UserName;
+        CreatorId = _netEaseUserId;
         ClearTrackRows();
         Filters.Reset();
         PlaylistTitle = "音乐云盘";
@@ -2180,6 +2185,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             IsLoggedIn = true;
             _netEaseRestoredFromCache = false;
             UserName = profile.Nickname;
+            _netEaseUserId = profile.UserId;
             // 有正在展示/加载中的具体歌单(如刚点了个性推荐的卡片)时不得覆盖创建者,
             // 也不得自动打开"我喜欢的音乐" —— 否则会与该歌单的加载代次竞争,
             // 把用户点开的歌单顶掉、创建者显示成自己(实测)。

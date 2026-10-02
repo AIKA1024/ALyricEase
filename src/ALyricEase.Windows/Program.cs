@@ -113,6 +113,21 @@ class Program
       return;
     }
 
+    // 分享面板真机探针(--sharetest [direct|flyout|closed]):真窗口 + DataRequested 观测,
+    // 定位 WindowsShareService 吞掉的失败(ShowShareUIForWindow 不抛异常 ≠ 面板真的弹出)
+    if (args.Length > 0 && args[0] == "--sharetest")
+    {
+      var shareMode = args.Length > 1 ? args[1] : "direct";
+      var shareBuilder = BuildAvaloniaApp();
+      Dispatcher.UIThread.Post(async () =>
+      {
+        try { await ShareProbe.RunAsync(shareMode); }
+        finally { Dispatcher.UIThread.InvokeShutdown(); }
+      }, DispatcherPriority.Background);
+      shareBuilder.StartWithClassicDesktopLifetime(Array.Empty<string>(), Avalonia.Controls.ShutdownMode.OnExplicitShutdown);
+      return;
+    }
+
     BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
   }
 

@@ -112,12 +112,22 @@ public sealed partial class ArtistAlbumsPageViewModel : NavigationDetailViewMode
             if (page.Count > 0)
             {
                 _offset += page.Count;
+                List<AlbumCardViewModel>? qqCards = _ref.IsQq ? new List<AlbumCardViewModel>() : null;
                 foreach (var a in page)
-                    _allAlbums.Add(_ref.IsQq
-                        ? new AlbumCardViewModel(a.Id, a.Name, a.PicUrl, a.Mid)
-                        : new AlbumCardViewModel(a.Id, a.Name, a.PicUrl));
+                {
+                    var card = _ref.IsQq
+                        ? new AlbumCardViewModel(a.Id, a.Name, a.PicUrl, a.Mid,
+                            publishTimeMs: a.PublishTime, songCount: a.Size)
+                        : new AlbumCardViewModel(a.Id, a.Name, a.PicUrl,
+                            publishTimeMs: a.PublishTime, songCount: a.Size);
+                    qqCards?.Add(card);
+                    _allAlbums.Add(card);
+                }
                 RefreshVisibleAlbums();
                 HasAlbums = true;
+                // QQ 列表接口不带曲数(totalNum 恒 0),批量补拉后就地回填卡片信息行
+                if (qqCards is not null)
+                    _ = FetchQqSongCountsAsync(qqCards, generation, ct);
             }
             Subtitle = $"已加载 {_allAlbums.Count} 张专辑";
         }
@@ -137,6 +147,28 @@ public sealed partial class ArtistAlbumsPageViewModel : NavigationDetailViewMode
                 IsLoadingMore = false;
                 _loadTask = null;
             }
+        }
+    }
+
+    /// <summary>批量补拉 QQ 专辑曲数并回填卡片(列表接口不带曲数)。锦上添花:失败静默,换歌手即作废。</summary>
+    private async Task FetchQqSongCountsAsync(
+        IReadOnlyList<AlbumCardViewModel> cards, int generation, CancellationToken ct)
+    {
+        try
+        {
+            var mids = cards.Select(c => c.Mid).ToList();
+            var counts = await _qqApi.GetAlbumSongCountsAsync(mids, ct).ConfigureAwait(true);
+            if (!IsCurrentLoad(generation, ct)) return;
+            foreach (var card in cards)
+                if (counts.TryGetValue(card.Mid, out var count))
+                    card.UpdateSongCount(count);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            // 曲数补拉失败不影响卡片其余信息
         }
     }
 
@@ -274,10 +306,10 @@ public sealed partial class ArtistAlbumsPageViewModel : NavigationDetailViewMode
         => generation == _loadGeneration && !token.IsCancellationRequested;
 
     private static NavigationPageCacheAlbum ToCacheAlbum(AlbumCardViewModel album) => new(
-        album.Id, album.Title, album.CoverUrl, album.Mid);
+        album.Id, album.Title, album.CoverUrl, album.Mid, album.PublishTimeMs, album.SongCount);
 
     private static AlbumCardViewModel ToAlbumCard(NavigationPageCacheAlbum album) =>
-        new(album.Id, album.Title, album.CoverUrl, album.Mid);
+        new(album.Id, album.Title, album.CoverUrl, album.Mid, album.PublishTimeMs, album.SongCount);
 
     private void OnFiltersChanged()
     {

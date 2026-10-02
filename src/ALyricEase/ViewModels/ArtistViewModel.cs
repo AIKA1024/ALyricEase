@@ -87,7 +87,8 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
             if (!IsCurrentLoad(generation, ct)) return;
             foreach (var a in albums)
             {
-                var card = new AlbumCardViewModel(a.Id, a.Name, a.PicUrl);
+                var card = new AlbumCardViewModel(a.Id, a.Name, a.PicUrl,
+                    publishTimeMs: a.PublishTime, songCount: a.Size);
                 // 接口返回的 type 是字符串:专辑 / Single / EP
                 if (string.Equals(a.Type, "专辑", StringComparison.Ordinal)) Albums.Add(card);
                 else Singles.Add(card);
@@ -168,15 +169,20 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
 
             var albums = await _qqApi.GetArtistAlbumsAsync(singerMid, 50, ct);
             if (!IsCurrentLoad(generation, ct)) return;
+            var cards = new List<AlbumCardViewModel>();
             foreach (var a in albums)
             {
-                var card = new AlbumCardViewModel(a.Id, a.Name, a.PicUrl, a.Mid);
+                var card = new AlbumCardViewModel(a.Id, a.Name, a.PicUrl, a.Mid,
+                    publishTimeMs: a.PublishTime, songCount: a.Size);
+                cards.Add(card);
                 // QQ albumType:录音室专辑/现场专辑等归专辑,EP/单曲归"单曲与EP"
                 var isSingle = a.Type.Contains("EP", StringComparison.OrdinalIgnoreCase)
                                || a.Type.Contains("单曲", StringComparison.Ordinal);
                 if (isSingle) Singles.Add(card);
                 else Albums.Add(card);
             }
+            // 列表接口不带曲数(totalNum 恒 0),批量补拉后就地回填卡片信息行
+            _ = FetchQqSongCountsAsync(cards, generation, ct);
             HasAlbums = Albums.Count > 0;
             HasSingles = Singles.Count > 0;
         }
@@ -194,6 +200,28 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
                 _isLoading = false;
                 IsLoadingSongs = false;
             }
+        }
+    }
+
+    /// <summary>批量补拉 QQ 专辑曲数并回填卡片(列表接口不带曲数)。锦上添花:失败静默,换歌手即作废。</summary>
+    private async Task FetchQqSongCountsAsync(
+        IReadOnlyList<AlbumCardViewModel> cards, int generation, CancellationToken ct)
+    {
+        try
+        {
+            var mids = cards.Select(c => c.Mid).ToList();
+            var counts = await _qqApi.GetAlbumSongCountsAsync(mids, ct).ConfigureAwait(true);
+            if (!IsCurrentLoad(generation, ct)) return;
+            foreach (var card in cards)
+                if (counts.TryGetValue(card.Mid, out var count))
+                    card.UpdateSongCount(count);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            // 曲数补拉失败不影响卡片其余信息
         }
     }
 
@@ -333,10 +361,10 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         row.Song.PreferCachedPlayback);
 
     private static NavigationPageCacheAlbum ToCacheAlbum(AlbumCardViewModel album) => new(
-        album.Id, album.Title, album.CoverUrl, album.Mid);
+        album.Id, album.Title, album.CoverUrl, album.Mid, album.PublishTimeMs, album.SongCount);
 
     private static AlbumCardViewModel ToAlbumCard(NavigationPageCacheAlbum album) =>
-        new(album.Id, album.Title, album.CoverUrl, album.Mid);
+        new(album.Id, album.Title, album.CoverUrl, album.Mid, album.PublishTimeMs, album.SongCount);
 
     private static void RestoreSongFlags(NavigationPageCacheTrack track)
     {

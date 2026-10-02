@@ -150,10 +150,10 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:AlbumCardViewModel">
                 <Button Theme="{StaticResource RowButtonTheme}" Classes="album-card" Command="{Binding OpenCommand}">
-                  <!-- 两行(封面/标题):封面固定 200 高且顶对齐,标题间隔 6(与个性推荐/全部专辑页一致)。
+                  <!-- 三行(封面/标题/发布信息):封面固定 200 高且顶对齐,标题间隔 6(与个性推荐/全部专辑页一致)。
                        不要改回"单格 + 标题 Margin 220"的写法:Stretch + 固定 Height 会把封面垂直居中,
-                       卡片顶部空出 20 且标题贴住封面底边(实测间距 0)。 -->
-                  <Grid Width="200" RowDefinitions="200,Auto">
+                       卡片顶部空出 20 且标题贴住封面底边(实测间距 0)。发布信息行 = 原版歌手页同款"yyyy-M-d发布,共N首歌"。 -->
+                  <Grid Width="200" RowDefinitions="200,Auto,Auto">
                     <Border Grid.Row="0" Width="200" Height="200" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
                       <Grid>
                         <Image infra:ManagedCoverImage.DecodeSize="300"
@@ -164,6 +164,8 @@
                     </Border>
                     <TextBlock Grid.Row="1" Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                MaxLines="1" Margin="4,6,4,0" />
+                    <TextBlock Grid.Row="2" Text="{Binding InfoText}" FontSize="12" Foreground="{DynamicResource TextTertiary}"
+                               IsVisible="{Binding HasInfo}" TextTrimming="CharacterEllipsis" MaxLines="1" Margin="4,3,4,0" />
                   </Grid>
                 </Button>
               </DataTemplate>
@@ -189,10 +191,10 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:AlbumCardViewModel">
                 <Button Theme="{StaticResource RowButtonTheme}" Classes="album-card" Command="{Binding OpenCommand}">
-                  <!-- 两行(封面/标题):封面固定 200 高且顶对齐,标题间隔 6(与个性推荐/全部专辑页一致)。
+                  <!-- 三行(封面/标题/发布信息):封面固定 200 高且顶对齐,标题间隔 6(与个性推荐/全部专辑页一致)。
                        不要改回"单格 + 标题 Margin 220"的写法:Stretch + 固定 Height 会把封面垂直居中,
-                       卡片顶部空出 20 且标题贴住封面底边(实测间距 0)。 -->
-                  <Grid Width="200" RowDefinitions="200,Auto">
+                       卡片顶部空出 20 且标题贴住封面底边(实测间距 0)。发布信息行 = 原版歌手页同款"yyyy-M-d发布,共N首歌"。 -->
+                  <Grid Width="200" RowDefinitions="200,Auto,Auto">
                     <Border Grid.Row="0" Width="200" Height="200" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
                       <Grid>
                         <Image infra:ManagedCoverImage.DecodeSize="300"
@@ -203,6 +205,8 @@
                     </Border>
                     <TextBlock Grid.Row="1" Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                MaxLines="1" Margin="4,6,4,0" />
+                    <TextBlock Grid.Row="2" Text="{Binding InfoText}" FontSize="12" Foreground="{DynamicResource TextTertiary}"
+                               IsVisible="{Binding HasInfo}" TextTrimming="CharacterEllipsis" MaxLines="1" Margin="4,3,4,0" />
                   </Grid>
                 </Button>
               </DataTemplate>

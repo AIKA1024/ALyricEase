@@ -9,13 +9,13 @@
              x:CompileBindings="True"
              x:Class="ALyricEase.Controls.AlbumGrid">
   <UserControl.DataTemplates>
-    <!-- 专辑卡片:200 宽,封面黑遮罩悬停,点击跳专辑页(歌手页横滑卡片同款视觉) -->
+    <!-- 专辑卡片:200 宽,封面黑遮罩悬停,点击跳专辑页(歌手页横滑卡片同款视觉,含发布信息行) -->
     <DataTemplate x:DataType="vm:AlbumCardViewModel">
       <Button Theme="{StaticResource RowButtonTheme}" Classes="album-card" Command="{Binding OpenCommand}">
-        <!-- 两行(封面/标题)而非"标题用 Margin 下移":Grid 内 Stretch + 固定 Height 的封面会被垂直居中
+        <!-- 三行(封面/标题/发布信息)而非"标题用 Margin 下移":Grid 内 Stretch + 固定 Height 的封面会被垂直居中
              (实测 225 高的卡片里封面落在 y=12),标题就压到封面底部去了。分行后封面顶对齐,
              标题与封面的间隔由 StackPanel 式的 Margin 决定(6,与个性推荐卡片一致)。 -->
-        <Grid Width="200" RowDefinitions="200,Auto">
+        <Grid Width="200" RowDefinitions="200,Auto,Auto">
           <Border Grid.Row="0" Width="200" Height="200" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource ArtFallback}">
             <Grid>
               <Image infra:ManagedCoverImage.DecodeSize="300"
@@ -26,6 +26,8 @@
           </Border>
           <TextBlock Grid.Row="1" Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                      MaxLines="1" Margin="4,6,4,0" />
+          <TextBlock Grid.Row="2" Text="{Binding InfoText}" FontSize="12" Foreground="{DynamicResource TextTertiary}"
+                     IsVisible="{Binding HasInfo}" TextTrimming="CharacterEllipsis" MaxLines="1" Margin="4,3,4,0" />
         </Grid>
       </Button>
     </DataTemplate>

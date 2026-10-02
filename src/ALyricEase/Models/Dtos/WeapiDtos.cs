@@ -239,6 +239,9 @@ public sealed record ArtistAlbumItem
 
     public int Size { get; init; }
 
+    /// <summary>发行时间,毫秒时间戳(0 = 未知)。QQ 侧由 publishDate 文本解析而来。</summary>
+    [JsonPropertyName("publishTime")] public long PublishTime { get; init; }
+
     /// <summary>专辑类型:字符串"专辑" / "Single" / "EP"(实测路径接口返回的是中文+英文,非数字)。</summary>
     public string Type { get; init; } = "";
 }

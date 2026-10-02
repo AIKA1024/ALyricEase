@@ -31,7 +31,9 @@ internal sealed record NavigationPageCacheAlbum(
     long Id,
     string Title,
     string CoverUrl,
-    string Mid);
+    string Mid,
+    long PublishTimeMs = 0,
+    int SongCount = 0);
 
 internal sealed record NavigationPageCacheArtist(
     MusicSource Source,

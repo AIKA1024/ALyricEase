@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -1847,6 +1848,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 Name = a.AlbumName ?? "",
                 PicUrl = string.Format(CoverTemplate, a.AlbumMid!),
                 Size = a.TotalNum,
+                // publishDate 形如 "yyyy-MM-dd",统一成毫秒时间戳(与网易云 publishTime 同口径)
+                PublishTime = DateTimeOffset.TryParse(a.PublishDate, CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var pd) ? pd.ToUnixTimeMilliseconds() : 0,
                 Type = a.AlbumType ?? "",
             })
             .ToList();
@@ -1867,6 +1871,52 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             offset += page.Count;
         }
         return all;
+    }
+
+    /// <summary>批量查专辑曲数:一次 musicu 请求带 N 个 GetAlbumSongList 子模块(num=1 只为读 data.totalNum)。
+    /// 歌手专辑列表接口(GetAlbumList)的 totalNum 恒为 0,曲数只能这样补;实测 30 个子模块单次 0.23s 全成功。
+    /// 失败/缺失的 mid 不进结果字典,调用方按"锦上添花"处理。</summary>
+    public async Task<Dictionary<string, int>> GetAlbumSongCountsAsync(
+        IReadOnlyList<string> albumMids, CancellationToken ct = default)
+    {
+        var counts = new Dictionary<string, int>();
+        var mids = albumMids.Where(m => !string.IsNullOrEmpty(m)).Distinct().ToList();
+        // 分块 30:单请求子模块数留有余量,超过一块的串行补
+        foreach (var chunk in mids.Chunk(30))
+        {
+            var reqs = new List<Action<Utf8JsonWriter>>(chunk.Length);
+            for (var i = 0; i < chunk.Length; i++)
+            {
+                var albumMid = chunk[i];
+                var idx = i; // 键必须逐个带序号:四参重载把键写死成 req_0,N 个全叠一个键只回一个
+                reqs.Add(w => WriteModuleReq(w, $"req_{idx}", "music.musichallAlbum.AlbumSongList",
+                    "GetAlbumSongList", p =>
+                {
+                    p.WriteString("albumMid", albumMid);
+                    p.WriteNumber("num", 1);
+                    p.WriteNumber("begin", 0);
+                }));
+            }
+
+            using var doc = await PostMusicuMultiAsync(reqs, ct).ConfigureAwait(false);
+            for (var i = 0; i < chunk.Length; i++)
+            {
+                if (!doc.RootElement.TryGetProperty($"req_{i}", out var req)
+                    || req.ValueKind != JsonValueKind.Object)
+                    continue;
+                if (req.TryGetProperty("code", out var code)
+                    && code.ValueKind == JsonValueKind.Number && code.GetInt32() != 0)
+                    continue;
+                if (req.TryGetProperty("data", out var data)
+                    && data.ValueKind == JsonValueKind.Object
+                    && data.TryGetProperty("totalNum", out var totalNum)
+                    && totalNum.ValueKind == JsonValueKind.Number
+                    && totalNum.GetInt32() > 0)
+                    counts[chunk[i]] = totalNum.GetInt32();
+            }
+        }
+
+        return counts;
     }
 
     /// <summary>专辑全量曲目:music.musichallAlbum.AlbumSongList/GetAlbumSongList(单专辑一次拉全,通常 ≤ 100 首)。</summary>

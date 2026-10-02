@@ -66,7 +66,8 @@
                 <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                 <!-- 歌手/专辑链接按钮(仿原版 ArtistsAndAlbum),点击出菜单跳歌手/专辑页;两者皆无名时整个隐藏 -->
                 <Button x:Name="ArtistAlbumButton" Classes="row-link" HorizontalAlignment="Left"
-                        VerticalAlignment="Center" IsVisible="{Binding HasArtistOrAlbumName}">
+                        VerticalAlignment="Center" IsVisible="{Binding HasArtistOrAlbumName}"
+                        IsEnabled="{Binding HasArtistOrAlbum}">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="{Binding ArtistsAndAlbumText}" FontSize="12"
                                Foreground="{DynamicResource TextSecondary}"
@@ -99,6 +100,7 @@
                             <Setter Property="Header" Value="{Binding Name}" />
                             <Setter Property="Command" Value="{Binding OpenCommand}" />
                             <Setter Property="CommandParameter" Value="{Binding Id}" />
+                            <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
                           </ControlTheme>
                         </MenuItem.ItemContainerTheme>
                       </MenuItem>
@@ -211,6 +213,7 @@
                         <Setter Property="Header" Value="{Binding Name}" />
                         <Setter Property="Command" Value="{Binding OpenCommand}" />
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
+                        <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
                       </ControlTheme>
                     </MenuFlyout.ItemContainerTheme>
                   </MenuFlyout>
@@ -293,6 +296,7 @@
                         <Setter Property="Header" Value="{Binding Name}" />
                         <Setter Property="Command" Value="{Binding OpenCommand}" />
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
+                        <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
                       </ControlTheme>
                     </MenuFlyout.ItemContainerTheme>
                   </MenuFlyout>

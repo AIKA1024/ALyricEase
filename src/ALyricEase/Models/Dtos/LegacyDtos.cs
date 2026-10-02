@@ -22,6 +22,9 @@ public sealed record LegacySearchSong
     public int Duration { get; init; }
 
     public int Fee { get; init; }
+
+    /// <summary>权益(内嵌且与账号无关;st&lt;0 即无版权灰色)。</summary>
+    [JsonPropertyName("privilege")] public SongPrivilegeDto? Privilege { get; init; }
 }
 
 // ---------- 登录 / 歌单(明文 GET) ----------

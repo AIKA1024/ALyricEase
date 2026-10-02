@@ -560,6 +560,16 @@ public static class Program
             return;
         }
 
+        // 专辑可播性预判验证:GetAlbumAsync 映射后 IsNoCopyright 应对无版权专辑全灰(--necopyright [albumId])
+        if (args.Length > 0 && args[0] == "--necopyright")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(
+                    () => NetEaseCopyrightProbe.RunAsync(
+                        args.Length > 1 && long.TryParse(args[1], out var aid) ? aid : 18893))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 凭证过期诊断:同一份 Cookie 打 校验/账号摘要/红心写入 三条链路,打印真实错误码
         if (args.Length > 0 && args[0] == "--qqdiag")
         {

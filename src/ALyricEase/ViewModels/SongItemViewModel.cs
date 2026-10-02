@@ -177,8 +177,9 @@ public sealed partial class SongItemViewModel : ViewModelBase
         }
     }
 
-    /// <summary>有可跳转的歌手:网易云按数字 id,QQ 按 singer mid。</summary>
-    public bool HasArtist => (IsNetEase && Song.ArtistIds.Count > 0) || Song.ArtistMids.Count > 0;
+    /// <summary>有可跳转的歌手:网易云按数字 id,QQ 按 singer mid。
+    /// 须排除 id=0 的占位项——云盘无版权歌(服务端抹掉 ar[].id)只有名字,Count>0 但全是 0,不可跳。</summary>
+    public bool HasArtist => (IsNetEase && Song.ArtistIds.Any(id => id != 0)) || Song.ArtistMids.Count > 0;
 
     /// <summary>有歌手名(展示用):与 HasArtist(可跳转)区分——云盘等无版权歌曲有名字无 id。</summary>
     public bool HasArtistName => !string.IsNullOrEmpty(Song.Artist);
@@ -191,6 +192,9 @@ public sealed partial class SongItemViewModel : ViewModelBase
 
     /// <summary>歌手或专辑至少有名(每日行歌名下组合链接按钮的显示条件:两者皆无则整个隐藏)。</summary>
     public bool HasArtistOrAlbumName => HasArtistName || HasAlbumName;
+
+    /// <summary>歌手或专辑至少一个可跳转;都不可跳(如云盘无版权歌)时合并链接按钮整体禁用。</summary>
+    public bool HasArtistOrAlbum => HasArtist || HasAlbum;
 
     /// <summary>歌单内序号(1 起);非歌单场景为 0。</summary>
     public int Index { get; private set; }

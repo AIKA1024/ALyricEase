@@ -25,6 +25,9 @@ public sealed partial class ArtistNavItem : ObservableObject
     /// <summary>QQ 项(mid 非空):跳 QQ 歌手页。</summary>
     public bool IsQq => _mid.Length > 0;
 
+    /// <summary>有可跳转目标:网易云 id=0 的占位项(云盘无版权歌,服务端抹掉 id)不可跳,菜单里禁用。</summary>
+    public bool HasTarget => IsQq || Id != 0;
+
     internal string Mid => _mid;
 
     [RelayCommand]

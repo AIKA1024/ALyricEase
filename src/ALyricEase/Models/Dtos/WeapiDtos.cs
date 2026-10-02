@@ -94,6 +94,20 @@ public sealed record SearchUserItemDto
     [JsonPropertyName("signature")] public string Signature { get; init; } = "";
 }
 
+/// <summary>歌曲权益(可播性判定;多接口内嵌 privilege,字段名固定)。</summary>
+public sealed record SongPrivilegeDto
+{
+    public long Id { get; init; }
+
+    public int Fee { get; init; }
+
+    /// <summary>版权状态:&lt;0 = 真无版权(灰色,VIP 也无解,典型 -200)。</summary>
+    public int St { get; init; }
+
+    /// <summary>当前账号可播的最高码率(bps),0 = 不可播(账号相关)。</summary>
+    public int Pl { get; init; }
+}
+
 /// <summary>搜索接口返回的单曲(ar/al 为搜索接口字段名)。</summary>
 public sealed record SearchSong
 {
@@ -109,6 +123,9 @@ public sealed record SearchSong
     [JsonPropertyName("dt")] public int DurationMs { get; init; }
 
     public int Fee { get; init; }
+
+    /// <summary>权益(专辑/歌单详情内嵌;部分接口不给则为 null,可播性回退到 fee 判据)。</summary>
+    [JsonPropertyName("privilege")] public SongPrivilegeDto? Privilege { get; init; }
 }
 
 public sealed record SearchArtist
@@ -302,6 +319,9 @@ public sealed record SongDetailItem
     [JsonPropertyName("dt")] public int DurationMs { get; init; }
 
     public int Fee { get; init; }
+
+    /// <summary>权益(内嵌且与账号无关;st&lt;0 即无版权灰色)。</summary>
+    [JsonPropertyName("privilege")] public SongPrivilegeDto? Privilege { get; init; }
 }
 
 public sealed record UserAccountResponse

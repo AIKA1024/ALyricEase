@@ -47,6 +47,11 @@ public sealed class Song
     /// </summary>
     public bool IsPlaybackUnavailable { get; internal set; }
 
+    /// <summary>服务端权益判定为无版权(网易云 privilege.st&lt;0,如独家下架曲库,典型:周杰伦)。
+    /// 元数据阶段即可确定,与账号/VIP 无关,播放接口必然失败 —— 列表行直接灰禁,不必等点击。
+    /// 由网易云映射器写入;QQ 歌恒 false。</summary>
+    public bool IsNoCopyright { get; internal set; }
+
     /// <summary>该实例来自离线歌单快照且已确认有本地音频；播放时跳过在线音质升级请求。</summary>
     internal bool PreferCachedPlayback { get; set; }
 }

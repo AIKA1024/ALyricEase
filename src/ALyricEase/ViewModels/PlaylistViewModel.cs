@@ -2083,6 +2083,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             SelectedPlaylist = fresh;
             PlaylistTitle = fresh.Name;
         }
+
+        // 用户页"参与创作"卡片换新实例(不在用户页时无操作;无 DI 宿主静默跳过)
+        try { ServiceLocator.Get<UserProfileViewModel>().SyncCreatedPlaylist(renamed.Playlist, fresh); }
+        catch { /* 无头/自检宿主 */ }
     }
 
     /// <summary>删除成功后刷新对应侧栏分组;若被删歌单正作为详情页打开,清空详情回到
@@ -2097,6 +2101,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
         if (wasOpen)
             ResetDetailPage();
+
+        // 用户页"参与创作"卡片同步移除(不在用户页时无操作;无 DI 宿主静默跳过)
+        try { ServiceLocator.Get<UserProfileViewModel>().SyncCreatedPlaylist(deleted.Playlist, null); }
+        catch { /* 无头/自检宿主 */ }
     }
 
     /// <summary>聚合歌单在侧栏被重命名(集合中已换新实例)后,若打开中的详情页正是它,

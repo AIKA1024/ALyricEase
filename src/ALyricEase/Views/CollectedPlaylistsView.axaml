@@ -29,13 +29,41 @@
     <Style Selector="Button.user-row">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="8" />
+      <Setter Property="Padding" Value="0" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     </Style>
-    <Style Selector="Button.user-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <!-- 悬停/按下高亮画在内容 Grid 之下的独立 Border(TrackRow row-hover-bg 同构,与内容解耦):
+         挂在模板 CP 上的画刷过渡会让整个行子树跟着失效重绘,实测明显卡顿。
+         默认背景=页面底色实色(视觉等同透明),插值全程不透明,无半透明中间帧。
+         Padding 移入内容 Grid 的 Margin,让高亮 Border 铺满整行 -->
+    <Style Selector="Border.user-row-hover">
       <Setter Property="Background" Value="{DynamicResource UserSectionRowHover}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.user-row:pointerover Border.user-row-hover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <!-- 按住期间锁显:over 链清空时 :pointerover 失配会让高亮层消失 -->
+    <Style Selector="Button.user-row:pressed Border.user-row-hover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Border.user-row-pressed">
+      <Setter Property="Background" Value="{DynamicResource UserSectionRowPressed}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="IsVisible" Value="False" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.user-row:pressed Border.user-row-pressed">
+      <Setter Property="IsVisible" Value="True" />
     </Style>
     <Style Selector="StackPanel.row-actions">
       <Setter Property="Orientation" Value="Horizontal" />
@@ -44,6 +72,11 @@
       <Setter Property="IsVisible" Value="False" />
     </Style>
     <Style Selector="Button.user-row:pointerover StackPanel.row-actions">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <!-- 按住期间锁存显示:断"over 链清空 → 按钮显隐 → 布局变化 → over 重算"的反馈循环
+         (Avalonia 12 PointerOverPreProcessor 捕获期间 hit≠捕获元素即清空 over 链,与用户页同款) -->
+    <Style Selector="Button.user-row:pressed StackPanel.row-actions">
       <Setter Property="IsVisible" Value="True" />
     </Style>
     <!-- ▶/••• 圆钮复用全局 row-action + RowButtonTheme(与歌曲行同一套) -->
@@ -68,15 +101,18 @@
       <ItemsControl x:Name="Rows" ItemsSource="{Binding Playlists}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-            <Button Classes="user-row" Click="OnPlaylistRowClick">
-              <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+            <Button Classes="user-row" Tapped="OnPlaylistRowTapped" ContextRequested="OnPlaylistContextRequested">
+              <Panel>
+                  <Border Classes="user-row-hover" />
+                  <Border Classes="user-row-pressed" />
+                  <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12" Margin="8">
                 <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
-                        Background="{DynamicResource ArtFallback}">
+                        IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                   <Image Stretch="UniformToFill"
                          infra:ManagedCoverImage.DecodeSize="96"
                          infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
                 </Border>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
                   <TextBlock Classes="row-title" Text="{Binding Name}" />
                   <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
                 </StackPanel>
@@ -93,6 +129,7 @@
                   </Button>
                 </StackPanel>
               </Grid>
+              </Panel>
             </Button>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

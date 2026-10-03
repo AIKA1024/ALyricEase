@@ -4,7 +4,9 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using ALyricEase.ViewModels;
+using Avalonia;
 using Visual = Avalonia.Visual;
 
 namespace ALyricEase.Views;
@@ -139,5 +141,71 @@ public class TrackRow : TemplatedControl
             song.PlayCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    /// <summary>:pressed 伪类手动维护(TemplatedControl 不像 Button 自带按下态,此前 axaml 里的
+    /// :pressed 样式一直是死的):Avalonia 12 指针捕获期间 hit≠捕获元素 ⇒ 整条 over 链清空,
+    /// :pointerover 不可靠,按下视觉与悬浮元素锁存必须挂稳定的 :pressed(TrackRow.axaml 同名样式)。
+    /// 行内子按钮按下会冒泡到这里,行级 :pressed 一并生效(视觉锁存,无副作用)。</summary>
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
+    {
+        base.OnPointerPressed(e);
+        PseudoClasses.Set(":pressed", true);
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+        PseudoClasses.Set(":pressed", false);
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        PseudoClasses.Set(":pressed", false);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // 宿主就绪后才能拿 DI(设计器/无头可能没有):应用按钮位置互换的设置类并订阅后续变化
+        try
+        {
+            if (_state is null)
+            {
+                _state = ServiceLocator.Get<AppStateStore>();
+                _state.VisualEffectsChanged += OnVisualEffectsChanged;
+            }
+            ApplySwapClass();
+        }
+        catch
+        {
+            // 无 DI 宿主:保持默认布局
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        // 虚拟化回收:按住中行被移出树,残留按下态会带进复用行
+        PseudoClasses.Set(":pressed", false);
+        // 退订设置变化(行实例随虚拟化生灭,store 是应用级单例,不退订会积累死引用)
+        if (_state is not null)
+        {
+            _state.VisualEffectsChanged -= OnVisualEffectsChanged;
+            _state = null;
+        }
+    }
+
+    private AppStateStore? _state;
+
+    private void OnVisualEffectsChanged() => ApplySwapClass();
+
+    /// <summary>播放/喜欢按钮位置互换开关:挂在行类上,模板里的按钮副本按类显隐(见 TrackRow.axaml)。</summary>
+    private void ApplySwapClass()
+    {
+        var swap = _state?.SwapPlayAndLikeOnRows == true;
+        if (swap) Classes.Add("swap-ops");
+        else Classes.Remove("swap-ops");
     }
 }

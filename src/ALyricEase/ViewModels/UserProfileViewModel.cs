@@ -63,6 +63,21 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
     /// <summary>收藏的歌单(创建者 ≠ 该用户)。</summary>
     public ObservableCollection<PlaylistItemViewModel> CollectedPlaylists { get; } = new();
 
+    /// <summary>歌单被重命名/删除后同步"参与创作"卡片(管理入口只对本人歌单出现,
+    /// 收藏行与音乐品味行不涉及):fresh 非空 = 换侧栏刷新出的新实例(Playlist init-only,
+    /// 名字/封面随实例更新);null = 移除该行。歌单不在本页时无操作。</summary>
+    internal void SyncCreatedPlaylist(Models.Playlist target, PlaylistItemViewModel? fresh)
+    {
+        for (var i = 0; i < CreatedPlaylists.Count; i++)
+        {
+            var p = CreatedPlaylists[i].Playlist;
+            if (p.Id != target.Id || p.Source != target.Source) continue;
+            if (fresh is not null) CreatedPlaylists[i] = fresh;
+            else CreatedPlaylists.RemoveAt(i);
+            return;
+        }
+    }
+
     private (int Generation, CancellationToken Token) BeginLoad()
     {
         _loadCancellation?.Cancel();

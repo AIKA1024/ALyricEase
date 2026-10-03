@@ -24,10 +24,26 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 按下/hover 画刷过渡时间线(--pressedtimeline):逐帧记录 overlay Border 的 Background 值序列。
+        if (args.Length > 0 && args[0] == "--pressedtimeline")
+        {
+            var pressedBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            HeadlessApp.ConfigureServices();
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await PressedBrushTimelineProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[pressedtimeline] 异常: {ex}"); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            pressedBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            return;
+        }
+
         // 滑杆对齐行为探针(--slideralign):量 *列+MaxWidth 下 Slider 的实际排布。
         if (args.Length > 0 && args[0] == "--slideralign")
-        {
-            var alignBuilder = AppBuilder.Configure<HeadlessApp>()
+        {            var alignBuilder = AppBuilder.Configure<HeadlessApp>()
                 .UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
             HeadlessApp.ConfigureServices();

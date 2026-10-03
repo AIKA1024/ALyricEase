@@ -100,6 +100,10 @@ public sealed class AppStateStore
     /// <summary>传统播放控制。</summary>
     public bool LegacyPlaybackControl { get; set; }
 
+    /// <summary>歌曲行的播放/喜欢按钮位置互换(播放钮盖封面、喜欢钮在行中列)。改动经
+    /// VisualEffectsChanged 通知现有行即时切换。</summary>
+    public bool SwapPlayAndLikeOnRows { get; set; }
+
     /// <summary>音频交叉淡化开关。</summary>
     public bool Crossfade { get; set; }
 
@@ -166,6 +170,7 @@ public sealed class AppStateStore
             CompatibilityVisual = dto.CompatibilityVisual ?? true;
             AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 3);
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
+            SwapPlayAndLikeOnRows = dto.SwapPlayAndLikeOnRows ?? false;
             Crossfade = dto.Crossfade ?? false;
             CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;
             AudioOutputDeviceId = NormalizeDeviceText(dto.AudioOutputDeviceId);
@@ -262,6 +267,7 @@ public sealed class AppStateStore
                 CompatibilityVisual = CompatibilityVisual,
                 AudioQuality = AudioQuality,
                 LegacyPlaybackControl = LegacyPlaybackControl,
+                SwapPlayAndLikeOnRows = SwapPlayAndLikeOnRows,
                 Crossfade = Crossfade,
                 CrossfadeSeconds = CrossfadeSeconds,
                 AudioOutputDeviceId = AudioOutputDeviceId,

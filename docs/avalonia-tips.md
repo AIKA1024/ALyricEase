@@ -1664,3 +1664,62 @@ Transition 类型(WPF 也没有),Composition 动画只能驱动合成器属性(T
 
 **注意**:XML 注释里不能出现 `--`(探针名写成 `lyrblur`,别带横线,AVLN1001);
 判"行为对不对"先证伪探针(打印了过期变量 → 假失败),诊断打点看 gen/定时器时序最快。
+
+## 捕获期间 over 链清空:按住行移动,hover 样式与悬浮按钮闪烁
+
+(2026-10-03,用户页/收藏页歌单行实测;Avalonia 12.1.3)
+
+**症状**:整行 Button(hover 背景 + 悬停浮现 ▶/•••)按下拖动时,行背景在 hover 色与主题
+pressed 色间闪,浮现按钮快速出现/消失,循环往复。
+
+**根因**(读 12.1.3 源码定位):`PointerOverPreProcessor.GetEffectivePointerOverElement`:
+指针被捕获期间,**只要 hit-test 元素 ≠ 捕获元素,整个 over 链清空**(祖先的 IsPointerOver
+也置 false,与 11 的"over 沿祖先链传播"不同)。而 `MouseDevice.MouseDown` 的隐式捕获
+`_pointer.Capture(source, Implicit)` 捕的是**按下瞬间命中的最内层元素**——可能是行内的
+image/textblock/模板元素,不是行本身 ⇒ 按住后移动,hit 在"== captured"与"≠ captured"间翻面,
+行 `:pointerover` 跟着抖。
+
+**反馈循环**(为什么是"闪烁"而不是"变一次"):行 `:pointerover` 驱动 row-actions 的
+`IsVisible` → 显隐造成布局变化 → `SceneInvalidated` 里会按指针位置**重新 hit-test 并重算
+over 链**(源码即有此钩子) → 命中结果又翻面 → 循环。
+
+**修法三件套**(缺一可能只把"背景闪"换成"按钮闪"):
+1. 行内非交互内容(封面瓦片、文本块)`IsHitTestVisible="False"`:命中恒落到行模板元素,
+   捕获元素稳定,内容/背景间移动不再翻面;
+2. `:pressed` 时锁存 hover 期才显示的元素(`row-actions IsVisible=True`,声明在
+   pointerover 样式之后):按住期间布局恒定,反馈循环断掉;
+3. 行的 `:pressed` 背景本地样式(pressed 声明在 pointerover 之后):背景不受 over 抖动影响。
+   只定义 `:pointerover` 不定义 `:pressed` 的行,按下无反馈、拖出回落主题 pressed 色。
+
+**已知残余**:按住期间指针悬在行内子按钮上时,子按钮自身 hover 高亮不亮(over 链为 null,
+伪类语义如此);松开后恢复。宽屏卡(card-op 用 Opacity 浮现,无布局反馈)不构成循环,未改。
+
+**性能补充(2026-10-03 实测)**:画刷过渡**不能挂在模板 ContentPresenter(内容宿主)上**——每帧
+背景失效拖着整个行子树(封面图/文本)重绘,肉眼可见卡顿;歌曲行不卡正因为动画在独立无内容
+兄弟 Border 上。正确结构:`Button.Padding=0`(内容 Grid 自己 `Margin=8`,让高亮层铺满原 padding
+区)+ 内容外包 `<Panel>`,首个子元素为 `IsHitTestVisible=False` 的高亮 Border(默认背景=所在底色
+**实色**,防 Transparent 插值的半透明中间帧),`:pointerover`/`:pressed` 样式指向该 Border。
+错误挂载方式会让用户报"歌单行动画卡、歌曲行不卡"。
+
+**BrushTransition 的"晚一拍"坑(2026-10-03,探针 --pressedtimeline 实测)**:伪类切换画刷时,
+属性值序列 = 旧值 → **终值直接落地(可被渲染一帧)** → Transition 才从旧值启动插值。后果:按下色
+先闪终值再回旧色渐变,感知为"过一会一瞬间变过去"(hover 不明显只是起点即底色);Transparent 起
+点的插值中间帧还是半透明灰。**修法**:需要"瞬时"的状态色(按下)用**独立覆盖层 + IsVisible 瞬时
+显隐**(不走 Transitions);需要"渐变"的状态色(hover)才用 BrushTransition,且**默认背景设为所在
+底色的实色**(不用 Transparent,防半透明中间帧)。探针留档:Headless/PressedBrushTimelineProbe.cs
+(注意:无头 MouseMove 不填 hitTest ⇒ over 链建立不了,伪类探针要子类暴露 PseudoClasses 直接驱动;
+无头动画每轮 InvalidateVisual 补帧;XML 注释别写探针名的 `--`)。
+
+**追加(同日实测)**:即便默认背景实色化,BrushTransition 在**真实渲染泵**下仍有 hover 高亮
+延迟 ~0.5s 才出现的问题(无头探针同结构即时 ⇒ 差异在真实渲染泵与画刷失效的交互,未深究)。
+**行类 hover 高亮的最终形态**:背景**恒定为 hover 色**、`Opacity 0↔1` + DoubleTransition 渐显
+(歌曲行 row-hover-bg 方案,数值插值即时),**不要用 BrushTransition 切背景色**。按下色(瞬时)
+另用独立按下层 IsVisible 显隐。
+
+**应用到 TrackRow(TemplatedControl)的额外坑**:`:pressed` 伪类 TemplatedControl 不自带,
+不手动设置则 axaml 里的 `:pressed` 选择器**从不匹配**(本仓库就躺过一条死样式)。修法:
+TrackRow.cs 在 OnPointerPressed/Released/CaptureLost 维护 `PseudoClasses.Set(":pressed", ...)`,
+OnDetachedFromVisualTree 清理(虚拟化回收防残留按下态带进复用行);axaml 里 hover 期显隐/布局类
+样式(row-ops、row-heart、时长隐藏、标题 ColumnSpan)各加一条 `:pressed` 版本锁存,紧跟对应
+`:pointerover` 之后、末尾触屏 `.touch` 覆盖之前。一处覆盖全部 ControlTheme 变体
+(Search/PlaylistWide/Album)。⚠ `VisualTreeAttachmentEventArgs` 在 Avalonia 根命名空间。

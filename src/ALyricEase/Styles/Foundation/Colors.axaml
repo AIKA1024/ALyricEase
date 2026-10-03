@@ -23,6 +23,7 @@
             <SolidColorBrush x:Key="CardOverlayButtonPressed" Color="#CC000000" />
             <!-- 歌单行悬停背景:浅色半透明 / 深色实色 #343434(原版) -->
             <SolidColorBrush x:Key="RowHoverBackground" Color="#33000000" />
+            <SolidColorBrush x:Key="RowPressedBackground" Color="#59000000" />
             <SolidColorBrush x:Key="AppListBackground" Color="#B3FFFFFF" />
             <SolidColorBrush x:Key="TextPrimary" Color="#1B1B1B" />
             <SolidColorBrush x:Key="TextSecondary" Color="#5D5D5D" />
@@ -52,6 +53,7 @@
             <SolidColorBrush x:Key="UserSectionCardBackground" Color="#F7F7F7" />
             <SolidColorBrush x:Key="UserSectionCardDivider" Color="#0F000000" />
             <SolidColorBrush x:Key="UserSectionRowHover" Color="#0D000000" />
+            <SolidColorBrush x:Key="UserSectionRowPressed" Color="#1A000000" />
             <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#C8F3F3F3" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#10000000" />
@@ -91,6 +93,7 @@
             <SolidColorBrush x:Key="CardOverlayButtonPressed" Color="#CC000000" />
             <!-- 歌单行悬停背景:深色实色 #343434(原版) -->
             <SolidColorBrush x:Key="RowHoverBackground" Color="#FF343434" />
+            <SolidColorBrush x:Key="RowPressedBackground" Color="#FF464646" />
             <SolidColorBrush x:Key="AppListBackground" Color="#0DFFFFFF" />
             <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF" />
             <SolidColorBrush x:Key="TextSecondary" Color="#C2C2C2" />
@@ -117,6 +120,7 @@
             <SolidColorBrush x:Key="UserSectionCardBackground" Color="#232323" />
             <SolidColorBrush x:Key="UserSectionCardDivider" Color="#393939" />
             <SolidColorBrush x:Key="UserSectionRowHover" Color="#343434" />
+            <SolidColorBrush x:Key="UserSectionRowPressed" Color="#464646" />
             <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#D0181818" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#12FFFFFF" />

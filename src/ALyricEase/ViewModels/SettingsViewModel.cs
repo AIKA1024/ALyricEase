@@ -142,6 +142,20 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public string CompatibilityVisualText => CompatibilityVisual ? "已启用" : "未启用";
 
+    /// <summary>歌曲行的播放/喜欢按钮位置互换。只改"怎么画"：经 VisualEffectsChanged
+    /// 通知现有行即时换类，不失效任何状态。</summary>
+    public bool SwapPlayAndLikeOnRows
+    {
+        get => _state.SwapPlayAndLikeOnRows;
+        set
+        {
+            _state.SwapPlayAndLikeOnRows = value;
+            _state.Save();
+            _state.NotifyVisualEffectsChanged();
+            OnPropertyChanged(nameof(SwapPlayAndLikeOnRows));
+        }
+    }
+
     partial void OnStatusChanged(string? value) => OnPropertyChanged(nameof(HasStatus));
 
     public bool HasStatus => !string.IsNullOrEmpty(Status);

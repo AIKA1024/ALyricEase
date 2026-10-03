@@ -59,6 +59,9 @@ public sealed class AppStateFile
     /// <summary>传统播放控制(点击行直接播放/双击入队等老式行为,当前仅存储偏好)。</summary>
     public bool? LegacyPlaybackControl { get; set; }
 
+    /// <summary>歌曲行的播放/喜欢按钮位置互换(播放钮盖封面、喜欢钮在行中列)。</summary>
+    public bool? SwapPlayAndLikeOnRows { get; set; }
+
     /// <summary>音频交叉淡化开关。</summary>
     public bool? Crossfade { get; set; }
 

@@ -129,7 +129,7 @@
     <Style Selector="Button.user-row">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="8" />
+      <Setter Property="Padding" Value="0" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -137,8 +137,43 @@
     <Style Selector="Button.user-row /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="CornerRadius" Value="8" />
     </Style>
-    <Style Selector="Button.user-row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <!-- 悬停/按下高亮画在内容 Grid 之下的独立 Border(TrackRow row-hover-bg 同构):
+         画刷过渡挂在模板 CP 上时,每帧背景失效拖着整个行子树(封面图/文本)重绘,实测明显卡顿;
+         独立轻量层与内容解耦则与歌曲行同速。默认背景=分组卡片同色实色(视觉等同透明),
+         插值全程不透明,避免 Transparent→hover 色的半透明中间帧。Padding 移入内容 Grid 的 Margin,
+         让高亮 Border 能铺满整行(含原 padding 区) -->
+    <!-- 悬停/按下高亮画在内容 Grid 之下的独立 Border(TrackRow row-hover-bg 同构):
+         背景恒 hover 色不参与过渡,用 Opacity 0↔1 渐显(DoubleTransition 数值插值,即时启动;
+         画刷过渡 BrushTransition 接管晚一拍,实测 hover 延迟出现)。Padding 移入内容 Grid 的
+         Margin,让高亮层铺满整行(含原 padding 区) -->
+    <Style Selector="Border.user-row-hover">
       <Setter Property="Background" Value="{DynamicResource UserSectionRowHover}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.user-row:pointerover Border.user-row-hover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <!-- 按住期间锁显:over 链清空时 :pointerover 失配会让高亮层消失 -->
+    <Style Selector="Button.user-row:pressed Border.user-row-hover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <!-- 按下层:瞬时显隐(无过渡语义)。BrushTransition 实测比样式赋值晚一拍接管(赋值瞬间终值先落地
+         可被渲染,探针 pressedtimeline 证实),按下色的变化不能走画刷过渡 -->
+    <Style Selector="Border.user-row-pressed">
+      <Setter Property="Background" Value="{DynamicResource UserSectionRowPressed}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="IsVisible" Value="False" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.user-row:pressed Border.user-row-pressed">
+      <Setter Property="IsVisible" Value="True" />
     </Style>
     <!-- 悬停浮现操作按钮(同 TrackRow row-ops):用 IsVisible 而非 Opacity ——
          非悬停时不占布局空间,歌名列多出一截;浮现/收起无过渡(TrackRow 同款瞬时切换) -->
@@ -149,6 +184,12 @@
       <Setter Property="IsVisible" Value="False" />
     </Style>
     <Style Selector="Button.user-row:pointerover StackPanel.row-actions">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <!-- 按住期间锁存显示:Avalonia 12 指针捕获期间(hit≠捕获元素)整个 over 链被清空
+         (PointerOverPreProcessor.GetEffectivePointerOverElement),行 :pointerover 抖动会
+         让按钮显隐 → 布局变化 → SceneInvalidated 重算 over → 死循环闪烁。按住恒显断循环。 -->
+    <Style Selector="Button.user-row:pressed StackPanel.row-actions">
       <Setter Property="IsVisible" Value="True" />
     </Style>
     <!-- ▶/••• 圆形按钮复用全局 Button.row-action 样式 + RowButtonTheme(与歌曲行同一套) -->
@@ -224,7 +265,7 @@
             </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:UserTasteRowViewModel">
-                  <Button Classes="card" Click="OnTasteRowClick">
+                  <Button Classes="card" Tapped="OnTasteRowTapped" ContextRequested="OnPlaylistContextRequested">
                     <StackPanel>
                       <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
                         <Grid>
@@ -285,7 +326,7 @@
             </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-                  <Button Classes="card" Click="OnPlaylistRowClick">
+                  <Button Classes="card" Tapped="OnPlaylistRowTapped" ContextRequested="OnPlaylistContextRequested">
                     <StackPanel>
                       <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
                         <Grid>
@@ -334,7 +375,7 @@
             </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-                  <Button Classes="card" Click="OnPlaylistRowClick">
+                  <Button Classes="card" Tapped="OnPlaylistRowTapped" ContextRequested="OnPlaylistContextRequested">
                     <StackPanel>
                       <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
                         <Grid>
@@ -385,10 +426,13 @@
             <ItemsControl ItemsSource="{Binding TasteRows}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:UserTasteRowViewModel">
-                  <Button Classes="user-row" Click="OnTasteRowClick">
-                    <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+                  <Button Classes="user-row" Tapped="OnTasteRowTapped" ContextRequested="OnPlaylistContextRequested">
+                    <Panel>
+                      <Border Classes="user-row-hover" />
+                      <Border Classes="user-row-pressed" />
+                      <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12" Margin="8">
                       <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
-                              Background="{DynamicResource ArtFallback}">
+                              IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                         <Panel>
                           <Image Stretch="UniformToFill" IsVisible="{Binding !ShowHeart}"
                                  infra:ManagedCoverImage.DecodeSize="96"
@@ -398,7 +442,7 @@
                                      IsVisible="{Binding ShowHeart}" />
                         </Panel>
                       </Border>
-                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
                         <TextBlock Classes="row-title" Text="{Binding Playlist.Playlist.Name}" />
                         <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
                       </StackPanel>
@@ -416,6 +460,7 @@
                         </Button>
                       </StackPanel>
                     </Grid>
+                    </Panel>
                   </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -427,15 +472,18 @@
             <ItemsControl ItemsSource="{Binding CreatedPlaylists}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-                  <Button Classes="user-row" Click="OnPlaylistRowClick">
-                    <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+                  <Button Classes="user-row" Tapped="OnPlaylistRowTapped" ContextRequested="OnPlaylistContextRequested">
+                    <Panel>
+                      <Border Classes="user-row-hover" />
+                      <Border Classes="user-row-pressed" />
+                      <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12" Margin="8">
                       <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
-                              Background="{DynamicResource ArtFallback}">
+                              IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                         <Image Stretch="UniformToFill"
                                infra:ManagedCoverImage.DecodeSize="96"
                                infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
                       </Border>
-                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
                         <TextBlock Classes="row-title" Text="{Binding Name}" />
                         <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
                       </StackPanel>
@@ -453,6 +501,7 @@
                         </Button>
                       </StackPanel>
                     </Grid>
+                    </Panel>
                   </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -464,15 +513,18 @@
             <ItemsControl ItemsSource="{Binding CollectedPlaylists}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-                  <Button Classes="user-row" Click="OnPlaylistRowClick">
-                    <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12">
+                  <Button Classes="user-row" Tapped="OnPlaylistRowTapped" ContextRequested="OnPlaylistContextRequested">
+                    <Panel>
+                      <Border Classes="user-row-hover" />
+                      <Border Classes="user-row-pressed" />
+                      <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12" Margin="8">
                       <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
-                              Background="{DynamicResource ArtFallback}">
+                              IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                         <Image Stretch="UniformToFill"
                                infra:ManagedCoverImage.DecodeSize="96"
                                infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
                       </Border>
-                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
                         <TextBlock Classes="row-title" Text="{Binding Name}" />
                         <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
                       </StackPanel>
@@ -489,6 +541,7 @@
                         </Button>
                       </StackPanel>
                     </Grid>
+                    </Panel>
                   </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>

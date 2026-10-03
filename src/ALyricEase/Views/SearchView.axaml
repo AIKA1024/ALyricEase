@@ -124,8 +124,12 @@
         <Style Selector=".narrow Grid.results-header">
             <Setter Property="Margin" Value="16,0,12,0" />
         </Style>
+        <!-- ⚠ 这条现在**不生效**:StackPanel.results-body 自带局部 Margin(24,12,24,120),局部值
+             优先级高于样式 setter ⇒ 小屏结果区仍是 24/12/24/120。底边仍须写 PlayerBarReserve(120):
+             一旦摘掉局部值让这条生效,底边写 8 就吃掉了小屏的播放条预留(2026-10-03 pagereserve 探针
+             实测过这条是死码)。回归线:Headless 的 pagereserve 探针。 -->
         <Style Selector=".narrow StackPanel.results-body">
-            <Setter Property="Margin" Value="12,8,12,8" />
+            <Setter Property="Margin" Value="12,8,12,120" />
         </Style>
         <!-- 回顶按钮(原版 BackToTopButton:40x40 圆形)。常驻占位:显隐走透明度 + 命中穿透,
              不用 IsVisible——出现/消失时会挤压标题行宽度造成布局跳动 -->

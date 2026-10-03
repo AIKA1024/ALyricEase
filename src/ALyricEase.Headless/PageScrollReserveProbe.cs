@@ -15,7 +15,9 @@ namespace ALyricEase.Headless;
 /// page-scroll 预留带不得外溢(--pagescroll)。
 ///
 /// 背景:内容页根 ScrollViewer 加 page-scroll 后,由 Styles/Controls/Scrolling.axaml 把
-/// "它自己的纵向滚动条"抬高 PlayerBarReserve(=100),免得滑块/轨道伸到常驻播放条后面。
+/// "它自己的纵向滚动条"抬高 PlayerBarReserve(当前 120,见 Dimensions.axaml),免得滑块/轨道
+/// 伸到常驻播放条后面。期望值从资源里读,不写死 —— 曾经写死 100,eec4b92 把
+/// PlayerBarReserve 改成 120 后这条线就一直红着(2026-10-03 才发现)。
 /// 这条样式必须写成 <c>ScrollViewer.page-scroll /template/ ScrollBar:vertical</c>。
 ///
 /// 若写成后代式 <c>ScrollViewer.page-scroll ScrollBar</c>(空格 = 后代,不区分层级),
@@ -23,16 +25,27 @@ namespace ALyricEase.Headless;
 /// 底部 100px 边距,直接被顶到容器中间(2026-09-17 实测回归,用户报告)。
 ///
 /// 夹具与断言(自包含:宿主上真正加载 Scrolling.axaml,不依赖 HeadlessApp 的样式表):
-///   页根 ScrollViewer(page-scroll) ── 纵向条 → 必须 bottom=100(抬起)
+///   页根 ScrollViewer(page-scroll) ── 纵向条 → 必须 bottom=PlayerBarReserve(抬起)
 ///     ├─ 嵌套横向 ScrollViewer ─────── 水平条 → 必须无外边距(原样)
 ///     └─ 嵌套纵向 ScrollViewer ─────── 纵向条 → 必须无外边距(原样)
 /// </summary>
 public static class PageScrollReserveProbe
 {
-    private const double Reserve = 100;
+    /// <summary>从 Dimensions.PlayerBarReserve 读期望值(不写死:改资源时这条线不会变红)。</summary>
+    private static double ResolveReserve()
+    {
+        if (Application.Current!.TryFindResource("PlayerBarReserve", out var resource)
+            && resource is Thickness thickness)
+            return thickness.Bottom;
+        Console.WriteLine("[pagescroll] [FAIL] 找不到 PlayerBarReserve 资源,期望值只能退回默认 120");
+        return 120;
+    }
 
     public static void Run()
     {
+        var reserve = ResolveReserve();
+        Console.WriteLine($"[pagescroll] 期望预留 = PlayerBarReserve.Bottom = {reserve:F0}px");
+
         var host = new ProbeHost { Content = BuildFixture() };
         var win = new Window { Width = 800, Height = 500, Content = host };
         win.Show();
@@ -67,7 +80,7 @@ public static class PageScrollReserveProbe
             if (!isPageRoot && bar.Orientation == Orientation.Horizontal) nestedHorizontalSeen = true;
 
             var m = bar.Margin;
-            var wantBottom = wantInset ? Reserve : 0;
+            var wantBottom = wantInset ? reserve : 0;
             var ok = m.Left == 0 && m.Top == 0 && m.Right == 0 && Math.Abs(m.Bottom - wantBottom) < 0.01;
             if (!ok) failed++;
 

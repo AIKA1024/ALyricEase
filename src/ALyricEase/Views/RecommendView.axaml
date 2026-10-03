@@ -99,8 +99,12 @@
     <Style Selector=".compact Border.card-art">
       <Setter Property="Width" Value="168" /><Setter Property="Height" Value="168" />
     </Style>
+    <!-- ⚠ 底边必须是 PlayerBarReserve(120),和其它断点一样 —— 内容根 margin 是页面唯一的
+         底部留白来源,少一档小屏滚到底时最后一行就压在播放条下面(2026-10-03 用户报
+         "个性推荐的自动留白失效了";这条曾是 16,0,12,0,宽/中屏 120 只有小屏漏了)。
+         回归线:Headless 的 pagereserve 探针(三个页面 × 三个断点)。 -->
     <Style Selector=".narrow StackPanel#PageContent">
-      <Setter Property="Margin" Value="16,0,12,0" />
+      <Setter Property="Margin" Value="16,0,12,120" />
     </Style>
     <Style Selector=".narrow Button.card">
       <Setter Property="Width" Value="156" /><Setter Property="Height" Value="206" />

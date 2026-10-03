@@ -381,9 +381,9 @@
        (实测亚克力失效、内容被硬切在播放条上缘)。抬升由各内容页内容根的
        Margin bottom = PlayerBarReserve 承担(计入滚动范围,滚到底才空出这段)。
        ScrollBar 底部同步抬起,避免滑块/轨道延伸到播放条后面。
-       数值来自 Dimensions.PlayerBarReserve,集中维护、各页统一。 -->
-  <Style Selector="ScrollViewer.page-scroll">
-  </Style>
+       数值来自 Dimensions.PlayerBarReserve,集中维护、各页统一。
+       ⚠ page-scroll 类本身不再设任何属性(下面那条 ScrollBar 样式只是以它为锚点)——
+       别再把预留塞回 ScrollViewer.Padding。回归线:Headless 的 pagescroll + pagereserve 探针。 -->
   <!-- ⚠ 必须用 /template/ + :vertical 收窄,不能写成 `ScrollViewer.page-scroll ScrollBar`:
        空格是**后代**选择器,会连页内嵌套滚动容器的滚动条一起命中 —— 个性推荐里横向卡片区
        的水平滚动条会被套上底部 100px 边距、被顶到容器中间(2026-09-17 实测回归)。

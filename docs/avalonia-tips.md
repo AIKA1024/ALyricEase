@@ -1151,30 +1151,37 @@ private bool IsHostPresentable()
   而 `CompositionOptions.UseRegionDirtyRectClipping` **从 12.1 起默认关闭**且明说会增加 CPU 开销,
   只对无 GPU 加速的平台有意义 ⇒ **不要开**。
 
-## 新增内容页:根 ScrollViewer 加 `Classes="page-scroll"` 自动让出播放条高度
+## 新增内容页:内容根 `margin bottom` = `PlayerBarReserve`(每个断点都要留)
 
 **背景**:底部播放条(`PlayerBarView`)在 `AppShell` 里以 `VerticalAlignment="Bottom"` +
 `ZIndex=1` **覆盖**在内容区上方(常驻显示、不随"有无曲目"隐藏),`PlayerBarHeight=100`,
 顶部进度条还向上凸 14px(落在预留带内,不遮内容)。这是 overlay 语义——滚到中途内容从播放条
-下方穿过,只有滚到底才空出一片。所以**不能**把播放条改成 docked 布局,只能让每个内容页在
-底部留一段等于播放条高度的空白。
+下方穿过(亚克力背景透出模糊内容),只有滚到底才空出一片。所以**不能**把播放条改成 docked
+布局,只能让每个内容页在底部留一段等于播放条高度的空白。
 
-**规则**:任何"整页可滚动"的内容页,根 `ScrollViewer` 加上 `Classes="page-scroll"` 即可,
-**不要再自己写底部留白**(不要给内容 `Grid`/`StackPanel` 写 `Margin="...,100"`、也不要单独写
-`ScrollBar` 底部 `Margin`)。
+**规则**(两头都要):
+
+1. 根 `ScrollViewer` 加 `Classes="page-scroll"` —— 它现在**只**负责"把本页自己的纵向滚动条
+   抬起 `PlayerBarReserve`"(见下一条);
+2. **内容根**(内容树里直接挂在滚动视口下、包住全部内容的那一个元素,如
+   `StackPanel#PageContent` / `Grid#PageLayout` / `StackPanel.results-body` /
+   `Grid.detail-shell`)写 `Margin` 底边 = `PlayerBarReserve`(=120,
+   `Styles/Foundation/Dimensions.axaml`,与 `PlayerBarHeight` 对齐)。
+
+⚠ **预留不能再走 `ScrollViewer.Padding`**(2026-09-25 `eec4b92` 已废弃该方案):padding 会压缩
+视口,内容被永久约束在播放条上方、**根本进不了播放条(亚克力)后面的区域**,"覆盖式"不成立
+(实测亚克力失效、内容被硬切在播放条上缘)。改成内容根 margin —— margin **计入滚动范围**,
+滚到底才空出,最后一行正好抬到播放条上方。
 
 ```xml
 <ScrollViewer Classes="page-scroll" VerticalScrollBarVisibility="Auto" ...>
-  <!-- 内容,底部不需要任何 margin -->
+  <StackPanel Margin="48,0,32,120">   <!-- 底边 = PlayerBarReserve,每个断点都要留 -->
 </ScrollViewer>
 ```
 
-`page-scroll` 做两件事(都在 `Styles/Controls/Scrolling.axaml`,两端 `App.axaml` 都已
+`page-scroll` 实际只剩一件事(`Styles/Controls/Scrolling.axaml`,两端 `App.axaml` 都已
 `StyleInclude` 该文件,自动生效):
 
-- 给根 `ScrollViewer` 设 `Padding` 底部 = `PlayerBarReserve`(=100,集中定义在
-  `Styles/Foundation/Dimensions.axaml`,与 `PlayerBarHeight` 对齐)。`ScrollViewer.Padding`
-  **计入滚动范围**,所以滚到底才留白、中途不挡内容——正是想要的行为。
 - 给**它自己的纵向滚动条**设底部留白(`Margin="0,0,0,PlayerBarReserve"`,选择器为
   `ScrollViewer.page-scroll /template/ ScrollBar:vertical`),滑块/轨道不伸到播放条后面
   (保留"滚到中途轨道在播放条上方"的观感)。
@@ -1184,12 +1191,42 @@ private bool IsHostPresentable()
   `/template/` 只命中该 ScrollViewer 自己模板里的滚动条,不会进嵌套 ScrollViewer;
   `:vertical` 再排除横向条(根内容页横向滚动均为 Disabled,这里只为防误伤)。
   回归线:`--pagescroll`(`src/ALyricEase.Headless/PageScrollReserveProbe.cs`),
-  用最小夹具断言"页根纵向条抬起 100、嵌套容器的横/纵条原样",
+  用最小夹具断言"页根纵向条抬起 `PlayerBarReserve`、嵌套容器的横/纵条原样",
   并已做受控 A/B 确认它真能测到后代式写法(后代式 → 5 条不符、exit 1)。
+  ⚠ 期望值必须从 `PlayerBarReserve` 资源读,**不要写死数字**:它曾经写死 100,`eec4b92` 把资源
+  改成 120 后这条线就一直红着、没人发现(2026-10-03 才发现并修)。
+
+### ⚠ 预留"每个断点都要留",且小心局部值把断点覆盖变成死码
+
+内容根的 margin 写在**样式**里,于是会被 `.compact` / `.narrow` 的覆盖整份替换掉 —— 覆盖时
+只改左右、忘了底边就会吃掉预留(而且只有那个断点出问题,宽屏自测完全看不出来):
+
+| 页面 | 基础 / `.compact` | `.narrow` | 结果 |
+|---|---|---|---|
+| `RecommendView` | 120 / 120 | **0**(`eec4b92` 起) | ❌ 窄窗口滚到底最后一行压在播放条下(2026-10-03 用户报"个性推荐的自动留白失效了") |
+| `SearchView` | 120 | 8 | 覆盖是**死码**(见下),当前不生效 |
+| `RecentPlaybackView` | 120 | 0 | 覆盖是**死码**,当前不生效 |
+
+窄窗口(窗口宽 < 641,即 `narrow` 档;`MainWindow.MinWidth=360`,桌面也能拖到)是唯一暴露路径
+—— `eec4b92` 逐页提预留时只提了基础(和部分 `.compact`)margin,漏了 `.narrow`。
+
+**为什么只有推荐页真的坏了**:Avalonia 里**局部值(代码/内联属性)优先级高于样式 setter**。
+`RecentPlaybackView` 的 `Grid#PageLayout`、`SearchView` 的 `StackPanel.results-body` 都把 `Margin`
+写成了内联值(`48,20,32,120` / `24,12,24,120`),它们那两条 `.narrow` 覆盖**根本不生效**
+(实测三档量出来都是 120)——这既是巧合也是坑:谁哪天按本仓"可能被样式覆盖的属性不写局部值"
+的约定把内联值摘掉让覆盖生效,底边写 0 / 8 就会立刻吃掉小屏预留。所以那两处死码的底边也一并
+改成 120(零行为变化,只是拆雷)。
+
+**回归线**:`--pagereserve`(`src/ALyricEase.Headless/PageBottomReserveProbe.cs`)——
+真实 View + 真实 VM(塞够内容让页面能滚)+ 假播放条 overlay(`ZIndex=1`、高 100),
+3 个页面 × 3 个断点各跑一次,滚到底后在窗口坐标量
+`视口下沿 − 预留承载元素下沿`,必须等于 `PlayerBarReserve.Bottom`;同时断言内容真的撑满视口
+(否则这轮根本测不出预留,不能算通过),并把假播放条高也纳入判定(留白 < 100 就是"被遮住")。
+每例落一张滚到底的截图,失败时直接看得到现场。
 
 **为什么集中**:之前各页各写一个不一致的硬编码底部留白(`Settings` 只留 40、`Search` 留 90、
-其余 110/116),窄屏还用 116/104——`Settings` 和 `Search` 因为留少了,滚到底仍被播放条挡住。
-统一后改播放条高度只动 `Dimensions.axaml` 一处,且不会再出现"某页漏留白"。
+其余 110/116),统一后改播放条高度只动 `Dimensions.axaml` 一处;但"每页 × 每断点各写一份"
+这条结构性风险还在(`eec4b92` 已经漏过一次),所以靠 `--pagereserve` 兜住。
 
 **落地实例**:`SettingsView` / `RecommendView` / `ArtistView` / `ArtistSongsPageView` /
 `ArtistAlbumsPageView` / `PlaylistView` / `AlbumView` / `SearchView` / `RecentPlaybackView` /
@@ -1201,8 +1238,7 @@ private bool IsHostPresentable()
 1. 居中卡片、没有滚动容器的页(如 `PersonalFmView`)接不上 `page-scroll`;只有窗口够矮时才可能
    被遮,需要的话给它包一层带 `page-scroll` 的 `ScrollViewer`。
 2. 嵌套在页内的二级滚动区(如歌单页里的横向卡片区)用别的 class(如 `tracks-scroller`),
-   **不要**把 `page-scroll` 套到非根滚动容器上——它的 `Padding` 底部按整页预留,
-   往里套会撑出多余空白。
+   **不要**把 `page-scroll` 套到非根滚动容器上——它的滚动条留白按整页预留,往里套会撑出多余空白。
 
 ## 别用 RenderTransform 把"贴边"的子控件往外推:ScrollViewer 自带 ClipToBounds
 

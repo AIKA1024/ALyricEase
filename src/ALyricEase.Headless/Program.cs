@@ -501,6 +501,13 @@ public static class Program
             return;
         }
 
+        // 内容页底部播放条预留是否还在(推荐/最近播放/搜索结果 × 三个断点)
+        if (args.Length > 0 && args[0] == "--pagereserve")
+        {
+            Environment.ExitCode = PageBottomReserveProbe.Run();
+            return;
+        }
+
         // QQ 音乐 API 冒烟:匿名打真实接口验证歌单修复(不依赖登录 Cookie)
         if (args.Length > 0 && args[0] == "--qqapi")
         {

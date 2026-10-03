@@ -10,6 +10,13 @@
              mc:Ignorable="d" d:DesignWidth="320" d:DesignHeight="600"
              x:Class="ALyricEase.Views.NavigationPaneView">
     <UserControl.Styles>
+        <!-- 分组标题由本组件的数据模板创建；使用正文主色保证浅色主题下的对比度，并避免
+             外层样式作用域和禁用 ListBoxItem 模板前景影响实际颜色。 -->
+        <Style Selector="TextBlock.nav-header">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
         <!-- 分组头折叠箭头:对齐 WinUI NavigationView——收起朝下(0°),展开旋转 180° 朝上,
              带旋转过渡(约 200ms ease-out) -->
         <Style Selector="TextBlock.nav-chevron">

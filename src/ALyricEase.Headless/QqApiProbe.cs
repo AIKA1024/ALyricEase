@@ -313,4 +313,66 @@ public static class QqApiProbe
         }
         return exit;
     }
+
+    /// <summary>用户歌单逐个试读探针(--qqplaylist [tid]):无参列出全部歌单(id/dirId/标称曲数),
+    /// 再对每个歌单调 GetPlaylistTrackPageAsync 读首页,逐个打印成功/失败与服务端错误码。
+    /// 带 tid 参数时对指定歌单做 GetPlaylistTracksAsync 全量拉取计时(复现 UI 打开路径)。</summary>
+    public static async Task<int> RunPlaylistProbeAsync(long? fullTid = null)
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var api = new QQMusicApiClient(new CookieStore());
+        if (!api.IsLoggedIn)
+        {
+            Console.WriteLine("[qqplaylist][FAIL] 本机无有效 QQ Cookie");
+            return 1;
+        }
+        var exit = 0;
+        try
+        {
+            if (fullTid is { } tid)
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var total = 0;
+                for (var begin = 0; ; begin += 300)
+                {
+                    var page = await api.GetPlaylistTrackPageAsync(tid, begin, 300);
+                    Console.WriteLine($"[qqplaylist]   begin={begin}: 本页{page.Songs.Count}首 total={page.TotalCount} HasMore={page.HasMore} 首曲=[{page.Songs.FirstOrDefault()?.Name}] 尾曲=[{page.Songs.LastOrDefault()?.Name}]");
+                    total += page.Songs.Count;
+                    if (!page.HasMore) break;
+                    if (begin > 10000) { Console.WriteLine("[qqplaylist]   超过 10 页,疑似死循环,中断"); break; }
+                }
+                sw.Stop();
+                Console.WriteLine($"[qqplaylist] 全量 tid={tid}: 合计 {total} 首,耗时 {sw.ElapsedMilliseconds}ms");
+                return 0;
+            }
+
+            var pls = await api.GetUserPlaylistsAsync();
+            Console.WriteLine($"[qqplaylist] 用户歌单 {pls.Count} 个:");
+            foreach (var p in pls)
+                Console.WriteLine($"[qqplaylist]   id={p.Id} dirId={p.DirId} 名=[{p.Name}] 标称{p.TrackCount}首 可加歌={p.CanAddTracks}");
+
+            foreach (var p in pls)
+            {
+                try
+                {
+                    var page = await api.GetPlaylistTrackPageAsync(p.Id, 0, 5);
+                    Console.WriteLine($"[qqplaylist]   [{p.Name}] tid={p.Id}: OK 首页{page.Songs.Count}首 total={page.TotalCount} 首曲=[{page.Songs.FirstOrDefault()?.Name}]");
+                }
+                catch (Exception ex)
+                {
+                    var code = (ex as ApiException)?.Code;
+                    Console.WriteLine($"[qqplaylist]   [{p.Name}] tid={p.Id}: FAIL {ex.GetType().Name} code={code} {ex.Message}");
+                    exit = 1;
+                }
+            }
+            Console.WriteLine(exit == 0 ? "[qqplaylist] 全部歌单可读" : "[qqplaylist] 存在读取失败的歌单");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[qqplaylist][FAIL] {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+            exit = 1;
+        }
+        return exit;
+    }
 }

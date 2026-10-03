@@ -228,6 +228,30 @@ public static class Program
             return;
         }
 
+        // QQ 歌单生产路径打开(--qqopen [tid] [dirId] [名]):真 DI + 生产的 OpenQqPlaylistCommand,
+        // 复现"个别歌单加载不出来"(默认开听歌吧 tid=2660913991 dirId=5 + BGM 对照)
+        if (args.Length > 0 && args[0] == "--qqopen")
+        {
+            // 与 --pl-cover-flash 同款:UsePlatformDetect(UseHeadless 会在 Setup 前踩静态标志报
+            // "Setup was already called",实测 2026-10-03);exitCode 经局部变量带出(lambda 内直赋不稳定)
+            var openBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var openExitCode = 1;
+            long tid = args.Length > 1 && long.TryParse(args[1], out var ot) ? ot : 2660913991;
+            long dirId = args.Length > 2 && long.TryParse(args[2], out var od) ? od : 5;
+            string name = args.Length > 3 ? args[3] : "听歌吧";
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { openExitCode = await QqOpenProbe.RunAsync(tid, dirId, name); }
+                catch (Exception ex) { Console.Error.WriteLine($"[qqopen] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            openBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = openExitCode;
+            return;
+        }
+
         // 打开别的歌单时曲目封面"又加载一遍"(--pl-cover-flash):真窗口 + 真歌单页 + 真实封面,
         // 同进程对照"清空重建 vs 逐位替换"两档下"本该显示封面却没显示"的可见行数逐帧曲线。
         if (args.Length > 0 && args[0] == "--pl-cover-flash")
@@ -545,6 +569,16 @@ public static class Program
         if (args.Length > 0 && args[0] == "--qqsearch")
         {
             Environment.ExitCode = System.Threading.Tasks.Task.Run(QqApiProbe.RunSearchProbeAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // QQ 用户歌单逐个试读:列出全部歌单并对每个读首页,定位个别歌单加载失败的真实错误码;
+        // 带 tid 参数(--qqplaylist 2660913991)时对该歌单做全量拉取计时
+        if (args.Length > 0 && args[0] == "--qqplaylist")
+        {
+            long? fullTid = args.Length > 1 && long.TryParse(args[1], out var t) ? t : null;
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(() => QqApiProbe.RunPlaylistProbeAsync(fullTid))
                 .GetAwaiter().GetResult();
             return;
         }

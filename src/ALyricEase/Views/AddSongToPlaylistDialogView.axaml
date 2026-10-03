@@ -11,13 +11,6 @@
     <!-- 原版 AddToPlaylistDialogContent 的搜索框 + 单击歌单行，套入项目统一的窗口内 ContentDialog 骨架。 -->
     <Grid x:Name="Root">
         <Grid.Styles>
-            <Style Selector="Grid#Root">
-                <Setter Property="Transitions">
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
-                    </Transitions>
-                </Setter>
-            </Style>
             <Style Selector="Button.playlist-choice">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />

@@ -12,14 +12,6 @@
          下载完成切待重启态 = 立即重启/稍后。三态都在 SettingsViewModel。 -->
     <Grid x:Name="Root">
         <Grid.Styles>
-            <!-- 打开时 0→1 淡入由 code-behind 触发(IsVisible 翻转不跑过渡,先置 0 下一帧再置 1) -->
-            <Style Selector="Grid#Root">
-                <Setter Property="Transitions">
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
-                    </Transitions>
-                </Setter>
-            </Style>
             <!-- 三态面板切换淡入 -->
             <Style Selector="StackPanel.dialog-state">
                 <Setter Property="Transitions">

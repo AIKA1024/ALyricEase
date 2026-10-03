@@ -9,7 +9,7 @@ using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
-/// <summary>登录对话框视图：打开时淡入，并把焦点放到当前登录方式的首要控件。</summary>
+/// <summary>登录对话框视图；显隐动画由宿主统一协调，打开后聚焦当前登录方式的首要控件。</summary>
 public partial class LoginDialogView : UserControl
 {
     private PlaylistViewModel? _subscribedPlaylist;
@@ -25,8 +25,7 @@ public partial class LoginDialogView : UserControl
         {
             if (e.Property == IsVisibleProperty && IsVisible)
             {
-                Root.Opacity = 0;
-                Dispatcher.UIThread.Post(FocusActiveInput, DispatcherPriority.Render);
+                Dispatcher.UIThread.Post(FocusActiveInput, DispatcherPriority.Loaded);
             }
         };
     }
@@ -129,7 +128,9 @@ public partial class LoginDialogView : UserControl
 
     private void FocusActiveInput()
     {
-        Root.Opacity = 1;
+        if (!IsVisible || !IsEnabled)
+            return;
+
         var vm = DataContext as MainViewModel;
         var playlist = vm?.Playlist;
         var target = playlist switch

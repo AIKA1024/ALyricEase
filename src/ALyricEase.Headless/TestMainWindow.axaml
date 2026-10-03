@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:infra="using:ALyricEase.Infrastructure"
         xmlns:views="using:ALyricEase.Views"
         xmlns:vm="using:ALyricEase.ViewModels"
         x:DataType="vm:MainViewModel"
@@ -190,10 +191,10 @@
 
       <!-- 登录对话框(共享 LoginDialogView):ZIndex 200 高于正在播放覆盖层(100),
            播放详情页里点红心也能弹登录。 -->
-      <views:LoginDialogView IsVisible="{Binding IsLoginDialogOpen}"
+      <views:LoginDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLoginDialogOpen}"
                              Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
 
-      <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
+      <views:AddSongToPlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAddSongToPlaylistDialogOpen}"
                                          Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
     </Grid>
   </ExperimentalAcrylicBorder>

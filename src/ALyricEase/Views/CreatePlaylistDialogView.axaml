@@ -12,16 +12,6 @@
          按钮右下:取消 + 强调色主按钮)。Esc=取消(取消按钮 HotKey,弹层隐藏时自动失效);
          Enter=确认(卡片 KeyBinding,焦点在弹层内时触发)。不支持点击空白关闭。 -->
     <Grid x:Name="Root">
-        <Grid.Styles>
-            <!-- 打开时 0→1 淡入由 code-behind 触发(IsVisible 翻转不跑过渡,先置 0 下一帧再置 1) -->
-            <Style Selector="Grid#Root">
-                <Setter Property="Transitions">
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
-                    </Transitions>
-                </Setter>
-            </Style>
-        </Grid.Styles>
         <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
         <Panel Background="#99000000" />
         <Grid DataContext="{Binding CreatePlaylistDialog}" x:DataType="vm:CreatePlaylistDialogViewModel"

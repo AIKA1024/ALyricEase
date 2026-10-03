@@ -5,7 +5,7 @@ using Avalonia.Threading;
 
 namespace ALyricEase.Views;
 
-/// <summary>添加到歌单模态视图：打开时淡入并把输入焦点放到搜索框。</summary>
+/// <summary>添加到歌单模态视图；显隐动画由宿主统一协调，打开后聚焦搜索框。</summary>
 public partial class AddSongToPlaylistDialogView : UserControl
 {
     public AddSongToPlaylistDialogView()
@@ -16,12 +16,11 @@ public partial class AddSongToPlaylistDialogView : UserControl
         {
             if (e.Property == IsVisibleProperty && IsVisible)
             {
-                Root.Opacity = 0;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    Root.Opacity = 1;
-                    SearchBox.Focus();
-                }, DispatcherPriority.Render);
+                    if (IsVisible && IsEnabled)
+                        SearchBox.Focus();
+                }, DispatcherPriority.Loaded);
             }
         };
     }

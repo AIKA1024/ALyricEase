@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:MainViewModel"
@@ -39,39 +40,39 @@
 
         <!-- 登录对话框(共享 LoginDialogView):ZIndex 200 高于正在播放覆盖层(100),
              播放详情页里点红心也能弹登录。 -->
-        <views:LoginDialogView IsVisible="{Binding IsLoginDialogOpen}"
+        <views:LoginDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLoginDialogOpen}"
                                Grid.Row="1" ZIndex="200" />
 
         <!-- 添加聚合歌单对话框(与登录弹层同层,声明在其后 → 同时可见时盖在其上) -->
-        <views:AddAggregateDialogView IsVisible="{Binding IsAggregateDialogOpen}"
+        <views:AddAggregateDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAggregateDialogOpen}"
                                       Grid.Row="1" ZIndex="200" />
 
         <!-- 聚合歌单设置对话框(齿轮;同层最末 → 同时可见时盖在最上) -->
-        <views:AggregateSettingsDialogView IsVisible="{Binding IsAggregateSettingsDialogOpen}"
+        <views:AggregateSettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAggregateSettingsDialogOpen}"
                                            Grid.Row="1" ZIndex="200" />
 
         <!-- 重命名歌单对话框(侧栏歌单子项右键/长按;同层,声明在聚合设置弹层之后) -->
-        <views:RenamePlaylistDialogView IsVisible="{Binding IsRenamePlaylistDialogOpen}"
+        <views:RenamePlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsRenamePlaylistDialogOpen}"
                                         Grid.Row="1" ZIndex="200" />
 
         <!-- 删除歌单确认对话框(侧栏歌单子项右键/长按;同层,声明在重命名弹层之后) -->
-        <views:DeletePlaylistDialogView IsVisible="{Binding IsDeletePlaylistDialogOpen}"
+        <views:DeletePlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsDeletePlaylistDialogOpen}"
                                         Grid.Row="1" ZIndex="200" />
 
         <!-- 播放条长按菜单中的“添加到歌单”。 -->
-        <views:AddSongToPlaylistDialogView IsVisible="{Binding IsAddSongToPlaylistDialogOpen}"
+        <views:AddSongToPlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAddSongToPlaylistDialogOpen}"
                                            Grid.Row="1" ZIndex="200" />
 
         <!-- 音频输出设备选择弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
-        <views:AudioDeviceDialogView IsVisible="{Binding IsAudioDeviceDialogOpen}"
+        <views:AudioDeviceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAudioDeviceDialogOpen}"
                                      Grid.Row="1" ZIndex="200" />
 
         <!-- 清除缓存确认弹窗(设置页;声明在设备弹层之后 → 同时可见时盖在最上) -->
-        <views:ClearCacheDialogView IsVisible="{Binding IsClearCacheDialogOpen}"
+        <views:ClearCacheDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsClearCacheDialogOpen}"
                                     Grid.Row="1" ZIndex="200" />
 
         <!-- 应用更新弹窗(设置页;同层最末 → 同时可见时盖在最上;安卓=下载 APK 后调系统安装器) -->
-        <views:UpdateDialogView IsVisible="{Binding IsUpdateDialogOpen}"
+        <views:UpdateDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsUpdateDialogOpen}"
                                 Grid.Row="1" ZIndex="200" />
     </Grid>
 </UserControl>

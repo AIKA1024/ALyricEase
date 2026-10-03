@@ -9,16 +9,9 @@
              x:Class="ALyricEase.Views.DeletePlaylistDialogView">
     <!-- 删除歌单确认对话框(与 RenamePlaylistDialogView 同款骨架,确认按钮为危险红):
          烟雾层盖住整窗拦截输入 + 居中卡片。Esc=取消;Enter=确认删除。
-         打开时淡入由 code-behind 触发(无输入框,不抢焦点)。 -->
+         打开/关闭动画由壳层的 ModalVisibilityTransition 统一协调(无输入框,不抢焦点)。 -->
     <Grid x:Name="Root">
         <Grid.Styles>
-            <Style Selector="Grid#Root">
-                <Setter Property="Transitions">
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
-                    </Transitions>
-                </Setter>
-            </Style>
             <Style Selector="Button.dialog-danger">
                 <Setter Property="Background" Value="#FFE74C3C" />
                 <Setter Property="Foreground" Value="White" />

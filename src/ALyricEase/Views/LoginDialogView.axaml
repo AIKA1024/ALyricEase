@@ -10,13 +10,6 @@
              x:Class="ALyricEase.Views.LoginDialogView">
     <Grid x:Name="Root" Container.Name="loginRoot" Container.Sizing="Width">
         <Grid.Styles>
-            <Style Selector="Grid#Root">
-                <Setter Property="Transitions">
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.14" />
-                    </Transitions>
-                </Setter>
-            </Style>
             <Style Selector="Button.source-tab">
                 <Setter Property="MinWidth" Value="116" />
                 <Setter Property="Height" Value="36" />

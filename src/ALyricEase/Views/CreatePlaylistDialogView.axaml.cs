@@ -4,8 +4,7 @@ using Avalonia.Threading;
 
 namespace ALyricEase.Views;
 
-/// <summary>创建歌单对话框视图:打开(IsVisible=true)时先置 0 下一帧再置 1 触发淡入,
-/// 并聚焦名称输入框(IsVisible 翻转本身不跑过渡)。</summary>
+/// <summary>创建歌单对话框视图；显隐动画由宿主统一协调，打开后聚焦名称输入框。</summary>
 public partial class CreatePlaylistDialogView : UserControl
 {
     public CreatePlaylistDialogView()
@@ -15,12 +14,11 @@ public partial class CreatePlaylistDialogView : UserControl
         {
             if (e.Property == IsVisibleProperty && IsVisible)
             {
-                Root.Opacity = 0;
                 Dispatcher.UIThread.Post(() =>
                 {
-                    Root.Opacity = 1;
-                    NameBox.Focus();
-                }, DispatcherPriority.Render);
+                    if (IsVisible && IsEnabled)
+                        NameBox.Focus();
+                }, DispatcherPriority.Loaded);
             }
         };
     }

@@ -8,17 +8,8 @@
              mc:Ignorable="d"
              x:Class="ALyricEase.Views.RenamePlaylistDialogView">
     <!-- 重命名歌单对话框(与 CreatePlaylistDialogView 同款骨架):烟雾层盖住整窗拦截输入 +
-         居中卡片。Esc=取消;Enter=确认。打开时淡入与聚焦输入框由 code-behind 触发。 -->
+         居中卡片。Esc=取消;Enter=确认。动画由壳层统一协调,code-behind 只负责聚焦输入框。 -->
     <Grid x:Name="Root">
-        <Grid.Styles>
-            <Style Selector="Grid#Root">
-                <Setter Property="Transitions">
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
-                    </Transitions>
-                </Setter>
-            </Style>
-        </Grid.Styles>
         <Panel Background="#99000000" />
         <Grid DataContext="{Binding RenamePlaylistDialog}" x:DataType="vm:RenamePlaylistDialogViewModel"
               HorizontalAlignment="Center" VerticalAlignment="Center">

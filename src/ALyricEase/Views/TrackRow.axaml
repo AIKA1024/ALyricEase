@@ -54,8 +54,8 @@
                     <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                                FontSize="20" Foreground="White" />
                   </Button>
-                  <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
-                          HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">
+                  <Button x:Name="LikeCoverButton" Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding LikeToolTip}">
                     <Grid>
                       <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
                                  FontSize="24"
@@ -130,8 +130,8 @@
                 <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                            FontSize="15" />
               </Button>
-              <Button Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-action row-like-inline"
-                      Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">
+              <Button x:Name="LikeInlineButton" Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-action row-like-inline"
+                      Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding LikeToolTip}">
                 <Grid>
                   <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="15"
                              Foreground="White" IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />
@@ -190,8 +190,8 @@
                     <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                                FontSize="20" Foreground="White" />
                   </Button>
-                  <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
-                          HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">
+                  <Button x:Name="LikeCoverButton" Theme="{StaticResource RowButtonTheme}" Classes="row-heart" Command="{Binding LikeCommand}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding LikeToolTip}">
                     <Grid>
                       <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
                                  FontSize="24"
@@ -214,8 +214,8 @@
                 <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                            FontSize="15" />
               </Button>
-              <Button Grid.Column="3" Theme="{StaticResource RowButtonTheme}" Classes="row-action row-like-inline"
-                      Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">
+              <Button x:Name="LikeInlineButton" Grid.Column="3" Theme="{StaticResource RowButtonTheme}" Classes="row-action row-like-inline"
+                      Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding LikeToolTip}">
                 <Grid>
                   <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="15"
                              Foreground="White" IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />
@@ -293,9 +293,9 @@
                   <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                              FontSize="13" Foreground="White" />
                 </Button>
-                <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart album-heart"
+                <Button x:Name="LikeCoverButton" Theme="{StaticResource RowButtonTheme}" Classes="row-heart album-heart"
                         Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                        ToolTip.Tip="喜欢">
+                        ToolTip.Tip="{Binding LikeToolTip}">
                   <Grid>
                     <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}"
                                FontSize="15"
@@ -317,8 +317,8 @@
                 <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
                            FontSize="15" />
               </Button>
-              <Button Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-action row-like-inline"
-                      Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="喜欢">
+              <Button x:Name="LikeInlineButton" Grid.Column="2" Theme="{StaticResource RowButtonTheme}" Classes="row-action row-like-inline"
+                      Command="{Binding LikeCommand}" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip.Tip="{Binding LikeToolTip}">
                 <Grid>
                   <TextBlock Text="{DynamicResource IconHeart}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="15"
                              Foreground="White" IsVisible="{Binding IsInLikelist, Converter={x:Static BoolConverters.Not}}" />

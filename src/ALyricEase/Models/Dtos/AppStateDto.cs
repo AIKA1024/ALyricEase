@@ -23,6 +23,9 @@ public sealed class AppStateFile
     /// <summary>搜索历史(最新在前;null = 从未搜过)。</summary>
     public List<string>? SearchHistory { get; set; }
 
+    /// <summary>上次选择的搜索来源(SearchSourceMode 枚举值；缺省为综合)。</summary>
+    public int? PreferredSearchSource { get; set; }
+
     /// <summary>最近成功开始播放的歌曲(最新在前;null = 旧版本尚未记录)。</summary>
     public List<RecentSongFile>? RecentSongs { get; set; }
 
@@ -61,6 +64,9 @@ public sealed class AppStateFile
 
     /// <summary>歌曲行的播放/喜欢按钮位置互换(播放钮盖封面、喜欢钮在行中列)。</summary>
     public bool? SwapPlayAndLikeOnRows { get; set; }
+
+    /// <summary>综合搜索合并歌曲的默认“我喜欢”平台(MusicSource 枚举值；null = 尚未选择)。</summary>
+    public int? PreferredCombinedLikeSource { get; set; }
 
     /// <summary>音频交叉淡化开关。</summary>
     public bool? Crossfade { get; set; }

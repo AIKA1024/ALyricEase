@@ -115,6 +115,12 @@ public sealed record SearchSong
 
     public string Name { get; init; } = "";
 
+    /// <summary>歌曲别名/版本说明（常含影视用途、Live 等补充信息）。</summary>
+    [JsonPropertyName("alia")] public List<string>? Aliases { get; init; }
+
+    /// <summary>发行时间，毫秒时间戳；搜索响应可能缺省为 0。</summary>
+    [JsonPropertyName("publishTime")] public long PublishTimeMs { get; init; }
+
     [JsonPropertyName("ar")] public List<SearchArtist>? Artists { get; init; }
 
     [JsonPropertyName("al")] public SearchAlbum? Album { get; init; }

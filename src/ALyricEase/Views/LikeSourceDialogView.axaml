@@ -1,0 +1,131 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.LikeSourceDialogView">
+  <!-- Fluent 2 决策对话框：清晰标题与说明、整行可点的平台单选项、单一强调操作。
+       烟雾层不支持点击空白关闭，Esc/系统返回明确取消，避免误触改变账号收藏。 -->
+  <Grid x:Name="Root">
+    <Grid.Styles>
+      <Style Selector="Button.like-source-choice">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="MinHeight" Value="72" />
+        <Setter Property="Padding" Value="14,12" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+        <Setter Property="BorderThickness" Value="1" />
+      </Style>
+      <Style Selector="Button.like-source-choice /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+      </Style>
+      <Style Selector="Button.like-source-choice:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+      </Style>
+      <Style Selector="Button.like-source-choice.selected /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+        <Setter Property="BorderThickness" Value="2" />
+      </Style>
+      <!-- Fluent Button 的状态色画在模板 ContentPresenter 上，复合状态也必须在同一层覆盖。 -->
+      <Style Selector="Button.like-source-choice.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+        <Setter Property="BorderThickness" Value="2" />
+      </Style>
+      <Style Selector="Border.like-source-indicator">
+        <Setter Property="Opacity" Value="0" />
+      </Style>
+      <Style Selector="Button.like-source-choice.selected Border.like-source-indicator">
+        <Setter Property="Opacity" Value="1" />
+      </Style>
+    </Grid.Styles>
+
+    <Panel Background="#99000000" />
+    <Grid DataContext="{Binding LikeSourceDialog}"
+          x:DataType="vm:LikeSourceDialogViewModel"
+          HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16">
+      <Border MaxWidth="520" MinWidth="340" Padding="24" CornerRadius="12"
+              Background="{DynamicResource AppSurface}"
+              BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+              BoxShadow="0 32 64 #66000000">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+          <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock Text="选择收藏平台" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="这条搜索结果同时来自网易云音乐和 QQ 音乐。请选择要修改“我喜欢”的平台。"
+                       FontSize="13" LineHeight="20" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}" />
+          </StackPanel>
+
+          <TextBlock Grid.Row="1" Text="{Binding SongText}" FontSize="14" FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis" />
+
+          <StackPanel Grid.Row="2" Spacing="8">
+            <Button x:Name="NetEaseChoice" Classes="like-source-choice"
+                    Classes.selected="{Binding IsNetEaseSelected}"
+                    IsVisible="{Binding HasNetEase}"
+                    Command="{Binding SelectNetEaseCommand}"
+                    AutomationProperties.Name="{Binding NetEaseAutomationName}">
+              <Grid ColumnDefinitions="4,32,*,Auto" ColumnSpacing="12">
+                <Border Classes="like-source-indicator" Width="4" CornerRadius="2"
+                        Background="{DynamicResource SystemAccentColor}" />
+                <Image Grid.Column="1" Width="28" Height="28" VerticalAlignment="Center"
+                       Source="avares://ALyricEase/Assets/TrackTags/SourceNetease.png" />
+                <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Text="网易云音乐" FontSize="14" FontWeight="SemiBold" />
+                  <TextBlock Text="收藏到网易云音乐账号的“我喜欢的音乐”"
+                             FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+                </StackPanel>
+                <TextBlock Grid.Column="3" Text="{Binding NetEaseStateText}" FontSize="12"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+              </Grid>
+            </Button>
+
+            <Button x:Name="QqChoice" Classes="like-source-choice"
+                    Classes.selected="{Binding IsQqSelected}"
+                    IsVisible="{Binding HasQq}"
+                    Command="{Binding SelectQqCommand}"
+                    AutomationProperties.Name="{Binding QqAutomationName}">
+              <Grid ColumnDefinitions="4,32,*,Auto" ColumnSpacing="12">
+                <Border Classes="like-source-indicator" Width="4" CornerRadius="2"
+                        Background="{DynamicResource SystemAccentColor}" />
+                <Image Grid.Column="1" Width="28" Height="28" VerticalAlignment="Center"
+                       Source="avares://ALyricEase/Assets/TrackTags/SourceQQ.png" />
+                <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Text="QQ 音乐" FontSize="14" FontWeight="SemiBold" />
+                  <TextBlock Text="收藏到 QQ 音乐账号的“我喜欢”"
+                             FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+                </StackPanel>
+                <TextBlock Grid.Column="3" Text="{Binding QqStateText}" FontSize="12"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+              </Grid>
+            </Button>
+          </StackPanel>
+
+          <TextBlock Grid.Row="3" Text="{Binding SelectionHint}" FontSize="12" LineHeight="18"
+                     TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+
+          <Grid Grid.Row="4" ColumnDefinitions="*,*,1.55*" ColumnSpacing="8">
+            <Button Content="取消" Height="34" HorizontalAlignment="Stretch"
+                    Command="{Binding $parent[views:LikeSourceDialogView].((vm:MainViewModel)DataContext).CloseLikeSourceDialogCommand}"
+                    HotKeyManager.HotKey="Escape" />
+            <Button Grid.Column="1" Content="确认" Height="34" HorizontalAlignment="Stretch"
+                    Command="{Binding ConfirmCommand}" />
+            <Button Grid.Column="2" Classes="accent" Content="确认并设为默认" Height="34"
+                    HorizontalAlignment="Stretch"
+                    Command="{Binding ConfirmAndSetDefaultCommand}" />
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

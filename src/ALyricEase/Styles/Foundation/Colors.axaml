@@ -47,6 +47,10 @@
             <SolidColorBrush x:Key="AppControlFillPressed" Color="#4DF9F9F9" />
             <SolidColorBrush x:Key="AppControlStroke" Color="#29000000" />
             <SolidColorBrush x:Key="AppControlStrokePressed" Color="#0F000000" />
+            <!-- 排序/筛选展开按钮：浅色主题使用可辨识的中性填充，避免沿用暗色硬编码。 -->
+            <SolidColorBrush x:Key="FilterExpanderBackground" Color="#E5E5E5" />
+            <SolidColorBrush x:Key="FilterExpanderBackgroundHover" Color="#DADADA" />
+            <SolidColorBrush x:Key="FilterExpanderBackgroundPressed" Color="#CECECE" />
             <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
             <SolidColorBrush x:Key="ListCardBorder" Color="#0F000000" />
             <!-- 用户页(亮):小屏分组卡片底/标题分隔线/行悬停(对齐原版 UWP 暗色 #232323/#393939/#343434 的亮色等价) -->
@@ -114,6 +118,10 @@
             <SolidColorBrush x:Key="AppControlFillPressed" Color="#08FFFFFF" />
             <SolidColorBrush x:Key="AppControlStroke" Color="#18FFFFFF" />
             <SolidColorBrush x:Key="AppControlStrokePressed" Color="#12FFFFFF" />
+            <!-- 排序/筛选展开按钮：保留原版暗色三态。 -->
+            <SolidColorBrush x:Key="FilterExpanderBackground" Color="#292929" />
+            <SolidColorBrush x:Key="FilterExpanderBackgroundHover" Color="#3B3B3B" />
+            <SolidColorBrush x:Key="FilterExpanderBackgroundPressed" Color="#4E4E4E" />
             <!-- 卡片描边:对齐 UWP CardStrokeColorDefault(亮 #0F000000 / 暗 #1AFFFFFF) -->
             <SolidColorBrush x:Key="ListCardBorder" Color="#1AFFFFFF" />
             <!-- 用户页(暗):小屏分组卡片底/标题分隔线/行悬停,取自原版 UWP 实测色 -->

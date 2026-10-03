@@ -94,21 +94,62 @@
         <Style Selector="Button.txt:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
-        <!-- 音源切换(本移植新增功能,原版无):底部弱化文字按钮,选中 teal 高亮 -->
+        <!-- Fluent 2 分段选择器:中性容器 + 选中浅填充 + 强调色短指示条。 -->
+        <Style Selector="Border.source-switcher">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="3" />
+        </Style>
         <Style Selector="Button.src">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="MinWidth" Value="76" />
+            <Setter Property="MinHeight" Value="36" />
             <Setter Property="FontSize" Value="13" />
-            <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+        <Style Selector="Button.src /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
         </Style>
         <Style Selector="Button.src:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
-        <Style Selector="Button.src.active">
-            <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+        <Style Selector="Button.src.active /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+        </Style>
+        <Style Selector="Button.src.active:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+        </Style>
+        <Style Selector="Button.src:focus /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+        </Style>
+        <Style Selector="TextBlock.src-label">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+        <Style Selector="Button.src.active TextBlock.src-label">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Border.src-indicator">
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Button.src.active Border.src-indicator">
+            <Setter Property="Opacity" Value="1" />
         </Style>
         <!-- 宽屏:热门搜索左列 / 搜索历史右列(原版 Wide VisualState);默认堆叠各占整行 -->
         <Style Selector=".wide Grid.suggest > StackPanel">
@@ -328,14 +369,40 @@
                             </ItemsControl>
                         </StackPanel>
                     </Grid>
-                    <!-- 音源切换:原版无此功能(单源),移植版在此弱化呈现,选中项 teal 高亮 -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8"
-                                Margin="0,4,0,0">
-                        <Button Classes="src" Classes.active="{Binding IsNetEaseSource}" Content="网易云"
-                                Command="{Binding SelectNetEaseSourceCommand}" />
-                        <Button Classes="src" Classes.active="{Binding IsQQSource}" Content="QQ音乐"
-                                Command="{Binding SelectQQSourceCommand}" />
-                    </StackPanel>
+                    <Border Classes="source-switcher" HorizontalAlignment="Center" Margin="0,4,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <Button Classes="src" Classes.active="{Binding IsCombinedSource}"
+                                    Command="{Binding SelectCombinedSourceCommand}"
+                                    AutomationProperties.Name="综合搜索">
+                                <Grid RowDefinitions="*,3" RowSpacing="2">
+                                    <TextBlock Classes="src-label" Text="综合" HorizontalAlignment="Center" />
+                                    <Border Grid.Row="1" Classes="src-indicator" Width="18" Height="3"
+                                            CornerRadius="2" HorizontalAlignment="Center"
+                                            Background="{DynamicResource SystemAccentColor}" />
+                                </Grid>
+                            </Button>
+                            <Button Classes="src" Classes.active="{Binding IsNetEaseSource}"
+                                    Command="{Binding SelectNetEaseSourceCommand}"
+                                    AutomationProperties.Name="使用网易云音乐搜索">
+                                <Grid RowDefinitions="*,3" RowSpacing="2">
+                                    <TextBlock Classes="src-label" Text="网易云" HorizontalAlignment="Center" />
+                                    <Border Grid.Row="1" Classes="src-indicator" Width="18" Height="3"
+                                            CornerRadius="2" HorizontalAlignment="Center"
+                                            Background="{DynamicResource SystemAccentColor}" />
+                                </Grid>
+                            </Button>
+                            <Button Classes="src" Classes.active="{Binding IsQQSource}"
+                                    Command="{Binding SelectQQSourceCommand}"
+                                    AutomationProperties.Name="使用 QQ 音乐搜索">
+                                <Grid RowDefinitions="*,3" RowSpacing="2">
+                                    <TextBlock Classes="src-label" Text="QQ音乐" HorizontalAlignment="Center" />
+                                    <Border Grid.Row="1" Classes="src-indicator" Width="18" Height="3"
+                                            CornerRadius="2" HorizontalAlignment="Center"
+                                            Background="{DynamicResource SystemAccentColor}" />
+                                </Grid>
+                            </Button>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
         </ScrollViewer>

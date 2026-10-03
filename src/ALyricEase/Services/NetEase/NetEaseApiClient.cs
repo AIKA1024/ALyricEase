@@ -501,7 +501,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         var userTask = KindTask(SearchKind.User, 1002);
         await Task.WhenAll(songTask, albumTask, artistTask, playlistTask, userTask).ConfigureAwait(false);
 
-        result.Songs.AddRange(await songTask.ConfigureAwait(false));
+        if (await songTask.ConfigureAwait(false) is { } songs)
+            result.Songs.AddRange(songs);
         if (albumTask.Result?.Result?.Albums is { } albums)
             result.Albums.AddRange(albums.Select(MapAlbumItem));
         if (artistTask.Result?.Result?.Artists is { } artists)
@@ -517,10 +518,17 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         {
             if (kind != SearchKind.All && kind != k)
                 return Task.FromResult<SearchResponse?>(null); // 非本类型,不发请求
-            return WrapAsync(isAll, TypedSearchAsync(keyword, type, limit, ct));
+            return WrapNullableAsync(isAll, TypedSearchAsync(keyword, type, limit, ct));
         }
 
         static async Task<T?> WrapAsync<T>(bool swallow, Task<T> task) where T : class
+        {
+            if (!swallow) return await task.ConfigureAwait(false);
+            try { return await task.ConfigureAwait(false); }
+            catch (ApiException) { return null; }
+        }
+
+        static async Task<T?> WrapNullableAsync<T>(bool swallow, Task<T?> task) where T : class
         {
             if (!swallow) return await task.ConfigureAwait(false);
             try { return await task.ConfigureAwait(false); }
@@ -1754,6 +1762,10 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         Name = s.Name,
         Artist = s.Artists is { Count: > 0 } ? string.Join("/", s.Artists.Select(a => a.Name)) : "",
         Album = s.Album?.Name ?? "",
+        Subtitle = s.Aliases is { Count: > 0 } ? string.Join(" / ", s.Aliases) : "",
+        PublishDate = s.PublishTimeMs > 0
+            ? DateTimeOffset.FromUnixTimeMilliseconds(s.PublishTimeMs).UtcDateTime.ToString("yyyy-MM-dd")
+            : "",
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.DurationMs,
         Fee = s.Fee,

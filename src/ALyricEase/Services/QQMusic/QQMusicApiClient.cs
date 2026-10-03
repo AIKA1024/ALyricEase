@@ -2318,7 +2318,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     {
         var id = t.SongId != 0 ? t.SongId : t.Id;
         var mid = FirstNonEmpty(t.SongMid, t.Mid);
-        var name = FirstNonEmpty(t.SongName, t.Name);
+        var name = FirstNonEmpty(t.SongName, t.Name, t.Title);
         // 专辑:平铺字段(搜索)优先,嵌套对象(详情)兜底
         var albumId = t.AlbumIdFlat != 0 ? t.AlbumIdFlat : t.Album?.AlbumId ?? t.Album?.Id ?? 0;
         var albumMid = FirstNonEmpty(t.AlbumMidFlat, t.Album?.AlbumMid, t.Album?.Mid);
@@ -2333,6 +2333,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             Name = name,
             Artist = t.Singer is { Count: > 0 } ? string.Join("/", t.Singer.Select(s => s.Name ?? "")) : "",
             Album = albumName,
+            Subtitle = t.Subtitle ?? "",
+            PublishDate = t.TimePublic ?? "",
+            OriginalVersion = t.OriginalVersion,
             CoverUrl = albumMid.Length > 0 ? string.Format(CoverTemplate, albumMid) : "",
             DurationMs = t.Interval > 0 ? t.Interval * 1000 : 0,
             Fee = t.Pay is { EffectivePayPlay: 0 } ? 0 : 1,

@@ -18,6 +18,18 @@ public sealed class Song
 
     public string Album { get; init; } = "";
 
+    /// <summary>版本/用途副标题（如 Live、影视插曲）。搜索去重时用于避免合并不同录音版本。</summary>
+    public string Subtitle { get; init; } = "";
+
+    /// <summary>发行日期文本（上游常见为 yyyy-MM-dd；空表示未知）。仅作跨平台匹配的弱证据。</summary>
+    public string PublishDate { get; init; } = "";
+
+    /// <summary>QQ 上游 ov 原版标识：1=原版，0=翻唱/Live，null=接口未提供。</summary>
+    public int? OriginalVersion { get; init; }
+
+    /// <summary>跨平台录音编码。当前两源搜索通常不返回，预留给未来可用的强匹配证据。</summary>
+    public string Isrc { get; init; } = "";
+
     public string CoverUrl { get; init; } = "";
 
     /// <summary>时长,毫秒。</summary>
@@ -51,6 +63,12 @@ public sealed class Song
     /// 元数据阶段即可确定,与账号/VIP 无关,播放接口必然失败 —— 列表行直接灰禁,不必等点击。
     /// 由网易云映射器写入;QQ 歌恒 false。</summary>
     public bool IsNoCopyright { get; internal set; }
+
+    /// <summary>
+    /// 综合搜索中被折叠到当前展示项下的其他平台录音。播放仍使用当前实例；保留候选以便后续
+    /// 增加手动切源或自动回退时无需重新匹配。普通列表为空。
+    /// </summary>
+    public IReadOnlyList<Song> AlternateRecordings { get; internal set; } = Array.Empty<Song>();
 
     /// <summary>该实例来自离线歌单快照且已确认有本地音频；播放时跳过在线音质升级请求。</summary>
     internal bool PreferCachedPlayback { get; set; }

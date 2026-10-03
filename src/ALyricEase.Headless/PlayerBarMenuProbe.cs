@@ -47,6 +47,8 @@ public static class PlayerBarMenuProbe
                "https://y.qq.com/n/ryqq/songDetail/abc", "QQ歌曲链接不正确");
 
         var playlists = ServiceLocator.Get<PlaylistViewModel>();
+        playlists.Playlists.Clear();
+        playlists.QqPlaylists.Clear();
         playlists.Playlists.Add(new PlaylistItemViewModel(new Playlist
         {
             Id = 1, Name = "我的歌单", CanAddTracks = true,
@@ -66,7 +68,25 @@ public static class PlayerBarMenuProbe
         dialog.SearchText = "不存在";
         Assert(dialog.HasNoItems && dialog.Items.Count == 0, "歌单搜索过滤不正确");
 
-        Console.WriteLine("[playerbarmenu] 菜单结构、模态歌单筛选、歌手子菜单与歌曲链接断言全部通过");
+        var mergedSong = SongSearchMerger.Merge(
+            [new Song
+            {
+                Id = 10, Source = MusicSource.NetEase, Name = "后来", Artist = "刘若英",
+                ArtistNames = ["刘若英"], Album = "我等你", DurationMs = 341_000,
+            }],
+            [new Song
+            {
+                Id = 11, Mid = "qq-mid", Source = MusicSource.QQ, Name = "后来", Artist = "刘若英",
+                ArtistNames = ["刘若英"], Album = "我等你", DurationMs = 341_500,
+            }],
+            1)[0];
+        dialog.Refresh(mergedSong);
+        Assert(dialog.Items.Count == 2
+               && dialog.Items.Any(item => item.Playlist.Source == MusicSource.NetEase)
+               && dialog.Items.Any(item => item.Playlist.Source == MusicSource.QQ),
+            "合并歌曲应同时列出两个平台的可写歌单");
+
+        Console.WriteLine("[playerbarmenu] 菜单结构、多平台歌单筛选、歌手子菜单与歌曲链接断言全部通过");
     }
 
     private static void Assert(bool condition, string message)

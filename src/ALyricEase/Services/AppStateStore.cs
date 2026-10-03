@@ -31,6 +31,16 @@ public sealed class AppStateStore
     /// <summary>搜索历史(最新在前,SearchViewModel 维护与落盘)。</summary>
     public List<string> SearchHistory { get; } = new();
 
+    /// <summary>搜索页上次选择的来源；默认综合搜索。</summary>
+    public SearchSourceMode PreferredSearchSource { get; private set; } = SearchSourceMode.Combined;
+
+    public void SetPreferredSearchSource(SearchSourceMode mode)
+    {
+        if (!Enum.IsDefined(mode) || PreferredSearchSource == mode) return;
+        PreferredSearchSource = mode;
+        Save();
+    }
+
     private readonly List<RecentPlaybackEntry> _recentSongs = new();
 
     /// <summary>最近成功开始播放的歌曲，播放次数优先、同次数时最近播放优先。</summary>
@@ -44,6 +54,9 @@ public sealed class AppStateStore
     /// 这些开关只改"怎么画"，不会让状态失效，所以不走保存/重载那条路。
     /// </summary>
     public event Action? VisualEffectsChanged;
+
+    /// <summary>综合搜索默认红心平台发生变化；已显示的合并行据此切换红心所代表的平台状态。</summary>
+    public event Action? PreferredCombinedLikeSourceChanged;
 
     /// <summary>由设置项的 setter 调用（见 SettingsViewModel）。</summary>
     public void NotifyVisualEffectsChanged() => VisualEffectsChanged?.Invoke();
@@ -104,6 +117,19 @@ public sealed class AppStateStore
     /// VisualEffectsChanged 通知现有行即时切换。</summary>
     public bool SwapPlayAndLikeOnRows { get; set; }
 
+    /// <summary>综合搜索合并歌曲的默认红心平台；null 表示首次有歧义时由用户选择。</summary>
+    public MusicSource? PreferredCombinedLikeSource { get; private set; }
+
+    /// <summary>记录综合搜索红心的默认平台。只接受当前支持账号“我喜欢”的两个音源。</summary>
+    public void SetPreferredCombinedLikeSource(MusicSource source)
+    {
+        if (source is not (MusicSource.NetEase or MusicSource.QQ)) return;
+        if (PreferredCombinedLikeSource == source) return;
+        PreferredCombinedLikeSource = source;
+        Save();
+        PreferredCombinedLikeSourceChanged?.Invoke();
+    }
+
     /// <summary>音频交叉淡化开关。</summary>
     public bool Crossfade { get; set; }
 
@@ -154,6 +180,10 @@ public sealed class AppStateStore
             if (dto is null) return;
             IsNetEaseGroupExpanded = dto.NetEaseGroupExpanded ?? true;
             IsQqGroupExpanded = dto.QqGroupExpanded ?? true;
+            PreferredSearchSource = dto.PreferredSearchSource is >= (int)SearchSourceMode.Combined
+                and <= (int)SearchSourceMode.QQ
+                ? (SearchSourceMode)dto.PreferredSearchSource.Value
+                : SearchSourceMode.Combined;
             WindowWidth = dto.WindowWidth;
             WindowHeight = dto.WindowHeight;
             WindowX = dto.WindowX;
@@ -171,6 +201,10 @@ public sealed class AppStateStore
             AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 3);
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
             SwapPlayAndLikeOnRows = dto.SwapPlayAndLikeOnRows ?? false;
+            PreferredCombinedLikeSource = dto.PreferredCombinedLikeSource is (int)MusicSource.NetEase
+                or (int)MusicSource.QQ
+                ? (MusicSource)dto.PreferredCombinedLikeSource.Value
+                : null;
             Crossfade = dto.Crossfade ?? false;
             CrossfadeSeconds = dto.CrossfadeSeconds ?? 4;
             AudioOutputDeviceId = NormalizeDeviceText(dto.AudioOutputDeviceId);
@@ -254,6 +288,7 @@ public sealed class AppStateStore
                     })
                     .ToList(),
                 SearchHistory = SearchHistory.ToList(),
+                PreferredSearchSource = (int)PreferredSearchSource,
                 RecentSongs = _recentSongs.Select(ToRecentFile).ToList(),
                 WindowWidth = WindowWidth,
                 WindowHeight = WindowHeight,
@@ -268,6 +303,9 @@ public sealed class AppStateStore
                 AudioQuality = AudioQuality,
                 LegacyPlaybackControl = LegacyPlaybackControl,
                 SwapPlayAndLikeOnRows = SwapPlayAndLikeOnRows,
+                PreferredCombinedLikeSource = PreferredCombinedLikeSource is { } likeSource
+                    ? (int)likeSource
+                    : null,
                 Crossfade = Crossfade,
                 CrossfadeSeconds = CrossfadeSeconds,
                 AudioOutputDeviceId = AudioOutputDeviceId,

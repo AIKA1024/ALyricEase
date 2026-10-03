@@ -14,7 +14,8 @@ namespace ALyricEase.ViewModels;
 
 /// <summary>搜索 VM:登录页(大标题 + 搜索框 + 热门搜索 + 搜索历史)→ 结果页("kw"的搜索结果 +
 /// 类型 Tab + 分区卡片,对齐原版 SearchResultView);歌曲行复用 SongItemViewModel(双击播放)。
-/// 音源经 MusicApiProvider 选择,多类型走 IMusicApi.SearchAllAsync(QQ 仅歌曲+歌单,网易全量);
+/// 独立音源经 MusicApiProvider 选择；综合模式并行搜索两源并保守合并同一录音。
+/// 多类型走 IMusicApi.SearchAllAsync(QQ 仅歌曲+歌单,网易全量);
 /// 搜索历史写入 AppStateStore(state.json)持久化,最新在前去重,上限 10 条。</summary>
 public sealed partial class SearchViewModel : ViewModelBase
 {
@@ -28,10 +29,14 @@ public sealed partial class SearchViewModel : ViewModelBase
 
     private readonly PlayerViewModel _player;
 
-    /// <summary>红心状态用网易云客户端(QQ 曲目在 SongItemViewModel 内跳过)。</summary>
+    /// <summary>网易云账号能力直接注入歌曲行；QQ 与合并结果的备用录音由歌曲行经 MusicApiProvider 路由。</summary>
     private readonly NetEaseApiClient? _neteaseApi;
 
     private readonly AppStateStore _appState;
+
+    private readonly IMusicApi? _netEaseSource;
+
+    private readonly IMusicApi? _qqSource;
 
     /// <summary>加载代次:新搜索/切 Tab 时自增,过期响应直接丢弃。</summary>
     private int _loadGeneration;
@@ -39,10 +44,12 @@ public sealed partial class SearchViewModel : ViewModelBase
     public SearchViewModel(MusicApiProvider sources, PlayerViewModel player, AppStateStore appState)
     {
         Sources = sources.All;
-        _neteaseApi = sources.All.FirstOrDefault(a => a.Source == MusicSource.NetEase) as NetEaseApiClient;
-        _selectedSource = Sources.Count > 0 ? Sources[0] : sources.Default;
+        _netEaseSource = sources.All.FirstOrDefault(a => a.Source == MusicSource.NetEase);
+        _qqSource = sources.All.FirstOrDefault(a => a.Source == MusicSource.QQ);
+        _neteaseApi = _netEaseSource as NetEaseApiClient;
         _player = player;
         _appState = appState;
+        (_selectedSource, _isCombinedSource) = RestoreSourceSelection(sources, appState.PreferredSearchSource);
         foreach (var w in appState.SearchHistory)
             SearchHistory.Add(w);
         // 任何路径改历史(不止 RecordHistory/ClearHistory)都同步历史区显隐
@@ -54,35 +61,71 @@ public sealed partial class SearchViewModel : ViewModelBase
 
     private IMusicApi _selectedSource;
 
+    private bool _isCombinedSource;
+
+    /// <summary>同时搜索网易云和 QQ，并只展示一次高置信度的同一录音。</summary>
+    public bool IsCombinedSource => _isCombinedSource;
+
     /// <summary>当前选中的音源。</summary>
     public IMusicApi SelectedSource
     {
         get => _selectedSource;
-        set
-        {
-            if (SetProperty(ref _selectedSource, value))
-            {
-                OnPropertyChanged(nameof(IsNetEaseSource));
-                OnPropertyChanged(nameof(IsQQSource));
-                OnPropertyChanged(nameof(TrendingKeywords));
-                OnPropertyChanged(nameof(Tabs));
-                OnPropertyChanged(nameof(ShowTabBar));
-            }
-        }
+        set => SelectSource(value, combined: false);
     }
 
     /// <summary>音源切换按钮高亮态(Avalonia Classes.active 绑定)。</summary>
-    public bool IsNetEaseSource => SelectedSource.Source == MusicSource.NetEase;
+    public bool IsNetEaseSource => !IsCombinedSource && SelectedSource.Source == MusicSource.NetEase;
 
-    public bool IsQQSource => SelectedSource.Source == MusicSource.QQ;
+    public bool IsQQSource => !IsCombinedSource && SelectedSource.Source == MusicSource.QQ;
+
+    [RelayCommand]
+    private void SelectCombinedSource()
+    {
+        if (_netEaseSource is not null && _qqSource is not null)
+            SelectSource(_selectedSource, combined: true);
+    }
 
     [RelayCommand]
     private void SelectNetEaseSource()
-        => SelectedSource = Sources.First(s => s.Source == MusicSource.NetEase);
+        => SelectSource(_netEaseSource ?? SelectedSource, combined: false);
 
     [RelayCommand]
     private void SelectQQSource()
-        => SelectedSource = Sources.First(s => s.Source == MusicSource.QQ);
+        => SelectSource(_qqSource ?? SelectedSource, combined: false);
+
+    private void SelectSource(IMusicApi source, bool combined)
+    {
+        var changed = !ReferenceEquals(_selectedSource, source) || _isCombinedSource != combined;
+        if (!changed) return;
+        _selectedSource = source;
+        _isCombinedSource = combined;
+        if (combined)
+            _appState.SetPreferredSearchSource(SearchSourceMode.Combined);
+        else if (source.Source == MusicSource.NetEase)
+            _appState.SetPreferredSearchSource(SearchSourceMode.NetEase);
+        else if (source.Source == MusicSource.QQ)
+            _appState.SetPreferredSearchSource(SearchSourceMode.QQ);
+        OnPropertyChanged(nameof(SelectedSource));
+        OnPropertyChanged(nameof(IsCombinedSource));
+        OnPropertyChanged(nameof(IsNetEaseSource));
+        OnPropertyChanged(nameof(IsQQSource));
+        OnPropertyChanged(nameof(TrendingKeywords));
+        OnPropertyChanged(nameof(Tabs));
+        OnPropertyChanged(nameof(ShowTabBar));
+    }
+
+    private (IMusicApi Source, bool Combined) RestoreSourceSelection(
+        MusicApiProvider sources,
+        SearchSourceMode saved)
+    {
+        if (saved == SearchSourceMode.NetEase && _netEaseSource is not null)
+            return (_netEaseSource, false);
+        if (saved == SearchSourceMode.QQ && _qqSource is not null)
+            return (_qqSource, false);
+        if (_netEaseSource is not null && _qqSource is not null)
+            return (_netEaseSource, true);
+        return (_netEaseSource ?? _qqSource ?? Sources.FirstOrDefault() ?? sources.Default, false);
+    }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SearchCommand))]
@@ -144,6 +187,8 @@ public sealed partial class SearchViewModel : ViewModelBase
     {
         get
         {
+            if (IsCombinedSource)
+                return [new(SearchKind.Track, "歌曲")];
             if (IsNetEaseSource)
                 return
                 [
@@ -338,16 +383,17 @@ public sealed partial class SearchViewModel : ViewModelBase
         Message = null;
         OnPropertyChanged(nameof(ResultsTitle));
 
-        // 新搜索一律回"全部"页;抑制 OnSelectedTabChanged 的重复加载,统一由下方执行
-        if (SelectedTab != SearchKind.All)
+        // 综合搜索只有歌曲页；独立音源新搜索回“全部”。抑制属性回调的重复加载。
+        var initialTab = IsCombinedSource ? SearchKind.Track : SearchKind.All;
+        if (SelectedTab != initialTab)
         {
             _suppressTabLoad = true;
-            SelectedTab = SearchKind.All;
+            SelectedTab = initialTab;
             _suppressTabLoad = false;
         }
         try
         {
-            await LoadTabCoreAsync(SearchKind.All, keyword).ConfigureAwait(true);
+            await LoadTabCoreAsync(initialTab, keyword).ConfigureAwait(true);
             if (Message is null)
                 RecordHistory(keyword); // 仅成功返回时记入历史(网络失败不算)
         }
@@ -389,7 +435,9 @@ public sealed partial class SearchViewModel : ViewModelBase
         try
         {
             var limit = kind == SearchKind.All ? SectionLimit : TabLimit;
-            var result = await SelectedSource.SearchAllAsync(keyword, kind, limit).ConfigureAwait(true);
+            var result = IsCombinedSource
+                ? await SearchCombinedAsync(keyword, limit).ConfigureAwait(true)
+                : await SelectedSource.SearchAllAsync(keyword, kind, limit).ConfigureAwait(true);
             if (generation != _loadGeneration) return; // 期间新搜索/切页,丢弃过期结果
 
             Songs.Clear(); Playlists.Clear(); Artists.Clear(); Albums.Clear(); Users.Clear();
@@ -402,7 +450,7 @@ public sealed partial class SearchViewModel : ViewModelBase
             }
             foreach (var song in result.Songs)
                 Songs.Add(new SongItemViewModel(song, _player.PlayFromList, queue: result.Songs,
-                    api: _neteaseApi, source: $"{SelectedSource.DisplayName}·搜索"));
+                    api: _neteaseApi, source: IsCombinedSource ? "综合搜索" : $"{SelectedSource.DisplayName}·搜索"));
             foreach (var p in result.Playlists) Playlists.Add(new SearchPlaylistItemViewModel(p));
             foreach (var a in result.Artists) Artists.Add(new SearchArtistItemViewModel(a));
             foreach (var a in result.Albums) Albums.Add(new SearchAlbumItemViewModel(a));
@@ -419,6 +467,58 @@ public sealed partial class SearchViewModel : ViewModelBase
             Message = $"搜索失败:{ex.Message}";
         }
     }
+
+    private async Task<SearchAllResult> SearchCombinedAsync(string keyword, int limit)
+    {
+        var requestLimit = Math.Max(limit, 10);
+        var netEaseTask = SearchSourceSafelyAsync(_netEaseSource, keyword, requestLimit);
+        var qqTask = SearchSourceSafelyAsync(_qqSource, keyword, requestLimit);
+        await Task.WhenAll(netEaseTask, qqTask).ConfigureAwait(true);
+
+        var netEase = await netEaseTask.ConfigureAwait(true);
+        var qq = await qqTask.ConfigureAwait(true);
+        if (netEase.Error is not null && qq.Error is not null)
+            throw new ApiException($"综合搜索失败：网易云 {netEase.Error.Message}；QQ音乐 {qq.Error.Message}");
+
+        var result = new SearchAllResult();
+        result.Songs.AddRange(SongSearchMerger.Merge(
+            netEase.Songs,
+            qq.Songs,
+            limit,
+            GetCombinedSourcePreference));
+        return result;
+    }
+
+    private static async Task<SourceSearchResult> SearchSourceSafelyAsync(
+        IMusicApi? source,
+        string keyword,
+        int limit)
+    {
+        if (source is null)
+            return new SourceSearchResult([], new InvalidOperationException("音源未注册"));
+        try
+        {
+            return new SourceSearchResult(
+                await source.SearchAsync(keyword, limit, 0).ConfigureAwait(false),
+                null);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
+        {
+            return new SourceSearchResult([], ex);
+        }
+    }
+
+    private int GetCombinedSourcePreference(Song song)
+    {
+        var api = song.Source == MusicSource.NetEase ? _netEaseSource : _qqSource;
+        return (song.IsNoCopyright ? -100 : 0)
+               + (song.Fee == 0 ? 20 : 0)
+               + (api?.IsLoggedIn == true ? 5 : 0)
+               + (song.Fee != 0 && api?.IsVip == true ? 10 : 0)
+               + (song.Source == MusicSource.NetEase ? 1 : 0);
+    }
+
+    private sealed record SourceSearchResult(IReadOnlyList<Song> Songs, Exception? Error);
 
     private void ClearResultCollections()
     {

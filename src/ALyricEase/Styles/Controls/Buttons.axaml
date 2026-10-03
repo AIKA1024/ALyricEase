@@ -79,31 +79,37 @@
         <Setter Property="Opacity" Value="0.9" />
     </Style>
 
-    <!-- 原版 ExpanderToggleButtonStyle：36px 深色上下箭头按钮，用于展开/收起排序筛选栏。 -->
+    <!-- 原版 ExpanderToggleButtonStyle：36px 上下箭头按钮，用于展开/收起排序筛选栏；
+         三态颜色由主题资源提供，避免浅色主题沿用暗色填充。 -->
     <Style Selector="ToggleButton.filter-expander">
         <Setter Property="Width" Value="36" />
         <Setter Property="Height" Value="36" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="CornerRadius" Value="4" />
-        <Setter Property="Background" Value="#292929" />
+        <Setter Property="Background" Value="{DynamicResource FilterExpanderBackground}" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="#3B3B3B" />
+        <Setter Property="Background" Value="{DynamicResource FilterExpanderBackgroundHover}" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:pressed /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="#4E4E4E" />
+        <Setter Property="Background" Value="{DynamicResource FilterExpanderBackgroundPressed}" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:checked /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="#292929" />
+        <Setter Property="Background" Value="{DynamicResource FilterExpanderBackground}" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="#3B3B3B" />
+        <Setter Property="Background" Value="{DynamicResource FilterExpanderBackgroundHover}" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:checked:pressed /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="#4E4E4E" />
+        <Setter Property="Background" Value="{DynamicResource FilterExpanderBackgroundPressed}" />
+    </Style>
+    <!-- FluentTheme 会在 ToggleButton:checked 时把 ContentPresenter 前景切成强调色按钮用的白色；
+         箭头直接使用应用主题正文色，避免浅色中性背景上的白色低对比。 -->
+    <Style Selector="ToggleButton.filter-expander TextBlock.filter-chevron">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
     <Style Selector="ToggleButton.filter-expander:checked TextBlock.filter-chevron">
         <Setter Property="RenderTransform">

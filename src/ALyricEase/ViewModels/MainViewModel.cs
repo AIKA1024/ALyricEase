@@ -47,6 +47,7 @@ public sealed partial class MainViewModel : ViewModelBase
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
         CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
         AddSongToPlaylistDialog = new AddSongToPlaylistDialogViewModel(playlist, OnSongAddedToPlaylist);
+        LikeSourceDialog = new LikeSourceDialogViewModel(() => IsLikeSourceDialogOpen = false);
         RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed,
             RenameAggregateAsync, OnAggregateRenamed);
         DeletePlaylistDialog = new DeletePlaylistDialogViewModel(playlist, OnDeletePlaylistConfirmed,
@@ -119,6 +120,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>添加当前歌曲到歌单的选择对话框 VM。</summary>
     public AddSongToPlaylistDialogViewModel AddSongToPlaylistDialog { get; }
+
+    /// <summary>综合搜索合并歌曲的“我喜欢”平台选择对话框。</summary>
+    public LikeSourceDialogViewModel LikeSourceDialog { get; }
 
     /// <summary>重命名歌单对话框 VM(宿主绑定 RenamePlaylistDialogView;打开前按目标歌单 Refresh)。</summary>
     public RenamePlaylistDialogViewModel RenamePlaylistDialog { get; }
@@ -553,6 +557,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
     public bool TryHandleBack()
     {
+        // 红心平台选择声明在宿主弹层最后，系统返回/Esc 优先关闭它。
+        if (IsLikeSourceDialogOpen)
+        {
+            CloseLikeSourceDialogCommand.Execute(null);
+            return true;
+        }
+
         // 更新弹窗声明在所有弹层最后(盖在最上) ⇒ 返回链最先消费
         if (IsUpdateDialogOpen)
         {
@@ -1014,6 +1025,20 @@ public sealed partial class MainViewModel : ViewModelBase
     private void CloseAddSongToPlaylistDialog() => IsAddSongToPlaylistDialogOpen = false;
 
     private void OnSongAddedToPlaylist() => IsAddSongToPlaylistDialogOpen = false;
+
+    // ---- 综合搜索红心平台选择对话框 ----
+
+    [ObservableProperty] private bool _isLikeSourceDialogOpen;
+
+    public void OpenLikeSourceDialog(SongItemViewModel? song)
+    {
+        if (song is null || !song.HasMultipleLikeSources) return;
+        LikeSourceDialog.Refresh(song);
+        IsLikeSourceDialogOpen = true;
+    }
+
+    [RelayCommand]
+    private void CloseLikeSourceDialog() => IsLikeSourceDialogOpen = false;
 
     // ---- 重命名歌单对话框 ----
 

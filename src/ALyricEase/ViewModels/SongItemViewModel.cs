@@ -25,11 +25,10 @@ public sealed partial class SongItemViewModel : ViewModelBase
     private string? _source;
     private readonly NetEaseApiClient? _api;
 
-    private bool _likedRequested;
-
-    /// <summary>已按哪个登录身份取过红心状态(-1 = 从未取)。换号/登出后与
-    /// <see cref="IUserMusicApi.AccountGeneration"/> 不一致时允许重取,否则旧账号的红心会一直留在界面上。</summary>
-    private int _likedGeneration = -1;
+    private readonly HashSet<MusicSource> _likedRequested = new();
+    private readonly Dictionary<MusicSource, int> _likedGenerations = new();
+    private readonly Dictionary<MusicSource, bool> _likedStates = new();
+    private readonly HashSet<MusicSource> _likeOperations = new();
 
     /// <summary>红心按钮与跳转是按音源路由的账号能力;红心两音源均支持,歌手/专辑跳转仍仅网易云为纯本地判定。</summary>
     private bool IsNetEase => Song.Source == Services.MusicSource.NetEase;
@@ -37,10 +36,12 @@ public sealed partial class SongItemViewModel : ViewModelBase
     /// <summary>按曲目音源解析红心能力客户端:网易云直连构造注入实例;其他音源经服务定位器取
     /// MusicApiProvider 路由(与 OpenArtistAsync 的用法一致)。宿主未初始化/未注册该音源时返回 null,
     /// 红心按钮静默降级为无操作(SelfTest/Headless 等无宿主环境安全)。</summary>
-    private IUserMusicApi? GetLikeApi()
+    private IUserMusicApi? GetLikeApi() => GetLikeApi(Song.Source);
+
+    private IUserMusicApi? GetLikeApi(MusicSource source)
     {
-        if (IsNetEase) return _api;
-        try { return ServiceLocator.Get<MusicApiProvider>().User(Song.Source); }
+        if (source == MusicSource.NetEase && _api is not null) return _api;
+        try { return ServiceLocator.Get<MusicApiProvider>().User(source); }
         catch { return null; }
     }
 
@@ -145,12 +146,18 @@ public sealed partial class SongItemViewModel : ViewModelBase
     /// <summary>容器 realized 时调用:首次才拉取红心状态(幂等)。未登录/服务未就绪则保持未喜欢。</summary>
     public void EnsureLikedLoaded()
     {
-        var api = GetLikeApi();
-        if (api is null) return;
-        // 幂等:同一登录身份只取一次;代次变化(换号/登出/刷新凭证)时允许重取。
-        if (_likedRequested && _likedGeneration == api.AccountGeneration) return;
-        _likedRequested = true;
-        _ = LoadLikedAsync(api);
+        foreach (var source in CombinedLikeTargetResolver.GetSources(Song))
+        {
+            var api = GetLikeApi(source);
+            if (api is null) continue;
+            // 幂等:同一登录身份只取一次;代次变化(换号/登出/刷新凭证)时允许重取。
+            if (_likedRequested.Contains(source)
+                && _likedGenerations.TryGetValue(source, out var generation)
+                && generation == api.AccountGeneration)
+                continue;
+            _likedRequested.Add(source);
+            _ = LoadLikedAsync(source, api);
+        }
     }
 
     public Song Song { get; }
@@ -223,6 +230,38 @@ public sealed partial class SongItemViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isInLikelist;
 
+    /// <summary>红心提示。综合结果会明确默认写入的平台，右键/长按可切换。</summary>
+    public string LikeToolTip
+    {
+        get
+        {
+            if (!HasMultipleLikeSources)
+                return IsInLikelist ? $"已添加到{SourceDisplayName(Song.Source)}我喜欢" : "喜欢";
+            var preferred = GetPreferredCombinedLikeSource();
+            return preferred is { } source && GetRecording(source) is not null
+                ? $"喜欢（默认：{SourceDisplayName(source)}；右键或长按可更改）"
+                : "喜欢（点击选择平台）";
+        }
+    }
+
+    /// <summary>合并结果是否同时含多个平台录音。</summary>
+    public bool HasMultipleLikeSources => CombinedLikeTargetResolver.GetSources(Song).Count > 1;
+
+    public MusicSource? PreferredCombinedLikeSource => GetPreferredCombinedLikeSource();
+
+    /// <summary>合并结果未设置默认平台时，首次点击必须由用户明确选择。</summary>
+    public bool NeedsLikeSourceChoice()
+        => HasMultipleLikeSources
+           && (PreferredCombinedLikeSource is not { } source || !HasLikeRecording(source));
+
+    public bool HasLikeRecording(MusicSource source) => GetRecording(source) is not null;
+
+    public bool CanToggleLikeOn(MusicSource source)
+        => GetRecording(source) is not null && GetLikeApi(source)?.CanToggleLike == true;
+
+    public bool IsLikedOn(MusicSource source)
+        => _likedStates.TryGetValue(source, out var liked) && liked;
+
     [RelayCommand]
     private async Task PlayAsync()
     {
@@ -236,29 +275,66 @@ public sealed partial class SongItemViewModel : ViewModelBase
     [RelayCommand]
     private async Task LikeAsync()
     {
-        var api = GetLikeApi();
-        if (api is null) return;
-        if (!api.CanToggleLike)
+        // 守卫放在命令层，确保鼠标、键盘及其他命令入口都遵守首次明确选择平台的规则。
+        if (NeedsLikeSourceChoice())
         {
-            TryOpenLoginDialog(null);
+            TryOpenLikeSourceDialog();
             return;
         }
 
-        var prev = IsInLikelist;
-        IsInLikelist = !prev; // 乐观更新,立即反馈
+        var source = ResolveLikeTarget() ?? Song.Source;
+        await ToggleLikeOnSourceAsync(source);
+    }
+
+    /// <summary>在指定平台切换“我喜欢”。默认平台由选择对话框的独立确认动作管理。</summary>
+    public async Task ToggleLikeOnSourceAsync(MusicSource source)
+    {
+        var recording = GetRecording(source);
+        var api = GetLikeApi(source);
+        if (recording is null || api is null || !_likeOperations.Add(source)) return;
+
+        if (!api.CanToggleLike)
+        {
+            _likeOperations.Remove(source);
+            TryOpenLoginDialog(source, null);
+            return;
+        }
+
+        var previous = IsLikedOn(source);
+        SetLikedState(source, !previous); // 乐观更新,立即反馈
         try
         {
-            IsInLikelist = await api.LikeToggleAsync(Song.Id);
+            SetLikedState(source, await api.LikeToggleAsync(recording.Id));
+            _likedGenerations[source] = api.AccountGeneration;
         }
         catch (ApiException ex) when (ShouldPromptRelogin(api, ex))
         {
-            IsInLikelist = prev; // 服务端拒绝(凭证失效或写权限被拒):回滚并弹登录窗引导重登
-            TryOpenLoginDialog(QQMusicApiClient.ReloginHintText);
+            SetLikedState(source, previous);
+            TryOpenLoginDialog(source, QQMusicApiClient.ReloginHintText);
         }
         catch
         {
-            IsInLikelist = prev; // 请求失败回滚
+            SetLikedState(source, previous);
         }
+        finally
+        {
+            _likeOperations.Remove(source);
+        }
+    }
+
+    public void SetPreferredCombinedLikeSource(MusicSource source)
+    {
+        if (!HasLikeRecording(source)) return;
+        try { ServiceLocator.Get<AppStateStore>().SetPreferredCombinedLikeSource(source); }
+        catch { /* 无宿主环境 */ }
+        RefreshLikeTarget();
+    }
+
+    /// <summary>全局默认平台变化后，由已实现的歌曲行刷新当前红心代表的来源。</summary>
+    public void RefreshLikeTarget()
+    {
+        UpdateDisplayedLikeState();
+        OnPropertyChanged(nameof(LikeToolTip));
     }
 
     /// <summary>红心写被拒时的重登判定:QQ 按服务端错误码(常规失效码 + 写通道 80105 归并);
@@ -267,9 +343,15 @@ public sealed partial class SongItemViewModel : ViewModelBase
         => api is QQMusicApiClient qq && QQMusicApiClient.ShouldPromptRelogin(ex.Code);
 
     /// <summary>弹登录窗并定位到本曲音源标签;无宿主环境(SelfTest/Headless)静默忽略。</summary>
-    private void TryOpenLoginDialog(string? hint)
+    private void TryOpenLoginDialog(MusicSource source, string? hint)
     {
-        try { ServiceLocator.Get<MainViewModel>().OpenLoginDialogFor(Song.Source, hint); }
+        try { ServiceLocator.Get<MainViewModel>().OpenLoginDialogFor(source, hint); }
+        catch { /* 无宿主环境 */ }
+    }
+
+    private void TryOpenLikeSourceDialog()
+    {
+        try { ServiceLocator.Get<MainViewModel>().OpenLikeSourceDialog(this); }
         catch { /* 无宿主环境 */ }
     }
 
@@ -315,20 +397,51 @@ public sealed partial class SongItemViewModel : ViewModelBase
         catch { /* 未初始化/导航失败:忽略 */ }
     }
 
-    private async Task LoadLikedAsync(IUserMusicApi api)
+    private async Task LoadLikedAsync(MusicSource source, IUserMusicApi api)
     {
         var generation = api.AccountGeneration;
         try
         {
             await api.EnsureLikedIdsAsync();
-            _likedGeneration = generation; // 记下本次结果对应的登录身份
-            IsInLikelist = api.IsLiked(Song.Id);
+            _likedGenerations[source] = generation;
+            var recording = GetRecording(source);
+            SetLikedState(source, recording is not null && api.IsLiked(recording.Id));
         }
         catch
         {
             // 保持未喜欢
         }
     }
+
+    private Song? GetRecording(MusicSource source)
+        => SongRecordingResolver.Resolve(Song, source);
+
+    private MusicSource? GetPreferredCombinedLikeSource()
+    {
+        try { return ServiceLocator.Get<AppStateStore>().PreferredCombinedLikeSource; }
+        catch { return null; }
+    }
+
+    private MusicSource? ResolveLikeTarget()
+        => CombinedLikeTargetResolver.Resolve(
+            Song,
+            GetPreferredCombinedLikeSource());
+
+    private void SetLikedState(MusicSource source, bool liked)
+    {
+        _likedStates[source] = liked;
+        UpdateDisplayedLikeState();
+        OnPropertyChanged(nameof(LikeToolTip));
+    }
+
+    private void UpdateDisplayedLikeState()
+    {
+        var displaySource = ResolveLikeTarget() ?? Song.Source;
+        IsInLikelist = IsLikedOn(displaySource);
+    }
+
+    public static string SourceDisplayName(MusicSource source)
+        => source == MusicSource.QQ ? "QQ音乐" : "网易云音乐";
 
     private static string FormatDuration(int ms)
     {

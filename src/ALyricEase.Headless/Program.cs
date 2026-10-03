@@ -756,6 +756,27 @@ public static class Program
             return;
         }
 
+        // 综合搜索去重算法纯内存回归（不触网）。
+        if (args.Length > 0 && args[0] == "--searchmerge")
+        {
+            SearchMergeProbe.Run();
+            return;
+        }
+
+        // 搜索来源持久化与 Fluent 2 分段选择器渲染回归（不触网）。
+        if (args.Length > 0 && args[0] == "--searchsource")
+        {
+            SearchSourcePreferenceProbe.Run();
+            return;
+        }
+
+        // Fluent 2 综合搜索红心平台选择对话框（桌面/窄屏，不触网）。
+        if (args.Length > 0 && args[0] == "--likesourcedlg")
+        {
+            LikeSourceDialogProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:搜索页改版渲染探针(落地页两态 + 结果页,输出临时 PNG)
         if (args.Length > 0 && args[0] == "--searchpage")
         {

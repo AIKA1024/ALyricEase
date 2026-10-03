@@ -25,6 +25,10 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
 
     public string Description => Playlist.Description;
 
+    public string SourceLabel => Playlist.Source == Services.MusicSource.QQ
+        ? "QQ 音乐"
+        : "网易云音乐";
+
     /// <summary>有简介才显示(API 多数歌单无简介)。</summary>
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
 

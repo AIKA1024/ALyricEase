@@ -88,6 +88,18 @@ public sealed record QQTrackDto
 
     public string? Name { get; init; }
 
+    /// <summary>标准展示标题；部分搜索响应只在 title/name 之一返回。</summary>
+    public string? Title { get; init; }
+
+    /// <summary>版本或用途副标题（Live、影视插曲等），用于跨平台录音判别。</summary>
+    public string? Subtitle { get; init; }
+
+    /// <summary>发行日期，通常为 yyyy-MM-dd。</summary>
+    [JsonPropertyName("time_public")] public string? TimePublic { get; init; }
+
+    /// <summary>原版标识：1=原版，0=翻唱/Live；nullable 可区分接口未返回与明确返回 0。</summary>
+    [JsonPropertyName("ov")] public int? OriginalVersion { get; init; }
+
     /// <summary>时长,秒(两形态同名)。</summary>
     public int Interval { get; init; }
 

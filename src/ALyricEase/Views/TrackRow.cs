@@ -20,6 +20,8 @@ public class TrackRow : TemplatedControl
     private Button? _artistAlbumButton;
     private Button? _artistButton;
     private Button? _moreButton;
+    private Button? _likeCoverButton;
+    private Button? _likeInlineButton;
 
     public TrackRow()
     {
@@ -64,6 +66,8 @@ public class TrackRow : TemplatedControl
             oldArtist.RemoveHandler(Button.ClickEvent, OnArtistButtonClick);
         if (_moreButton is { } oldMore)
             oldMore.RemoveHandler(Button.ClickEvent, OnMoreButtonClick);
+        DetachLikeButton(_likeCoverButton);
+        DetachLikeButton(_likeInlineButton);
 
         base.OnApplyTemplate(e);
 
@@ -99,6 +103,38 @@ public class TrackRow : TemplatedControl
         {
             _moreButton = null;
         }
+
+        _likeCoverButton = e.NameScope.Find("LikeCoverButton") as Button;
+        _likeInlineButton = e.NameScope.Find("LikeInlineButton") as Button;
+        AttachLikeButton(_likeCoverButton);
+        AttachLikeButton(_likeInlineButton);
+    }
+
+    private static void AttachLikeButton(Button? button)
+    {
+        if (button is null) return;
+        button.AddHandler(InputElement.ContextRequestedEvent, OnLikeButtonContextRequested);
+    }
+
+    private static void DetachLikeButton(Button? button)
+    {
+        if (button is null) return;
+        button.RemoveHandler(InputElement.ContextRequestedEvent, OnLikeButtonContextRequested);
+    }
+
+    /// <summary>合并结果在红心上右键/长按始终打开同一个平台选择模态层。</summary>
+    private static void OnLikeButtonContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (sender is not Button { DataContext: SongItemViewModel { HasMultipleLikeSources: true } song })
+            return;
+        TryOpenLikeSourceDialog(song);
+        e.Handled = true;
+    }
+
+    private static void TryOpenLikeSourceDialog(SongItemViewModel song)
+    {
+        try { ServiceLocator.Get<MainViewModel>().OpenLikeSourceDialog(song); }
+        catch { /* 设计器/无头宿主没有应用 DI。 */ }
     }
 
     /// <summary>点击(抬起)歌手/专辑按钮 → 展开按钮下方的 MenuFlyout。
@@ -175,6 +211,7 @@ public class TrackRow : TemplatedControl
             {
                 _state = ServiceLocator.Get<AppStateStore>();
                 _state.VisualEffectsChanged += OnVisualEffectsChanged;
+                _state.PreferredCombinedLikeSourceChanged += OnPreferredCombinedLikeSourceChanged;
             }
             ApplySwapClass();
         }
@@ -193,6 +230,7 @@ public class TrackRow : TemplatedControl
         if (_state is not null)
         {
             _state.VisualEffectsChanged -= OnVisualEffectsChanged;
+            _state.PreferredCombinedLikeSourceChanged -= OnPreferredCombinedLikeSourceChanged;
             _state = null;
         }
     }
@@ -200,6 +238,12 @@ public class TrackRow : TemplatedControl
     private AppStateStore? _state;
 
     private void OnVisualEffectsChanged() => ApplySwapClass();
+
+    private void OnPreferredCombinedLikeSourceChanged()
+    {
+        if (DataContext is SongItemViewModel song)
+            song.RefreshLikeTarget();
+    }
 
     /// <summary>播放/喜欢按钮位置互换开关:挂在行类上,模板里的按钮副本按类显隐(见 TrackRow.axaml)。</summary>
     private void ApplySwapClass()

@@ -74,5 +74,9 @@
         <!-- 应用更新弹窗(设置页;同层最末 → 同时可见时盖在最上;安卓=下载 APK 后调系统安装器) -->
         <views:UpdateDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsUpdateDialogOpen}"
                                 Grid.Row="1" ZIndex="200" />
+
+        <!-- 综合搜索合并歌曲的红心平台选择；移动端长按红心也进入此模态层。 -->
+        <views:LikeSourceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLikeSourceDialogOpen}"
+                                    Grid.Row="1" ZIndex="200" />
     </Grid>
 </UserControl>

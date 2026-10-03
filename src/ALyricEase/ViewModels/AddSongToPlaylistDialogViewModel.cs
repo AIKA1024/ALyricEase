@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -38,25 +39,32 @@ public sealed partial class AddSongToPlaylistDialogViewModel : ViewModelBase
 
     public bool HasNoItems => !HasItems;
 
-    public string SongText => _song is null ? "" : $"将「{_song.Name}」添加到：";
+    public string SongText => _song is null
+        ? ""
+        : SongRecordingResolver.GetSources(_song).Count > 1
+            ? $"将「{_song.Name}」添加到网易云音乐或 QQ 音乐歌单："
+            : $"将「{_song.Name}」添加到：";
 
     public string EmptyText
     {
         get
         {
             if (_song is null) return "当前没有可添加的歌曲。";
-            var loggedIn = _song.Source == Services.MusicSource.QQ
-                ? _playlist.IsQqLoggedIn
-                : _playlist.IsLoggedIn;
+            var sources = SongRecordingResolver.GetSources(_song);
+            var loggedIn = sources.Any(IsLoggedIn);
             if (!loggedIn)
-                return $"尚未登录{(_song.Source == Services.MusicSource.QQ ? "QQ音乐" : "网易云音乐")}账号。";
+                return sources.Count > 1
+                    ? "尚未登录网易云音乐或 QQ 音乐账号。"
+                    : $"尚未登录{(sources[0] == MusicSource.QQ ? "QQ音乐" : "网易云音乐")}账号。";
             return SearchText.Trim().Length > 0
                 ? "没有匹配的歌单。"
-                : "当前账号暂无可添加的歌单。";
+                : sources.Count > 1
+                    ? "已登录的平台暂无可添加的歌单。"
+                    : "当前账号暂无可添加的歌单。";
         }
     }
 
-    /// <summary>每次打开都按当前侧栏快照重建候选，仅保留歌曲同音源且属于当前账号的歌单。</summary>
+    /// <summary>每次打开都按当前侧栏快照重建候选。合并歌曲同时列出两个平台的可写歌单。</summary>
     public void Refresh(Song song)
     {
         _song = song;
@@ -64,10 +72,13 @@ public sealed partial class AddSongToPlaylistDialogViewModel : ViewModelBase
         Message = null;
         IsBusy = false;
         _allItems.Clear();
-        var sourceItems = song.Source == Services.MusicSource.QQ
-            ? _playlist.QqPlaylists
-            : _playlist.Playlists;
-        _allItems.AddRange(sourceItems.Where(item => item.Playlist.CanAddTracks));
+        foreach (var source in SongRecordingResolver.GetSources(song))
+        {
+            var sourceItems = source == MusicSource.QQ
+                ? _playlist.QqPlaylists
+                : _playlist.Playlists;
+            _allItems.AddRange(sourceItems.Where(item => item.Playlist.CanAddTracks));
+        }
         ApplyFilter();
         OnPropertyChanged(nameof(SongText));
         OnPropertyChanged(nameof(EmptyText));
@@ -97,11 +108,17 @@ public sealed partial class AddSongToPlaylistDialogViewModel : ViewModelBase
     private async Task AddAsync(PlaylistItemViewModel? item)
     {
         if (item is null || _song is null || IsBusy) return;
+        var recording = SongRecordingResolver.Resolve(_song, item.Playlist.Source);
+        if (recording is null)
+        {
+            Message = $"这条搜索结果没有{item.SourceLabel}版本，无法添加。";
+            return;
+        }
         IsBusy = true;
         Message = null;
         try
         {
-            await _playlist.AddSongToPlaylistAsync(item.Playlist, _song);
+            await _playlist.AddSongToPlaylistAsync(item.Playlist, recording);
             item.UpdateTrackCount(item.TrackCount + 1);
             _onAdded();
         }
@@ -118,4 +135,7 @@ public sealed partial class AddSongToPlaylistDialogViewModel : ViewModelBase
             IsBusy = false;
         }
     }
+
+    private bool IsLoggedIn(MusicSource source)
+        => source == MusicSource.QQ ? _playlist.IsQqLoggedIn : _playlist.IsLoggedIn;
 }

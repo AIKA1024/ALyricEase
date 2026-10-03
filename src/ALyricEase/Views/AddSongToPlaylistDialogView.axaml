@@ -58,9 +58,13 @@
                                                            infra:ManagedCoverImage.Source="{Binding CoverUrl}"
                                                            Stretch="UniformToFill" />
                                                 </Border>
-                                                <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                                           VerticalAlignment="Center"
-                                                           TextTrimming="CharacterEllipsis" />
+                                                <StackPanel Grid.Column="1" Spacing="2"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding SourceLabel}" FontSize="11"
+                                                               Foreground="{DynamicResource TextTertiary}" />
+                                                </StackPanel>
                                                 <TextBlock Grid.Column="2" Text="{Binding TrackCountText}"
                                                            VerticalAlignment="Center" FontSize="12"
                                                            Foreground="{DynamicResource TextTertiary}" />

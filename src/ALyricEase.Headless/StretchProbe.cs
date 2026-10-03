@@ -51,7 +51,19 @@ public static class StretchProbe
             Name = "名字很长的歌单名称用来测试弹窗里的省略号与行宽拉伸是否正常",
             TrackCount = 12, CanAddTracks = true,
         }));
-        main.AddSongToPlaylistDialog.Refresh(new Song { Id = 1, Source = MusicSource.QQ, Name = "探针歌曲" });
+        var combinedSong = SongSearchMerger.Merge(
+            [new Song
+            {
+                Id = 1, Source = MusicSource.NetEase, Name = "探针歌曲", Artist = "探针歌手",
+                ArtistNames = ["探针歌手"], DurationMs = 180_000,
+            }],
+            [new Song
+            {
+                Id = 2, Mid = "probe-mid", Source = MusicSource.QQ, Name = "探针歌曲", Artist = "探针歌手",
+                ArtistNames = ["探针歌手"], DurationMs = 180_500,
+            }],
+            1)[0];
+        main.AddSongToPlaylistDialog.Refresh(combinedSong);
         Render(new AddSongToPlaylistDialogView { DataContext = main }, "stretch_adddlg.png", 720, 560);
     }
 

@@ -62,5 +62,9 @@
     <!-- 应用更新弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
     <views:UpdateDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsUpdateDialogOpen}"
                             Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
+    <!-- 综合搜索合并歌曲的红心平台选择；声明在最后，始终是最上层决策对话框。 -->
+    <views:LikeSourceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLikeSourceDialogOpen}"
+                                Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
   </Grid>
 </UserControl>

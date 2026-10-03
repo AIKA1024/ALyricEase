@@ -21,6 +21,8 @@ public static class SearchPageProbe
     {
         // 历史种子直接注入集合(不落盘;HasHistory 经 CollectionChanged 联动)
         var vm = ServiceLocator.Get<SearchViewModel>();
+        // 原有多类型/Tab 溢出断言针对网易云独立源；综合源在后面单独覆盖。
+        vm.SelectNetEaseSourceCommand.Execute(null);
         foreach (var w in new[] { "同花顺", "周杰伦" })
             vm.SearchHistory.Add(w);
 
@@ -116,7 +118,28 @@ public static class SearchPageProbe
         vm.SelectedTab = SearchKind.All;
         WaitIdle(vm, seconds: 30);
 
-        // QQ 音源端到端:回登录页 → 切 QQ → 搜"周杰伦"(歌曲走 client_search_cp,歌单走 musicu.fcg)
+        // 综合音源端到端：两源并行搜索、同一录音只显示一次，匹配项保留备用平台录音。
+        vm.BackToLandingCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        vm.SelectCombinedSourceCommand.Execute(null);
+        vm.Keyword = "后来 刘若英";
+        vm.SearchCommand.Execute(null);
+        WaitIdle(vm, seconds: 45);
+        var dualSourceSongs = vm.Songs.Count(song => song.Song.AlternateRecordings.Count > 0);
+        Shot(window, "search-results-combined");
+        Console.WriteLine($"[sp] results/combined: songs={vm.Songs.Count} 双源匹配={dualSourceSongs} " +
+            $"tabs={vm.Tabs.Count} message={vm.Message ?? "-"}");
+        Console.WriteLine("[sp] combined sources: " + string.Join(", ", vm.Songs
+            .GroupBy(row => row.Song.Source)
+            .Select(group => $"{group.Key}={group.Count()}")));
+        foreach (var row in vm.Songs.Take(8))
+        {
+            var song = row.Song;
+            Console.WriteLine($"[sp]   {song.Source}: [{song.Name}] [{song.Artist}] {song.DurationMs}ms " +
+                $"album=[{song.Album}] subtitle=[{song.Subtitle}] date=[{song.PublishDate}] ov={song.OriginalVersion}");
+        }
+
+        // QQ 音源端到端:回登录页 → 切 QQ → 搜"周杰伦"(歌曲走 SearchCgiService,歌单走 musicu.fcg)
         vm.BackToLandingCommand.Execute(null);
         Dispatcher.UIThread.RunJobs();
         vm.SelectQQSourceCommand.Execute(null);

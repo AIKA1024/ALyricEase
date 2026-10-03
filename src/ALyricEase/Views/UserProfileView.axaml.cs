@@ -38,7 +38,7 @@ public partial class UserProfileView : UserControl
     {
         if (sender is not Button { DataContext: UserTasteRowViewModel row } button) return;
         if (IsInnerButtonHit(sender, e)) return;
-        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistCommand.Execute(row.Playlist);
+        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(row.Playlist);
     }
 
     /// <summary>参与创作/收藏的歌单行 → 歌单详情页。激活走 Tapped(TrackRow 同款,见上)。</summary>
@@ -46,7 +46,7 @@ public partial class UserProfileView : UserControl
     {
         if (sender is not Button { DataContext: PlaylistItemViewModel pvm }) return;
         if (IsInnerButtonHit(sender, e)) return;
-        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistCommand.Execute(pvm);
+        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(pvm);
     }
 
     /// <summary>宽/中屏卡片悬停浮现的播放圆钮:播放歌单。阻止事件冒泡到卡片按钮(否则会顺带打开详情页)。</summary>

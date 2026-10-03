@@ -795,6 +795,18 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist.OpenQqPlaylistCommand.Execute(playlist);
     }
 
+    /// <summary>非侧栏入口(用户页/收藏页/推荐页等)的统一打开口:按歌单音源自动路由。
+    /// ⚠ 必须经这里,不能写死 OpenShellPlaylistCommand —— QQ 歌单 tid 丢给网易云的
+    /// GetPlaylistTrackOverviewAsync 必然失败(2026-10-03 实测:用户页点"听歌吧"空白,侧栏正常)。</summary>
+    public void OpenShellPlaylistAuto(PlaylistItemViewModel? playlist)
+    {
+        if (playlist is null) return;
+        if (playlist.Playlist.Source == MusicSource.QQ)
+            OpenShellQqPlaylistCommand.Execute(playlist);
+        else
+            OpenShellPlaylistCommand.Execute(playlist);
+    }
+
     private void PreserveOpenPlaylistBeforeReplacement()
     {
         if ((ActivePage is "Favorites" or "CloudDrive") && Playlist.HasRetainedPageData)

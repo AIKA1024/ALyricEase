@@ -38,7 +38,7 @@ public partial class CollectedPlaylistsView : UserControl
         if (e.Source is Visual source
             && source.FindAncestorOfType<Button>() is { } hit
             && !ReferenceEquals(hit, button)) return;
-        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistCommand.Execute(pvm);
+        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(pvm);
     }
 
     private void OnRowPlayClick(object? sender, RoutedEventArgs e)

@@ -277,7 +277,7 @@ public sealed class RecommendViewModel : ViewModelBase
             CoverUrl = item.CoverUrl,
             TrackCount = item.TrackCount,
         });
-        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistCommand.Execute(playlist);
+        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(playlist);
         return Task.CompletedTask;
     }
 

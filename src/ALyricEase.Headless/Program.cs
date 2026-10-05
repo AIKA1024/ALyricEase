@@ -24,6 +24,23 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--page-transition")
+        {
+            var transitionBuilder = AppBuilder.Configure<PageTransitionProbe.ProbeApp>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            var transitionExitCode = 0;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await PageTransitionProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[page-transition] {ex}"); transitionExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            transitionBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = transitionExitCode;
+            return;
+        }
+
         // 按下/hover 画刷过渡时间线(--pressedtimeline):逐帧记录 overlay Border 的 Background 值序列。
         if (args.Length > 0 && args[0] == "--pressedtimeline")
         {

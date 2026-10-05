@@ -249,11 +249,9 @@
             <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentContent}"
                                          IsTransitionReversed="{Binding IsTransitionReversed}">
               <TransitioningContentControl.PageTransition>
-                <CompositePageTransition>
-                  <CompositePageTransition.PageTransitions>
-                    <PageSlide Orientation="Horizontal" Duration="0:0:0.3" /><CrossFade Duration="0:0:0.3" />
-                  </CompositePageTransition.PageTransitions>
-                </CompositePageTransition>
+                <!-- 内置 PageSlide/CrossFade 依赖 UI 帧时钟；复杂页更新期间会停帧。
+                     保留双 presenter 生命周期，平移与透明度交给合成线程。 -->
+                <infra:CompositionPageTransition Duration="0:0:0.3" />
               </TransitioningContentControl.PageTransition>
             </TransitioningContentControl>
             <!-- 应用内毛玻璃曾用 VisualBrush+BlurEffect,但 Avalonia 12.1.1 的 BlurEffect 不实际渲染(见诊断),已移除 -->

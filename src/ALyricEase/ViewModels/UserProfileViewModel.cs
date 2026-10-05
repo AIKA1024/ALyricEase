@@ -203,6 +203,10 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
             HasCreated = CreatedPlaylists.Count > 0;
             HasCollected = CollectedPlaylists.Count > 0;
             IsLoading = false;
+
+            // 播放量补拉:QQ asset 列表通道 play_cnt 恒 0 不下发(网易云 user/playlist 天然带),
+            // 详情通道才有真实值;后台静默按块补,完成逐个原地更新角标
+            _ = FillQqPlayCountsAsync(playlists, generation, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -211,6 +215,31 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         {
             // 网络失败静默:停在空态,不崩
             if (IsCurrentLoad(generation, ct)) IsLoading = false;
+        }
+    }
+
+    /// <summary>QQ 歌单播放量后台补拉:按块多模块请求,完成后逐行原地更新(不改集合结构)。</summary>
+    private async Task FillQqPlayCountsAsync(List<Playlist> playlists, int generation, CancellationToken ct)
+    {
+        try
+        {
+            var counts = await _qqApi.GetPlaylistPlayCountsAsync(playlists.Select(p => p.Id), ct)
+                .ConfigureAwait(true);
+            if (!IsCurrentLoad(generation, ct)) return;
+            foreach (var pvm in TasteRows.Select(t => t.Playlist)
+                         .Concat(CreatedPlaylists)
+                         .Concat(CollectedPlaylists))
+            {
+                if (counts.TryGetValue(pvm.Id, out var n) && n != pvm.Playlist.PlayCount)
+                    pvm.UpdatePlayCount(n);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            // 播放量缺失不影响页面
         }
     }
 

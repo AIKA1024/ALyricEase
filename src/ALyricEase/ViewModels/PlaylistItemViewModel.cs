@@ -13,6 +13,7 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
         Playlist = playlist;
         _currentCoverUrl = playlist.CoverUrl;
         _trackCount = playlist.TrackCount;
+        _playCount = playlist.PlayCount;
     }
 
     public Playlist Playlist { get; }
@@ -38,8 +39,19 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
 
     public string TrackCountText => $"{TrackCount} 首";
 
-    /// <summary>累计播放次数格式化文本(用户页角标用;0 显示 "0")。</summary>
-    public string PlayCountText => Services.NetEase.NetEaseApiClient.FormatPlayCount(Playlist.PlayCount);
+    /// <summary>累计播放次数格式化文本(用户页角标用;0 显示 "0")。
+    /// QQ 列表接口不下发(恒 0),用户页后台补拉后经 <see cref="UpdatePlayCount"/> 原地更新。</summary>
+    private double _playCount;
+
+    public string PlayCountText => Services.NetEase.NetEaseApiClient.FormatPlayCount(_playCount);
+
+    /// <summary>播放量后台补拉落地(与 <see cref="UpdateTrackCount"/> 同款:不替换 VM 实例)。</summary>
+    public void UpdatePlayCount(double value)
+    {
+        if (_playCount == value) return;
+        _playCount = value;
+        OnPropertyChanged(nameof(PlayCountText));
+    }
 
     /// <summary>歌单创建者(用户页 more 菜单"创建者"项/跳用户页用;非用户页入口为 null)。</summary>
     public string? CreatorName { get; init; }

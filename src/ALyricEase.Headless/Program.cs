@@ -606,6 +606,14 @@ public static class Program
             return;
         }
 
+        // QQ 用户歌单原始响应 dump:确认服务端字段名(播放量等)后补 DTO 映射
+        if (args.Length > 0 && args[0] == "--qqdumppl")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqApiProbe.RunDumpPlaylistsAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 创建/删除歌单端到端实测(需本机有效 Cookie):两平台 Create→复检→Delete 还原
         if (args.Length > 0 && args[0] == "--createpl")
         {

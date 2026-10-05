@@ -1551,6 +1551,42 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
     }
 
+    /// <summary>探针专用(--qqdumppl):dump 用户歌单两通道的原始首条目 JSON,确认服务端
+    /// 字段名(如播放量)后再补 DTO 映射。</summary>
+    internal async Task<string> DumpUserPlaylistsRawAsync(CancellationToken ct = default)
+    {
+        using var doc = await PostMusicuMultiAsync(
+        [
+            w => WriteModuleReq(w, "req_0", "music.musicasset.PlaylistBaseRead", "GetPlaylistByUin",
+                p => p.WriteString("uin", _uin)),
+            w => WriteModuleReq(w, "req_1", "music.musicasset.PlaylistFavRead", "GetPlaylistFavInfo",
+                p => p.WriteString("uin", _uin)),
+        ], ct).ConfigureAwait(false);
+        var root = doc.RootElement.Clone();
+        return root.GetRawText();
+    }
+
+    /// <summary>探针专用(--qqdumppl):dump uniform_get_Dissinfo 歌单详情原始响应(data 段),
+    /// 确认详情通道是否携带播放量。</summary>
+    internal async Task<string> DumpSonglistDetailRawAsync(long tid, CancellationToken ct = default)
+    {
+        using var doc = await PostMusicuAsync(w =>
+        {
+            WriteModuleReq(w, "music.srfDissInfo.aiDissInfo", "uniform_get_Dissinfo", p =>
+            {
+                p.WriteNumber("disstid", tid);
+                p.WriteNumber("userinfo", 1);
+                p.WriteNumber("tag", 1);
+                p.WriteNumber("orderlist", 1);
+                p.WriteNumber("song_begin", 0);
+                p.WriteNumber("song_num", 1);
+                p.WriteNumber("onlysonglist", 0);
+                p.WriteString("enc_host_uin", "");
+            });
+        }, ct).ConfigureAwait(false);
+        return doc.RootElement.Clone().GetRawText();
+    }
+
     /// <summary>回落:老主页通道 mydiss.list(字段随版本漂移取兜底;可能缺名,置占位文案)。</summary>
     private async Task<List<Playlist>> GetUserPlaylistsViaHomepageAsync(CancellationToken ct)
     {
@@ -1614,12 +1650,66 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return new PlaylistTrackPage(songs, hasMore, totalCount);
     }
 
+    /// <summary>批量取歌单播放量(dirinfo.listennum)。asset 列表通道(GetPlaylistByUin)的 play_cnt
+    /// 恒回 0 不下发真实值,uniform_get_Dissinfo 详情通道才携带(2026-10-04 实测:听歌吧 listennum=37983,
+    /// 列表通道 21 条 play_cnt 全 0)。多模块 musicu 按 10 个/块合并 POST;单 req 失败静默跳过 ——
+    /// 播放量缺失只是展示不完整,不值得报错。</summary>
+    internal async Task<Dictionary<long, double>> GetPlaylistPlayCountsAsync(
+        IEnumerable<long> tids, CancellationToken ct = default)
+    {
+        var result = new Dictionary<long, double>();
+        var list = tids.Distinct().ToArray();
+        const int chunk = 10;
+        for (var offset = 0; offset < list.Length; offset += chunk)
+        {
+            var batch = list.Skip(offset).Take(chunk).ToArray();
+            try
+            {
+                using var doc = await PostMusicuMultiAsync(
+                    batch.Select((tid, i) => (Action<Utf8JsonWriter>)(w => WriteModuleReq(
+                        w, $"req_{i}", "music.srfDissInfo.aiDissInfo", "uniform_get_Dissinfo", p =>
+                        {
+                            p.WriteNumber("disstid", tid);
+                            p.WriteNumber("userinfo", 1);
+                            p.WriteNumber("tag", 1);
+                            p.WriteNumber("orderlist", 1);
+                            p.WriteNumber("song_begin", 0);
+                            p.WriteNumber("song_num", 1); // 只为 dirinfo,songlist 带一首压响应体
+                            p.WriteNumber("onlysonglist", 0);
+                            p.WriteString("enc_host_uin", "");
+                        }))).ToArray(), ct).ConfigureAwait(false);
+
+                var root = doc.RootElement;
+                for (var i = 0; i < batch.Length; i++)
+                {
+                    if (!root.TryGetProperty($"req_{i}", out var req)
+                        || req.ValueKind != JsonValueKind.Object) continue;
+                    if (req.TryGetProperty("code", out var codeEl)
+                        && codeEl.ValueKind == JsonValueKind.Number && codeEl.GetInt64() != 0) continue;
+                    if (!req.TryGetProperty("data", out var data)
+                        || data.ValueKind != JsonValueKind.Object) continue;
+                    if (data.TryGetProperty("code", out var dataCode)
+                        && dataCode.ValueKind == JsonValueKind.Number && dataCode.GetInt64() != 0) continue;
+                    if (!data.TryGetProperty("dirinfo", out var dir)
+                        || dir.ValueKind != JsonValueKind.Object) continue;
+                    if (dir.TryGetProperty("listennum", out var listen)
+                        && listen.ValueKind == JsonValueKind.Number)
+                        result[batch[i]] = listen.GetDouble();
+                }
+            }
+            catch (Exception ex) when (ex is ApiException or JsonException or HttpRequestException)
+            {
+                // 该块失败跳过,继续下一块
+            }
+        }
+        return result;
+    }
+
     /// <summary>歌单全量曲目:music.srfDissInfo.aiDissInfo/uniform_get_Dissinfo(与网页端同源,
     /// 条目为 track_info 同构复用 MapTrack)。旧 DissInfo/CgiGetDiss 与 qzone fcg_ucc 均已失效 ——
     /// CgiGetDiss 现网对缺 userinfo/tag/orderlist 的请求只回 code=0 但 songlist 空(详情页白屏);
     /// 按 song_begin/song_num 分页拉齐 total_song_num。</summary>
-    public async Task<List<Song>> GetPlaylistTracksAsync(long id, CancellationToken ct = default)
-    {
+    public async Task<List<Song>> GetPlaylistTracksAsync(long id, CancellationToken ct = default)    {
         const int pageSize = 300;
         var songs = new List<Song>();
         for (var begin = 0; ; begin += pageSize)

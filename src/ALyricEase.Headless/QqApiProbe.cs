@@ -314,6 +314,36 @@ public static class QqApiProbe
         return exit;
     }
 
+    /// <summary>探针(--qqdumppl):dump 用户歌单两通道(自建/收藏)的原始 JSON,确认服务端字段名。</summary>
+    public static async Task<int> RunDumpPlaylistsAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var api = new QQMusicApiClient(new CookieStore());
+        if (!api.IsLoggedIn)
+        {
+            Console.WriteLine("[qqdumppl][FAIL] 本机无有效 QQ Cookie");
+            return 1;
+        }
+        var raw = await api.DumpUserPlaylistsRawAsync();
+        Console.WriteLine($"[qqdumppl] 用户歌单原始响应 {raw.Length} 字节,写入 $TEMP/qqdumppl.json");
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "qqdumppl.json"), raw);
+        var detail = await api.DumpSonglistDetailRawAsync(2660913991); // 听歌吧
+        Console.WriteLine($"[qqdumppl] 歌单详情原始响应 {detail.Length} 字节,写入 $TEMP/qqdissdetail.json");
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "qqdissdetail.json"), detail);
+
+        // 批量播放量补拉实测:全部用户歌单的 tid 一次喂进去
+        var pls = await api.GetUserPlaylistsAsync();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var counts = await api.GetPlaylistPlayCountsAsync(pls.Select(p => p.Id));
+        sw.Stop();
+        Console.WriteLine($"[qqdumppl] 播放量补拉: {counts.Count}/{pls.Count} 个歌单拿到,耗时 {sw.ElapsedMilliseconds}ms");
+        foreach (var p in pls)
+            Console.WriteLine($"[qqdumppl]   [{p.Name}] listennum={counts.GetValueOrDefault(p.Id)}");
+        return 0;
+    }
+
     /// <summary>用户歌单逐个试读探针(--qqplaylist [tid]):无参列出全部歌单(id/dirId/标称曲数),
     /// 再对每个歌单调 GetPlaylistTrackPageAsync 读首页,逐个打印成功/失败与服务端错误码。
     /// 带 tid 参数时对指定歌单做 GetPlaylistTracksAsync 全量拉取计时(复现 UI 打开路径)。</summary>

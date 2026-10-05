@@ -186,6 +186,36 @@
       <!-- ============ 交互 ============ -->
       <TextBlock Classes="section-header" Text="交互" />
 
+      <StackPanel IsVisible="{Binding DesktopSettingsSupported}" Spacing="8" Margin="0,0,0,8">
+        <Border Classes="setting-card">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel VerticalAlignment="Center" Spacing="4">
+              <TextBlock Classes="setting-title" Text="开机自启" />
+              <TextBlock Text="登录 Windows 后自动启动 ALyricEase" FontSize="12"
+                         TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+              <TextBlock IsVisible="{Binding HasStartupHint}" Text="{Binding StartupHint}"
+                         FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartAtLogin, Mode=TwoWay}"
+                          VerticalAlignment="Center" OnContent="" OffContent=""
+                          AutomationProperties.Name="开机自启" />
+          </Grid>
+        </Border>
+        <Border Classes="setting-card">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel VerticalAlignment="Center" Spacing="4">
+              <TextBlock Classes="setting-title" Text="关闭主窗口时" />
+              <TextBlock Text="最小化到托盘后继续播放，可从托盘恢复窗口" FontSize="12"
+                         TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+            <ComboBox Grid.Column="1" MinWidth="150" Height="32" VerticalAlignment="Center"
+                      ItemsSource="{Binding CloseBehaviorOptions}"
+                      SelectedIndex="{Binding CloseBehaviorIndex, Mode=TwoWay}"
+                      AutomationProperties.Name="关闭主窗口时的行为" />
+          </Grid>
+        </Border>
+      </StackPanel>
+
       <Border Classes="setting-card" Margin="0,0,0,8">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconHeart}" />

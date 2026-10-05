@@ -9,6 +9,8 @@
     <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <!-- 直接验证桌面端的生命周期控制器，避免测试替身复制关闭逻辑。 -->
+    <Compile Include="..\ALyricEase.Windows\Services\DesktopLifecycleController.cs" Link="DesktopLifecycleController.cs" />
     <ProjectReference Include="..\ALyricEase\ALyricEase.csproj" />
     <PackageReference Include="Avalonia.Headless" Version="12.1.2" />
     <PackageReference Include="Avalonia.Skia" Version="12.1.2" /><!-- TEMP-DIAG:真实渲染截图 -->

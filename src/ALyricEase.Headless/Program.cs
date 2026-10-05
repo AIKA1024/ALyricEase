@@ -317,6 +317,12 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
+        if (args.Length > 0 && args[0] == "--desktop-lifecycle")
+        {
+            Environment.ExitCode = DesktopLifecycleProbe.Run();
+            return;
+        }
+
         // 单例歌单页重数据回归：离页归零，返回从一次性内存快照恢复内容/筛选/滚动状态。
         if (args.Length > 0 && args[0] == "--playlist-lifetime")
         {

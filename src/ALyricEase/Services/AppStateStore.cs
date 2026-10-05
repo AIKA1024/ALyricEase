@@ -78,6 +78,9 @@ public sealed class AppStateStore
 
     // ---- 设置页偏好(SettingsViewModel 绑定;离散项即时保存,连续滑块延迟合并保存) ----
 
+    /// <summary>关闭主窗口时：null=每次询问，true=隐藏到托盘，false=退出应用。</summary>
+    public bool? MinimizeToTrayOnClose { get; set; }
+
     /// <summary>主题:System/Light/Dark。</summary>
     public string Theme { get; set; } = "System";
 
@@ -189,6 +192,7 @@ public sealed class AppStateStore
             WindowX = dto.WindowX;
             WindowY = dto.WindowY;
             WindowMaximized = dto.WindowMaximized ?? false;
+            MinimizeToTrayOnClose = dto.MinimizeToTrayOnClose;
             Theme = string.IsNullOrEmpty(dto.Theme) ? "System" : dto.Theme;
             Language = string.IsNullOrEmpty(dto.Language) ? "System" : dto.Language;
             // 只有显式写着 Performance 才是最佳性能;其余(含老配置里的 "Balanced"、空值、
@@ -295,6 +299,7 @@ public sealed class AppStateStore
                 WindowX = WindowX,
                 WindowY = WindowY,
                 WindowMaximized = WindowMaximized,
+                MinimizeToTrayOnClose = MinimizeToTrayOnClose,
                 Theme = Theme,
                 Language = Language,
                 PerformanceMode = PerformanceMode,

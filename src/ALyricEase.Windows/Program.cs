@@ -138,6 +138,7 @@ class Program
     services.AddSingleton<DispatcherService>();
     services.AddSingleton<CookieStore>();
     services.AddSingleton<AppStateStore>();
+    services.AddSingleton<IStartupService, WindowsStartupService>();
     services.AddSingleton<CnIpPool>();
     services.AddSingleton<CryptoService>();
     services.AddSingleton<NetEaseApiClient>();

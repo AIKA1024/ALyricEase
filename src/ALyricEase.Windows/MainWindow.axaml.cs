@@ -29,6 +29,8 @@ public partial class MainWindow : Window
     private NowPlayingOverlayController? _nowPlayingController;
     private MainViewModel? _vm;
 
+    internal ContentControl DesktopDialogHost => CloseDialogPresenter;
+
     /// <summary>常规态几何快照(仅 Normal 态更新;最大化/全屏/最小化时保留旧值供关闭落盘)。</summary>
     private double _normalWidth, _normalHeight;
     private int _normalX, _normalY;
@@ -73,6 +75,9 @@ public partial class MainWindow : Window
         // 布局完成、ClientSize 有效:把覆盖层"屏幕外"位置从兜底值更新为真实高度(仍无过渡,不可见)。
         // ⚠ 壳层此刻还没挂载 → 控制器为 null,挂载后(AttachShell)会再补一次。
         _nowPlayingController?.UpdateClosedPosition();
+
+        // 从托盘 Show() 会再次触发 Opened；已有壳层时不能重新启动启动画面的无限旋转动画。
+        if (_shell is not null) return;
 
         // 启动画面已在首帧可见(合成线程旋转指示不受 UI 阻塞影响):
         // 再过两帧让启动画面确实呈现,然后挂载重内容壳层并收起启动画面。
@@ -291,11 +296,11 @@ public partial class MainWindow : Window
     }
 
 #if WINDOWS
-    /// <summary>全屏时把 Win32 命中测试直接改为 HTCLIENT,阻止系统标题栏拖动。</summary>
+    /// <summary>全屏或关闭模态层打开时使用 HTCLIENT，阻止烟雾层穿透到标题栏拖动。</summary>
     private IntPtr OnWndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int WM_NCHITTEST = 0x0084;
-        if (msg == WM_NCHITTEST && WindowState == WindowState.FullScreen)
+        if (msg == WM_NCHITTEST && (WindowState == WindowState.FullScreen || CloseDialogPresenter.IsVisible))
         {
             handled = true;
             return new IntPtr(1); // HTCLIENT
@@ -348,6 +353,7 @@ public partial class MainWindow : Window
 
         // 即使当前没有可返回内容也消费该专用按键，避免它落到列表项等普通控件上触发交互。
         e.Handled = true;
+        if (CloseDialogPresenter.IsVisible) return;
         _vm?.TryHandleBack();
     }
 

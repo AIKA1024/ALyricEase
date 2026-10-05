@@ -39,6 +39,9 @@ public sealed class AppStateFile
 
     public bool? WindowMaximized { get; set; }
 
+    /// <summary>null=每次询问，true=最小化到托盘，false=退出应用。</summary>
+    public bool? MinimizeToTrayOnClose { get; set; }
+
     // ---- 设置页偏好(SettingsViewModel 读写;null = 用户未改过,加载端回退默认) ----
 
     /// <summary>主题:System/Light/Dark。</summary>

@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ALyricEase.ViewModels"
+        x:Class="ALyricEase.Views.CloseBehaviorDialogView"
+        x:DataType="vm:CloseBehaviorDialogViewModel" IsVisible="False">
+  <!-- 与清除缓存/音频设备对话框相同的窗口内烟雾层、卡片和主题资源。
+       淡入淡出统一由 ModalVisibilityTransition 驱动；烟雾层不支持点击关闭。 -->
+  <Grid>
+    <Panel Background="#99000000" />
+    <Border x:Name="DialogCard" MaxWidth="480" MinWidth="300" Margin="16" Padding="24"
+            HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="8"
+            Background="{DynamicResource AppSurface}"
+            BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+            BoxShadow="0 32 64 #66000000"
+            KeyboardNavigation.TabNavigation="Cycle"
+            AutomationProperties.Name="关闭 ALyricEase">
+    <StackPanel Spacing="12">
+      <TextBlock Text="关闭 ALyricEase" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Text="你希望最小化到托盘，还是退出应用？" TextWrapping="Wrap"
+                 FontSize="14" />
+      <TextBlock Text="最小化到托盘后音乐会继续播放，点击托盘图标可恢复窗口。退出应用将停止播放。"
+                 TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TextSecondary}" />
+      <CheckBox Content="记住我的选择" IsChecked="{Binding RememberChoice, Mode=TwoWay}" />
+      <TextBlock Text="之后可在「设置 → 交互 → 关闭主窗口时」更改。"
+                 TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+      <Grid ColumnDefinitions="1.5*,*,*" ColumnSpacing="8" Margin="0,4,0,0">
+        <Button x:Name="MinimizeButton" Classes="accent" Content="最小化到托盘" Height="34" HorizontalAlignment="Stretch"
+                Padding="8,0"
+                Command="{Binding MinimizeToTrayCommand}" />
+        <Button Grid.Column="1" Content="退出应用" Height="34" HorizontalAlignment="Stretch" Padding="8,0"
+                Command="{Binding ExitCommand}" />
+        <Button Grid.Column="2" Content="取消" Height="34" HorizontalAlignment="Stretch" Padding="8,0"
+                Command="{Binding CancelCommand}" />
+      </Grid>
+    </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

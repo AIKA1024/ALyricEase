@@ -44,6 +44,10 @@ public static class ModalVisibilityTransition
 
     public static void SetDuration(Control control, TimeSpan value) => control.SetValue(DurationProperty, value);
 
+    /// <summary>等待当前显隐动画完成，供宿主在淡出后隐藏窗口或退出应用。</summary>
+    public static Task WaitForTransitionAsync(Control control) =>
+        States.TryGetValue(control, out var state) ? state.TransitionTask : Task.CompletedTask;
+
     private static void OnIsOpenChanged(Control control, AvaloniaPropertyChangedEventArgs args)
     {
         var state = States.GetValue(control, static target => new TransitionState(target));
@@ -55,6 +59,8 @@ public static class ModalVisibilityTransition
         private readonly Control _target;
         private CancellationTokenSource? _cancellation;
         private long _generation;
+
+        public Task TransitionTask { get; private set; } = Task.CompletedTask;
 
         public TransitionState(Control target)
         {
@@ -76,7 +82,7 @@ public static class ModalVisibilityTransition
                 return;
             }
 
-            _ = isOpen ? OpenAsync() : CloseAsync();
+            TransitionTask = isOpen ? OpenAsync() : CloseAsync();
         }
 
         private void OnAttached(object? sender, VisualTreeAttachmentEventArgs e) => Apply(GetIsOpen(_target));

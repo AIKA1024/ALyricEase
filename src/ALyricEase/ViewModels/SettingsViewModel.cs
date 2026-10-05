@@ -28,6 +28,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly IAudioPlayer _player;
     /// <summary>应用自更新服务(Windows=Velopack 实现;Android/无头探针=空实现或 null)。</summary>
     private readonly IAppUpdateService? _update;
+    private readonly IStartupService? _startup;
 
     /// <summary>当前枚举到的输出设备(不含"跟随系统默认设备"伪项);索引 i 对应下拉第 i+1 项。</summary>
     private readonly List<AudioOutputDevice> _devices = new();
@@ -38,12 +39,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string? _status;
 
     public SettingsViewModel(AppStateStore state, MusicCacheService musicCache, IAudioPlayer player,
-        IAppUpdateService? updateService = null)
+        IAppUpdateService? updateService = null, IStartupService? startupService = null)
     {
         _state = state;
         _musicCache = musicCache;
         _player = player;
         _update = updateService;
+        _startup = startupService;
+        RefreshDesktopSettings();
         ApplyTheme(_state.Theme); // 启动恢复已保存的主题
 
         // 输出设备:启动就把上次选的设备贴回播放器(不必等用户打开设置页)。
@@ -51,6 +54,69 @@ public sealed partial class SettingsViewModel : ViewModelBase
         AudioDeviceSupported = _player.SupportsOutputDeviceSelection;
         if (AudioDeviceSupported) AudioDeviceRestoreTask = RestoreAudioDeviceAsync();
         else AudioDeviceHint = "当前平台不支持切换输出设备,播放时使用系统默认设备";
+    }
+
+    // ---- 桌面启动与关闭行为 ----
+
+    public bool DesktopSettingsSupported => _startup is { IsSupported: true };
+
+    public IReadOnlyList<string> CloseBehaviorOptions { get; } = ["每次询问", "最小化到托盘", "退出应用"];
+
+    public int CloseBehaviorIndex
+    {
+        get => _state.MinimizeToTrayOnClose switch { true => 1, false => 2, _ => 0 };
+        set
+        {
+            if (value is < 0 or > 2) return;
+            bool? behavior = value switch { 1 => true, 2 => false, _ => null };
+            if (_state.MinimizeToTrayOnClose == behavior) return;
+            _state.MinimizeToTrayOnClose = behavior;
+            _state.Save();
+            OnPropertyChanged(nameof(CloseBehaviorIndex));
+        }
+    }
+
+    private bool _startAtLogin;
+    public bool StartAtLogin
+    {
+        get => _startAtLogin;
+        set
+        {
+            if (!DesktopSettingsSupported || _startAtLogin == value) return;
+            try
+            {
+                _startup!.SetEnabled(value);
+                _startAtLogin = _startup.IsEnabled;
+                StartupHint = null;
+            }
+            catch (Exception ex)
+            {
+                StartupHint = $"设置开机自启失败：{ex.Message}";
+            }
+            OnPropertyChanged(nameof(StartAtLogin));
+        }
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStartupHint))]
+    private string? _startupHint;
+
+    public bool HasStartupHint => !string.IsNullOrEmpty(StartupHint);
+
+    public void RefreshDesktopSettings()
+    {
+        if (!DesktopSettingsSupported) return;
+        try
+        {
+            _startAtLogin = _startup!.IsEnabled;
+            StartupHint = null;
+        }
+        catch (Exception ex)
+        {
+            StartupHint = $"读取开机自启状态失败：{ex.Message}";
+        }
+        OnPropertyChanged(nameof(StartAtLogin));
+        OnPropertyChanged(nameof(CloseBehaviorIndex));
     }
 
     // ---- 下拉框选项 ----

@@ -14,6 +14,7 @@ namespace ALyricEase;
 
 public partial class App : Application
 {
+  private DesktopLifecycleController? _desktopLifecycle;
   public override void Initialize()
   {
     AvaloniaXamlLoader.Load(this);
@@ -30,6 +31,7 @@ public partial class App : Application
     {
       desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
       desktop.Exit += (_, _) => ServiceLocator.Get<AppStateStore>().Flush();
+      desktop.Exit += (_, _) => _desktopLifecycle?.Dispose();
 
       // 主窗口本身秒开:内部先显示启动画面(标题栏+图标+合成线程旋转指示),
       // 重内容壳层(MainWindowShell)在其首帧后由 MainWindow 自行挂载并原地收起启动画面。
@@ -40,6 +42,8 @@ public partial class App : Application
       // 在显示前恢复几何,确保 Win32 窗口的第一个可见帧就是上次关闭时的大小、位置和状态。
       mainWindow.RestorePersistedWindowBounds();
       desktop.MainWindow = mainWindow;
+      _desktopLifecycle = new DesktopLifecycleController(this, mainWindow,
+          ServiceLocator.Get<SettingsViewModel>(), ServiceLocator.Get<AppStateStore>(), mainWindow.DesktopDialogHost);
       mainWindow.Show();
 
 #if WINDOWS

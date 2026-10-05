@@ -44,17 +44,16 @@ public partial class App : Application
       desktop.MainWindow = mainWindow;
       _desktopLifecycle = new DesktopLifecycleController(this, mainWindow,
           ServiceLocator.Get<SettingsViewModel>(), ServiceLocator.Get<AppStateStore>(), mainWindow.DesktopDialogHost);
+#if WINDOWS
+      // 首次 Show 前监听 TaskbarButtonCreated，首次显示与托盘恢复共用同一条注册路径。
+      var hwnd = mainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+      InitTaskbarThumbButtons(mainWindow, hwnd);
+#endif
       mainWindow.Show();
 
 #if WINDOWS
       // SMTC 需要前台窗口 HWND,须在窗口创建后于 UI 线程初始化
-      var hwnd = mainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
       ServiceLocator.Get<ISmtcService>().Initialize(hwnd);
-
-      // 任务栏缩略图工具栏:须窗口已显示(关联任务栏按钮)后再注册。
-      // ⚠ 不能挂 Opened —— Opened 在 Show() 内部同步触发,这里的处理器永远不跑
-      // (实测任务栏三键消失的回归);Show() 返回后窗口已显示,前置条件已满足,直接调用。
-      InitTaskbarThumbButtons(mainWindow, hwnd);
 #endif
 
       // 后台恢复登录态(已存 MUSIC_U 则拉资料+歌单),不阻塞 UI
@@ -78,10 +77,17 @@ public partial class App : Application
 
       var player = ServiceLocator.Get<PlayerViewModel>();
       // 播放状态变化 → 更新播放/暂停按钮图标
-      player.PropertyChanged += (_, e) =>
+      void OnPlayerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
       {
         if (e.PropertyName == nameof(PlayerViewModel.IsPlaying))
           tb.SetPlaying(player.IsPlaying);
+      }
+      player.PropertyChanged += OnPlayerPropertyChanged;
+      tb.SetPlaying(player.IsPlaying);
+      window.Closed += (_, _) =>
+      {
+        player.PropertyChanged -= OnPlayerPropertyChanged;
+        tb.Dispose();
       };
       tb.ButtonClicked += id =>
       {

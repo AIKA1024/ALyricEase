@@ -31,6 +31,13 @@ class Program
     // selftest(无 UI)模式下:先在主线程钉住 UIThread,保证 DispatcherService.Post 能排队
     _ = Avalonia.Threading.Dispatcher.UIThread;
 
+    if (args.Length > 0 && args[0] == "--selftest-taskbar")
+    {
+      var outputPath = args.Length > 1 ? args[1] : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ale_taskbar_probe.log");
+      Environment.ExitCode = TaskbarThumbButtonsProbe.Run(outputPath);
+      return;
+    }
+
     if (args.Length > 0 && args[0] == "--selftest-leak")
     {
       SelfTest.RunLeakTestAsync().GetAwaiter().GetResult();

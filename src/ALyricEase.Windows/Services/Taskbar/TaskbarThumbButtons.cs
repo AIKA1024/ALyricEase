@@ -30,6 +30,7 @@ public sealed class TaskbarThumbButtons : IDisposable
 
     private static readonly Guid TaskbarListClsid = new("56FDF344-FD6D-11d0-958A-006097C9A090");
     private static readonly Guid TaskbarList3Iid = new("ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf");
+    private static readonly uint TaskbarButtonCreatedMessage = RegisterWindowMessage("TaskbarButtonCreated");
 
     // THUMBBUTTON 官方布局:szTip 是内联 WCHAR[260],不是指针!
     // 偏移:dwMask(0) iId(4) iBitmap(8) hIcon(12) szTip(16,520字节) dwFlags(536)
@@ -48,13 +49,21 @@ public sealed class TaskbarThumbButtons : IDisposable
     private readonly IntPtr _hwnd;
     private IntPtr _taskbar;
     private bool _initialized;
+    private bool _buttonsAdded;
+    private bool _playing;
+    private bool _disposed;
     private GCHandle _selfHandle;
     private IntPtr _iconPlay;
     private IntPtr _iconPause;
     private IntPtr _iconPrev;
     private IntPtr _iconNext;
-    private IntPtr _imageList;
     private WndProcDelegate? _subclassProc;
+
+    internal int TaskbarButtonCreatedCount { get; private set; }
+    internal int RegistrationCount { get; private set; }
+    internal bool HasRegisteredButtons => _buttonsAdded;
+    internal bool HasRenderedIcons => _iconPrev != IntPtr.Zero && _iconPlay != IntPtr.Zero
+        && _iconPause != IntPtr.Zero && _iconNext != IntPtr.Zero;
 
     public event Action<uint>? ButtonClicked;
 
@@ -62,7 +71,8 @@ public sealed class TaskbarThumbButtons : IDisposable
 
     public unsafe bool Initialize()
     {
-        if (_hwnd == IntPtr.Zero || _initialized) return false;
+        if (_initialized) return true;
+        if (_hwnd == IntPtr.Zero || _disposed || TaskbarButtonCreatedMessage == 0) return false;
         try
         {
             var hr = CoCreateInstance(TaskbarListClsid, IntPtr.Zero, 1 /*CLSCTX_INPROC_SERVER*/, TaskbarList3Iid, out _taskbar);
@@ -80,32 +90,13 @@ public sealed class TaskbarThumbButtons : IDisposable
             _iconNext = RenderGlyphIcon(MediaShape.Next);
             Log($"icons prev={_iconPrev} play={_iconPlay} pause={_iconPause} next={_iconNext}");
 
-            // 按钮数组(THB_ICON 方式,hIcon 直连;iBitmap 不用 ImageList 时必须为 0)
-            var size = Marshal.SizeOf<ThumbButton>();
-            var pButtons = Marshal.AllocHGlobal(size * 3);
-            try
-            {
-                var b = new ThumbButton[3];
-                b[0] = new ThumbButton { dwMask = ThbBitmaskIcon | ThbBitmaskTooltip, iId = IdPrevious, iBitmap = 0, hIcon = _iconPrev, szTip = "上一曲", dwFlags = ThbFlagEnabled };
-                b[1] = new ThumbButton { dwMask = ThbBitmaskIcon | ThbBitmaskTooltip, iId = IdPlayPause, iBitmap = 0, hIcon = _iconPlay, szTip = "播放/暂停", dwFlags = ThbFlagEnabled };
-                b[2] = new ThumbButton { dwMask = ThbBitmaskIcon | ThbBitmaskTooltip, iId = IdNext, iBitmap = 0, hIcon = _iconNext, szTip = "下一曲", dwFlags = ThbFlagEnabled };
-                for (var i = 0; i < 3; i++)
-                    Marshal.StructureToPtr(b[i], pButtons + size * i, false);
-
-                var hrAdd = ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, ThumbButton*, int>)GetVtable(_taskbar, 15))(_taskbar, _hwnd, 3, (ThumbButton*)pButtons);
-                Log($"ThumbBarAddButtons hr=0x{hrAdd:x} hwnd=0x{_hwnd:x}");
-                if (hrAdd != 0) return false;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(pButtons);
-            }
-
-            // 子类化窗口接收 WM_COMMAND(THBN_CLICKED),dwRefData 指向 GCHandle(this)
+            // 在首次 Show 前挂钩，等待 Shell 的 TaskbarButtonCreated 后才添加工具栏。
+            // Hide→Show 和 Explorer 重启都会重新发送此消息，必须在同一实例上重新注册。
             _subclassProc = SubclassProc;
             _selfHandle = GCHandle.Alloc(this);
             var subclassed = SetWindowSubclass(_hwnd, _subclassProc, ThbBhId, GCHandle.ToIntPtr(_selfHandle));
             Log($"SetWindowSubclass={subclassed}");
+            if (!subclassed) return false;
 
             _initialized = true;
             return true;
@@ -117,6 +108,46 @@ public sealed class TaskbarThumbButtons : IDisposable
         }
     }
 
+    private unsafe void RegisterButtons()
+    {
+        if (!_initialized || _disposed) return;
+        _buttonsAdded = false;
+        try
+        {
+            // 沿用已有图标和 ID，并在重新注册时恢复隐藏期间变化的播放状态。
+            var size = Marshal.SizeOf<ThumbButton>();
+            var pButtons = Marshal.AllocHGlobal(size * 3);
+            try
+            {
+                var b = new ThumbButton[3];
+                b[0] = new ThumbButton { dwMask = ThbBitmaskIcon | ThbBitmaskTooltip | ThbBitmaskFlags, iId = IdPrevious, iBitmap = 0, hIcon = _iconPrev, szTip = "上一曲", dwFlags = ThbFlagEnabled };
+                b[1] = new ThumbButton { dwMask = ThbBitmaskIcon | ThbBitmaskTooltip | ThbBitmaskFlags, iId = IdPlayPause, iBitmap = 0, hIcon = _playing ? _iconPause : _iconPlay, szTip = "播放/暂停", dwFlags = ThbFlagEnabled };
+                b[2] = new ThumbButton { dwMask = ThbBitmaskIcon | ThbBitmaskTooltip | ThbBitmaskFlags, iId = IdNext, iBitmap = 0, hIcon = _iconNext, szTip = "下一曲", dwFlags = ThbFlagEnabled };
+                for (var i = 0; i < 3; i++)
+                    Marshal.StructureToPtr(b[i], pButtons + size * i, false);
+
+                var hr = ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, IntPtr, int>)GetVtable(_taskbar, 15))(_taskbar, _hwnd, 3, pButtons);
+                Log($"ThumbBarAddButtons hr=0x{hr:x} hwnd=0x{_hwnd:x} playing={_playing}");
+                // 同一任务栏按钮的重复通知不能重复添加；已有工具栏则更新完整三键。
+                if (hr < 0)
+                {
+                    hr = ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, IntPtr, int>)GetVtable(_taskbar, 16))(_taskbar, _hwnd, 3, pButtons);
+                    Log($"ThumbBarUpdateButtons(restore) hr=0x{hr:x}");
+                }
+                _buttonsAdded = hr >= 0;
+                if (_buttonsAdded) RegistrationCount++;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(pButtons);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"RegisterButtons EX: {ex}");
+        }
+    }
+
     private static void Log(string msg)
     {
         try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ale_taskbar.log"), $"{DateTime.Now:HH:mm:ss} {msg}\n"); } catch { }
@@ -125,7 +156,8 @@ public sealed class TaskbarThumbButtons : IDisposable
     /// <summary>更新播放/暂停按钮图标(播放→暂停图标,暂停→播放图标)。</summary>
     public unsafe void SetPlaying(bool playing)
     {
-        if (!_initialized) return;
+        _playing = playing;
+        if (!_initialized || !_buttonsAdded || _disposed) return;
         try
         {
             var size = Marshal.SizeOf<ThumbButton>();
@@ -134,7 +166,7 @@ public sealed class TaskbarThumbButtons : IDisposable
             {
                 var b = new ThumbButton { dwMask = ThbBitmaskIcon, iId = IdPlayPause, iBitmap = 0, hIcon = playing ? _iconPause : _iconPlay, dwFlags = ThbFlagEnabled };
                 Marshal.StructureToPtr(b, p, false);
-                ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, ThumbButton*, int>)GetVtable(_taskbar, 16))(_taskbar, _hwnd, 1, (ThumbButton*)p);
+                ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint, IntPtr, int>)GetVtable(_taskbar, 16))(_taskbar, _hwnd, 1, p);
             }
             finally { Marshal.FreeHGlobal(p); }
         }
@@ -145,12 +177,20 @@ public sealed class TaskbarThumbButtons : IDisposable
 
     private static unsafe IntPtr SubclassProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, IntPtr uIdSubclass, IntPtr dwRefData)
     {
-        if (msg == 0x0111 /* WM_COMMAND */ && (uint)(wParam.ToInt64() >> 16) == ThbnClicked)
+        if (dwRefData != IntPtr.Zero && GCHandle.FromIntPtr(dwRefData).Target is TaskbarThumbButtons self)
         {
-            var id = (uint)(wParam.ToInt64() & 0xFFFF);
-            // 通过 GCHandle 找实例(存于 dwRefData)
-            if (dwRefData != IntPtr.Zero && GCHandle.FromIntPtr(dwRefData).Target is TaskbarThumbButtons self)
+            if (msg == TaskbarButtonCreatedMessage)
+            {
+                self.TaskbarButtonCreatedCount++;
+                self.RegisterButtons();
+            }
+            else if (msg == 0x0018 /* WM_SHOWWINDOW */ && wParam == IntPtr.Zero)
+                self._buttonsAdded = false;
+            else if (msg == 0x0111 /* WM_COMMAND */ && (uint)(wParam.ToInt64() >> 16) == ThbnClicked)
+            {
+                var id = (uint)(wParam.ToInt64() & 0xFFFF);
                 self.ButtonClicked?.Invoke(id);
+            }
         }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
@@ -278,17 +318,23 @@ public sealed class TaskbarThumbButtons : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         if (_hwnd != IntPtr.Zero && _subclassProc is not null)
             RemoveWindowSubclass(_hwnd, _subclassProc, ThbBhId);
         if (_selfHandle.IsAllocated) _selfHandle.Free();
         if (_taskbar != IntPtr.Zero) { try { Marshal.Release(_taskbar); } catch { } _taskbar = IntPtr.Zero; }
         foreach (var icon in new[] { _iconPrev, _iconPlay, _iconPause, _iconNext })
             if (icon != IntPtr.Zero) DestroyIcon(icon);
+        _iconPrev = _iconPlay = _iconPause = _iconNext = IntPtr.Zero;
+        _subclassProc = null;
+        _buttonsAdded = false;
         _initialized = false;
     }
 
     // ---- P/Invoke ----
     [DllImport("ole32.dll")] private static extern int CoCreateInstance(in Guid rclsid, IntPtr pUnkOuter, uint dwClsContext, in Guid riid, out IntPtr ppv);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string message);
     [DllImport("comctl32.dll", SetLastError = true)] private static extern bool SetWindowSubclass(IntPtr hwnd, WndProcDelegate proc, uint uIdSubclass, IntPtr dwRefData);
     [DllImport("comctl32.dll", SetLastError = true)] private static extern bool RemoveWindowSubclass(IntPtr hwnd, WndProcDelegate proc, uint uIdSubclass);
     [DllImport("comctl32.dll")] private static extern IntPtr DefSubclassProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);

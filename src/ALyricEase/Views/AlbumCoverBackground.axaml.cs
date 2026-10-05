@@ -4,14 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using ALyricEase.Infrastructure;
+using ALyricEase.Services.Audio;
 using Avalonia;
-using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Rendering.Composition;
-using Avalonia.Rendering.Composition.Animations;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -19,7 +19,7 @@ namespace ALyricEase.Views;
 
 /// <summary>
 /// 从封面提取四个代表色，绘制成原版 AlbumCoverBackgroundControl 风格的动态柔光色团。
-/// 色团在合成线程缓慢漂移；切歌时双层交叉淡化，避免整张模糊封面造成的纹理噪声。
+/// 色团通过逐帧更新合成属性缓慢漂移；切歌时双层交叉淡化，避免整张模糊封面造成的纹理噪声。
 ///
 /// <para>
 /// ⚠ 漂移**必须**由宿主按"详情页是否打开"绑 <see cref="MotionEnabled"/> 关掉。
@@ -45,8 +45,8 @@ namespace ALyricEase.Views;
 /// 同轮实测：色团整层不画只值 <b>0.85%</b>、详情页主画布整块不画只值 <b>+0.11%</b>、
 /// "渐变→纯色 / 渐变→预渲染位图"都落在噪声里；换算到**每帧**，组合动画 0.16% GPU/帧、
 /// 定时器 0.13% GPU/帧，几乎一样。⇒ 省 GPU 只能少出帧，流畅只能按刷新率出帧，**二者不可兼得**。
-/// 而组合动画由合成器推帧，**UI 线程再忙也不掉帧**；定时器会被 UI 线程饿死（空载就已经只有 14 次/秒），
-/// 播放中只会更差。要降这一层的钱，只剩"别在看不见的时候动"（<see cref="MotionEnabled"/> 门控，已做）。
+/// 现实现使用 <c>TopLevel.RequestAnimationFrame</c> 的高精度时间步长更新合成属性，避开旧定时器的低频和量化；
+/// 同时保留“看不见就不分析、不请求下一帧”的 <see cref="MotionEnabled"/> 门控。
 /// </para>
 /// </summary>
 public partial class AlbumCoverBackground : UserControl
@@ -55,12 +55,13 @@ public partial class AlbumCoverBackground : UserControl
         AvaloniaProperty.Register<AlbumCoverBackground, IImage?>(nameof(Cover));
 
     /// <summary>
-    /// 是否让色团漂移。默认 true 保留设计原意；宿主负责在"看不见这个背景"时置 false。
+    /// 是否让色团漂移。默认 false，宿主只在详情页真正可见时置 true；这也保证 Android
+    /// 不会因为控件刚构造、绑定尚未落值而提前申请音频分析权限。
     /// 注意这**只是**省掉动画开销：静止的色团层几乎不要钱（实测详情页可见且漂移停掉时 0.93% GPU），
     /// 所以关掉它不会改变任何观感，只会在切回来时从当前位置继续。
     /// </summary>
     public static readonly StyledProperty<bool> MotionEnabledProperty =
-        AvaloniaProperty.Register<AlbumCoverBackground, bool>(nameof(MotionEnabled), defaultValue: true);
+        AvaloniaProperty.Register<AlbumCoverBackground, bool>(nameof(MotionEnabled), defaultValue: false);
 
     private static readonly Color[] s_defaultPalette =
     [
@@ -71,9 +72,10 @@ public partial class AlbumCoverBackground : UserControl
     ];
 
     private static readonly TimeSpan s_motionCycle = TimeSpan.FromSeconds(26);
-
-    // 色团漂移路标间必须恒速:显式线性缓动(不带 easing 的 InsertKeyFrame 默认行为不可靠)。
-    private static readonly LinearEasing s_linearEasing = new();
+    private static readonly Vector3[] s_motionPaths =
+    [
+        new(148, 58, 0), new(-86, 146, 0), new(-152, -70, 0), new(108, -128, 0), new(-104, 92, 0),
+    ];
 
     private bool _showingLayerA = true;
     private bool _motionStarted;
@@ -81,6 +83,17 @@ public partial class AlbumCoverBackground : UserControl
     private int _motionStartAttempts;
     private int _motionGeneration;
     private int _paletteVersion;
+    private readonly IAudioPlayer? _audioPlayer;
+    private CompositionVisual[]? _motionVisuals;
+    private TopLevel? _motionTopLevel;
+    private TimeSpan _lastMotionTimestamp;
+    private bool _hasMotionTimestamp;
+    private double _motionPhase;
+    private double _smoothedEnergy;
+    private double _previousRawEnergy;
+    private double _energyBurst;
+    private double _burstCooldown;
+    private double _smoothedSpeed = 0.52;
 
     public IImage? Cover
     {
@@ -106,6 +119,14 @@ public partial class AlbumCoverBackground : UserControl
     public AlbumCoverBackground()
     {
         InitializeComponent();
+        try
+        {
+            _audioPlayer = ServiceLocator.Get<IAudioPlayer>();
+        }
+        catch
+        {
+            // 设计器/孤立控件测试可能没有建立 DI；此时保留普通慢速漂移。
+        }
         ApplyPalette(GetLayer(true), s_defaultPalette);
         ApplyPalette(GetLayer(false), s_defaultPalette);
         BaseLayer.Background = new SolidColorBrush(Darken(s_defaultPalette[0], 0.48));
@@ -133,8 +154,15 @@ public partial class AlbumCoverBackground : UserControl
     /// <summary>宿主开关与挂载状态一有变化就重算：两者任一不满足都该停。</summary>
     private void ApplyMotionPreference()
     {
-        if (MotionEnabled) QueueMotionStart();
-        else StopMotion();
+        if (MotionEnabled)
+        {
+            _audioPlayer?.SetAudioAnalysisEnabled(true);
+            QueueMotionStart();
+        }
+        else
+        {
+            StopMotion();
+        }
     }
 
     private void QueuePaletteRefresh()
@@ -222,12 +250,21 @@ public partial class AlbumCoverBackground : UserControl
         _motionGeneration++;
         _motionStartQueued = false;
         _motionStartAttempts = 0;
+        _audioPlayer?.SetAudioAnalysisEnabled(false);
         foreach (var ellipse in GetLayer(true).Concat(GetLayer(false)))
         {
             var visual = ElementComposition.GetElementVisual(ellipse);
             visual?.StopAnimation("Translation");
             visual?.StopAnimation("Scale");
         }
+        _motionVisuals = null;
+        _motionTopLevel = null;
+        _hasMotionTimestamp = false;
+        _smoothedEnergy = 0;
+        _previousRawEnergy = 0;
+        _energyBurst = 0;
+        _burstCooldown = 0;
+        _smoothedSpeed = 0.52;
         _motionStarted = false;
     }
 
@@ -239,20 +276,10 @@ public partial class AlbumCoverBackground : UserControl
         var visuals = all.Select(ElementComposition.GetElementVisual).ToArray();
         if (visuals.Any(visual => visual is null)) return false;
 
-        // 26s 周期改为"椭圆轨道匀速循环"(8 路标 + 线性插值,闭合回路):
-        // 旧实现前 12.5s 是 Hold 段(仅 12px),肉眼里就是"有些时间不动"。
-        // 椭圆长轴沿各色团主方向(Burst 方向),短轴 0.6 倍,周长 ~500px / 26s ≈ 20px/s —— 全程恒速可见。
-        // A/B 调色层使用同一轨道,切歌交叉淡化时不会跳位。
-        var paths = new Vector3[]
-        {
-            new(148, 58, 0), new(-86, 146, 0), new(-152, -70, 0), new(108, -128, 0), new(-104, 92, 0),
-        };
-
         for (var i = 0; i < all.Length; i++)
         {
             var ellipse = all[i];
             var visual = visuals[i]!;
-            var pathIndex = i % paths.Length;
 
             visual.StopAnimation("Translation");
             visual.StopAnimation("Scale");
@@ -262,37 +289,75 @@ public partial class AlbumCoverBackground : UserControl
                 (float)(ellipse.Bounds.Width / 2),
                 (float)(ellipse.Bounds.Height / 2),
                 0);
-
-            // 椭圆轨道:长轴沿 Burst 方向,幅值取其 0.75 倍。
-            var burst = paths[pathIndex];
-            var dir = Vector3.Normalize(new Vector3(burst.X, burst.Y, 0));
-            var perp = new Vector3(-dir.Y, dir.X, 0);
-            var amp = new Vector3(burst.X, burst.Y, 0).Length() * 0.75f;
-
-            // ⚠ 每个路标必须显式传 LinearEasing:不带 easing 的 InsertKeyFrame 不能假定是线性,
-            //   段内减速会造成"走一段慢下来"的脉动感(2026-09-23 用户实测)。
-            // ⚠ 必须包含进度 0 的原点路标(k=0):漏掉它会让动画在第一个路标上冻住 1/8 周期,
-            // 且循环回卷时从终点瞬移回起点 —— 实测观感"一顿一顿"(2026-09-23)。
-            var drift = visual.Compositor.CreateVector3DKeyFrameAnimation();
-            drift.Target = "Translation";
-            drift.Duration = s_motionCycle;
-            drift.IterationBehavior = AnimationIterationBehavior.Forever;
-            for (var k = 0; k <= 8; k++)
-            {
-                var angle = k * Math.PI / 4;
-                var offset = new Vector3(
-                    (float)((Math.Sin(angle) * dir.X - (1 - Math.Cos(angle)) * perp.X) * amp),
-                    (float)((Math.Sin(angle) * dir.Y - (1 - Math.Cos(angle)) * perp.Y) * amp),
-                    0);
-                drift.InsertKeyFrame(k / 8f, offset, s_linearEasing);
-            }
-            visual.StartAnimation("Translation", drift);
-            // 不再叠加缩放呼吸:胀缩脉动会让匀速漂移读成"走一段慢下来"(2026-09-23 用户反馈)。
-            // (visual.Scale 已在上面复位为 1,不再启动 Scale 动画。)
         }
 
+        _motionVisuals = visuals.Select(visual => visual!).ToArray();
+        _motionTopLevel = TopLevel.GetTopLevel(this);
+        if (_motionTopLevel is null) return false;
+        _hasMotionTimestamp = false;
         _motionStarted = true;
+        _motionTopLevel.RequestAnimationFrame(OnMotionFrame);
         return true;
+    }
+
+    /// <summary>
+    /// 高精度帧时钟驱动的音频响应漂移。这里不是之前失败的 DispatcherTimer 降频方案：
+    /// RequestAnimationFrame 跟随实际渲染帧并提供高分辨率时间戳，位移直接写合成视觉，
+    /// 不触发布局。相位按 dt 积分，所以分析数据只有 20Hz 也不会让位置呈阶梯。
+    /// </summary>
+    private void OnMotionFrame(TimeSpan timestamp)
+    {
+        if (!_motionStarted || !MotionEnabled || !this.IsAttachedToVisualTree()
+            || _motionVisuals is not { Length: 10 } visuals || _motionTopLevel is null)
+            return;
+
+        var dt = _hasMotionTimestamp
+            ? Math.Clamp((timestamp - _lastMotionTimestamp).TotalSeconds, 1.0 / 240.0, 0.05)
+            : 1.0 / 60.0;
+        _lastMotionTimestamp = timestamp;
+        _hasMotionTimestamp = true;
+
+        var rawEnergy = Math.Clamp(_audioPlayer?.AudioEnergy ?? 0f, 0f, 1f);
+        var rise = rawEnergy - _previousRawEnergy;
+        _burstCooldown = Math.Max(0, _burstCooldown - dt);
+        if (rise > 0.13 && _burstCooldown <= 0)
+        {
+            // 只响应明显的强弱跃迁，并留出冷却时间；避免每个采样峰都触发一次加速。
+            _energyBurst = Math.Max(_energyBurst, Math.Min(0.65, 0.18 + (rise - 0.13) * 2.8));
+            _burstCooldown = 1.35;
+        }
+        _previousRawEnergy = rawEnergy;
+        _energyBurst *= Math.Exp(-dt / 0.85);
+
+        // 快起、慢落：强段很快建立动势，间歇处自然减速而不是跟着 20Hz 样本抖动。
+        var tau = rawEnergy > _smoothedEnergy ? 0.14 : 1.05;
+        var follow = 1 - Math.Exp(-dt / tau);
+        _smoothedEnergy += (rawEnergy - _smoothedEnergy) * follow;
+
+        // 用开方型曲线展开实际音乐常见的中低能量区间：暂停约 50s/圈，普通段约 18~24s，
+        // 强段约 12~15s，偶发跃迁可短促进入约 10s/圈，强弱差异肉眼可见。
+        var perceivedEnergy = Math.Pow(_smoothedEnergy, 0.58);
+        var targetSpeed = 0.52 + 1.72 * perceivedEnergy + _energyBurst;
+        // 最终速度再做一层连续过渡，播放/暂停时只改变速度，不会产生速度阶跃。
+        var speedTau = targetSpeed > _smoothedSpeed ? 0.24 : 1.10;
+        _smoothedSpeed += (targetSpeed - _smoothedSpeed) * (1 - Math.Exp(-dt / speedTau));
+        _motionPhase = (_motionPhase + dt * Math.Tau / s_motionCycle.TotalSeconds * _smoothedSpeed) % Math.Tau;
+
+        for (var i = 0; i < visuals.Length; i++)
+        {
+            var burst = s_motionPaths[i % s_motionPaths.Length];
+            var dir = Vector3.Normalize(burst);
+            var perp = new Vector3(-dir.Y, dir.X, 0);
+            // 音乐只影响沿轨道的速度，不改变轨道半径；否则幅度变化会让当前坐标瞬移。
+            var amplitude = burst.Length() * 0.75;
+            var offset = new Vector3(
+                (float)((Math.Sin(_motionPhase) * dir.X - (1 - Math.Cos(_motionPhase)) * perp.X) * amplitude),
+                (float)((Math.Sin(_motionPhase) * dir.Y - (1 - Math.Cos(_motionPhase)) * perp.Y) * amplitude),
+                0);
+            visuals[i].Translation = offset;
+        }
+
+        _motionTopLevel.RequestAnimationFrame(OnMotionFrame);
     }
 
     private static Color[] ExtractPalette(IImage cover)

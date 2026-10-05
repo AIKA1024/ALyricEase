@@ -25,10 +25,16 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
   private readonly MediaPlayer _mp;
   private MediaSource? _mediaSource;
   private Timer? _timer;
-  private PlaybackState _state = PlaybackState.Idle;
+  private volatile PlaybackState _state = PlaybackState.Idle;
   private bool _hadContent;
   private long _lastPosMs = -1;
   private long _lastDurMs;
+  private readonly object _analysisGate = new();
+  private CancellationTokenSource? _analysisCancellation;
+  private Thread? _analysisThread;
+  private float _audioEnergy;
+  private int _analysisGeneration;
+  private int _analysisRouteVersion;
 
   // 输出设备:只缓存 FindAllAsync 返回的 DeviceInformation 实例(见 RefreshOutputDevicesAsync 的说明)。
   private IReadOnlyDictionary<string, DeviceInformation> _deviceCache =
@@ -169,6 +175,7 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
         _mp.AudioDevice = null;
         _outputDevice = null;
         _outputDeviceId = null;
+        Interlocked.Increment(ref _analysisRouteVersion);
         return true;
       }
 
@@ -176,6 +183,7 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
       _mp.AudioDevice = info;
       _outputDevice = info;
       _outputDeviceId = deviceId;
+      Interlocked.Increment(ref _analysisRouteVersion);
       return true;
     }
     catch (Exception)
@@ -197,6 +205,7 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
       // 设备中途被拔:退回默认设备播放,好过整首播不出来
       _outputDevice = null;
       _outputDeviceId = null;
+      Interlocked.Increment(ref _analysisRouteVersion);
     }
   }
 
@@ -208,9 +217,48 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
 
   public event EventHandler<string>? ErrorOccurred;
 
+  public float AudioEnergy => Volatile.Read(ref _audioEnergy);
+
+  public float BassEnergy => 0f; // WASAPI 会话峰值没有频谱；Android 后端会提供低频能量。
+
+  public void SetAudioAnalysisEnabled(bool enabled)
+  {
+    Thread? stoppingThread = null;
+    lock (_analysisGate)
+    {
+      if (enabled)
+      {
+        if (_analysisCancellation is not null) return;
+        var cancellation = _analysisCancellation = new CancellationTokenSource();
+        var generation = Interlocked.Increment(ref _analysisGeneration);
+        var thread = _analysisThread = new Thread(() => AnalyzeAudioLoop(cancellation, generation))
+        {
+          IsBackground = true,
+          Name = "ALyricEase.AudioEnergy.Windows",
+        };
+        thread.Start();
+      }
+      else
+      {
+        Interlocked.Increment(ref _analysisGeneration);
+        _analysisCancellation?.Cancel();
+        _analysisCancellation = null;
+        stoppingThread = _analysisThread;
+        _analysisThread = null;
+        Volatile.Write(ref _audioEnergy, 0f);
+      }
+    }
+
+    // 关闭播放器前等采样线程归还会话 COM 引用，避免它与 MediaPlayer.Dispose 并发。
+    // 正常最多等待一个 50ms 采样周期；超时则不阻塞 UI。
+    if (stoppingThread is not null && stoppingThread != Thread.CurrentThread)
+        stoppingThread.Join(250);
+  }
+
   public void PlayUrl(string url)
   {
     Stop();
+    Interlocked.Increment(ref _analysisRouteVersion);
     try
     {
       _mediaSource?.Dispose();
@@ -283,6 +331,7 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
 
   public void Dispose()
   {
+    SetAudioAnalysisEnabled(false);
     _mp.MediaFailed -= OnMediaFailed;
     StopPolling();
     try
@@ -355,6 +404,63 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
     catch
     {
       // 未就绪/竞态读取异常忽略
+    }
+  }
+
+  private void AnalyzeAudioLoop(CancellationTokenSource cancellation, int generation)
+  {
+    var token = cancellation.Token;
+    var initialized = WindowsAudioSessionMeter.InitializeApartment();
+    WindowsAudioSessionMeter? meter = null;
+    var observedRouteVersion = -1;
+    var silentSamples = 0;
+    try
+    {
+      while (!token.IsCancellationRequested)
+      {
+        var playing = _state == PlaybackState.Playing;
+        var routeVersion = Volatile.Read(ref _analysisRouteVersion);
+        if (playing && (meter is null || routeVersion != observedRouteVersion || silentSamples >= 40))
+        {
+          meter?.Dispose();
+          meter = WindowsAudioSessionMeter.TryCreate(_outputDeviceId, Environment.ProcessId);
+          observedRouteVersion = routeVersion;
+          silentSamples = 0;
+        }
+
+        var energy = 0f;
+        if (playing && meter?.TryGetPeak(out var peak) == true)
+        {
+          // 平方根把低电平动态展开；0.6 振幅探针约映射到 0.76，保留强弱段差异。
+          energy = Math.Clamp((MathF.Sqrt(Math.Clamp(peak, 0f, 1f)) - 0.08f) / 0.92f, 0f, 1f);
+          silentSamples = peak <= 0.0005f ? silentSamples + 1 : 0;
+        }
+        else if (playing)
+        {
+          silentSamples++;
+        }
+        else
+        {
+          // 暂停/空闲时不反复枚举会话；恢复播放仍复用原 meter，切歌则由 routeVersion 强制刷新。
+          silentSamples = 0;
+        }
+
+        if (generation == Volatile.Read(ref _analysisGeneration))
+          Volatile.Write(ref _audioEnergy, energy);
+        if (token.WaitHandle.WaitOne(50)) break; // 20Hz 分析；渲染端按帧插值
+      }
+    }
+    catch
+    {
+      // 无音频设备/会话切换竞态时静默退化为固定慢速背景。
+    }
+    finally
+    {
+      meter?.Dispose();
+      if (initialized) WindowsAudioSessionMeter.UninitializeApartment();
+      cancellation.Dispose();
+      if (generation == Volatile.Read(ref _analysisGeneration))
+        Volatile.Write(ref _audioEnergy, 0f);
     }
   }
 

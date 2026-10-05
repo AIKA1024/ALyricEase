@@ -4,6 +4,8 @@
           android:versionName="0.0.3"
           package="com.aika1024.alyricease">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 播放详情页动态背景读取当前 MediaPlayer 会话的低质量波形/FFT；不采集麦克风。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

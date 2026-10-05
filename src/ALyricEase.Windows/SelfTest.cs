@@ -384,6 +384,38 @@ internal static class SelfTest
         Environment.ExitCode = swapped && stillPlaying && errors.Count == 0 && hardOk ? 0 : 1;
     }
 
+    /// <summary>真机验证动态背景所用的 WASAPI 进程会话峰值采样。</summary>
+    public static async Task RunAudioEnergyTestAsync()
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var dir = Path.Combine(Path.GetTempPath(), "aly-audio-energy-test");
+        Directory.CreateDirectory(dir);
+        var file = WriteToneWav(Path.Combine(dir, "tone-523.wav"), 523.25, 6);
+
+        // 与其它 MediaPlayer 真机探针一致，只 Stop：无 Avalonia 应用生命周期的 WinExe
+        // 自测进程里调用 WinRT MediaPlayer.Dispose 会等待平台关闭线程，掩盖采样结果。
+        var player = new WindowsMediaPlayer(new DispatcherService());
+        player.Volume = 50;
+        player.SetAudioAnalysisEnabled(true);
+        player.PlayUrl(file);
+
+        var maxEnergy = 0f;
+        for (var i = 0; i < 80; i++)
+        {
+            await Task.Delay(75);
+            maxEnergy = Math.Max(maxEnergy, player.AudioEnergy);
+            if (maxEnergy >= 0.35f) break;
+        }
+
+        player.Stop();
+        player.SetAudioAnalysisEnabled(false);
+        var ok = maxEnergy >= 0.35f;
+        Console.WriteLine(ok
+            ? $"[audioenergy] WASAPI 会话峰值采样 OK(max={maxEnergy:F3})"
+            : $"[audioenergy] FAIL 6s 内未读到有效能量(max={maxEnergy:F3})");
+        Environment.ExitCode = ok ? 0 : 1;
+    }
+
     /// <summary>写一段 16bit 单声道 44.1kHz 正弦波 WAV(两端 10ms 淡入淡出防爆音)。</summary>
     private static string WriteToneWav(string path, double freq, double seconds)
     {

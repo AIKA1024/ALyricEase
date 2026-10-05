@@ -22,6 +22,9 @@ namespace ALyricEase;
 public class MainActivity : AvaloniaMainActivity
 {
     private const int NotificationPermissionRequestCode = 2001;
+    internal const int AudioAnalysisPermissionRequestCode = 2002;
+    private static WeakReference<MainActivity>? s_current;
+    private static bool s_audioPermissionRequested;
 
     /// <summary>返回相关日志标签(adb logcat -s ALyricEaseBack,D 可看返回有没有到应用层)。</summary>
     private const string BackLogTag = "ALyricEaseBack";
@@ -35,6 +38,7 @@ public class MainActivity : AvaloniaMainActivity
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        s_current = new WeakReference<MainActivity>(this);
         base.OnCreate(savedInstanceState);
         RequestNotificationPermission();
         TryRunDeviceProbe(Intent);
@@ -80,6 +84,28 @@ public class MainActivity : AvaloniaMainActivity
         base.OnStop();
     }
 
+    protected override void OnDestroy()
+    {
+        if (s_current?.TryGetTarget(out var current) == true && ReferenceEquals(current, this))
+            s_current = null;
+        base.OnDestroy();
+    }
+
+    /// <summary>动态背景首次需要音频频谱时才申请权限；同一进程拒绝后不反复弹窗。</summary>
+    internal static bool TryRequestAudioAnalysisPermission()
+    {
+        if (s_audioPermissionRequested
+            || s_current?.TryGetTarget(out var activity) != true
+            || activity is null)
+            return false;
+        s_audioPermissionRequested = true;
+        activity.RunOnUiThread(() => ActivityCompat.RequestPermissions(
+            activity,
+            new[] { global::Android.Manifest.Permission.RecordAudio },
+            AudioAnalysisPermissionRequestCode));
+        return true;
+    }
+
     /// <summary>系统返回:先让共享 VM 逐级消费一层,消费不掉再退到后台。</summary>
     private void HandleSystemBack()
     {
@@ -119,6 +145,9 @@ public class MainActivity : AvaloniaMainActivity
     public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
     {
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
-        // 无论结果如何应用都能正常运行;媒体横幅靠媒体会话显示,不依赖该权限
+        if (requestCode == AudioAnalysisPermissionRequestCode
+            && grantResults.Length > 0 && grantResults[0] == Permission.Granted)
+            ServiceLocator.Get<Services.Audio.IAudioPlayer>().SetAudioAnalysisEnabled(true);
+        // 无论结果如何应用都能正常运行;拒绝录音权限只会让背景保持普通慢速漂移。
     }
 }

@@ -61,4 +61,17 @@ public interface IAudioPlayer : IDisposable
     /// 仅当当前正在播放且启用了交叉淡化时执行并返回 true;否则返回 false,
     /// 调用方回落 <see cref="PlayUrl"/> 硬切。由 UI 线程调用。</summary>
     Task<bool> TryCrossfadePlayAsync(string url, int fadeMs) => Task.FromResult(false);
+
+    // ---- 音频响应背景(可选能力) ----
+
+    /// <summary>当前音频活动强度,归一化到 0..1。后端不支持时恒为 0。</summary>
+    float AudioEnergy => 0f;
+
+    /// <summary>当前低频能量,归一化到 0..1。只有能取得频谱的后端提供。</summary>
+    float BassEnergy => 0f;
+
+    /// <summary>按需启停音频分析。详情页不可见时必须关闭,避免后台轮询和系统音效占用。</summary>
+    void SetAudioAnalysisEnabled(bool enabled)
+    {
+    }
 }

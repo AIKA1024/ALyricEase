@@ -32,6 +32,13 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
   private long _lastDurMs;
   private string? _cachePath;
   private string? _currentUrl;
+  private readonly object _analysisLock = new();
+  private global::Android.Media.Audiofx.Visualizer? _visualizer;
+  private VisualizerListener? _visualizerListener;
+  private bool _audioAnalysisRequested;
+  private float _audioEnergy;
+  private float _bassEnergy;
+  private float _waveEnergy;
 
   // 代数号:每次 PlayUrl/Stop 自增,迟到的错误回调/下载完成回调据此丢弃,防竞态。
   private int _generation;
@@ -57,6 +64,7 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
       // 准备完成才允许 SetPreferredDevice(见 ApplyPreferredDevice 的状态说明)
       var routed = _outputDevice is null ? true : ApplyPreferredDevice();
       _mp.Start();
+      EnsureAudioVisualizer();
       Log($"Prepared, started streaming (device={_outputDeviceId ?? "system default"}, routed={routed})");
     }
     catch (Exception ex)
@@ -286,6 +294,30 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
 
   public event EventHandler<string>? ErrorOccurred;
 
+  public float AudioEnergy => Volatile.Read(ref _audioEnergy);
+
+  public float BassEnergy => Volatile.Read(ref _bassEnergy);
+
+  public void SetAudioAnalysisEnabled(bool enabled)
+  {
+    _audioAnalysisRequested = enabled;
+    if (!enabled)
+    {
+      ReleaseAudioVisualizer();
+      return;
+    }
+
+    var context = global::Android.App.Application.Context;
+    if (context.CheckSelfPermission(global::Android.Manifest.Permission.RecordAudio)
+        != global::Android.Content.PM.Permission.Granted)
+    {
+      _ = global::ALyricEase.MainActivity.TryRequestAudioAnalysisPermission();
+      return;
+    }
+
+    EnsureAudioVisualizer();
+  }
+
   public void PlayUrl(string url)
   {
     Log($"PlayUrl: {url}");
@@ -469,6 +501,7 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
   private void ResetPlayerInternal()
   {
     _prepared = false;
+    ReleaseAudioVisualizer();
     try
     {
       _mp.Stop();
@@ -487,6 +520,8 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
 
   public void Dispose()
   {
+    _audioAnalysisRequested = false;
+    ReleaseAudioVisualizer();
     StopInternal();
     try
     {
@@ -544,6 +579,115 @@ public sealed class AndroidMediaPlayer : IAudioPlayer
     }
     catch
     {
+    }
+  }
+
+  private void EnsureAudioVisualizer()
+  {
+    if (!_audioAnalysisRequested || !_prepared) return;
+    var context = global::Android.App.Application.Context;
+    if (context.CheckSelfPermission(global::Android.Manifest.Permission.RecordAudio)
+        != global::Android.Content.PM.Permission.Granted) return;
+
+    lock (_analysisLock)
+    {
+      if (_visualizer is not null) return;
+      try
+      {
+        var visualizer = new global::Android.Media.Audiofx.Visualizer(_mp.AudioSessionId);
+        var range = global::Android.Media.Audiofx.Visualizer.GetCaptureSizeRange();
+        var captureSize = range is { Length: >= 2 } ? Math.Min(1024, range[1]) : 256;
+        visualizer.SetCaptureSize(captureSize);
+        visualizer.SetScalingMode(global::Android.Media.Audiofx.VisualizerScalingMode.AsPlayed);
+        var listener = new VisualizerListener(this);
+        var captureRate = Math.Min(global::Android.Media.Audiofx.Visualizer.MaxCaptureRate, 20_000); // mHz = 20Hz
+        visualizer.SetDataCaptureListener(listener, captureRate, waveform: true, fft: true);
+        visualizer.SetEnabled(true);
+        _visualizerListener = listener;
+        _visualizer = visualizer;
+        Log($"Audio visualizer enabled(session={_mp.AudioSessionId}, size={captureSize}, rate={captureRate}mHz)");
+      }
+      catch (Exception ex)
+      {
+        Log($"Audio visualizer unavailable: {ex.Message}");
+        ReleaseAudioVisualizerLocked();
+      }
+    }
+  }
+
+  private void ReleaseAudioVisualizer()
+  {
+    lock (_analysisLock) ReleaseAudioVisualizerLocked();
+    Volatile.Write(ref _waveEnergy, 0f);
+    Volatile.Write(ref _bassEnergy, 0f);
+    Volatile.Write(ref _audioEnergy, 0f);
+  }
+
+  private void ReleaseAudioVisualizerLocked()
+  {
+    if (_visualizer is { } visualizer)
+    {
+      try { visualizer.SetEnabled(false); } catch { }
+      try { visualizer.Release(); } catch { }
+      visualizer.Dispose();
+      _visualizer = null;
+    }
+    _visualizerListener?.Dispose();
+    _visualizerListener = null;
+  }
+
+  private void OnWaveform(byte[] waveform)
+  {
+    if (!_audioAnalysisRequested || waveform.Length == 0) return;
+    double sum = 0;
+    foreach (var sample in waveform)
+    {
+      var centered = sample - 128.0;
+      sum += centered * centered;
+    }
+    var rms = Math.Sqrt(sum / waveform.Length) / 128.0;
+    var normalized = (float)Math.Clamp((rms - 0.01) / 0.24, 0, 1);
+    Volatile.Write(ref _waveEnergy, normalized);
+    PublishAudioEnergy();
+  }
+
+  private void OnFft(byte[] fft, int samplingRateMilliHz)
+  {
+    if (!_audioAnalysisRequested || fft.Length < 8) return;
+    var sampleRate = samplingRateMilliHz / 1000.0;
+    var binHz = sampleRate / fft.Length;
+    var maxBin = Math.Clamp((int)Math.Ceiling(250 / binHz), 2, fft.Length / 2 - 1);
+    var strongest = 0.0;
+    for (var bin = 1; bin <= maxBin; bin++)
+    {
+      var real = unchecked((sbyte)fft[bin * 2]);
+      var imaginary = unchecked((sbyte)fft[bin * 2 + 1]);
+      strongest = Math.Max(strongest, Math.Sqrt(real * real + imaginary * imaginary));
+    }
+    Volatile.Write(ref _bassEnergy, (float)Math.Clamp(strongest / 128.0, 0, 1));
+    PublishAudioEnergy();
+  }
+
+  private void PublishAudioEnergy()
+  {
+    var wave = Volatile.Read(ref _waveEnergy);
+    var bass = Volatile.Read(ref _bassEnergy);
+    Volatile.Write(ref _audioEnergy, Math.Clamp(wave * 0.72f + bass * 0.28f, 0f, 1f));
+  }
+
+  private sealed class VisualizerListener(AndroidMediaPlayer owner)
+      : Java.Lang.Object, global::Android.Media.Audiofx.Visualizer.IOnDataCaptureListener
+  {
+    public void OnWaveFormDataCapture(global::Android.Media.Audiofx.Visualizer? visualizer,
+        byte[]? waveform, int samplingRate)
+    {
+      if (waveform is not null) owner.OnWaveform(waveform);
+    }
+
+    public void OnFftDataCapture(global::Android.Media.Audiofx.Visualizer? visualizer,
+        byte[]? fft, int samplingRate)
+    {
+      if (fft is not null) owner.OnFft(fft, samplingRate);
     }
   }
 

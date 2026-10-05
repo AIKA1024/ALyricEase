@@ -20,6 +20,7 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
 
     private int _userVolume;
     private string? _deviceId;
+    private bool _audioAnalysisEnabled;
 
     // 渐变会话:同一时刻最多一个;硬切/Stop 时取消,旧实例音量停在半路由 Stop 兜底。
     // volatile:自然结束由线程池清空,Volume setter(UI 线程)读它决定"立即应用还是交给斜坡"。
@@ -84,6 +85,12 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
         try
         {
             fresh.PlayUrl(url);
+            if (_audioAnalysisEnabled)
+            {
+                // 分析只跟 active 实例走；否则 Windows 两个后端会各自启动一条 WASAPI 采样线程。
+                old.SetAudioAnalysisEnabled(false);
+                fresh.SetAudioAnalysisEnabled(true);
+            }
         }
         catch
         {
@@ -278,6 +285,7 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
     public void Dispose()
     {
         CancelFade();
+        SetAudioAnalysisEnabled(false);
         Unwire(Active);
         foreach (var player in _players)
             player?.Dispose();
@@ -332,5 +340,19 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
     {
         _deviceId = deviceId; // 副实例创建时照此应用
         return Active.TrySetOutputDevice(deviceId);
+    }
+
+    // ---- 音频响应背景(只读 active;交叉切换后自动跟随新实例) ----
+
+    public float AudioEnergy => Active.AudioEnergy;
+
+    public float BassEnergy => Active.BassEnergy;
+
+    public void SetAudioAnalysisEnabled(bool enabled)
+    {
+        _audioAnalysisEnabled = enabled;
+        Active.SetAudioAnalysisEnabled(enabled);
+        // 非 active 实例只负责交叉淡化声音，不需要重复分析同一个进程/输出会话。
+        _players[1 - _activeIndex]?.SetAudioAnalysisEnabled(false);
     }
 }

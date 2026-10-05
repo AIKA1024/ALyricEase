@@ -94,6 +94,20 @@ class Program
       return;
     }
 
+    if (args.Length > 0 && args[0] == "--selftest-audioenergy")
+    {
+      // 真机验证播放会话峰值能被背景分析器读到；同样需要泵 UI 队列更新 Playing 状态。
+      var energyTask = SelfTest.RunAudioEnergyTestAsync();
+      while (!energyTask.IsCompleted)
+      {
+        Dispatcher.UIThread.RunJobs();
+        Thread.Sleep(5);
+      }
+
+      energyTask.GetAwaiter().GetResult();
+      return;
+    }
+
     if (args.Length > 0 && args[0] == "--selftest-creator")
     {
       var creatorTask = SelfTest.RunCreatorProbeAsync();

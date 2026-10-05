@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- 与 vpk pack -v / GitHub release tag 保持一致(检查更新按版本比对) -->
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <ApplicationIcon>..\ALyricEase\Assets\app.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>

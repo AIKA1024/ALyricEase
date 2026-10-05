@@ -671,14 +671,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private bool CanAttemptPlayback(Song song)
     {
-        try
-        {
-            return PlaybackAvailability.CanAttempt(song, _sources.Resolve(song));
-        }
-        catch (NotSupportedException)
-        {
-            return true;
-        }
+        try { return PlaybackAvailability.CanAttempt(song, _sources.Resolve(song)); }
+        catch (NotSupportedException) { return PlaybackAvailability.CanAttempt(song, null); }
     }
 
     private static bool SameSong(Song left, Song right)
@@ -823,12 +817,16 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>播放地址为空时的提示文案:按"歌曲是否 VIP × 是否登录 × 是否会员"区分,
+    /// <summary>播放地址为空时的提示文案:按收费类型、登录与会员状态区分,
     /// 免费歌/会员仍不可播 → 版权或区域限制(不再笼统归因会员)。</summary>
     private static string BuildUnplayableMessage(Song song, IMusicApi api)
     {
-        if (song.Fee == 0)
+        if (song.Fee is 0 or 8)
             return "该歌曲暂不可播放(版权或区域限制)";
+        if (song.Source == MusicSource.NetEase && song.Fee == 4 && song.IsPurchased != true)
+            return api.IsLoggedIn
+                ? "该歌曲需单独购买数字专辑后播放"
+                : "该歌曲需登录已购买数字专辑的网易云账号后播放";
         if (song.Source == MusicSource.QQ)
         {
             if (!api.IsLoggedIn) return "该歌曲为 QQ 音乐 VIP 歌曲,登录 QQ 音乐后解锁";

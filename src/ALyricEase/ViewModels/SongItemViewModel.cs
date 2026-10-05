@@ -16,8 +16,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace ALyricEase.ViewModels;
 
 /// <summary>搜索结果单行:展示歌曲信息 + 双击播放。封面/红心状态后台加载。
-/// 可播性预判:VIP 歌曲在未登录/已确认非会员时直接禁用整行(播放前可知);
-/// 版权/区域等只有播放时才知道的,播放失败后补标禁用。</summary>
+/// 可播性预判处理明确无版权、已知未登录/非会员与未购买；信息不完整、试听和区域权益
+/// 仍交给播放地址接口裁决，播放地址确认失败后补标禁用。</summary>
 public sealed partial class SongItemViewModel : ViewModelBase
 {
     private Func<Song, IReadOnlyList<Song>?, string?, Task<bool>> _playSong;
@@ -93,7 +93,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
                 ? new ArtistNavItem(0, song.ArtistNames[i], song.ArtistMids[i])
                 : new ArtistNavItem(song.ArtistIds[i], song.ArtistNames[i]));
         Artists = artists;
-        // 可播性预判:播放前即可确定的(未登录/已确认非会员的 VIP 歌曲)直接禁用整行
+        // 明确无版权或明确缺少收费权益时提前禁用；未知权益仍允许播放接口实测。
         RefreshPlayability();
         // 封面由视图的租约式加载器按可见性拉取，VM 不再长期持有 Bitmap。
     }
@@ -129,10 +129,8 @@ public sealed partial class SongItemViewModel : ViewModelBase
         RefreshPlayability();
     }
 
-    /// <summary>按当前登录/会员状态重算可播性(数据驱动,播放前即可确定的部分):
-    /// 免费歌恒可点；VIP 歌曲在未登录、或会员状态已确认且非会员时禁用。
-    /// 会员状态未加载(IsVipLoaded=false)时不下结论保持可点，由播放实测兜底。
-    /// 登录态变化后可重调(行集合重建时 ctor 已自动跑一次)。</summary>
+    /// <summary>按本地已知状态重算可播性：明确无版权、未登录/非会员 VIP 曲目、
+    /// 明确未购买曲目与本次运行中播放地址已确认失败的歌曲禁用；未知权益由播放实测决定。</summary>
     public void RefreshPlayability()
     {
         IsPlayable = PlaybackAvailability.CanAttempt(Song, GetLikeApi());

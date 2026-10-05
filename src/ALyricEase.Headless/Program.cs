@@ -650,6 +650,14 @@ public static class Program
             return;
         }
 
+        // 版权/VIP/单曲购买权益分层预判；不确定状态仍由真实播放地址裁决。
+        if (args.Length > 0 && args[0] == "--playability")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(PlaybackAvailabilityProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 凭证过期诊断:同一份 Cookie 打 校验/账号摘要/红心写入 三条链路,打印真实错误码
         if (args.Length > 0 && args[0] == "--qqdiag")
         {

@@ -418,6 +418,7 @@ public sealed class AppStateStore
         CoverUrl = song.CoverUrl,
         DurationMs = song.DurationMs,
         Fee = song.Fee,
+        IsPurchased = song.IsPurchased,
         ArtistIds = song.ArtistIds.ToArray(),
         ArtistNames = song.ArtistNames.ToArray(),
         ArtistMids = song.ArtistMids.ToArray(),

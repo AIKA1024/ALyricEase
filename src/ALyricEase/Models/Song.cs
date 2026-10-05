@@ -35,8 +35,11 @@ public sealed class Song
     /// <summary>时长,毫秒。</summary>
     public int DurationMs { get; init; }
 
-    /// <summary>0 免费,其余为 VIP/付费(展示用)。</summary>
+    /// <summary>收费类型。网易云:0=免费,1=VIP,4=单独购买,8=普通音质免费；QQ 当前归一为 0/1。</summary>
     public int Fee { get; init; }
+
+    /// <summary>当前账号是否已单独购买该曲/数字专辑。null 表示上游未返回购买权益。</summary>
+    public bool? IsPurchased { get; init; }
 
     /// <summary>歌手 id 列表(点击歌手跳歌手页;显示名用 Artist。网易云填,QQ 留空)。</summary>
     public IReadOnlyList<long> ArtistIds { get; init; } = Array.Empty<long>();
@@ -59,8 +62,8 @@ public sealed class Song
     /// </summary>
     public bool IsPlaybackUnavailable { get; internal set; }
 
-    /// <summary>服务端权益判定为无版权(网易云 privilege.st&lt;0,如独家下架曲库,典型:周杰伦)。
-    /// 元数据阶段即可确定,与账号/VIP 无关,播放接口必然失败 —— 列表行直接灰禁,不必等点击。
+    /// <summary>服务端明确判定无版权(网易云 privilege.st == -200)。
+    /// 元数据阶段即可确定,与账号/VIP 无关,列表行可直接灰禁；-1 等状态仍允许播放接口实测。
     /// 由网易云映射器写入;QQ 歌恒 false。</summary>
     public bool IsNoCopyright { get; internal set; }
 

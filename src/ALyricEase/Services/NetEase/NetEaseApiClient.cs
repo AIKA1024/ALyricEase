@@ -1750,7 +1750,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.Duration,
         Fee = s.Fee,
-        IsNoCopyright = (s.Privilege?.St ?? 0) < 0,
+        IsPurchased = GetPurchasedStatus(s.Privilege),
+        IsNoCopyright = IsCopyrightUnavailable(s.Privilege),
         ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
         ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
         AlbumId = s.Album?.Id ?? 0,
@@ -1769,7 +1770,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.DurationMs,
         Fee = s.Fee,
-        IsNoCopyright = (s.Privilege?.St ?? 0) < 0,
+        IsPurchased = GetPurchasedStatus(s.Privilege),
+        IsNoCopyright = IsCopyrightUnavailable(s.Privilege),
         ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
         ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
         AlbumId = s.Album?.Id ?? 0,
@@ -1784,9 +1786,19 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.DurationMs,
         Fee = s.Fee,
-        IsNoCopyright = (s.Privilege?.St ?? 0) < 0,
+        IsPurchased = GetPurchasedStatus(s.Privilege),
+        IsNoCopyright = IsCopyrightUnavailable(s.Privilege),
         ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
         ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
         AlbumId = s.Album?.Id ?? 0,
     };
+
+    /// <summary>网易云只有 st=-200 表示明确无版权；-1 等状态在搜索接口中可能与
+    /// 歌曲详情矛盾，不能据此阻止用户请求实际播放地址。</summary>
+    internal static bool IsCopyrightUnavailable(SongPrivilegeDto? privilege)
+        => privilege?.St == -200;
+
+    /// <summary>payed=3/5 表示已购；privilege 缺失时保留未知，避免把旧缓存或精简接口误判为未购。</summary>
+    internal static bool? GetPurchasedStatus(SongPrivilegeDto? privilege)
+        => privilege is null ? null : privilege.PurchaseStatus is 3 or 5;
 }

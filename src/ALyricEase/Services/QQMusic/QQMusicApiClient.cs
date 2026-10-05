@@ -1415,7 +1415,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 var assetNick = FirstNonEmpty(me.Nick);
                 if (assetNick.Length > 0)
                 {
-                    // 资料返回时同步确认会员状态:登录/启动后歌单与歌曲行渲染前即可预判可播性
+                    // 资料返回时同步确认会员状态，用于账号展示及 VIP 曲目提前预判；
+                    // 试听、区域等不确定权益仍由播放地址确认。
                     await EnsureVipStatusAsync(ct).ConfigureAwait(false);
                     return new UserProfile
                     {

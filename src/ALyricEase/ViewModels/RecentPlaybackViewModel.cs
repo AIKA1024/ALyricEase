@@ -31,7 +31,7 @@ public sealed partial class RecentPlaybackViewModel : ViewModelBase
 
     public string Subtitle => $"共 {Songs.Count} 首";
 
-    /// <summary>登录/会员状态变化后刷新 VIP 曲目的可播性。</summary>
+    /// <summary>登录/会员状态变化后刷新歌曲行的本地可播状态。</summary>
     public void RefreshPlayability()
     {
         foreach (var item in Songs) item.RefreshPlayability();

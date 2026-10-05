@@ -383,11 +383,17 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (e.PropertyName is nameof(PlaylistViewModel.IsLoggedIn) or nameof(PlaylistViewModel.IsQqLoggedIn))
         {
-            // 登录态变化:重算各页歌曲行可播性(登录成会员后 VIP 行恢复可点;登出则禁用)
+            // 登录态变化后刷新各页歌曲行；明确的 VIP/购买权益提前判定，未知状态仍由播放地址兜底。
             Search.RefreshPlayability();
             Playlist.RefreshPlayability();
             Recommend.RefreshPlayability();
             RecentPlayback.RefreshPlayability();
+            // 扫码/验证码登录可能先建立登录态、再异步取得会员状态；状态确认后再刷新一次，
+            // 让已确认非会员的 VIP 行及时置灰，也让会员账号恢复可点。
+            _ = RefreshPlayabilityAfterVipLoadedAsync(
+                e.PropertyName == nameof(PlaylistViewModel.IsQqLoggedIn)
+                    ? MusicSource.QQ
+                    : MusicSource.NetEase);
             Account.SyncLoginState();
             if (ActivePage == "Account" &&
                 ((e.PropertyName == nameof(PlaylistViewModel.IsLoggedIn) && Playlist.IsLoggedIn) ||
@@ -395,6 +401,23 @@ public sealed partial class MainViewModel : ViewModelBase
                 _ = Account.RefreshAsync();
             RebuildShellNavigation();
         }
+    }
+
+    private async Task RefreshPlayabilityAfterVipLoadedAsync(MusicSource source)
+    {
+        try
+        {
+            await ServiceLocator.Get<MusicApiProvider>().Resolve(source).EnsureVipStatusAsync();
+        }
+        catch
+        {
+            // 账号接口瞬时失败时保持“会员未知”可点，由实际播放地址继续兜底。
+        }
+
+        Search.RefreshPlayability();
+        Playlist.RefreshPlayability();
+        Recommend.RefreshPlayability();
+        RecentPlayback.RefreshPlayability();
     }
 
     /// <summary>静态导航 + 在线账号或离线快照的歌单分组(QQ 键加前缀防与网易云 id 撞键)。

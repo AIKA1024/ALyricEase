@@ -101,7 +101,10 @@ public sealed record SongPrivilegeDto
 
     public int Fee { get; init; }
 
-    /// <summary>版权状态:&lt;0 = 真无版权(灰色,VIP 也无解,典型 -200)。</summary>
+    /// <summary>单曲/数字专辑购买状态；3 或 5 表示当前账号已购买。</summary>
+    [JsonPropertyName("payed")] public int PurchaseStatus { get; init; }
+
+    /// <summary>版权状态:-200 = 明确无版权；-1 等值可能因接口而异，不能直接禁用。</summary>
     public int St { get; init; }
 
     /// <summary>当前账号可播的最高码率(bps),0 = 不可播(账号相关)。</summary>
@@ -329,7 +332,7 @@ public sealed record SongDetailItem
 
     public int Fee { get; init; }
 
-    /// <summary>权益(内嵌且与账号无关;st&lt;0 即无版权灰色)。</summary>
+    /// <summary>权益(只有 st=-200 可作为明确无版权；其他状态交播放地址接口确认)。</summary>
     [JsonPropertyName("privilege")] public SongPrivilegeDto? Privilege { get; init; }
 }
 

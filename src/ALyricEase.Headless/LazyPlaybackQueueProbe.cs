@@ -1,7 +1,6 @@
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
-using ALyricEase.ViewModels;
 
 namespace ALyricEase.Headless;
 
@@ -27,11 +26,35 @@ internal static class LazyPlaybackQueueProbe
 
         var random = new Random(20260831);
         var excluded = new HashSet<int> { 3, 5, 8 };
-        var picks = Enumerable.Range(0, 500)
-            .Select(_ => PlayerViewModel.SelectShuffleIndex(count, 10, excluded, random))
-            .ToList();
-        var fullRange = picks.All(index => index >= 0 && index < count && index != 10 && !excluded.Contains(index))
+        var bag = new ShuffleIndexBag();
+        bag.Refill(count, 10, excluded, random);
+        var picks = new List<int>();
+        while (bag.TryTake(out var pick)) picks.Add(pick);
+        var expectedCount = count - excluded.Count - 1;
+        var fullRange = picks.Count == expectedCount
+                        && picks.Distinct().Count() == expectedCount
+                        && picks.All(index => index >= 0 && index < count
+                                              && index != 10 && !excluded.Contains(index))
                         && picks.Any(index => index >= 200);
+
+        var previousRoundLast = picks[^1];
+        bag.Refill(count, previousRoundLast, excluded, random);
+        var avoidsRoundBoundaryRepeat = bag.TryTake(out var nextRoundFirst)
+                                        && nextRoundFirst != previousRoundLast;
+        bag.PutBack(nextRoundFirst);
+        var putBackOccurrences = 0;
+        while (bag.TryTake(out var retryPick))
+            if (retryPick == nextRoundFirst) putBackOccurrences++;
+        var preservesTransientCandidate = putBackOccurrences == 1;
+
+        var shiftedBag = new ShuffleIndexBag();
+        shiftedBag.Refill(6, 0, new HashSet<int>(), new Random(7));
+        shiftedBag.RemoveAndShift(2);
+        shiftedBag.InsertAndShift(2);
+        var shiftedPicks = new List<int>();
+        while (shiftedBag.TryTake(out var shiftedPick)) shiftedPicks.Add(shiftedPick);
+        shiftedPicks.Sort();
+        var preservesNextInsertion = shiftedPicks.SequenceEqual([1, 3, 4, 5]);
 
         var bounded = new BoundedSongCache(32);
         for (var index = 0; index < 1000; index++) bounded.Set(index, ToSong(index));
@@ -46,10 +69,30 @@ internal static class LazyPlaybackQueueProbe
         var aggregateRange = await aggregate.GetCountAsync() == 1000
                              && (await aggregate.GetSongAsync(850))?.Id == 851;
 
+        var pageRequests = new List<(int Begin, int Count)>();
+        var paged = new PagedSongQueue(
+            1000,
+            ids.Take(50).Select(ToSong).ToList(),
+            (begin, take, _) =>
+            {
+                pageRequests.Add((begin, take));
+                var songs = ids.Skip(begin).Take(take).Select(ToSong).ToList();
+                return Task.FromResult(new PagedSongQueue.Page(songs, 1000));
+            });
+        var pagedUnloaded = await paged.GetSongAsync(899);
+        var pagedCached = await paged.GetSongAsync(899);
+        var pagedOnDemand = pagedUnloaded?.Id == 900
+                            && ReferenceEquals(pagedUnloaded, pagedCached)
+                            && pageRequests.SequenceEqual([(850, 50)]);
+
         Console.WriteLine($"[lazy-playback] count={count}, resolvesOnDemand={resolvesOnDemand}, " +
-                          $"fullRange={fullRange}, aggregateRange={aggregateRange}, " +
+                          $"fullRange={fullRange}, boundary={avoidsRoundBoundaryRepeat}, " +
+                          $"putBack={preservesTransientCandidate}, nextInsert={preservesNextInsertion}, " +
+                          $"aggregateRange={aggregateRange}, pagedOnDemand={pagedOnDemand}, " +
                           $"maxPick={picks.Max()}, cache={bounded.Count}/32");
-        return resolvesOnDemand && fullRange && aggregateRange && boundedMemory ? 0 : 1;
+        return resolvesOnDemand && fullRange && avoidsRoundBoundaryRepeat
+               && preservesTransientCandidate && preservesNextInsertion
+               && aggregateRange && pagedOnDemand && boundedMemory ? 0 : 1;
     }
 
     private static Song ToSong(long id) => new() { Id = id, Name = $"Song {id}" };

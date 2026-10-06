@@ -56,6 +56,21 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private readonly HashSet<int> _excludedLazyIndices = new();
     private CancellationTokenSource? _queueRequestCancellation;
 
+    // 随机模式采用逻辑下标洗牌袋：完整歌单一轮内不重复，元数据仍按命中下标解析。
+    // 历史保存已播放的 Song，上一首/从历史前进无需再次请求歌曲详情。
+    private readonly ShuffleIndexBag _shuffleBag = new();
+    private static readonly IReadOnlySet<int> NoShuffleExclusions = new HashSet<int>();
+    private readonly List<ShuffleHistoryEntry> _shuffleHistory = new();
+    private int _shuffleHistoryPosition = -1;
+    private bool _shuffleContextIsLazy;
+    private ILazySongQueue? _shuffleLazySource;
+    private const int MaxShuffleHistoryCount = 2048;
+
+    // “下一首播放”独立于播放模式；优先级高于单曲循环/洗牌袋，播放后回到原模式。
+    private readonly List<Song> _playNextSongs = new();
+
+    private readonly record struct ShuffleHistoryEntry(Song Song, int LogicalIndex, bool IsQueueSong);
+
     private PlaybackState _prevState;
     private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
 
@@ -164,6 +179,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsListLoopMode));
         OnPropertyChanged(nameof(IsSingleLoopMode));
         OnPropertyChanged(nameof(IsShuffleMode));
+        ResetShuffleState();
         _appState.PlaybackMode = (int)value;
         _appState.Save();
     }
@@ -321,6 +337,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         if (_queueIndex < 0) { _queue.Insert(0, current); _queueIndex = 0; }
         QueueSourceName = source;
         _queueVms = _queue.Select(s => new QueueItemViewModel(s, PlayQueueItem, RemoveFromQueue)).ToList();
+        ResetShuffleState();
         RefreshUpcomingItems();
     }
 
@@ -333,6 +350,20 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         int logicalIndex,
         IReadOnlyList<Song> materialized,
         string? source = null)
+        => await PlayFromLazyList(
+            song,
+            lazyQueue,
+            logicalIndex,
+            materialized.Select((candidate, index) => (LogicalIndex: index, Song: candidate)).ToList(),
+            source);
+
+    /// <summary>支持稀疏物化窗口的懒队列入口：卡片播放只需携带首批已知歌曲及其真实逻辑下标。</summary>
+    private async Task<bool> PlayFromLazyList(
+        Song song,
+        ILazySongQueue lazyQueue,
+        int logicalIndex,
+        IReadOnlyList<(int LogicalIndex, Song Song)> materialized,
+        string? source)
     {
         if (!CanAttemptPlayback(song)) return false;
         var result = await TryPlayAsync(song);
@@ -344,13 +375,12 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _lazyQueue = lazyQueue;
         _queueRequestCancellation = new CancellationTokenSource();
         var displaySongs = materialized
-            .Select((candidate, index) => (candidate, index))
-            .Where(pair => SameSong(pair.candidate, song) || CanAttemptPlayback(pair.candidate))
+            .Where(pair => SameSong(pair.Song, song) || CanAttemptPlayback(pair.Song))
             .ToList();
-        _queue = displaySongs.Select(pair => pair.candidate).ToList();
+        _queue = displaySongs.Select(pair => pair.Song).ToList();
         _queueVms = _queue.Select(candidate => new QueueItemViewModel(
             candidate, PlayQueueItem, RemoveFromQueue)).ToList();
-        _lazyQueueVmIndices.AddRange(displaySongs.Select(pair => pair.index));
+        _lazyQueueVmIndices.AddRange(displaySongs.Select(pair => pair.LogicalIndex));
         _queueIndex = logicalIndex;
         if (!_lazyQueueVmIndices.Contains(logicalIndex))
         {
@@ -359,6 +389,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             _lazyQueueVmIndices.Add(logicalIndex);
         }
         QueueSourceName = source;
+        ResetShuffleState();
         RefreshUpcomingItems();
         return true;
     }
@@ -384,6 +415,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             _queueIndex = 0;
             QueueSourceName = null;
             _queueVms = new List<QueueItemViewModel> { new(song, PlayQueueItem, RemoveFromQueue) };
+            ResetShuffleState();
             RefreshUpcomingItems();
         }
         return true;
@@ -401,15 +433,20 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        if (CurrentSong is not null && SameSong(song, CurrentSong)) return;
         var existing = FindQueueIndex(song);
-        if (existing == _queueIndex) return; // 就是当前曲,无需处理
         if (existing >= 0) RemoveQueueEntryAt(existing);
 
-        var insertIndex = _queueIndex + 1;
+        var currentDisplayIndex = CurrentSong is null ? -1 : FindQueueIndex(CurrentSong);
+        var insertIndex = currentDisplayIndex >= 0 ? currentDisplayIndex + 1 : 0;
+        if (_lazyQueue is null)
+            _shuffleBag.InsertAndShift(insertIndex);
         _queue.Insert(insertIndex, song);
         _queueVms.Insert(insertIndex, new QueueItemViewModel(song, PlayQueueItem, RemoveFromQueue));
         if (_lazyQueue is not null)
             _lazyQueueVmIndices.Insert(insertIndex, -1);
+        _playNextSongs.RemoveAll(candidate => SameSong(candidate, song));
+        _playNextSongs.Insert(0, song);
         RefreshUpcomingItems();
     }
 
@@ -595,7 +632,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             var result = await TryPlayAsync(song);
             if (result == PlayAttemptResult.Started)
             {
-                _queueIndex = logicalIndex;
+                _playNextSongs.Clear();
+                if (logicalIndex == -1)
+                {
+                    _lazyQueueVmIndices.RemoveAt(idx);
+                    _queue.RemoveAt(idx);
+                    _queueVms.RemoveAt(idx);
+                }
+                else
+                {
+                    _queueIndex = logicalIndex;
+                }
+                ResetShuffleState();
                 RefreshUpcomingItems();
             }
             else if (result == PlayAttemptResult.Unavailable)
@@ -608,6 +656,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         if (playResult == PlayAttemptResult.Started)
         {
             _queueIndex = idx;
+            _playNextSongs.Clear();
+            ResetShuffleState();
             RefreshUpcomingItems();
         }
         else if (playResult == PlayAttemptResult.Unavailable)
@@ -627,6 +677,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private void RemoveQueueEntryAt(int idx)
     {
         if ((uint)idx >= (uint)_queue.Count) return;
+        var removedSong = _queue[idx];
+        _playNextSongs.RemoveAll(candidate => SameSong(candidate, removedSong));
         if (_lazyQueue is not null)
         {
             var logicalIndex = _lazyQueueVmIndices[idx];
@@ -646,8 +698,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             ExcludeLazyIndex(logicalIndex);
             return;
         }
+        _shuffleBag.RemoveAndShift(idx);
         _queue.RemoveAt(idx);
         _queueVms.RemoveAt(idx);
+        RemoveShuffleHistoryWhere(entry => entry.IsQueueSong && SameSong(entry.Song, removedSong));
         var playingIndex = CurrentSong is null
             ? -1
             : FindQueueIndex(CurrentSong);
@@ -660,9 +714,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private void ExcludeLazyIndex(int logicalIndex)
     {
         _excludedLazyIndices.Add(logicalIndex);
+        _shuffleBag.Exclude(logicalIndex);
+        RemoveShuffleHistoryWhere(entry => entry.IsQueueSong && entry.LogicalIndex == logicalIndex);
         var displayIndex = _lazyQueueVmIndices.IndexOf(logicalIndex);
         if (displayIndex >= 0)
         {
+            var removedSong = _queue[displayIndex];
+            _playNextSongs.RemoveAll(candidate => SameSong(candidate, removedSong));
             _lazyQueueVmIndices.RemoveAt(displayIndex);
             _queue.RemoveAt(displayIndex);
             _queueVms.RemoveAt(displayIndex);
@@ -693,6 +751,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _lazyQueue = null;
         _lazyQueueVmIndices.Clear();
         _excludedLazyIndices.Clear();
+        _playNextSongs.Clear();
+        _shuffleBag.Clear();
+        _shuffleHistory.Clear();
+        _shuffleHistoryPosition = -1;
+        _shuffleLazySource = null;
     }
 
     /// <summary>播放一首歌:查播放地址(higher→standard 自动降级),null 提示 VIP/不可播。
@@ -863,20 +926,74 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnSmtcPlayPause() => TogglePlayPauseCommand.Execute(null);
 
-    /// <summary>直接播放一个歌单(用户页/收藏页行内 ▶ 与歌单 more 菜单共用):
-    /// 拉全量曲目后以首个可播曲目起步,完整列表作为队列传入(与专辑页"播放全部"同语义)。
-    /// 失败静默 —— 按钮语境没有错误呈现面。</summary>
+    /// <summary>直接播放一个歌单(用户页/收藏页行内 ▶ 与歌单 more 菜单共用)：
+    /// 只取概览/首批曲目并立即起播，剩余歌曲通过懒队列按切歌下标解析。</summary>
     [RelayCommand]
     private async Task PlayPlaylistAsync(PlaylistItemViewModel? pvm)
     {
-        if (pvm is null || pvm.Id == 0 || pvm.Playlist.Source != MusicSource.NetEase) return;
+        if (pvm is null || pvm.Id == 0) return;
         try
         {
-            var songs = await _api.GetPlaylistDetailAsync(pvm.Id).ConfigureAwait(true);
-            // 可播性预判是行 VM 概念(PlaybackAvailability 需要红心 API),这里交给播放器实测兜底
-            var first = songs.FirstOrDefault();
-            if (first is not null)
-                await PlayFromList(first, songs, pvm.Name).ConfigureAwait(true);
+            if (pvm.Playlist.Source == MusicSource.QQ)
+            {
+                if (_sources.Resolve(MusicSource.QQ) is not QQMusicApiClient qqApi) return;
+                const int pageSize = 50;
+                var firstPage = await qqApi.GetPlaylistTrackPageAsync(pvm.Id, 0, pageSize)
+                    .ConfigureAwait(true);
+                var lazyQueue = new PagedSongQueue(
+                    firstPage.TotalCount,
+                    firstPage.Songs,
+                    async (begin, count, ct) =>
+                    {
+                        var page = await qqApi.GetPlaylistTrackPageAsync(pvm.Id, begin, count, ct)
+                            .ConfigureAwait(false);
+                        return new PagedSongQueue.Page(page.Songs, page.TotalCount);
+                    },
+                    pageSize);
+                var materialized = firstPage.Songs
+                    .Select((song, index) => (LogicalIndex: index, Song: song))
+                    .ToList();
+                await PlayFirstAvailableAsync(lazyQueue, materialized, pvm.Name).ConfigureAwait(true);
+                return;
+            }
+
+            var overview = await _api.GetPlaylistTrackOverviewAsync(pvm.Id).ConfigureAwait(true);
+            if (overview.TrackIds.Count == 0) return;
+
+            // v6 通常自带前段曲目：先直接用它起播，不为凑满“首批”额外等待 song/detail。
+            var known = overview.PrefixTracks
+                .GroupBy(song => song.Id)
+                .ToDictionary(group => group.Key, group => group.First());
+            var firstIds = overview.TrackIds.Take(50).ToList();
+            var lazyNetEase = new IndexedSongQueue(
+                overview.TrackIds,
+                known.Values,
+                _api.GetSongsByIdsAsync);
+            var firstWindow = firstIds
+                .Select((id, index) => (LogicalIndex: index,
+                    Song: known.TryGetValue(id, out var song) ? song : null))
+                .Where(pair => pair.Song is not null)
+                .Select(pair => (pair.LogicalIndex, pair.Song!))
+                .ToList();
+            if (await PlayFirstAvailableAsync(lazyNetEase, firstWindow, pvm.Name).ConfigureAwait(true))
+                return;
+
+            // 前段元数据为空或全部不可播时，最多补首 50 首缺失项再找一次，仍不触碰完整歌单。
+            var missing = firstIds.Where(id => !known.ContainsKey(id)).ToList();
+            if (missing.Count == 0) return;
+            foreach (var song in await _api.GetSongsByIdsAsync(missing).ConfigureAwait(true))
+            {
+                known[song.Id] = song;
+                var index = firstIds.IndexOf(song.Id);
+                if (index >= 0) lazyNetEase.Remember(index, song);
+            }
+            var resolvedWindow = firstIds
+                .Select((id, index) => (LogicalIndex: index,
+                    Song: known.TryGetValue(id, out var song) ? song : null))
+                .Where(pair => pair.Song is not null)
+                .Select(pair => (pair.LogicalIndex, pair.Song!))
+                .ToList();
+            await PlayFirstAvailableAsync(lazyNetEase, resolvedWindow, pvm.Name).ConfigureAwait(true);
         }
         catch
         {
@@ -884,47 +1001,102 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private async Task<bool> PlayFirstAvailableAsync(
+        ILazySongQueue lazyQueue,
+        IReadOnlyList<(int LogicalIndex, Song Song)> materialized,
+        string source)
+    {
+        foreach (var (logicalIndex, song) in materialized)
+        {
+            if (!CanAttemptPlayback(song)) continue;
+            if (await PlayFromLazyList(song, lazyQueue, logicalIndex, materialized, source)
+                    .ConfigureAwait(true))
+                return true;
+        }
+        return false;
+    }
+
     private void OnSmtcNext() => _ = PlayNextAsync();
 
     private void OnSmtcPrevious() => _ = PlayPreviousAsync();
+
+    /// <summary>消费“下一首播放”队列。随机模式下它不占用洗牌袋，但会进入播放历史；
+    /// 懒歌单中的插入项播放后从物化窗口移除，逻辑位置仍停在原歌单锚点。</summary>
+    private async Task<bool> TryPlayPendingNextAsync()
+    {
+        while (_playNextSongs.Count > 0)
+        {
+            var pending = _playNextSongs[0];
+            var displayIndex = FindQueueIndex(pending);
+            if (displayIndex < 0)
+            {
+                _playNextSongs.RemoveAt(0);
+                continue;
+            }
+
+            var isLazySentinel = _lazyQueue is not null
+                                 && (uint)displayIndex < (uint)_lazyQueueVmIndices.Count
+                                 && _lazyQueueVmIndices[displayIndex] == -1;
+            var logicalAnchor = _queueIndex;
+            var result = await TryPlayAsync(pending);
+            if (result == PlayAttemptResult.TransientFailure) return true;
+
+            _playNextSongs.RemoveAt(0);
+            if (isLazySentinel)
+            {
+                _lazyQueueVmIndices.RemoveAt(displayIndex);
+                _queue.RemoveAt(displayIndex);
+                _queueVms.RemoveAt(displayIndex);
+                if (result == PlayAttemptResult.Started)
+                {
+                    if (PlaybackMode == PlaybackMode.Shuffle && !IsFmActive)
+                        CommitShuffleHistory(new ShuffleHistoryEntry(
+                            pending, logicalAnchor, IsQueueSong: false));
+                    RefreshUpcomingItems();
+                    return true;
+                }
+
+                RefreshUpcomingItems();
+                continue;
+            }
+
+            if (result == PlayAttemptResult.Started)
+            {
+                _queueIndex = FindQueueIndex(pending);
+                if (PlaybackMode == PlaybackMode.Shuffle && !IsFmActive)
+                    CommitShuffleHistory(new ShuffleHistoryEntry(
+                        pending, _queueIndex, IsQueueSong: true));
+                RefreshUpcomingItems();
+                return true;
+            }
+
+            var failedIndex = FindQueueIndex(pending);
+            if (failedIndex >= 0) RemoveQueueEntryAt(failedIndex);
+        }
+
+        return false;
+    }
 
     /// <summary>播放队列中的下一首。FM 激活时无视播放模式持续从 FM 取歌;
     /// 否则按播放模式:列表循环(尾→头)、单曲循环(重播当前)、随机播放、心动模式(下一首红心,无红心则退回列表循环)。</summary>
     [RelayCommand]
     public async Task PlayNextAsync()
     {
+        // 用户显式指定的“下一首”永远先于单曲循环、随机袋和 FM；成功后恢复原模式。
+        if (await TryPlayPendingNextAsync()) return;
         if (IsFmActive)
         {
             await PlayFmNextAsync();
             return;
         }
         if (_queue.Count == 0 && _lazyQueue is null) return;
-        // "下一首播放"哨兵(逻辑位 -1)在当前曲之后:下一曲/自动连播优先播它,播完摘除并回到懒歌单顺位。
-        // 播放失败(Unavailable)也摘除跳过,避免永久卡住;TransientFailure(临时网络问题)保留重试。
-        if (_lazyQueue is not null
-            && _lazyQueueVmIndices.Count > _queueIndex + 1
-            && _lazyQueueVmIndices[_queueIndex + 1] == -1)
-        {
-            var pending = _queue[_queueIndex + 1];
-            var pendingResult = await TryPlayAsync(pending);
-            if (pendingResult == PlayAttemptResult.TransientFailure) return;
-            _lazyQueueVmIndices.RemoveAt(_queueIndex + 1);
-            _queue.RemoveAt(_queueIndex + 1);
-            _queueVms.RemoveAt(_queueIndex + 1);
-            if (pendingResult == PlayAttemptResult.Started)
-            {
-                // _queueIndex 保持指向当前曲不动:下一曲继续走懒歌单顺位
-                RefreshUpcomingItems();
-                return;
-            }
-        }
         switch (PlaybackMode)
         {
             case PlaybackMode.SingleLoop when CurrentSong is not null:
                 await PlayAsync(CurrentSong);
                 break;
             case PlaybackMode.Shuffle:
-                await PlayShuffleAsync();
+                await PlayShuffleNextAsync();
                 break;
             case PlaybackMode.Heartbeat:
                 await PlayLikedAsync(forward: true);
@@ -975,7 +1147,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 await PlayAsync(CurrentSong);
                 break;
             case PlaybackMode.Shuffle:
-                await PlayShuffleAsync();
+                await PlayShufflePreviousAsync();
                 break;
             case PlaybackMode.Heartbeat:
                 await PlayLikedAsync(forward: false);
@@ -1077,80 +1249,175 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>随机播放:队列中随机挑一首(队列 &gt; 1 时避开当前曲)。</summary>
-    private async Task PlayShuffleAsync()
+    /// <summary>随机下一首：优先沿“上一首”留下的前向历史移动；到历史末端后才从洗牌袋取新候选。</summary>
+    private async Task PlayShuffleNextAsync()
     {
-        if (_lazyQueue is not null)
+        EnsureShuffleContext();
+        var ct = _queueRequestCancellation?.Token ?? CancellationToken.None;
+        try
         {
-            var source = _lazyQueue;
-            var ct = _queueRequestCancellation?.Token ?? CancellationToken.None;
-            try
+            while (_shuffleHistoryPosition + 1 < _shuffleHistory.Count)
             {
-                var count = await source.GetCountAsync(ct);
-                for (var attempt = 0; attempt < count; attempt++)
+                var target = _shuffleHistoryPosition + 1;
+                var result = await TryPlayShuffleHistoryEntryAsync(_shuffleHistory[target], ct);
+                if (result == PlayAttemptResult.Started)
                 {
-                    var index = SelectShuffleIndex(count, _queueIndex, _excludedLazyIndices, Random.Shared);
-                    if (index < 0)
-                    {
-                        if (CurrentSong is not null) await PlayAsync(CurrentSong);
-                        return;
-                    }
-                    var song = await source.GetSongAsync(index, ct);
-                    if (!ReferenceEquals(source, _lazyQueue)) return;
-                    if (song is null)
-                    {
-                        _excludedLazyIndices.Add(index);
-                        continue;
-                    }
-                    if (!CanAttemptPlayback(song))
-                    {
-                        ExcludeLazyIndex(index);
-                        continue;
-                    }
-                    var result = await TryPlayAsync(song);
-                    if (result == PlayAttemptResult.Unavailable)
-                    {
-                        ExcludeLazyIndex(index);
-                        continue;
-                    }
-                    if (result == PlayAttemptResult.TransientFailure) return;
-                    _queueIndex = index;
-                    RememberLazyDisplaySong(index, song);
-                    RefreshUpcomingItems();
+                    _shuffleHistoryPosition = target;
                     return;
                 }
+                if (result == PlayAttemptResult.TransientFailure) return;
+                RemoveShuffleHistoryAt(target);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+
+            var lazySource = _lazyQueue;
+            var count = lazySource is null ? _queue.Count : await lazySource.GetCountAsync(ct);
+            var remainingAttempts = count;
+            while (remainingAttempts-- > 0)
             {
+                var currentCount = lazySource is null ? _queue.Count : count;
+                if (_shuffleBag.Count == 0)
+                    _shuffleBag.Refill(currentCount, _queueIndex,
+                        lazySource is null ? NoShuffleExclusions : _excludedLazyIndices,
+                        Random.Shared);
+                if (!_shuffleBag.TryTake(out var index)) break;
+
+                var (result, song) = await TryPlayShuffleIndexAsync(index, lazySource, ct);
+                if (result == PlayAttemptResult.Started && song is not null)
+                {
+                    CommitShuffleHistory(new ShuffleHistoryEntry(song, index, IsQueueSong: true));
+                    return;
+                }
+                if (result == PlayAttemptResult.TransientFailure)
+                {
+                    _shuffleBag.PutBack(index);
+                    return;
+                }
+
+                if (lazySource is not null && !ReferenceEquals(lazySource, _lazyQueue)) return;
             }
-            catch (Exception ex)
-            {
-                Message = $"加载播放队列失败:{ex.Message}";
-            }
-            return;
+
+            if (CurrentSong is not null) await PlayAsync(CurrentSong);
         }
-        var remainingAttempts = _queue.Count;
-        while (_queue.Count > 1 && remainingAttempts-- > 0)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            int index;
-            do { index = Random.Shared.Next(_queue.Count); } while (index == _queueIndex);
-            var song = _queue[index];
-            if (!CanAttemptPlayback(song))
-            {
-                RemoveQueueEntryAt(index);
-                continue;
-            }
-            var result = await TryPlayAsync(song);
-            if (result == PlayAttemptResult.Started)
-            {
-                _queueIndex = FindQueueIndex(song);
-                RefreshUpcomingItems();
-                return;
-            }
-            if (result == PlayAttemptResult.TransientFailure) return;
-            RemoveQueueEntryAt(index);
         }
-        if (CurrentSong is not null) await PlayAsync(CurrentSong);
+        catch (Exception ex)
+        {
+            Message = $"加载播放队列失败:{ex.Message}";
+        }
+    }
+
+    /// <summary>随机上一首严格沿成功播放历史返回，不重新抽取随机歌曲。</summary>
+    private async Task PlayShufflePreviousAsync()
+    {
+        EnsureShuffleContext();
+        var ct = _queueRequestCancellation?.Token ?? CancellationToken.None;
+        try
+        {
+            while (_shuffleHistoryPosition > 0)
+            {
+                var target = _shuffleHistoryPosition - 1;
+                var result = await TryPlayShuffleHistoryEntryAsync(_shuffleHistory[target], ct);
+                if (result == PlayAttemptResult.Started)
+                {
+                    _shuffleHistoryPosition = target;
+                    return;
+                }
+                if (result == PlayAttemptResult.TransientFailure) return;
+                RemoveShuffleHistoryAt(target);
+            }
+
+            if (CurrentSong is not null) await PlayAsync(CurrentSong);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Message = $"加载播放队列失败:{ex.Message}";
+        }
+    }
+
+    private async Task<(PlayAttemptResult Result, Song? Song)> TryPlayShuffleIndexAsync(
+        int index,
+        ILazySongQueue? lazySource,
+        CancellationToken ct)
+    {
+        Song? song;
+        if (lazySource is not null)
+        {
+            song = await lazySource.GetSongAsync(index, ct);
+            if (!ReferenceEquals(lazySource, _lazyQueue)) return (PlayAttemptResult.TransientFailure, null);
+            if (song is null)
+            {
+                ExcludeLazyIndex(index);
+                return (PlayAttemptResult.Unavailable, null);
+            }
+        }
+        else
+        {
+            if ((uint)index >= (uint)_queue.Count) return (PlayAttemptResult.Unavailable, null);
+            song = _queue[index];
+        }
+
+        if (!CanAttemptPlayback(song))
+        {
+            if (lazySource is not null) ExcludeLazyIndex(index);
+            else RemoveQueueEntryAt(index);
+            return (PlayAttemptResult.Unavailable, song);
+        }
+
+        var result = await TryPlayAsync(song);
+        if (result == PlayAttemptResult.Unavailable)
+        {
+            if (lazySource is not null) ExcludeLazyIndex(index);
+            else
+            {
+                var queueIndex = FindQueueIndex(song);
+                if (queueIndex >= 0) RemoveQueueEntryAt(queueIndex);
+            }
+            return (result, song);
+        }
+        if (result != PlayAttemptResult.Started) return (result, song);
+
+        _queueIndex = lazySource is null ? FindQueueIndex(song) : index;
+        if (lazySource is not null) RememberLazyDisplaySong(index, song);
+        RefreshUpcomingItems();
+        return (result, song);
+    }
+
+    private async Task<PlayAttemptResult> TryPlayShuffleHistoryEntryAsync(
+        ShuffleHistoryEntry entry,
+        CancellationToken ct)
+    {
+        if (entry.IsQueueSong)
+        {
+            if (_shuffleContextIsLazy)
+            {
+                if (_excludedLazyIndices.Contains(entry.LogicalIndex))
+                    return PlayAttemptResult.Unavailable;
+            }
+            else if (FindQueueIndex(entry.Song) < 0)
+            {
+                return PlayAttemptResult.Unavailable;
+            }
+        }
+
+        if (!CanAttemptPlayback(entry.Song)) return PlayAttemptResult.Unavailable;
+        var result = await TryPlayAsync(entry.Song);
+        if (result != PlayAttemptResult.Started) return result;
+
+        if (_shuffleContextIsLazy)
+        {
+            _queueIndex = entry.LogicalIndex;
+            if (entry.IsQueueSong) RememberLazyDisplaySong(entry.LogicalIndex, entry.Song);
+        }
+        else
+        {
+            _queueIndex = FindQueueIndex(entry.Song);
+        }
+        RefreshUpcomingItems();
+        return result;
     }
 
     /// <summary>心动模式:沿队列方向找下一首红心(喜欢的)歌;队列里没有红心则退回列表循环。</summary>
@@ -1257,29 +1524,72 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _lazyQueueVmIndices.Add(logicalIndex);
     }
 
-    /// <summary>在完整逻辑范围内等概率选取一个未排除且非当前的下标。</summary>
-    internal static int SelectShuffleIndex(
-        int count,
-        int currentIndex,
-        IReadOnlySet<int> excluded,
-        Random random)
+    private void EnsureShuffleContext()
     {
-        if (count <= 0) return -1;
-        var eligible = 0;
-        for (var index = 0; index < count; index++)
-            if (index != currentIndex && !excluded.Contains(index)) eligible++;
-        if (eligible == 0)
-            return currentIndex >= 0 && currentIndex < count && !excluded.Contains(currentIndex)
-                ? currentIndex
-                : -1;
+        if (_shuffleContextIsLazy != (_lazyQueue is not null)
+            || !ReferenceEquals(_shuffleLazySource, _lazyQueue)
+            || _shuffleHistory.Count == 0)
+            ResetShuffleState();
+    }
 
-        var target = random.Next(eligible);
-        for (var index = 0; index < count; index++)
-        {
-            if (index == currentIndex || excluded.Contains(index)) continue;
-            if (target-- == 0) return index;
-        }
-        return -1;
+    private void ResetShuffleState()
+    {
+        _shuffleBag.Clear();
+        _shuffleHistory.Clear();
+        _shuffleHistoryPosition = -1;
+        _shuffleContextIsLazy = _lazyQueue is not null;
+        _shuffleLazySource = _lazyQueue;
+        if (CurrentSong is null) return;
+
+        var isQueueSong = _shuffleContextIsLazy
+            ? IsCurrentLazyQueueSong()
+            : FindQueueIndex(CurrentSong) >= 0;
+        _shuffleHistory.Add(new ShuffleHistoryEntry(CurrentSong, _queueIndex, isQueueSong));
+        _shuffleHistoryPosition = 0;
+    }
+
+    private bool IsCurrentLazyQueueSong()
+    {
+        if (CurrentSong is null || _queueIndex < 0 || _excludedLazyIndices.Contains(_queueIndex))
+            return false;
+
+        for (var displayIndex = 0; displayIndex < _lazyQueueVmIndices.Count; displayIndex++)
+            if (_lazyQueueVmIndices[displayIndex] == _queueIndex
+                && SameSong(_queue[displayIndex], CurrentSong))
+                return true;
+        return false;
+    }
+
+    private void CommitShuffleHistory(ShuffleHistoryEntry entry)
+    {
+        EnsureShuffleContext();
+        if (_shuffleHistoryPosition + 1 < _shuffleHistory.Count)
+            _shuffleHistory.RemoveRange(
+                _shuffleHistoryPosition + 1,
+                _shuffleHistory.Count - _shuffleHistoryPosition - 1);
+
+        _shuffleHistory.Add(entry);
+        _shuffleHistoryPosition = _shuffleHistory.Count - 1;
+        if (_shuffleHistory.Count <= MaxShuffleHistoryCount) return;
+
+        var remove = _shuffleHistory.Count - MaxShuffleHistoryCount;
+        _shuffleHistory.RemoveRange(0, remove);
+        _shuffleHistoryPosition -= remove;
+    }
+
+    private void RemoveShuffleHistoryAt(int index)
+    {
+        if ((uint)index >= (uint)_shuffleHistory.Count) return;
+        _shuffleHistory.RemoveAt(index);
+        if (index <= _shuffleHistoryPosition) _shuffleHistoryPosition--;
+        _shuffleHistoryPosition = Math.Min(_shuffleHistoryPosition, _shuffleHistory.Count - 1);
+    }
+
+    private void RemoveShuffleHistoryWhere(Predicate<ShuffleHistoryEntry> predicate)
+    {
+        for (var index = _shuffleHistory.Count - 1; index >= 0; index--)
+            if (predicate(_shuffleHistory[index]))
+                RemoveShuffleHistoryAt(index);
     }
 
     private void OnSmtcSeek(long ms)

@@ -66,6 +66,62 @@ internal sealed class IndexedSongQueue : ILazySongQueue
     }
 }
 
+/// <summary>已知总数、按页解析歌曲的懒队列。适合只有 offset/limit 接口的音源；
+/// 命中未缓存下标时只拉所在页，不会为了开始播放先获取完整歌单。</summary>
+internal sealed class PagedSongQueue : ILazySongQueue
+{
+    internal sealed record Page(IReadOnlyList<Song> Songs, int TotalCount);
+
+    private readonly Func<int, int, CancellationToken, Task<Page>> _loader;
+    private readonly BoundedSongCache _cache = new(384);
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private readonly int _pageSize;
+    private int _count;
+
+    public PagedSongQueue(
+        int count,
+        IReadOnlyList<Song> firstPage,
+        Func<int, int, CancellationToken, Task<Page>> loader,
+        int pageSize = 50)
+    {
+        _count = Math.Max(count, firstPage.Count);
+        _loader = loader;
+        _pageSize = Math.Max(1, pageSize);
+        for (var index = 0; index < firstPage.Count; index++)
+            _cache.Set(index, firstPage[index]);
+    }
+
+    public ValueTask<int> GetCountAsync(CancellationToken ct = default)
+        => ValueTask.FromResult(_count);
+
+    public async ValueTask<Song?> GetSongAsync(int index, CancellationToken ct = default)
+    {
+        if (index < 0 || (_count > 0 && index >= _count)) return null;
+        if (_cache.TryGet(index, out var cached)) return cached;
+
+        await _loadGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_cache.TryGet(index, out cached)) return cached;
+            var begin = index / _pageSize * _pageSize;
+            var page = await _loader(begin, _pageSize, ct).ConfigureAwait(false);
+            _count = Math.Max(page.TotalCount, begin + page.Songs.Count);
+            for (var offset = 0; offset < page.Songs.Count; offset++)
+                _cache.Set(begin + offset, page.Songs[offset]);
+            return _cache.TryGet(index, out cached) ? cached : null;
+        }
+        finally
+        {
+            _loadGate.Release();
+        }
+    }
+
+    public void Remember(int index, Song song)
+    {
+        if (index >= 0) _cache.Set(index, song);
+    }
+}
+
 /// <summary>
 /// 聚合歌单逻辑队列。成员只保留计数；网易云在命中该成员时取 trackId 概览，QQ 则按命中下标取一首。
 /// </summary>

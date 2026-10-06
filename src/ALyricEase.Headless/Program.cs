@@ -24,6 +24,13 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--tray-restore")
+        {
+            Environment.ExitCode = TrayRestoreProbe.Run(args.Length > 1 ? args[1]
+                : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ale_tray_restore_probe.log"));
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--page-transition")
         {
             var transitionBuilder = AppBuilder.Configure<PageTransitionProbe.ProbeApp>()

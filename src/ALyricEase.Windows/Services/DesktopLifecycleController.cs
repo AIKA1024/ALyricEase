@@ -9,6 +9,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.Input;
+using System.Runtime.InteropServices;
 
 namespace ALyricEase.Services;
 
@@ -176,8 +177,22 @@ internal sealed class DesktopLifecycleController : IDisposable
         if (_window.WindowState == WindowState.Minimized)
             _window.WindowState = _visibleWindowState;
         _window.Show();
-        _window.Activate();
-        _dialog?.FocusDefaultAction();
+        // 托盘点击/菜单命令返回后再激活，避免菜单收起时又把前台交回 Explorer。
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_exiting || _disposed || !_window.IsVisible) return;
+            var handle = _window.TryGetPlatformHandle();
+            if (OperatingSystem.IsWindows() && handle is { HandleDescriptor: "HWND" } && handle.Handle != IntPtr.Zero)
+            {
+                // Win32 的实际最小化状态也要还原；仅 Activate 不会展开最小化窗口。
+                if (IsIconic(handle.Handle)) ShowWindow(handle.Handle, 9 /* SW_RESTORE */);
+                // SetForegroundWindow 可能被系统拒绝；仍把窗口抬到普通窗口最前面，确保可见。
+                SetWindowPos(handle.Handle, IntPtr.Zero /* HWND_TOP */, 0, 0, 0, 0,
+                    0x0001 | 0x0002 | 0x0010 /* NOSIZE | NOMOVE | NOACTIVATE */);
+            }
+            _window.Activate();
+            _dialog?.FocusDefaultAction();
+        }, DispatcherPriority.Background);
     }
 
     internal void Exit()
@@ -199,4 +214,16 @@ internal sealed class DesktopLifecycleController : IDisposable
         _dialog?.ViewModel.CancelCommand.Execute(null);
         _tray.Dispose();
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr hwnd, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 }

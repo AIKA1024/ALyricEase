@@ -164,8 +164,17 @@
       </Border>
 
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <CheckBox Content="启用播放详情界面的动态背景效果" IsChecked="{Binding DynamicBackground}"
-                  VerticalAlignment="Center" Margin="8,0,0,0" />
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconPalette}" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+            <TextBlock Classes="setting-title" Text="动态背景" />
+            <TextBlock Text="在播放详情界面显示动态背景效果" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}" Margin="0,2,0,0" />
+          </StackPanel>
+          <ToggleSwitch Grid.Column="2" IsChecked="{Binding DynamicBackground, Mode=TwoWay}"
+                        OnContent="" OffContent="" VerticalAlignment="Center"
+                        AutomationProperties.Name="播放详情动态背景" />
+        </Grid>
       </Border>
 
       <Border Classes="setting-card" Margin="0,0,0,8">

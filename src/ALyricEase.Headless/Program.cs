@@ -24,6 +24,43 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] is "--submenu-animation" or "--submenu-animation-desktop"
+            or "--submenu-hover" or "--submenu-hover-desktop")
+        {
+            var desktop = args[0].EndsWith("-desktop");
+            var hover = args[0].StartsWith("--submenu-hover");
+            var builder = AppBuilder.Configure<HeadlessApp>();
+            if (desktop) builder.UsePlatformDetect();
+            else builder.UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            HeadlessApp.ConfigureServices();
+            var exitCode = 0;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await SubMenuAnimationProbe.RunAsync(desktop, hover); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); exitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            builder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = exitCode;
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--menuwidth-desktop")
+        {
+            var menuWidthBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var menuWidthExitCode = 0;
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { MenuWidthProbe.RunDesktop(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); menuWidthExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            menuWidthBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = menuWidthExitCode;
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--tray-restore")
         {
             Environment.ExitCode = TrayRestoreProbe.Run(args.Length > 1 ? args[1]
@@ -730,6 +767,12 @@ public static class Program
         if (args.Length > 0 && args[0] == "--playerbarmenu")
         {
             PlayerBarMenuProbe.Run();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--menuwidth")
+        {
+            MenuWidthProbe.Run();
             return;
         }
 

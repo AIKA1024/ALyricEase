@@ -82,12 +82,18 @@
         <Setter Property="Margin" Value="4 0 4 14" />
     </Style>
 
-    <!-- 所有 MenuFlyoutPresenter(一级+子菜单都自动创建 MenuFlyoutPresenter,子菜单不继承父级 FlyoutPresenterClasses):
+    <!-- 一级菜单表面:
          统一圆角;阴影/内边距放模板根 Border(MenuFlyoutPresenter 模板不绑 {TemplateBinding Padding})。
          打开动画(仿 WinUI3 淡入+滑入,方向按锚点自动判断)走 ctrl:FlyoutOpenAnimation 合成动画 -->
     <Style Selector="MenuFlyoutPresenter">
         <Setter Property="CornerRadius" Value="12" />
+        <!-- 横向必须按视口测量；Auto 会让菜单项保持长文本的完整宽度，
+             表面被裁掉后，子菜单仍按不可见的右边缘定位。纵向继续允许滚动。 -->
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         <Setter Property="ctrl:FlyoutOpenAnimation.IsEnabled" Value="True" />
+    </Style>
+    <Style Selector="MenuItem /template/ Popup#PART_Popup ScrollViewer">
+        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
     </Style>
     <!-- 播放条歌曲菜单按原版保持约 240px 宽，短标题/来源不会让菜单忽宽忽窄。 -->
     <Style Selector="MenuFlyoutPresenter.player-song-menu">

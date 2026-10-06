@@ -211,6 +211,11 @@
     <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot">
         <Setter Property="Background" Value="{DynamicResource SystemBaseLow}" />
     </Style>
+    <!-- 只缩略标题，保留图标、快捷键和子菜单箭头的布局空间。 -->
+    <Style Selector="MenuItem /template/ ContentPresenter#PART_HeaderPresenter">
+        <Setter Property="TextWrapping" Value="NoWrap" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
 
     <!-- 行内圆形操作按钮(歌曲行 TrackRow / 用户页歌单行共用):32px 圆。
          必须配合 RowButtonTheme(TrackRow.axaml 定义、应用级可见)使用 —— 它是无状态自定义模板,

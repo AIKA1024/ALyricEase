@@ -106,6 +106,8 @@ internal static class UiFramePacer
         => Disabled ? "已禁用(ALY_NO_PACER=1)"
             : $"持有者={_demand} wanted={_wanted} 线程已起={_threadStarted} 累计投递={Interlocked.Read(ref _posts)}";
 
+    internal static int Demand => Volatile.Read(ref _demand);
+
     /// <summary>
     /// 按 <see cref="Stopwatch"/> 累积时刻表投递,而不是"睡固定时长" ——
     /// 后者会把每次睡眠的量化误差累加成持续偏慢(整首歌下来进度条会明显滞后)。

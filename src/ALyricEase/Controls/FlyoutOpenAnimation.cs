@@ -12,6 +12,7 @@ using Avalonia.LogicalTree;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using ALyricEase.Infrastructure;
 
 namespace ALyricEase.Controls;
 
@@ -25,10 +26,8 @@ namespace ALyricEase.Controls;
 /// · 揭示 = 表面平移 + ClipTranslate 反向 + Border ScaleY 0.5→1,我们用弹窗窗口裁剪近似前两者。
 /// </summary>
 ///
-/// 起始偏移取弹层的完整高度,使首帧整个表面都在弹窗窗口的裁剪区外。
-/// 揭示效果靠"弹窗窗口裁掉越界部分"实现,所以开局露出多少取决于【偏移 / 弹层高度】:
-/// 固定 50px 时,2 项的短菜单遮掉 56%(像从 0 滑出),而播放条 10 项的长菜单只遮掉约 17%
-/// (50% 高度仍会让半个菜单在首帧出现)。完整高度偏移才能保证从裁剪区外开始。
+/// 起始偏移取弹层高度的一半，首帧露出半张菜单，随后从锚边滑入。
+/// 使用独立的 Translation 合成属性；Offset 属于布局系统，子菜单首次布局会覆盖其动画。
 ///
 /// 只有纵向滑入(原版菜单过渡 MenuPopupThemeTransition 仅 Top/Bottom 两个方向,无左右)。
 /// 方向按弹窗最终位置相对锚点(PlacementTarget)判断:菜单在锚点下方→向下滑,在上方→向上滑;
@@ -76,6 +75,10 @@ public class FlyoutOpenAnimation
     /// <summary>弹窗窗口最终位置(PositionChanged 事件携带,WindowBase 无公开 Position 属性)。</summary>
     private static readonly ConditionalWeakTable<Visual, StrongBox<PixelPoint>> PopupPositions = new();
 
+    // Windows 鼠标静止时 DispatcherTimer 可能迟到。菜单可见期间持有帧泵，
+    // 让原生悬停计时和首帧及时处理；关闭即归还，不改变 Avalonia 的悬停时长。
+    private static readonly ConditionalWeakTable<Visual, StrongBox<bool>> PacerLeases = new();
+
     /// <summary>探针诊断:每次动画实际启动时回报表面与起始偏移。</summary>
     internal static event Action<Visual, double, double>? Started;
 
@@ -89,6 +92,7 @@ public class FlyoutOpenAnimation
             if (e.NewValue is not true)
             {
                 RestorePrimedOpacity(surface);
+                ReleasePacer(surface);
                 surface.AttachedToVisualTree -= OnSurfaceAttached;
                 surface.DetachedFromVisualTree -= OnSurfaceDetached;
                 return;
@@ -129,11 +133,19 @@ public class FlyoutOpenAnimation
         {
             RestorePrimedOpacity(surface);
             StartFlags.Remove(surface);
+            ReleasePacer(surface);
         }
     }
 
     private static void Hook(Visual surface)
     {
+        if (OperatingSystem.IsWindows() && TopLevel.GetTopLevel(surface) is not null
+            && !PacerLeases.TryGetValue(surface, out _))
+        {
+            UiFramePacer.Acquire();
+            PacerLeases.Add(surface, new StrongBox<bool>(true));
+        }
+
         // Android 的 overlay 弹窗要等布局后才有高度和方向，但不能等到那时才设置起始视觉：
         // 否则 Popup 会先以最终态完成一次合成，再从 0 播放动画，形成明显闪现。
         PrimeSurface(surface);
@@ -178,6 +190,11 @@ public class FlyoutOpenAnimation
         }
     }
 
+    private static void ReleasePacer(Visual surface)
+    {
+        if (PacerLeases.Remove(surface)) UiFramePacer.Release();
+    }
+
     private static void TryStart(Visual surface)
     {
         // Android overlay 使用 Loaded 队列；若弹层在回调前已关闭，不得给已脱树表面留下 started 状态。
@@ -218,8 +235,7 @@ public class FlyoutOpenAnimation
     internal static (bool HasPopupRect, bool HasTarget) LastResolved { get; private set; }
 
     /// <summary>
-    /// 入场偏移:取弹层的完整高度,使表面首帧位于弹窗裁剪区外。
-    /// 50% 偏移仍会让长菜单的一半在首帧出现,无法解决播放条菜单的突现观感。
+    /// 入场偏移:取弹层高度的一半，与 WinUI3 的菜单揭示运动保持一致。
     /// </summary>
     internal static double ComputeEntranceOffset(double surfaceHeight)
     {
@@ -297,17 +313,21 @@ public class FlyoutOpenAnimation
         }
 
         var compositor = visual.Compositor;
-        var baseOffset = visual.Offset;
-        var baseOpacity = RestorePrimedOpacity(surface, visual);
+        // Offset 会在 Visual.SynchronizeCompositionProperties 中按 Bounds 重写，
+        // 尤其 MenuItem 的 Popup 子菜单在 Opened 后仍有首次布局，动画因此被覆盖。
+        // Translation 是独立的动画位移，不参与测量、子菜单锚点或布局同步。
+        var baseTranslation = new Vector3((float)visual.Translation.X,
+            (float)visual.Translation.Y, (float)visual.Translation.Z);
+        RestorePrimedOpacity(surface, visual);
 
         // 结束帧 = 基值:动画播完自动移出时钟并回落基值,无缝交接,无需手动 Stop。
         // 原版菜单表面全程不透明(只有遮罩层 83ms 淡入,我们没有遮罩层),靠裁剪揭示即可:
         // 恢复基透明度后只播位移动画,首帧即全不透明的半张菜单从锚边滑出。
         var slide = compositor.CreateVector3KeyFrameAnimation();
         slide.Duration = SlideDuration;
-        slide.InsertKeyFrame(0f, new Vector3((float)(baseOffset.X + dx), (float)(baseOffset.Y + dy), 0f));
-        slide.InsertKeyFrame(1f, new Vector3((float)baseOffset.X, (float)baseOffset.Y, 0f), SlideEasing);
-        visual.StartAnimation("Offset", slide);
+        slide.InsertKeyFrame(0f, baseTranslation + new Vector3((float)dx, (float)dy, 0f));
+        slide.InsertKeyFrame(1f, baseTranslation, SlideEasing);
+        visual.StartAnimation("Translation", slide);
     }
 
     /// <summary>在表面 attach 前用可撤销的动画优先级值预隐藏；不会替换原有样式或绑定。</summary>

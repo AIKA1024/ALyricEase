@@ -38,6 +38,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private readonly AppStateStore _appState;
     private readonly MusicCacheService _musicCache;
     private MusicCacheLease? _musicCacheLease;
+    private readonly PlaybackCacheSession _playbackCache = new();
 
     private bool _scrubbing;
     private bool _seekPending;
@@ -788,11 +789,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             offlineFallback?.Dispose();
             offlineFallback = null;
             await StartPlayerAsync(item.Url, cacheLease: null, allowCrossfade);
-            if (item.IsTrial != true)
-                _ = _musicCache.CacheAsync(
-                    song,
-                    string.IsNullOrWhiteSpace(item.Level) ? qualityLevel : item.Level,
-                    item.Url);
+            if (item.IsTrial != true && ReferenceEquals(CurrentSong, song))
+                _playbackCache.Begin(
+                    token => _musicCache.CacheAsync(
+                        song,
+                        string.IsNullOrWhiteSpace(item.Level) ? qualityLevel : item.Level,
+                        item.Url, token),
+                    _player.State == PlaybackState.Playing);
             return PlayAttemptResult.Started;
         }
         catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
@@ -988,6 +991,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void PrepareSongPlayback(Song song)
     {
+        _playbackCache.Cancel();
         _crossfadeAdvancing = false; // 新歌起播:允许在它的末段再触发交叉切歌
         CurrentSong = song;
         Title = song.Name;
@@ -1332,6 +1336,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         var newState = _player.State;
         IsLoading = newState == PlaybackState.Loading;
         IsPlaying = newState == PlaybackState.Playing;
+        if (newState == PlaybackState.Idle) _playbackCache.Cancel();
+        else _playbackCache.UpdatePlaying(IsPlaying);
         // 歌曲自然播完(Playing/Paused → Idle)按当前模式自动切下一首;
         // PlayUrl 内部 Stop() 的瞬时 Idle 用 _advancing 抑制(启动新歌不是播完)。
         if (_advancing == 0
@@ -1346,6 +1352,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnPositionChanged(object? sender, long value)
     {
+        _playbackCache.Tick();
         PositionMs = value;
 
         if (_seekPending)
@@ -1398,7 +1405,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnDurationChanged(object? sender, long value) => DurationMs = value;
 
-    private void OnError(object? sender, string message) => Message = message;
+    private void OnError(object? sender, string message)
+    {
+        _playbackCache.Cancel();
+        Message = message;
+    }
 
     private async Task LoadCoverAsync(Song song)
     {
@@ -1422,6 +1433,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _playbackCache.Dispose();
         _musicCacheLease?.Dispose();
         _musicCacheLease = null;
         ResetLazyQueue();

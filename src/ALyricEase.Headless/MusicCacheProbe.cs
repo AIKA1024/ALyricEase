@@ -140,6 +140,7 @@ internal static class MusicCacheProbe
             if (File.Exists(highPath) || cache.GetCurrentSizeBytes() != 0)
                 return Fail("租约释放后未删除待清理文件");
 
+            await AudioCachePolicyProbe.VerifyAsync(root);
             Console.WriteLine("[media-cache] PASS: 音质升级/断网降级、封面、歌词、离线歌单索引与统一清理均正常");
             return 0;
         }

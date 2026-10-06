@@ -39,7 +39,7 @@ public sealed class MusicCacheService
     private readonly object _pinGate = new();
     private readonly Dictionary<string, int> _pinCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deleteWhenReleased = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, Lazy<Task>> _downloads = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, AudioCacheDownload> _downloads = new(StringComparer.Ordinal);
     // 一次性页面快照的内存副本(纯数据,不含视觉树/ViewModel)。快照 key 是每次捕获时新生成的 GUID,
     // 只存在进程内的导航历史里 —— 也就是说它天生只服务当前进程,落盘没有任何额外收益。
     // 所以这里只留内存:读取是同步的,返回时不等待任何 I/O(旧实现还会派发一次延迟落盘,已移除)。
@@ -70,6 +70,7 @@ public sealed class MusicCacheService
     // 偏大只会多跑一次扫描;两种偏差都由任何一次真实扫描(裁剪/清空/读取容量/改上限)重置。
     // ⚠️ 新增任何"直接写/删缓存目录文件"的代码都必须同步它,否则偏差会累积。
     private long _knownCacheBytes = -1;
+    private long _evictionScanCount;
     private MusicCacheIndexFile _offlineIndex;
 
     public MusicCacheService(AppStateStore state)
@@ -91,6 +92,8 @@ public sealed class MusicCacheService
     }
 
     public int MaximumSizeMb => Volatile.Read(ref _maximumSizeMb);
+
+    internal long EvictionScanCount => Interlocked.Read(ref _evictionScanCount);
 
     public static int NormalizeMaximumSizeMb(int value) =>
         Math.Clamp(value, MinimumAllowedSizeMb, MaximumAllowedSizeMb);
@@ -168,20 +171,33 @@ public sealed class MusicCacheService
     }
 
     /// <summary>缓存完整音乐；比现有缓存低或相同的结果丢弃，更高音质写入后替换旧文件。</summary>
-    public Task CacheAsync(Song song, string actualQuality, string url)
+    public async Task CacheAsync(
+        Song song, string actualQuality, string url, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(url)) return Task.CompletedTask;
+        if (string.IsNullOrWhiteSpace(url) || cancellationToken.IsCancellationRequested) return;
         var songKey = BuildSongKey(song);
         var rank = GetQualityRank(song.Source, actualQuality);
         var downloadKey = $"audio:{songKey}:{rank}";
         var clearGeneration = Volatile.Read(ref _clearGeneration);
-        var download = _downloads.GetOrAdd(
-            downloadKey,
-            _ => new Lazy<Task>(
-                () => DownloadAndStoreAudioAsync(
-                    downloadKey, songKey, rank, song.Source, url, clearGeneration),
-                LazyThreadSafetyMode.ExecutionAndPublication));
-        return download.Value;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var download = _downloads.GetOrAdd(
+                downloadKey,
+                _ => new AudioCacheDownload(cancellationToken, current => DownloadAndStoreAudioAsync(
+                    downloadKey, current, songKey, rank, song.Source, url, clearGeneration)));
+            try
+            {
+                // 同曲切走又切回时，先等旧下载清理完 .part，再重试；不能复用已取消的任务。
+                await download.Task.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                if (download.CancellationToken == cancellationToken)
+                    await download.Task.Value.ConfigureAwait(false);
+                return;
+            }
+            if (!download.CancellationToken.IsCancellationRequested) return;
+        }
     }
 
     public Task<byte[]?> TryGetCoverAsync(string url) =>
@@ -437,17 +453,19 @@ public sealed class MusicCacheService
 
     private async Task DownloadAndStoreAudioAsync(
         string downloadKey,
+        AudioCacheDownload download,
         string songKey,
         int rank,
         MusicSource source,
         string url,
         int clearGeneration)
     {
+        var cancellationToken = download.CancellationToken;
         string? temporaryPath = null;
         var downloadGateEntered = false;
         try
         {
-            await _downloadGate.WaitAsync().ConfigureAwait(false);
+            await _downloadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             downloadGateEntered = true;
             if (clearGeneration != Volatile.Read(ref _clearGeneration)) return;
             if (GetAudioFiles(songKey).Any(file => file.Rank >= rank)) return;
@@ -468,7 +486,7 @@ public sealed class MusicCacheService
 
             using var response = await _http.SendAsync(
                 request,
-                HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             var maximumBytes = GetMaximumBytes();
             if (response.Content.Headers.ContentLength is > 0 and var declaredLength
@@ -479,7 +497,7 @@ public sealed class MusicCacheService
             temporaryPath = Path.Combine(
                 _cacheDirectory,
                 $"a-{songKey}-{rank:D2}.{Guid.NewGuid():N}.part");
-            await using (var sourceStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+            await using (var sourceStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
             await using (var targetStream = new FileStream(
                 temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 bufferSize: 81920, useAsync: true))
@@ -487,11 +505,11 @@ public sealed class MusicCacheService
                 var buffer = new byte[81920];
                 long written = 0;
                 int read;
-                while ((read = await sourceStream.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+                while ((read = await sourceStream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
                 {
                     written += read;
                     if (written > GetMaximumBytes()) return;
-                    await targetStream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+                    await targetStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -499,16 +517,14 @@ public sealed class MusicCacheService
             var extension = GetAudioExtension(url, response.Content.Headers.ContentType?.MediaType);
             var finalPath = Path.Combine(_cacheDirectory, $"a-{songKey}-{rank:D2}{extension}");
 
-            await _mutationGate.WaitAsync().ConfigureAwait(false);
+            await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (clearGeneration != Volatile.Read(ref _clearGeneration)) return;
                 var existing = GetAudioFiles(songKey);
                 if (existing.Any(file => file.Rank >= rank)) return;
-                if (!CanMakeSpaceFor(fileLength)) return;
-                foreach (var lowerQuality in existing) DeleteOrDefer(lowerQuality.Path);
-
-                if (!EnsureSpaceFor(fileLength)) return;
+                if (!EnsureSpaceFor(fileLength, existing, cancellationToken)) return;
                 File.Move(temporaryPath, finalPath, overwrite: false);
                 File.SetLastWriteTimeUtc(finalPath, DateTime.UtcNow);
                 temporaryPath = null;
@@ -527,7 +543,8 @@ public sealed class MusicCacheService
         {
             if (temporaryPath is not null) TryDelete(temporaryPath);
             if (downloadGateEntered) _downloadGate.Release();
-            _downloads.TryRemove(downloadKey, out _);
+            // 精确移除本次任务，避免旧任务清理时误删同曲的新下载。
+            _downloads.TryRemove(new KeyValuePair<string, AudioCacheDownload>(downloadKey, download));
         }
     }
 
@@ -807,16 +824,47 @@ public sealed class MusicCacheService
     /// 快路径:工作副本已知且"现状 + 本次写入"仍在上限内 ⇒ 直接放行,不枚举目录
     /// (这是封面/音频/歌词落盘的热路径,见 <c>_knownCacheBytes</c> 的说明)。
     /// 慢路径(接近上限或副本未知)才做完整扫描,并顺手把工作副本校准回真实值。</summary>
-    private bool EnsureSpaceFor(long incomingLength)
+    private bool EnsureSpaceFor(
+        long incomingLength,
+        IReadOnlyList<AudioCacheFile>? replacedAudio = null,
+        CancellationToken cancellationToken = default)
     {
         var maximum = GetMaximumBytes();
         if (incomingLength <= 0 || incomingLength > maximum) return false;
 
         var known = Interlocked.Read(ref _knownCacheBytes);
-        if (known >= 0 && known + incomingLength <= maximum) return true;
+        if (known >= 0 && known + incomingLength <= maximum)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (replacedAudio is not null)
+                foreach (var file in replacedAudio) DeleteOrDefer(file.Path);
+            return true;
+        }
 
         var files = GetEvictionCandidates();
         var total = files.Sum(file => file.Length);
+        ResetKnownCacheBytes(total);
+        cancellationToken.ThrowIfCancellationRequested();
+        // 预检与淘汰复用同一次扫描。钉住的音频不能删，放不下时保留原缓存。
+        if (files.Where(file => IsPinned(file.FullName)).Sum(file => file.Length) + incomingLength > maximum)
+            return false;
+
+        if (replacedAudio is not null)
+        {
+            foreach (var audio in replacedAudio)
+            {
+                if (IsPinned(audio.Path))
+                {
+                    DeleteOrDefer(audio.Path);
+                    continue;
+                }
+                var index = files.FindIndex(file => string.Equals(
+                    file.FullName, audio.Path, StringComparison.OrdinalIgnoreCase));
+                if (index < 0 || !TryDelete(audio.Path)) continue;
+                total -= files[index].Length;
+                files.RemoveAt(index);
+            }
+        }
         foreach (var file in files)
         {
             if (total + incomingLength <= maximum) break;
@@ -855,17 +903,9 @@ public sealed class MusicCacheService
         return true;
     }
 
-    private bool CanMakeSpaceFor(long incomingLength)
-    {
-        if (incomingLength <= 0 || incomingLength > GetMaximumBytes()) return false;
-        var pinnedBytes = GetEvictionCandidates()
-            .Where(file => IsPinned(file.FullName))
-            .Sum(file => file.Length);
-        return pinnedBytes + incomingLength <= GetMaximumBytes();
-    }
-
     private List<FileInfo> GetEvictionCandidates()
     {
+        Interlocked.Increment(ref _evictionScanCount);
         var result = new List<FileInfo>();
         foreach (var path in EnumerateCacheFiles())
         {
@@ -877,6 +917,18 @@ public sealed class MusicCacheService
         }
         result.Sort((left, right) => left.LastWriteTimeUtc.CompareTo(right.LastWriteTimeUtc));
         return result;
+    }
+
+    private sealed class AudioCacheDownload
+    {
+        public AudioCacheDownload(CancellationToken cancellationToken, Func<AudioCacheDownload, Task> start)
+        {
+            CancellationToken = cancellationToken;
+            Task = new Lazy<Task>(() => start(this), LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        public CancellationToken CancellationToken { get; }
+        public Lazy<Task> Task { get; }
     }
 
     private List<AudioCacheFile> GetAudioFiles(string songKey)

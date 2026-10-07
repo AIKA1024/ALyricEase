@@ -434,7 +434,7 @@
                       <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
                               IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                         <Panel>
-                          <Image Stretch="UniformToFill" IsVisible="{Binding !ShowHeart}"
+                          <Image Stretch="UniformToFill"
                                  infra:ManagedCoverImage.DecodeSize="96"
                                  infra:ManagedCoverImage.Source="{Binding Playlist.CoverUrl}" />
                           <TextBlock Text="♥" FontSize="20" Foreground="White"

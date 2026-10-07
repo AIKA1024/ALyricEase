@@ -34,6 +34,9 @@ public sealed class AppStateStore
     /// <summary>搜索页上次选择的来源；默认综合搜索。</summary>
     public SearchSourceMode PreferredSearchSource { get; private set; } = SearchSourceMode.Combined;
 
+    /// <summary>全部专辑页显示偏好；未选择时移动端列表、桌面端大图。</summary>
+    public bool? ArtistAlbumsListMode { get; set; }
+
     public void SetPreferredSearchSource(SearchSourceMode mode)
     {
         if (!Enum.IsDefined(mode) || PreferredSearchSource == mode) return;
@@ -183,6 +186,7 @@ public sealed class AppStateStore
             if (dto is null) return;
             IsNetEaseGroupExpanded = dto.NetEaseGroupExpanded ?? true;
             IsQqGroupExpanded = dto.QqGroupExpanded ?? true;
+            ArtistAlbumsListMode = dto.ArtistAlbumsListMode;
             PreferredSearchSource = dto.PreferredSearchSource is >= (int)SearchSourceMode.Combined
                 and <= (int)SearchSourceMode.QQ
                 ? (SearchSourceMode)dto.PreferredSearchSource.Value
@@ -293,6 +297,7 @@ public sealed class AppStateStore
                     .ToList(),
                 SearchHistory = SearchHistory.ToList(),
                 PreferredSearchSource = (int)PreferredSearchSource,
+                ArtistAlbumsListMode = ArtistAlbumsListMode,
                 RecentSongs = _recentSongs.Select(ToRecentFile).ToList(),
                 WindowWidth = WindowWidth,
                 WindowHeight = WindowHeight,

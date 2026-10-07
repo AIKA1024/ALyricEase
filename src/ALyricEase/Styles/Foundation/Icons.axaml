@@ -31,6 +31,8 @@
     <x:String x:Key="IconPin">&#xF36B;</x:String> <!-- 实为细线字形,须配 LyricEaseIconsOutline -->
     <x:String x:Key="IconChevronDown">&#xE901;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconChevronUp">&#xF2B7;</x:String>
+    <x:String x:Key="IconViewList">&#xE905;</x:String> <!-- ListRegular,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconViewGallery">&#xE933;</x:String> <!-- ContentGallery,须配 LyricEaseIconsOriginal -->
 
     <!-- 播放控制(实心) -->
     <x:String x:Key="IconPrevious">&#xF633;</x:String>

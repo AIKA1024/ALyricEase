@@ -8,39 +8,73 @@
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.ArtistAlbumsPageView">
   <UserControl.Styles>
+    <Style Selector="Grid#PageContent">
+      <Setter Property="Margin" Value="48,20,32,120" />
+    </Style>
+    <Style Selector=".narrow Grid#PageContent">
+      <Setter Property="Margin" Value="16,20,16,120" />
+    </Style>
+    <Style Selector="StackPanel#SectionHeading">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="12" />
+    </Style>
+    <Style Selector=".narrow StackPanel#SectionHeading">
+      <Setter Property="Orientation" Value="Vertical" />
+      <Setter Property="Spacing" Value="2" />
+    </Style>
   </UserControl.Styles>
 
   <!-- 整页滚动(歌单页同构):网格延伸到播放条下方, clearance 由内容底部 margin 提供 -->
   <ScrollViewer x:Name="PageScroller" Classes="tracks-scroller page-scroll" VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled">
-    <Grid Margin="48,20,32,120" RowDefinitions="Auto,Auto,Auto,*">
+    <Grid x:Name="PageContent" RowDefinitions="Auto,Auto,Auto,*">
       <!-- 页头:歌手名(随内容滚动,同歌单页 hero) -->
       <TextBlock Grid.Row="0" Text="{Binding Name}" Classes="page-title" Margin="0,0,0,12" />
 
       <!-- 区块头:全部专辑 + 加载进度 -->
       <Grid Grid.Row="1" Margin="10,0,0,12" ColumnDefinitions="*,Auto">
-        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+        <StackPanel x:Name="SectionHeading" VerticalAlignment="Center">
           <TextBlock Text="全部专辑" FontSize="22" FontWeight="Bold" />
           <TextBlock Text="{Binding Subtitle}" FontSize="14" Foreground="{DynamicResource TextTertiary}"
                      VerticalAlignment="Center" />
         </StackPanel>
-        <ToggleButton Grid.Column="1" Classes="filter-expander"
-                      IsChecked="{Binding Filters.IsExpanded, Mode=TwoWay}"
-                      ToolTip.Tip="展开或收起排序和筛选"
-                      AutomationProperties.Name="展开或收起专辑排序和筛选">
-          <TextBlock Classes="filter-chevron" Text="{DynamicResource IconChevronDown}"
-                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="11"
-                     RenderTransformOrigin="50%,50%" />
-        </ToggleButton>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <ToggleButton x:Name="DisplayModeButton" Classes="filter-expander"
+                        IsChecked="{Binding IsListMode, Mode=TwoWay}"
+                        ToolTip.Tip="{Binding DisplayModeToolTip}"
+                        AutomationProperties.Name="{Binding DisplayModeToolTip}">
+            <Grid>
+              <TextBlock Text="{DynamicResource IconViewList}" FontSize="18"
+                         FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                         Foreground="{DynamicResource TextPrimary}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         IsVisible="{Binding !IsListMode}" />
+              <TextBlock Text="{DynamicResource IconViewGallery}" FontSize="18"
+                         FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                         Foreground="{DynamicResource TextPrimary}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                         IsVisible="{Binding IsListMode}" />
+            </Grid>
+          </ToggleButton>
+          <ToggleButton Classes="filter-expander"
+                        IsChecked="{Binding Filters.IsExpanded, Mode=TwoWay}"
+                        ToolTip.Tip="展开或收起排序和筛选"
+                        AutomationProperties.Name="展开或收起专辑排序和筛选">
+            <TextBlock Classes="filter-chevron" Text="{DynamicResource IconChevronDown}"
+                       FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="11"
+                       RenderTransformOrigin="50%,50%" />
+          </ToggleButton>
+        </StackPanel>
       </Grid>
 
       <controls:TrackCollectionSortAndFilterControl Grid.Row="2" Margin="10,0,0,12"
                                                      DataContext="{Binding Filters}"
                                                      IsVisible="{Binding IsExpanded}" />
 
-      <!-- 专辑网格:纵向虚拟化(AlbumGrid 分块),滚动近底部增量补页;尾部加载指示 -->
+      <!-- 大图和详细列表共用分页/筛选集合，均纵向虚拟化；尾部加载指示共用。 -->
       <StackPanel Grid.Row="3" Spacing="4">
-        <controls:AlbumGrid ItemsSource="{Binding Albums}" />
+        <controls:AlbumGrid ItemsSource="{Binding Albums}" IsVisible="{Binding !IsListMode}" />
+        <controls:AlbumList ItemsSource="{Binding Albums}" IsVisible="{Binding IsListMode}" />
         <TextBlock Text="加载中…" FontSize="13" Foreground="{DynamicResource TextTertiary}"
                    HorizontalAlignment="Center" Margin="0,8,0,16"
                    IsVisible="{Binding IsLoadingMore}" />

@@ -20,6 +20,7 @@ public sealed partial class ArtistAlbumsPageViewModel : NavigationDetailViewMode
     private readonly NetEaseApiClient _api;
     private readonly QQMusicApiClient _qqApi;
     private readonly MusicCacheService _musicCache;
+    private readonly AppStateStore _state;
 
     private ArtistPageRef? _ref;
     private int _offset;
@@ -33,11 +34,14 @@ public sealed partial class ArtistAlbumsPageViewModel : NavigationDetailViewMode
     public ArtistAlbumsPageViewModel(
         NetEaseApiClient api,
         QQMusicApiClient qqApi,
-        MusicCacheService musicCache)
+        MusicCacheService musicCache,
+        AppStateStore state)
     {
         _api = api;
         _qqApi = qqApi;
         _musicCache = musicCache;
+        _state = state;
+        _isListMode = state.ArtistAlbumsListMode ?? (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
         Filters = CollectionSortAndFilterViewModel.ForAlbums("在专辑中搜索");
         Filters.FilterChanged += OnFiltersChanged;
     }
@@ -45,6 +49,18 @@ public sealed partial class ArtistAlbumsPageViewModel : NavigationDetailViewMode
     public RangeObservableCollection<AlbumCardViewModel> Albums { get; } = new();
 
     public CollectionSortAndFilterViewModel Filters { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayModeToolTip))]
+    private bool _isListMode;
+
+    public string DisplayModeToolTip => IsListMode ? "切换为大图模式" : "切换为详细列表模式";
+
+    partial void OnIsListModeChanged(bool value)
+    {
+        _state.ArtistAlbumsListMode = value;
+        _state.Save();
+    }
 
     [ObservableProperty] private string _name = "";
 

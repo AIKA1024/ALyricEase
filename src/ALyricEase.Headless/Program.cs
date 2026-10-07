@@ -579,6 +579,13 @@ public static class Program
             return;
         }
 
+        // 全部专辑页：显示模式持久化、响应式列表和虚拟化。
+        if (args.Length > 0 && args[0] == "--album-display")
+        {
+            Environment.ExitCode = AlbumDisplayModeProbe.Run();
+            return;
+        }
+
         // 专辑卡片几何探针:全部专辑页/歌手页卡片内封面与标题的实际矩形与间距
         if (args.Length > 0 && args[0] == "--albumgrid")
         {

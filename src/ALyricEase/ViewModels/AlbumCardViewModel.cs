@@ -39,6 +39,7 @@ public sealed partial class AlbumCardViewModel : ViewModelBase
         if (count <= 0 || SongCount == count) return;
         SongCount = count;
         OnPropertyChanged(nameof(SongCount));
+        OnPropertyChanged(nameof(SongCountText));
         OnPropertyChanged(nameof(InfoText));
         OnPropertyChanged(nameof(HasInfo));
     }
@@ -64,6 +65,13 @@ public sealed partial class AlbumCardViewModel : ViewModelBase
 
     /// <summary>信息行显隐(有任何一段才显示,避免空 TextBlock 占行高)。</summary>
     public bool HasInfo => PublishTimeMs > 0 || SongCount > 0;
+
+    /// <summary>详细列表的独立信息列，缺失值用占位符表示。</summary>
+    public string PublishDateText => PublishTimeMs > 0
+        ? DateTimeOffset.FromUnixTimeMilliseconds(PublishTimeMs).LocalDateTime.ToString("yyyy-M-d") + "发布"
+        : "—";
+
+    public string SongCountText => SongCount > 0 ? $"{SongCount} 首歌" : "—";
 
     /// <summary>QQ 专辑(mid 非空):跳 QQ 专辑页。</summary>
     public bool IsQq => _mid.Length > 0;

@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:CompileBindings="True"
+             x:Class="ALyricEase.Controls.AlbumList">
+  <UserControl.Styles>
+    <Style Selector="Button.album-list-row">
+      <Setter Property="Height" Value="60" />
+      <Setter Property="Margin" Value="2" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.album-list-row Border.row-hover-bg">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBackground}" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.album-list-row:pointerover Border.row-hover-bg">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.album-list-row:focus-visible Border.row-hover-bg">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.album-list-row Border.row-pressed-bg">
+      <Setter Property="Background" Value="{DynamicResource RowPressedBackground}" />
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Button.album-list-row:pressed Border.row-pressed-bg">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="StackPanel.album-metadata">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="24" />
+      <Setter Property="Width" Value="236" />
+    </Style>
+    <Style Selector="TextBlock.album-publish-date">
+      <Setter Property="Width" Value="132" />
+    </Style>
+    <Style Selector="TextBlock.album-song-count">
+      <Setter Property="Width" Value="80" />
+    </Style>
+    <Style Selector=".compact-metadata StackPanel.album-metadata">
+      <Setter Property="Orientation" Value="Vertical" />
+      <Setter Property="Spacing" Value="2" />
+      <Setter Property="Width" Value="112" />
+    </Style>
+    <Style Selector=".compact-metadata TextBlock.album-publish-date">
+      <Setter Property="Width" Value="112" />
+    </Style>
+    <Style Selector=".compact-metadata TextBlock.album-song-count">
+      <Setter Property="Width" Value="112" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 使用页面现有滚动容器和有效视口，只实化视口附近的行。 -->
+  <ItemsControl x:Name="Rows">
+    <ItemsControl.ItemsPanel>
+      <ItemsPanelTemplate>
+        <VirtualizingStackPanel />
+      </ItemsPanelTemplate>
+    </ItemsControl.ItemsPanel>
+    <ItemsControl.ItemTemplate>
+      <DataTemplate x:DataType="vm:AlbumCardViewModel">
+        <Button Theme="{StaticResource RowButtonTheme}" Classes="album-list-row"
+                Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Title}">
+          <Grid>
+            <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
+            <Border Classes="row-pressed-bg" CornerRadius="4" IsHitTestVisible="False" />
+            <Grid Classes="album-row-content" ColumnDefinitions="50,*,Auto" ColumnSpacing="12" Margin="8,0">
+              <Border Width="50" Height="50" CornerRadius="4" ClipToBounds="True"
+                      Background="{DynamicResource ArtFallback}">
+                <Image infra:ManagedCoverImage.DecodeSize="100"
+                       infra:ManagedCoverImage.Source="{Binding CoverUrl}" Stretch="UniformToFill" />
+              </Border>
+              <TextBlock Grid.Column="1" Classes="album-title" Text="{Binding Title}"
+                         FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" MaxLines="1" ToolTip.Tip="{Binding Title}" />
+              <StackPanel Grid.Column="2" Classes="album-metadata" VerticalAlignment="Center">
+                <TextBlock Classes="album-publish-date" Text="{Binding PublishDateText}" FontSize="12"
+                           Foreground="{DynamicResource TextSecondary}" TextAlignment="Right" />
+                <TextBlock Classes="album-song-count" Text="{Binding SongCountText}" FontSize="12"
+                           Foreground="{DynamicResource TextSecondary}" TextAlignment="Right" />
+              </StackPanel>
+            </Grid>
+          </Grid>
+        </Button>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

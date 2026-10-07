@@ -26,6 +26,9 @@ public sealed class AppStateFile
     /// <summary>上次选择的搜索来源(SearchSourceMode 枚举值；缺省为综合)。</summary>
     public int? PreferredSearchSource { get; set; }
 
+    /// <summary>全部专辑页是否使用详细列表；null = 按平台使用默认模式。</summary>
+    public bool? ArtistAlbumsListMode { get; set; }
+
     /// <summary>最近成功开始播放的歌曲(最新在前;null = 旧版本尚未记录)。</summary>
     public List<RecentSongFile>? RecentSongs { get; set; }
 

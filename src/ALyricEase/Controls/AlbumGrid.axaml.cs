@@ -16,7 +16,7 @@ public sealed record AlbumRow(IReadOnlyList<AlbumCardViewModel> Cards);
 /// <summary>
 /// 纵向滚动专辑网格("查看更多"专辑页用):卡片按 ColumnsPerRow 切成行,
 /// 纵向 VirtualizingStackPanel 只实例化视口附近的行;列数随控件宽度自适应
-/// (212px/卡:200 卡片 + 12 右边距,1~6 列)。分块机制与 SongGridView 同源。
+/// (212px/卡:200 卡片 + 12 右边距,至少 1 列)。分块机制与 SongGridView 同源。
 /// </summary>
 public partial class AlbumGrid : UserControl
 {
@@ -82,7 +82,7 @@ public partial class AlbumGrid : UserControl
     /// <summary>列数随宽度自适应;变化才重建,避免每次尺寸微调全量重排。</summary>
     private void UpdateColumnsPerRow(double width)
     {
-        var per = Math.Clamp((int)(width / 212), 1, 6);
+        var per = Math.Max((int)(width / 212), 1);
         if (per == _columnsPerRow) return;
         _columnsPerRow = per;
         ScheduleRebuild();

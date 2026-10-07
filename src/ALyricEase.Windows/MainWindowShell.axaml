@@ -10,7 +10,7 @@
        RowDefinitions="48,*" 与窗口网格对齐,Row 0 留给标题栏,覆盖层用 RowSpan 跨两行。 -->
   <Grid RowDefinitions="48,*">
     <!-- 内容页 VM→视图映射已收敛至共用壳层 AppShell.axaml 的 UserControl.DataTemplates(桌面/移动单一维护点) -->
-    <views:AppShell Grid.Row="1" />
+    <views:AppShell Grid.Row="1" IsEnabled="{Binding !IsErrorDialogOpen}" />
 
     <!-- 正在播放覆盖层:整窗 Grid 常驻,靠合成线程的 Translation 动画(驱动见 NowPlayingOverlayController)
          在"原位/屏幕外"间滑入滑出——不用 UI 线程过渡,因首次打开时 UI 线程正被详情页首实化塞满会掉帧。
@@ -66,5 +66,7 @@
     <!-- 综合搜索合并歌曲的红心平台选择；声明在最后，始终是最上层决策对话框。 -->
     <views:LikeSourceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLikeSourceDialogOpen}"
                                 Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+    <views:ErrorDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsErrorDialogOpen}"
+                           Grid.Row="0" Grid.RowSpan="2" ZIndex="210" />
   </Grid>
 </UserControl>

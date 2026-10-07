@@ -95,6 +95,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [ObservableProperty] private int _netEaseProxyPort;
     [ObservableProperty] private string _netEaseProxyStatus = "在网易云音乐客户端中设置下方代理并登录";
     private NetEaseProxyLoginService? _netEaseProxyLogin;
+    private Task _netEaseProxyShutdown = Task.CompletedTask;
+    private int _netEaseProxyGeneration;
 
     public bool IsNetEaseProxyMethod => NetEaseLoginMethod == NetEaseLoginMethod.Proxy;
     public bool IsNetEaseCookieMethod => NetEaseLoginMethod == NetEaseLoginMethod.Cookie;
@@ -235,28 +237,36 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         // 对齐 Cirrus 的体验:切到代理方式即自动起代理,端口立刻可见,
         // 不留"地址显示 — 还得再点一下启动"的空档。失败时按钮仍在,可手动重试。
         if (CanUseNetEaseProxyLogin && !IsNetEaseProxyLoginActive)
-            StartNetEaseProxyLogin();
+            _ = StartNetEaseProxyLoginAsync();
     }
 
     /// <summary>启动本地 MITM 代理开始监听官方客户端登录;端口与状态经属性呈现给引导 UI。</summary>
     [RelayCommand]
-    private void StartNetEaseProxyLogin()
+    private async Task StartNetEaseProxyLoginAsync()
     {
         if (!CanUseNetEaseProxyLogin || IsNetEaseProxyLoginActive) return;
+        var generation = ++_netEaseProxyGeneration;
+        IsNetEaseProxyLoginActive = true;
+        NetEaseProxyStatus = "正在准备代理…";
         Message = null;
         try
         {
+            // 原生代理使用共享运行时；等旧实例完成关闭，再启动新实例，避免快速重开互相干扰。
+            await _netEaseProxyShutdown;
+            if (generation != _netEaseProxyGeneration) return;
             IProgress<NetEaseProxyLoginUpdate> progress =
-                new Progress<NetEaseProxyLoginUpdate>(OnNetEaseProxyLoginUpdate);
-            _netEaseProxyLogin?.Dispose();
+                new Progress<NetEaseProxyLoginUpdate>(update =>
+                {
+                    if (generation == _netEaseProxyGeneration) OnNetEaseProxyLoginUpdate(update);
+                });
             _netEaseProxyLogin = new NetEaseProxyLoginService(_api);
             NetEaseProxyPort = _netEaseProxyLogin.Start(progress.Report);
             OnPropertyChanged(nameof(NetEaseProxyAddress));
         }
         catch (Exception ex)
         {
-            _netEaseProxyLogin?.Dispose();
-            _netEaseProxyLogin = null;
+            if (generation != _netEaseProxyGeneration) return;
+            CancelNetEaseProxyLogin();
             NetEaseProxyStatus = "代理启动失败";
             Message = $"代理登录启动失败:{ex.Message}";
         }
@@ -305,9 +315,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>关闭弹层/切换登录方式时停止代理监听;再次启动会分配新端口。</summary>
     public void CancelNetEaseProxyLogin()
     {
+        ++_netEaseProxyGeneration;
         var service = _netEaseProxyLogin;
         _netEaseProxyLogin = null;
-        service?.Dispose();
+        if (service is not null) _netEaseProxyShutdown = service.DisposeAsync().AsTask();
         IsNetEaseProxyLoginActive = false;
         NetEaseProxyPort = 0;
         OnPropertyChanged(nameof(NetEaseProxyAddress));

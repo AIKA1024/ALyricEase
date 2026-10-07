@@ -24,6 +24,25 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close")
+        {
+            AppBuilder.Configure<HeadlessApp>().UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .SetupWithoutStarting();
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    if (args[0] == "--login-close") await LoginCloseProbe.RunAsync();
+                    else await QqUserFailureProbe.RunAsync();
+                }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--qq-login-response")
         {
             Environment.ExitCode = QqLoginResponseProbe.RunAsync().GetAwaiter().GetResult();

@@ -30,6 +30,8 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
     private CancellationTokenSource? _loadCancellation;
     private int _loadGeneration;
 
+    internal event Action<Exception>? QqLoadFailed;
+
     public UserProfileViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player)
     {
         _api = api;
@@ -83,6 +85,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
         _loadCancellation = new CancellationTokenSource();
+        IsLoading = true;
         return (++_loadGeneration, _loadCancellation.Token);
     }
 
@@ -211,10 +214,11 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
         }
-        catch
+        catch (Exception ex)
         {
-            // 网络失败静默:停在空态,不崩
-            if (IsCurrentLoad(generation, ct)) IsLoading = false;
+            if (!IsCurrentLoad(generation, ct)) return;
+            IsLoading = false;
+            QqLoadFailed?.Invoke(ex);
         }
     }
 

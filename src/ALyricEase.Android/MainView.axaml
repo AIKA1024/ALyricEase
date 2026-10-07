@@ -7,7 +7,7 @@
              x:Class="ALyricEase.MainView">
     <Grid RowDefinitions="48,*">
         <!-- Android 顶部横幅:左侧固定汉堡按钮,右侧 20 间距 + 当前页面名称 -->
-        <Border Grid.Row="0" Background="{DynamicResource AppBackground}"
+        <Border Grid.Row="0" Background="{DynamicResource AppBackground}" IsEnabled="{Binding !IsErrorDialogOpen}"
                 BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="48,20,*" Margin="4,0,12,0">
                 <Button Grid.Column="0" Classes="navigation-button" Width="40" Height="40"
@@ -19,7 +19,7 @@
                            FontWeight="SemiBold" VerticalAlignment="Center" />
             </Grid>
         </Border>
-        <views:AppShell Grid.Row="1" />
+        <views:AppShell Grid.Row="1" IsEnabled="{Binding !IsErrorDialogOpen}" />
 
         <!-- 正在播放覆盖层:内容区 Grid 常驻,靠 RenderTransform 在"原位/屏幕外"间滑入滑出。
              RenderTransform 目标值由 NowPlayingOverlayController 按 MainViewModel.ShowNowPlaying 切换。
@@ -78,5 +78,7 @@
         <!-- 综合搜索合并歌曲的红心平台选择；移动端长按红心也进入此模态层。 -->
         <views:LikeSourceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLikeSourceDialogOpen}"
                                     Grid.Row="1" ZIndex="200" />
+        <views:ErrorDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsErrorDialogOpen}"
+                               Grid.Row="0" Grid.RowSpan="2" ZIndex="210" />
     </Grid>
 </UserControl>

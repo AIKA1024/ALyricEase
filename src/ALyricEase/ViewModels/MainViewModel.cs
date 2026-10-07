@@ -36,6 +36,7 @@ public sealed partial class MainViewModel : ViewModelBase
         ArtistSongsPage = artistSongsPage;
         ArtistAlbumsPage = artistAlbumsPage;
         UserProfile = userProfile;
+        UserProfile.QqLoadFailed += OnQqUserLoadFailed;
         Collected = collected;
         RecentPlayback = recentPlayback;
         Settings = settings;
@@ -66,7 +67,7 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(LyricBlurEnabled));
         };
         // 启动页:本地存有任一音源登录凭证 → 自己的用户页(登录态异步恢复);
-        // 完全没有 → 账号页 + 自动弹出登录弹层(与侧栏"账号"未登录的行为一致)。
+        // 完全没有 → 账号页，登录弹层由用户主动打开。
         // CookieStore 构造函数同步读盘,此处判定可靠。
         _activePage = Playlist.HasStoredCredentials ? "User" : "Account";
         // 用户页非侧栏项 → SelectedNav 为 null,侧栏无高亮(同详情页打开时的行为);
@@ -82,8 +83,6 @@ public sealed partial class MainViewModel : ViewModelBase
             // 直接 Load 不走 OpenUser 命令 —— 不进返回历史,启动即"首页",无页可返回。
             _ = Playlist.HasNetEaseCredential ? UserProfile.LoadAsync(0) : UserProfile.LoadQqAsync();
         }
-        else
-            IsLoginDialogOpen = true; // 无账号:启动即呈现登录页
         // 登录恢复完成后"自动打开我喜欢的音乐"会切走 ActivePage —— 仅当用户真的停在收藏页
         // 等待时才兜底打开,否则启动即被顶离用户页(实测)。
         Playlist.AutoOpenFavoritesGuard = () => ActivePage == "Favorites";
@@ -580,6 +579,12 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
     public bool TryHandleBack()
     {
+        if (IsErrorDialogOpen)
+        {
+            CloseErrorDialogCommand.Execute(null);
+            return true;
+        }
+
         // 红心平台选择声明在宿主弹层最后，系统返回/Esc 优先关闭它。
         if (IsLikeSourceDialogOpen)
         {
@@ -875,8 +880,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         PreserveDetailBeforeReplacement("User", UserProfile.HasRetainedPageData);
         ActivePage = "User";
-        try { await UserProfile.LoadQqAsync(); }
-        catch { /* 网络失败:停留在用户页空内容 */ }
+        await UserProfile.LoadQqAsync();
     }
 
     /// <summary>QQ 音乐曲目点击歌手 → 歌手页(按 singer mid)。</summary>
@@ -991,8 +995,8 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void CloseLoginDialog()
     {
-        Playlist.CancelLoginActivities();
         IsLoginDialogOpen = false;
+        Playlist.CancelLoginActivities();
     }
 
     // ---- 添加聚合歌单对话框 ----

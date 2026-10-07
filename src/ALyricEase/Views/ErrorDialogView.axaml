@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             x:Class="ALyricEase.Views.ErrorDialogView">
+    <Grid>
+        <Panel Background="#99000000" />
+        <Border x:Name="DialogCard" MaxWidth="480" Margin="16" Padding="24" CornerRadius="8"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="{DynamicResource AppSurface}"
+                BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                BoxShadow="0 32 64 #66000000"
+                KeyboardNavigation.TabNavigation="Cycle"
+                AutomationProperties.Name="{Binding ErrorDialogTitle}">
+            <StackPanel Spacing="16">
+                <TextBlock Text="{Binding ErrorDialogTitle}" FontSize="20" FontWeight="SemiBold"
+                           TextWrapping="Wrap" />
+                <ScrollViewer MaxHeight="280" HorizontalScrollBarVisibility="Disabled">
+                    <TextBlock Text="{Binding ErrorDialogMessage}" FontSize="14" LineHeight="22"
+                               TextWrapping="Wrap" />
+                </ScrollViewer>
+                <Button x:Name="ConfirmButton" Content="知道了" Classes="accent"
+                        Command="{Binding CloseErrorDialogCommand}"
+                        HorizontalAlignment="Right" MinWidth="96" Height="34" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

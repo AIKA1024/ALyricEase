@@ -31,12 +31,13 @@ public sealed record NetEaseProxyLoginUpdate(
 /// Cookie 中提取 MUSIC_U,再调服务端资料接口验证,通过后走既有
 /// <see cref="NetEaseApiClient.SetMusicUCookie"/> 持久化链路 —— 与粘贴 Cookie 登录完全同路。
 /// Copycat 只带 win-x64/win-arm64 native,非 Windows 平台入口应依据 <see cref="IsSupported"/> 隐藏。</summary>
-public sealed class NetEaseProxyLoginService : IDisposable
+public sealed class NetEaseProxyLoginService : IDisposable, IAsyncDisposable
 {
     public static bool IsSupported => OperatingSystem.IsWindows();
 
     private readonly NetEaseApiClient _api;
     private readonly Func<string, Task<string>>? _verifierOverride;
+    private readonly Action<CopycatProxy> _terminate;
     private readonly SemaphoreSlim _verifyGate = new(1, 1);
     private CopycatProxy? _proxy;
     private Action<NetEaseProxyLoginUpdate>? _observer;
@@ -44,9 +45,16 @@ public sealed class NetEaseProxyLoginService : IDisposable
 
     /// <summary>探针注入的自定义验证器:返回昵称视为通过;null 走真实链路(SetMusicUCookie + 资料接口)。</summary>
     public NetEaseProxyLoginService(NetEaseApiClient api, Func<string, Task<string>>? verifierOverride = null)
+        : this(api, verifierOverride, static proxy => proxy.Terminate())
+    {
+    }
+
+    internal NetEaseProxyLoginService(NetEaseApiClient api, Func<string, Task<string>>? verifierOverride,
+        Action<CopycatProxy> terminate)
     {
         _api = api;
         _verifierOverride = verifierOverride;
+        _terminate = terminate;
     }
 
     /// <summary>启动代理并开始监听。返回实际监听端口;失败抛异常由调用方提示。</summary>
@@ -74,20 +82,30 @@ public sealed class NetEaseProxyLoginService : IDisposable
     /// <summary>停止代理并解除监听;幂等。</summary>
     public void Stop()
     {
-        CleanupProxy();
         _observer = null;
+        CleanupProxy();
+    }
+
+    private CopycatProxy? DetachProxy()
+    {
+        var proxy = _proxy;
+        _proxy = null;
+        if (proxy is null) return null;
+        proxy.HeadersCaptured -= OnHeadersCaptured;
+        proxy.Error -= OnProxyError;
+        return proxy;
     }
 
     private void CleanupProxy()
     {
-        var proxy = _proxy;
-        _proxy = null;
-        if (proxy is null) return;
-        proxy.HeadersCaptured -= OnHeadersCaptured;
-        proxy.Error -= OnProxyError;
+        if (DetachProxy() is { } proxy) TerminateProxy(proxy);
+    }
+
+    private void TerminateProxy(CopycatProxy proxy)
+    {
         try
         {
-            proxy.Terminate();
+            _terminate(proxy);
         }
         catch
         {
@@ -163,6 +181,14 @@ public sealed class NetEaseProxyLoginService : IDisposable
     public void Dispose()
     {
         Stop();
-        _verifyGate.Dispose();
+        // 捕获回调可能仍在验证并最终 Release；此信号量未创建系统句柄，交给 GC 回收。
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        // 在调用线程立即断开通知；耗时的原生关闭放到后台，不阻塞 UI 动画。
+        _observer = null;
+        var proxy = DetachProxy();
+        return proxy is null ? ValueTask.CompletedTask : new ValueTask(Task.Run(() => TerminateProxy(proxy)));
     }
 }

@@ -123,7 +123,7 @@
            窗口控制三键已上浮为独立层(见下方 WindowControls):详情页打开时三键保持最上层,
            同 UWP 原生 caption buttons;标题栏其余部分(返回/汉堡/标题)照旧被覆盖层盖住。 -->
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent" PointerPressed="OnTitleBarPointerPressed"
-            ColumnDefinitions="Auto,*">
+            ColumnDefinitions="Auto,*" IsEnabled="{Binding !IsErrorDialogOpen}">
         <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0" VerticalAlignment="Center">
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">

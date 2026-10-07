@@ -88,7 +88,7 @@ public partial class HeadlessApp : Application
     }
   }
 
-    public static void ConfigureServices()
+    public static void ConfigureServices(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<DispatcherService>();
@@ -133,6 +133,7 @@ public partial class HeadlessApp : Application
         services.AddSingleton<UserProfileViewModel>();
         services.AddSingleton<CollectedPlaylistsViewModel>();
         services.AddSingleton<MainViewModel>();
+        configure?.Invoke(services);
         ServiceLocator.Provider = services.BuildServiceProvider();
         CoverImagePipeline.Configure(ServiceLocator.Get<MusicCacheService>());
     }

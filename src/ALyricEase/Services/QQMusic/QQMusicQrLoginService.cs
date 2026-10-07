@@ -66,17 +66,22 @@ internal sealed class QQMusicQrLoginService : IDisposable
     private AndroidDevice _device;
 
     public QQMusicQrLoginService(CookieStore cookie)
-    {
-        _devicePath = Path.Combine(cookie.ConfigDirectory, "qq-device.json");
-        _device = LoadDevice() ?? CreateDevice();
-        _http = new HttpClient(new HttpClientHandler
+        : this(cookie, new HttpClient(new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
             UseCookies = false,
         })
         {
             Timeout = TimeSpan.FromSeconds(25),
-        };
+        })
+    {
+    }
+
+    internal QQMusicQrLoginService(CookieStore cookie, HttpClient http)
+    {
+        _devicePath = Path.Combine(cookie.ConfigDirectory, "qq-device.json");
+        _device = LoadDevice() ?? CreateDevice();
+        _http = http;
     }
 
     public async Task<QQMusicQrCredential> LoginAsync(
@@ -428,6 +433,8 @@ internal sealed class QQMusicQrLoginService : IDisposable
             .ConfigureAwait(false);
         if (result.Code != 0)
             throw new ApiException($"QQ 登录协议失败({method}, {result.GlobalCode}/{result.ItemCode})", result.Code);
+        if (result.Data.ValueKind != JsonValueKind.Object)
+            throw new ApiException($"QQ 登录响应缺少有效数据({method})", -2);
         return result.Data;
     }
 
@@ -462,13 +469,22 @@ internal sealed class QQMusicQrLoginService : IDisposable
         var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             throw new ApiException($"QQ 登录请求失败 HTTP {(int)response.StatusCode}", (int)response.StatusCode);
-        using var doc = JsonDocument.Parse(text);
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(text); }
+        catch (JsonException)
+        {
+            throw new ApiException($"QQ 登录响应格式异常({method})", -2);
+        }
+        using var responseDocument = doc;
         var root = doc.RootElement;
         var globalCode = GetInt(root, "code") ?? 0;
-        if (!root.TryGetProperty("req_0", out var item))
-            throw new ApiException("QQ 登录响应缺少 req_0", globalCode);
-        var code = GetInt(item, "code") ?? 0;
-        var data = GetProperty(item, "data").Clone();
+        var item = GetProperty(root, "req_0");
+        if (item.ValueKind != JsonValueKind.Object)
+            throw new ApiException("QQ 登录响应缺少有效 req_0", globalCode != 0 ? globalCode : -2);
+        var code = GetInt(item, "code") ?? (globalCode != 0 ? globalCode : -2);
+        // 失败响应可能只有 code，没有 data；先保留业务码，让调用方处理凭证失效。
+        var data = GetProperty(item, "data");
+        if (data.ValueKind != JsonValueKind.Undefined) data = data.Clone();
         return new ApiCallResult(code != 0 ? code : globalCode, globalCode, code, data);
     }
 

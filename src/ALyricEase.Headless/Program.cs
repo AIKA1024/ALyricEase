@@ -24,6 +24,12 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--qq-login-response")
+        {
+            Environment.ExitCode = QqLoginResponseProbe.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         if (args.Length > 0 && args[0] is "--submenu-animation" or "--submenu-animation-desktop"
             or "--submenu-hover" or "--submenu-hover-desktop")
         {

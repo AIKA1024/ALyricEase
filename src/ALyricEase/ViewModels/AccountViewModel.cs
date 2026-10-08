@@ -10,6 +10,7 @@ namespace ALyricEase.ViewModels;
 
 public sealed partial class AccountPlatformViewModel : ViewModelBase
 {
+    private int _loadGeneration;
     public AccountPlatformViewModel(string platformName) => PlatformName = platformName;
 
     public string PlatformName { get; }
@@ -27,12 +28,15 @@ public sealed partial class AccountPlatformViewModel : ViewModelBase
 
     public string AvatarLetter => string.IsNullOrWhiteSpace(Username) ? PlatformName[..1] : Username[..1];
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+    public bool HasUserId => long.TryParse(UserIdText, out var id) && id > 0;
 
     partial void OnUsernameChanged(string value) => OnPropertyChanged(nameof(AvatarLetter));
     partial void OnErrorMessageChanged(string? value) => OnPropertyChanged(nameof(HasError));
+    partial void OnUserIdTextChanged(string value) => OnPropertyChanged(nameof(HasUserId));
 
     public void SetLoginState(bool loggedIn, string fallbackName = "")
     {
+        if (IsLoggedIn != loggedIn) ++_loadGeneration;
         IsLoggedIn = loggedIn;
         if (loggedIn)
         {
@@ -54,12 +58,14 @@ public sealed partial class AccountPlatformViewModel : ViewModelBase
     public async Task LoadAsync(Func<CancellationToken, Task<MusicAccountSummary>> loader, CancellationToken ct)
     {
         if (!IsLoggedIn) return;
+        var generation = ++_loadGeneration;
         IsLoading = true;
         ErrorMessage = null;
         try
         {
             var summary = await loader(ct);
             ct.ThrowIfCancellationRequested();
+            if (generation != _loadGeneration || !IsLoggedIn) return;
             Username = summary.Nickname.Length > 0 ? summary.Nickname : PlatformName + "用户";
             UserIdText = summary.UserId > 0 ? summary.UserId.ToString() : "—";
             MembershipName = summary.MembershipName;
@@ -77,15 +83,17 @@ public sealed partial class AccountPlatformViewModel : ViewModelBase
         }
         catch (ApiException ex)
         {
+            if (generation != _loadGeneration || ct.IsCancellationRequested) return;
             ErrorMessage = $"账号信息暂时无法刷新：{ex.Message}";
         }
         catch (Exception ex)
         {
+            if (generation != _loadGeneration || ct.IsCancellationRequested) return;
             ErrorMessage = $"网络连接失败：{ex.Message}";
         }
         finally
         {
-            if (!ct.IsCancellationRequested) IsLoading = false;
+            if (generation == _loadGeneration) IsLoading = false;
         }
     }
 }

@@ -24,7 +24,7 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close")
+        if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close" or "--personal-home" or "--login-idle-close")
         {
             AppBuilder.Configure<HeadlessApp>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
@@ -33,7 +33,9 @@ public static class Program
             {
                 try
                 {
-                    if (args[0] == "--login-close") await LoginCloseProbe.RunAsync();
+                    if (args[0] == "--login-idle-close") await LoginIdleCloseProbe.RunAsync();
+                    else if (args[0] == "--personal-home") await PersonalHomeProbe.RunAsync();
+                    else if (args[0] == "--login-close") await LoginCloseProbe.RunAsync();
                     else await QqUserFailureProbe.RunAsync();
                 }
                 catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }

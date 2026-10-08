@@ -21,6 +21,7 @@
 | 歌词面板太贵 / 逐行模糊该不该留 | [perf-notes.md](perf-notes.md)(先读「把歌词模糊收进『性能与体验』档位」;再读它上面那条已回退的「摘掉远景行的模糊」——**为什么试过又撤**) |
 | 某个动画/循环最小化后还在烧 CPU | [avalonia-tips.md](avalonia-tips.md)「自续订的 RequestAnimationFrame 循环」「先分清三类"一直在动"」 |
 | 进度条/动画"卡卡的,鼠标一动就顺" | [avalonia-tips.md](avalonia-tips.md) 文末「UI 线程静息时长睡 ~79ms」 |
+| 弹层/过渡"定住一秒后瞬间消失、没动画"(UI 线程没死) | [perf-notes.md](perf-notes.md) §九「UI 线程动画必须自己持帧泵」 |
 | Release 包冷启动就崩 / 构建期 IL2072 | [avalonia-tips.md](avalonia-tips.md)「Release 包的裁剪会删掉…」;[android-notes.md](android-notes.md) §6 |
 | Android 返回键 / 清单改了不生效 / 图片内存预算 | [android-notes.md](android-notes.md) |
 | 要改曲目行的样式 | [original-track-row-styles.md](original-track-row-styles.md)(改完对照 [TrackRow.axaml](../src/ALyricEase/Views/TrackRow.axaml)) |
@@ -53,7 +54,8 @@
 最佳性能整档不挂 `Effect`,省 **0.95% GPU**,视觉代价平均通道差 0.26 级)、
 **试过但判负**的画法(定时器驱动、预渲染纹理、`BitmapCache`、按距离摘掉远景行的模糊)、
 消融夹具的三条铁律(停/起只走 `MotionEnabled`;变体不许与轮内位置绑定,用拉丁方;
-逐行消融写的是本地值,会污染后面所有档)、探针清单。
+逐行消融写的是本地值,会污染后面所有档)、探针清单、
+**模态弹层淡入淡出"卡一秒后消失"**(UI 线程动画必须自己持 `UiFramePacer`,§九)。
 
 ## 四、内存
 

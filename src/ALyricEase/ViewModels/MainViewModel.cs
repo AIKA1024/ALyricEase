@@ -24,7 +24,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, PersonalHomeViewModel personalHome, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
@@ -41,6 +41,7 @@ public sealed partial class MainViewModel : ViewModelBase
         RecentPlayback = recentPlayback;
         Settings = settings;
         Account = account;
+        PersonalHome = personalHome;
         _playlist = playlist;
         AppState = appState;
         AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed,
@@ -66,28 +67,15 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(NowPlayingMotionEnabled));
             OnPropertyChanged(nameof(LyricBlurEnabled));
         };
-        // 启动页:本地存有任一音源登录凭证 → 自己的用户页(登录态异步恢复);
-        // 完全没有 → 账号页，登录弹层由用户主动打开。
-        // CookieStore 构造函数同步读盘,此处判定可靠。
-        _activePage = Playlist.HasStoredCredentials ? "User" : "Account";
-        // 用户页非侧栏项 → SelectedNav 为 null,侧栏无高亮(同详情页打开时的行为);
-        // 账号页也不是侧栏项(侧栏"账号"是按钮),同样无高亮。
+        // 自己的主页同时容纳两个平台；他人的用户资料仍是独立详情页。
+        _activePage = Playlist.HasStoredCredentials ? "PersonalHome" : "Account";
         _selectedNav = ShellNavItems.FirstOrDefault(item => item.Key == _activePage);
-        // 启动页数据:自己的用户页(uid=0 按登录态解析)。
-        // 直接 LoadAsync 不走 OpenUser 命令 —— 不进返回历史,启动即"首页",无页可返回。
-        // 未登录(账号页启动)不拉取:uid=0 无意义,登录成功后由用户自行进入用户页。
-        if (_activePage == "User")
-        {
-            // 启动页数据:自己的用户页,按本地凭证音源解析(有网易云凭证走网易云;
-            // 仅 QQ 凭证走 QQ 用户页 —— 旧逻辑恒走网易云,QQ 单独登录的用户启动只见空页)。
-            // 直接 Load 不走 OpenUser 命令 —— 不进返回历史,启动即"首页",无页可返回。
-            _ = Playlist.HasNetEaseCredential ? UserProfile.LoadAsync(0) : UserProfile.LoadQqAsync();
-        }
         // 登录恢复完成后"自动打开我喜欢的音乐"会切走 ActivePage —— 仅当用户真的停在收藏页
         // 等待时才兜底打开,否则启动即被顶离用户页(实测)。
         Playlist.AutoOpenFavoritesGuard = () => ActivePage == "Favorites";
+        if (_activePage == "PersonalHome") _ = PersonalHome.EnsureLoadedAsync();
         _ = Recommend.EnsureLoadedAsync(); // 启动即拉首页区块(幂等,失败静默)
-        _ = Playlist.EnsureQqLoadedAsync(); // 启动恢复 QQ 登录态并拉侧边栏"QQ音乐"分组(失败静默)
+        if (_activePage != "PersonalHome") _ = Playlist.EnsureQqLoadedAsync(); // 启动恢复 QQ 登录态并拉侧边栏"QQ音乐"分组(失败静默)
     }
 
     public SearchViewModel Search { get; }
@@ -104,6 +92,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public RecentPlaybackViewModel RecentPlayback { get; }
     public SettingsViewModel Settings { get; }
     public AccountViewModel Account { get; }
+    public PersonalHomeViewModel PersonalHome { get; }
 
     /// <summary>界面状态存储(折叠状态;主窗口大小/位置由 MainWindow 读写同一实例)。</summary>
     public Services.AppStateStore AppState { get; }
@@ -150,6 +139,7 @@ public sealed partial class MainViewModel : ViewModelBase
         new("Browse", "浏览", ""),
         new("PersonalStation", "私人FM", ""),
         new("MyMusicHeader", "我的音乐", isHeader: true),
+        new("PersonalHome", "个人主页", ""),
         new("Library", "我的收藏", ""),
         new("CloudDrive", "音乐云盘", ""),
         new("Recents", "最近播放", ""),
@@ -194,6 +184,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 "Account" => "账号",
                 "Settings" => "设置",
                 "User" => "个人主页",
+                "PersonalHome" => "我的音乐",
                 "Artist" => "歌手",
                 "Album" => "专辑",
                 "Debug" => "Debug",
@@ -299,6 +290,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "ArtistSongs" => ArtistSongsPage,
         "ArtistAlbums" => ArtistAlbumsPage,
         "User" => UserProfile,
+        "PersonalHome" => PersonalHome,
         "Library" => Collected,
         "Recents" => RecentPlayback,
         "Settings" => Settings,
@@ -347,6 +339,12 @@ public sealed partial class MainViewModel : ViewModelBase
         if (value == "Recommend")
             _ = Recommend.EnsureLoadedAsync();
 
+        if (value == "PersonalHome")
+        {
+            PersonalHome.RestoreScrollPosition();
+            _ = PersonalHome.EnsureLoadedAsync();
+        }
+
         if (value == "Account")
             _ = Account.RefreshAsync();
 
@@ -373,7 +371,7 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(CurrentPageTitle));
     }
 
-    private static bool IsNavItem(string page) => page is "Search" or "Recommend" or "Browse" or "PersonalStation" or "Library" or "CloudDrive" or "Recents" or "Favorites";
+    private static bool IsNavItem(string page) => page is "PersonalHome" or "Search" or "Recommend" or "Browse" or "PersonalStation" or "Library" or "CloudDrive" or "Recents" or "Favorites";
 
     private void OnPlaylistsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildShellNavigation();
 
@@ -394,7 +392,7 @@ public sealed partial class MainViewModel : ViewModelBase
                     ? MusicSource.QQ
                     : MusicSource.NetEase);
             Account.SyncLoginState();
-            if (ActivePage == "Account" &&
+            if ((ActivePage == "Account" || ActivePage == "PersonalHome" && !PersonalHome.IsRefreshing) &&
                 ((e.PropertyName == nameof(PlaylistViewModel.IsLoggedIn) && Playlist.IsLoggedIn) ||
                  (e.PropertyName == nameof(PlaylistViewModel.IsQqLoggedIn) && Playlist.IsQqLoggedIn)))
                 _ = Account.RefreshAsync();
@@ -689,13 +687,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
         // 防御性兜底：只要视觉上不在首页(启动页 = 用户页),就绝不能因历史缺失直接退出界面。
         // 正常导航都会命中上面的历史；该分支覆盖恢复状态或后续新增页面漏记历史的情况。
-        if (!string.Equals(ActivePage, "User", StringComparison.Ordinal))
+        if (!string.Equals(ActivePage, "PersonalHome", StringComparison.Ordinal))
         {
             _isGoingBack = true;
             try
             {
-                ActivePage = "User";
-                SetSelectedNavWithoutNavigation(ShellNavItems.FirstOrDefault(n => n.Key == "User"));
+                ActivePage = "PersonalHome";
+                SetSelectedNavWithoutNavigation(ShellNavItems.FirstOrDefault(n => n.Key == "PersonalHome"));
             }
             finally
             {
@@ -863,10 +861,16 @@ public sealed partial class MainViewModel : ViewModelBase
         catch { /* 网络失败:停留在歌手页空内容 */ }
     }
 
-    /// <summary>打开用户页:uid=0 视为"自己"(按登录态解析;未登录时停留在空内容页)。</summary>
+    /// <summary>uid=0 打开自己的跨平台主页；具体 uid 打开网易云用户详情。</summary>
     [RelayCommand]
     private async Task OpenUserAsync(long? uid)
     {
+        if (uid is null or 0)
+        {
+            ActivePage = "PersonalHome";
+            await PersonalHome.EnsureLoadedAsync();
+            return;
+        }
         PreserveDetailBeforeReplacement("User", UserProfile.HasRetainedPageData);
         ActivePage = "User";
         try { await UserProfile.LoadAsync(uid ?? 0); }

@@ -601,3 +601,21 @@ DispatcherTimer.RunOnce(() =>
 它量不了用户真实跑的那个窗口。新脚本按 `\GPU Engine(*)\Utilization Percentage`、`pid_` 过滤、
 **加总所有引擎**、**丢首采样**（与 `GpuUsageSampler` 同口径），并在整段全 0 时直接把
 "可能是被遮挡"喊出来。
+
+## 九、模态弹层淡入淡出"卡一秒后瞬间消失"：UI 线程动画必须自己持帧泵（2026-10-08）
+
+**症状**：登录弹层偶发"点关闭 → 弹窗定住 ~1 秒（能拖窗口、点弹层没反应）→ 无淡出直接消失"。
+
+**机制**：`ModalVisibilityTransition` 的淡入淡出是 UI 线程 styling 动画（`Animation.RunAsync`），
+每帧推进都需要 UI 线程醒着。但 §六 已实测：静息时 UI 线程长睡、渲染帧请求唤不醒它，
+**唯一可靠唤醒是外部投递的消息**。底部条/详情页动画都持有 `UiFramePacer`，唯独模态过渡没持
+⇒ 没有别的唤醒源时（音乐暂停、界面全静），150ms 的过渡被拉长到 ~1 秒，期间弹窗保持不透明
+⇒ 看起来"卡住 + 没动画"。音乐在播时 position 事件 ~100ms 唤醒一次，勉强走完 ⇒ 症状"偶发"。
+
+**判别要点**：用户"能拖动窗口"说明 UI 线程活着（真被同步堵死时 Avalonia 的非客户区命中测试
+没法跑，窗口拖不动）——这是"缺帧"而非"线程被堵"的关键证据。`--login-idle-close` 探针里
+`Thread.Sleep(700)` 注入真堵死时动画照样停帧，那是物理上救不了的另一回事。
+
+**修法**：`ModalVisibilityTransition.OpenAsync/CloseAsync` 在 `BeginTransition` 后
+`UiFramePacer.Acquire()`，finally 里 `Release()`（引用计数，重叠过渡各自持有）。
+回归：`--login-idle-close` / `--login-close`。

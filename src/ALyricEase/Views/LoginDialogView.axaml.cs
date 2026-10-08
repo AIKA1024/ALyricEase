@@ -128,7 +128,7 @@ public partial class LoginDialogView : UserControl
 
     private void FocusActiveInput()
     {
-        if (!IsVisible || !IsEnabled)
+        if (!IsVisible || !IsEnabled || !ModalVisibilityTransition.GetIsOpen(this))
             return;
 
         var vm = DataContext as MainViewModel;

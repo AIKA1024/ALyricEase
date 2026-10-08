@@ -50,7 +50,8 @@ internal static class LoginCloseProbe
                 $"关闭命令及时返回({watch.ElapsedMilliseconds}ms)");
             await terminationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
             Check(!terminatedOnUiThread, "原生 Terminate 在后台执行");
-            Check(view.IsVisible && !view.IsEnabled, "关闭时先禁用输入，保持可见直到淡出结束");
+            Check(view.IsVisible && view.IsEnabled && !view.IsHitTestVisible,
+                "关闭时阻止指针输入并保留正常外观，保持可见直到淡出结束");
 
             var animation = ModalVisibilityTransition.WaitForTransitionAsync(view);
             var sawIntermediateOpacity = false;
@@ -60,7 +61,7 @@ internal static class LoginCloseProbe
                 sawIntermediateOpacity |= view.Opacity is > 0 and < 1;
             }
             await animation;
-            Check(sawIntermediateOpacity && !view.IsVisible, "代理仍在清理时淡出动画正常播放并完成");
+            Check(sawIntermediateOpacity && !view.IsVisible && !view.IsEnabled, "代理仍在清理时淡出动画正常播放并完成，隐藏后禁用");
             var shutdown = ShutdownTask(playlist);
             Check(!shutdown.IsCompleted, "动画完成不需要等待原生代理关闭");
 

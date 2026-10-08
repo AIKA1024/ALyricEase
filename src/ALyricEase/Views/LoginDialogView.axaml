@@ -7,7 +7,8 @@
              xmlns:infra="using:ALyricEase.Infrastructure"
              x:DataType="vm:MainViewModel"
              mc:Ignorable="d"
-             x:Class="ALyricEase.Views.LoginDialogView">
+             x:Class="ALyricEase.Views.LoginDialogView"
+             infra:ModalVisibilityTransition.PreserveEnabledDuringClose="True">
     <Grid x:Name="Root" Container.Name="loginRoot" Container.Sizing="Width">
         <Grid.Styles>
             <Style Selector="Button.source-tab">

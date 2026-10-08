@@ -1,0 +1,264 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             x:Class="ALyricEase.Views.PersonalHomeView"
+             x:DataType="vm:PersonalHomeViewModel" x:CompileBindings="True">
+  <UserControl.Resources>
+    <DataTemplate x:Key="AccountCard" x:DataType="vm:AccountPlatformViewModel">
+      <Border Classes="identity-card">
+        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="16">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Border Classes="platform-mark" Width="4" Height="16" CornerRadius="2" />
+              <TextBlock Text="{Binding PlatformName}" FontSize="13" FontWeight="SemiBold" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Text="已连接" Classes="secondary" IsVisible="{Binding IsLoggedIn}" />
+            <TextBlock Grid.Column="1" Text="未登录" Classes="secondary" IsVisible="{Binding !IsLoggedIn}" />
+          </Grid>
+          <Grid Grid.Row="1" ColumnDefinitions="64,*" ColumnSpacing="16">
+            <Border Width="64" Height="64" CornerRadius="32" ClipToBounds="True"
+                    Background="{DynamicResource AppSurfaceElevated}">
+              <Grid>
+                <TextBlock Text="{Binding AvatarLetter}" FontSize="24" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Image infra:ManagedCoverImage.Source="{Binding AvatarUrl}"
+                       infra:ManagedCoverImage.DecodeSize="128" Stretch="UniformToFill" />
+              </Grid>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Username}" FontSize="22" FontWeight="SemiBold"
+                         TextTrimming="CharacterEllipsis" IsVisible="{Binding IsLoggedIn}" />
+              <TextBlock Text="连接你的音乐" FontSize="22" FontWeight="SemiBold" IsVisible="{Binding !IsLoggedIn}" />
+              <TextBlock Text="{Binding MembershipName}" Classes="secondary" IsVisible="{Binding IsLoggedIn}" />
+              <TextBlock Text="同步喜欢与收藏的歌单" Classes="secondary" IsVisible="{Binding !IsLoggedIn}" />
+            </StackPanel>
+          </Grid>
+          <StackPanel Grid.Row="2" Spacing="8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Text="{Binding AccountLevelText, StringFormat='账号等级  {0}'}" Classes="secondary"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" IsVisible="{Binding IsLoggedIn}" />
+              <TextBlock Text="随时在这里找到你的音乐" Classes="secondary" TextWrapping="Wrap"
+                         VerticalAlignment="Center" IsVisible="{Binding !IsLoggedIn}" />
+              <Button Grid.Column="1" Classes="home-action" Content="查看主页" Click="OnProfileClick" MinHeight="32"
+                      IsVisible="{Binding IsLoggedIn}" IsEnabled="{Binding HasUserId}"
+                      AutomationProperties.Name="{Binding PlatformName, StringFormat='查看{0}个人主页'}" />
+              <Button Grid.Column="1" Classes="home-action" Content="登录" Click="OnLoginClick" MinHeight="32"
+                      IsVisible="{Binding !IsLoggedIn}" AutomationProperties.Name="{Binding PlatformName, StringFormat='登录{0}'}" />
+            </Grid>
+            <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}"
+                       Classes="secondary" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="PlaylistCard" x:DataType="vm:PlaylistItemViewModel">
+      <Border Classes="playlist-card" Margin="0,0,12,12">
+        <Grid RowDefinitions="Auto,Auto">
+          <Button Classes="playlist-open" Tapped="OnPlaylistTapped" KeyDown="OnPlaylistKeyDown" ContextRequested="OnPlaylistContextRequested"
+                  AutomationProperties.Name="{Binding Name, StringFormat='打开歌单 {0}'}" ToolTip.Tip="{Binding Name}">
+            <Grid Classes="playlist-content" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" RowSpacing="12">
+              <Border Classes="playlist-art" CornerRadius="8"
+                      ClipToBounds="True" Background="{DynamicResource ArtFallback}">
+                <Grid>
+                  <TextBlock Classes="art-glyph" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="36" Foreground="{DynamicResource TextTertiary}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Image infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                         infra:ManagedCoverImage.DecodeSize="360" Stretch="UniformToFill" />
+                </Grid>
+              </Border>
+              <StackPanel Classes="playlist-caption" Spacing="4">
+                <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding TrackCountText}" Classes="secondary" />
+              </StackPanel>
+            </Grid>
+          </Button>
+          <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4" Margin="12,0,12,10">
+            <TextBlock Text="{Binding SourceLabel}" Classes="secondary" FontSize="11"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="1" Classes="card-action" Click="OnPlayClick" ToolTip.Tip="播放歌单"
+                    AutomationProperties.Name="{Binding Name, StringFormat='播放 {0}'}">
+              <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+            </Button>
+            <Button Grid.Column="2" Classes="card-action" Click="OnMoreClick" ToolTip.Tip="更多操作"
+                    AutomationProperties.Name="{Binding Name, StringFormat='{}{0}的更多操作'}">
+              <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" />
+            </Button>
+          </Grid>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Button.home-action">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+      <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12,7" /><Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem">
+      <Setter Property="CornerRadius" Value="6" /><Setter Property="Padding" Value="12,8" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem:selected">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="FontSize" Value="20" /><Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Border.identity-card">
+      <Setter Property="Padding" Value="24" /><Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Border.playlist-card">
+      <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="12" />
+    </Style>
+    <Style Selector="Button.playlist-open">
+      <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="12" /><Setter Property="CornerRadius" Value="10" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.card-action">
+      <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" /><Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" /><Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.playlist-art">
+      <Setter Property="Height" Value="164" /><Setter Property="Grid.ColumnSpan" Value="2" />
+    </Style>
+    <Style Selector="StackPanel.playlist-caption">
+      <Setter Property="Grid.Row" Value="1" /><Setter Property="Grid.ColumnSpan" Value="2" />
+    </Style>
+    <Style Selector="TextBlock.art-glyph"><Setter Property="Text" Value="{DynamicResource IconMusicNote}" /></Style>
+    <Style Selector="UniformGrid.taste-grid"><Setter Property="Columns" Value="2" /></Style>
+    <Style Selector="ItemsControl.taste Border.playlist-art">
+      <Setter Property="Height" Value="72" /><Setter Property="Width" Value="72" />
+      <Setter Property="Grid.ColumnSpan" Value="1" />
+    </Style>
+    <Style Selector="ItemsControl.taste StackPanel.playlist-caption">
+      <Setter Property="Grid.Row" Value="0" /><Setter Property="Grid.Column" Value="1" />
+      <Setter Property="Grid.ColumnSpan" Value="1" /><Setter Property="Margin" Value="16,0,0,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ContentControl.ne-account Border.platform-mark">
+      <Setter Property="Background" Value="{DynamicResource LyricEaseRed}" />
+    </Style>
+    <Style Selector="ContentControl.qq-account Border.platform-mark">
+      <Setter Property="Background" Value="#31C27C" />
+    </Style>
+    <Style Selector="UniformGrid.playlists"><Setter Property="Columns" Value="4" /></Style>
+    <Style Selector="StackPanel.home-content"><Setter Property="Margin" Value="32,28,32,120" /></Style>
+    <Style Selector="ContentControl.qq-account"><Setter Property="Grid.Column" Value="1" /></Style>
+    <ContainerQuery Name="homeHost" Query="max-width:1000">
+      <Style Selector="UniformGrid.playlists"><Setter Property="Columns" Value="3" /></Style>
+    </ContainerQuery>
+    <ContainerQuery Name="homeHost" Query="max-width:760">
+      <Style Selector="UniformGrid.playlists"><Setter Property="Columns" Value="2" /></Style>
+      <Style Selector="ContentControl.ne-account"><Setter Property="Grid.ColumnSpan" Value="2" /></Style>
+      <Style Selector="ContentControl.qq-account">
+        <Setter Property="Grid.Column" Value="0" /><Setter Property="Grid.Row" Value="1" />
+        <Setter Property="Grid.ColumnSpan" Value="2" />
+      </Style>
+    </ContainerQuery>
+    <ContainerQuery Name="homeHost" Query="max-width:500">
+      <Style Selector="StackPanel.home-content"><Setter Property="Margin" Value="16,20,16,120" /></Style>
+      <Style Selector="UniformGrid.playlists"><Setter Property="Columns" Value="1" /></Style>
+      <Style Selector="UniformGrid.taste-grid"><Setter Property="Columns" Value="1" /></Style>
+      <Style Selector="Border.identity-card"><Setter Property="Padding" Value="16" /></Style>
+      <Style Selector="Border.playlist-art">
+        <Setter Property="Height" Value="64" /><Setter Property="Width" Value="64" />
+        <Setter Property="Grid.ColumnSpan" Value="1" />
+      </Style>
+      <Style Selector="StackPanel.playlist-caption">
+        <Setter Property="Grid.Row" Value="0" /><Setter Property="Grid.Column" Value="1" />
+        <Setter Property="Grid.ColumnSpan" Value="1" /><Setter Property="Margin" Value="12,0,0,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+      </Style>
+    </ContainerQuery>
+  </UserControl.Styles>
+  <ScrollViewer x:Name="PageScroller" Classes="page-scroll" HorizontalScrollBarVisibility="Disabled"
+                Container.Name="homeHost" Container.Sizing="Width">
+    <StackPanel Classes="home-content" Spacing="24" MaxWidth="1240">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <StackPanel Spacing="6">
+          <TextBlock Text="我的音乐" FontSize="28" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding ConnectionSummary}" Classes="secondary" TextWrapping="Wrap" />
+        </StackPanel>
+        <Button Grid.Column="1" Classes="home-action" Content="管理帐号" Command="{Binding ManageAccountsCommand}" VerticalAlignment="Center" />
+      </Grid>
+      <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="16">
+        <ContentControl Classes="ne-account" Content="{Binding Account.NetEase}" ContentTemplate="{StaticResource AccountCard}"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <ContentControl Classes="qq-account" Content="{Binding Account.Qq}" ContentTemplate="{StaticResource AccountCard}"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+      </Grid>
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <ListBox Classes="platform-filter" SelectedIndex="{Binding SourceIndex, Mode=TwoWay}" Background="Transparent" BorderThickness="0"
+                 Padding="0" AutomationProperties.Name="筛选音乐平台">
+          <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ListBox.ItemsPanel>
+          <ListBoxItem Content="全部" /><ListBoxItem Content="网易云" /><ListBoxItem Content="QQ 音乐" />
+        </ListBox>
+        <Button Grid.Column="1" Classes="home-action" Content="刷新" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}"
+                AutomationProperties.Name="刷新两个平台的帐号与歌单" />
+      </Grid>
+      <ProgressBar Height="3" IsIndeterminate="True" IsVisible="{Binding IsRefreshing}"
+                   infra:IndeterminateAnimationGate.IsActive="True" />
+      <TextBlock Text="{Binding LibraryStatus}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Classes="secondary" />
+      <StackPanel IsVisible="{Binding HasTaste}" Spacing="12">
+        <TextBlock Text="我喜欢的音乐" Classes="section-title" />
+        <ItemsControl Classes="taste" ItemsSource="{Binding TastePlaylists}" ItemTemplate="{StaticResource PlaylistCard}" Margin="0,0,-12,0">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Classes="taste-grid" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
+      <StackPanel IsVisible="{Binding HasCreated}" Spacing="12">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="创建的歌单" Classes="section-title" />
+          <TextBlock Grid.Column="1" Text="{Binding CreatedPlaylists.Count, StringFormat='{}{0} 个歌单'}" Classes="secondary" VerticalAlignment="Center" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding CreatedPlaylists}" ItemTemplate="{StaticResource PlaylistCard}" Margin="0,0,-12,0">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Classes="playlists" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
+      <StackPanel IsVisible="{Binding HasCollected}" Spacing="12">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="收藏的歌单" Classes="section-title" />
+          <TextBlock Grid.Column="1" Text="{Binding CollectedPlaylists.Count, StringFormat='{}{0} 个歌单'}" Classes="secondary" VerticalAlignment="Center" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding CollectedPlaylists}" ItemTemplate="{StaticResource PlaylistCard}" Margin="0,0,-12,0">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Classes="playlists" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
+      <Border Classes="identity-card" IsVisible="{Binding IsEmpty}">
+        <StackPanel Spacing="10" Margin="0,12">
+          <TextBlock Text="{Binding EmptyTitle}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding EmptyDescription}" Classes="secondary" TextWrapping="Wrap" />
+          <Button Classes="home-action" Content="管理帐号" Command="{Binding ManageAccountsCommand}" HorizontalAlignment="Left" Margin="0,6,0,0" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

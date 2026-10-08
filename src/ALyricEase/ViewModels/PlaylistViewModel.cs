@@ -378,6 +378,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>QQ 登录用户的歌单(侧边栏"QQ音乐"分组;一次全量拉取,失败静默可重试)。</summary>
     public ObservableCollection<PlaylistItemViewModel> QqPlaylists { get; } = new();
 
+    [ObservableProperty] private string? _netEaseLibraryError;
+    [ObservableProperty] private string? _qqLibraryError;
+
     /// <summary>把歌曲追加到选定歌单，按歌单音源路由至对应账号客户端。</summary>
     public Task AddSongToPlaylistAsync(Playlist playlist, Song song)
         => playlist.Source == MusicSource.QQ
@@ -490,6 +493,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     }
 
     /// <summary>进入页面时调用:恢复本地登录态(网易云拉资料,不阻塞 UI,失败静默),QQ 侧由 EnsureQqLoadedAsync 处理。</summary>
+    public async Task EnsureLibraryOverviewAsync()
+    {
+        await Task.WhenAll(EnsureQqLoadedAsync(),
+            (!IsLoggedIn || _netEaseRestoredFromCache) && _cookie.MusicU is { Length: > 0 }
+                ? LoadProfileAndPlaylistsAsync() : Task.CompletedTask);
+    }
+
     public async Task EnsureLoadedAsync()
     {
         await EnsureQqLoadedAsync();
@@ -511,6 +521,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 验证通过后才呈现已登录并拉取用户歌单。</summary>
     public async Task EnsureQqLoadedAsync()
     {
+        QqLibraryError = null;
         if ((!IsQqLoggedIn || _qqRestoredFromCache) && _cookie.QQCookieRaw is { Length: > 0 })
         {
             try
@@ -523,15 +534,18 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             {
                 _qqApi.ClearCookie();
                 IsQqLoggedIn = false;
+                QqLibraryError = "QQ 音乐登录已失效，请重新登录。";
                 return;
             }
             catch (ApiException)
             {
+                QqLibraryError = "QQ 音乐暂时无法同步，请稍后刷新。";
                 // 网络/服务端瞬时异常保留本地 Cookie 与离线快照，下次进入再验证。
                 return;
             }
             catch (Exception ex) when (IsConnectivityFailure(ex))
             {
+                QqLibraryError = "QQ 音乐暂时无法连接，请检查网络后刷新。";
                 // HttpClient 在完全断网时不会包装成 ApiException；保留已恢复的离线账号。
                 return;
             }
@@ -543,6 +557,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>拉取 QQ 用户歌单填入 QqPlaylists(一次全量),昵称一并缓存。失败静默且不标记已加载。</summary>
     private async Task LoadQqPlaylistsAsync()
     {
+        QqLibraryError = null;
         try
         {
             var profile = await _qqApi.GetUserProfileAsync();
@@ -558,6 +573,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
             // Cookie 失效/网络失败:分组保持空,下次进入或重启重试
+            QqLibraryError = "QQ 音乐歌单同步失败，已保留现有歌单。请稍后刷新。";
         }
     }
 
@@ -901,10 +917,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public void LogoutNetEase()
     {
         _api.ClearCookie();
+        NetEaseLibraryError = null;
         IsLoggedIn = false;
         UserName = "";
         AvatarUrl = "";
         Playlists.Clear();
+        NetEaseCollectedPlaylists.Clear();
         if (SelectedPlaylist?.Playlist.Source == MusicSource.NetEase)
             ClearCurrentPlaylistContent();
         NotifyAccountChanged();
@@ -922,6 +940,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public void LogoutQq()
     {
         _qqApi.ClearCookie();
+        QqLibraryError = null;
         IsQqLoggedIn = false;
         QqUserName = "";
         QqPlaylists.Clear();
@@ -2167,6 +2186,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public async Task ReloadNetEasePlaylistsAsync()
     {
         if (!IsLoggedIn) return;
+        NetEaseLibraryError = null;
         try
         {
             var profile = await _api.GetUserProfileAsync();
@@ -2184,6 +2204,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
             // 刷新失败保持现列表(侧栏旧数据仍可用)
+            NetEaseLibraryError = "网易云音乐歌单同步失败，已保留现有歌单。请稍后刷新。";
         }
     }
 
@@ -2196,6 +2217,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     private async Task LoadProfileAndPlaylistsAsync()
     {
+        NetEaseLibraryError = null;
         IsBusy = true;
         Message = null;
         try
@@ -2237,6 +2259,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             Message = _netEaseRestoredFromCache
                 ? "当前网络不可用，已恢复离线歌单"
                 : $"登录失败:{ex.Message}";
+            NetEaseLibraryError = "网易云音乐暂时无法同步，请检查网络或重新登录。";
         }
         finally
         {

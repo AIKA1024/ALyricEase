@@ -98,12 +98,11 @@ internal static class QqUserFailureProbe
 
         var startupRoot = Path.Combine(root, "startup");
         var startup = CreateMain(startupRoot, new ResponseHandler(), storedCredential: true);
-        await Task.Delay(100);
-        Check(startup.ActivePage == "User" && startup.IsErrorDialogOpen && !startup.CanGoBack,
-            "启动凭证失效先停留在用户页显示提示");
-        startup.CloseErrorDialogCommand.Execute(null);
-        Check(startup.ActivePage == "Account" && !startup.IsErrorDialogOpen && !startup.CanGoBack,
-            "启动提示关闭后才回到账户页，无失败页历史");
+        await startup.PersonalHome.EnsureLoadedAsync();
+        Check(startup.ActivePage == "PersonalHome" && !startup.IsErrorDialogOpen && !startup.CanGoBack,
+            "启动凭证失效仍停留在跨平台主页，不阻断其他平台");
+        Check(!startup.Account.Qq.IsLoggedIn && startup.PersonalHome.HasError,
+            "失效平台显示重新登录入口和同步错误");
         Console.WriteLine("[qq-user-failure] PASS");
     }
 

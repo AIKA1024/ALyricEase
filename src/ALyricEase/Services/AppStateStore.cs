@@ -37,6 +37,12 @@ public sealed class AppStateStore
     /// <summary>全部专辑页显示偏好；未选择时移动端列表、桌面端大图。</summary>
     public bool? ArtistAlbumsListMode { get; set; }
 
+    /// <summary>个人主页"创建的歌单"显示偏好；未选择时移动端列表、桌面端大图。</summary>
+    public bool? HomeCreatedPlaylistsListMode { get; set; }
+
+    /// <summary>个人主页"收藏的歌单"显示偏好；未选择时移动端列表、桌面端大图。</summary>
+    public bool? HomeCollectedPlaylistsListMode { get; set; }
+
     public void SetPreferredSearchSource(SearchSourceMode mode)
     {
         if (!Enum.IsDefined(mode) || PreferredSearchSource == mode) return;
@@ -187,6 +193,8 @@ public sealed class AppStateStore
             IsNetEaseGroupExpanded = dto.NetEaseGroupExpanded ?? true;
             IsQqGroupExpanded = dto.QqGroupExpanded ?? true;
             ArtistAlbumsListMode = dto.ArtistAlbumsListMode;
+            HomeCreatedPlaylistsListMode = dto.HomeCreatedPlaylistsListMode;
+            HomeCollectedPlaylistsListMode = dto.HomeCollectedPlaylistsListMode;
             PreferredSearchSource = dto.PreferredSearchSource is >= (int)SearchSourceMode.Combined
                 and <= (int)SearchSourceMode.QQ
                 ? (SearchSourceMode)dto.PreferredSearchSource.Value
@@ -240,6 +248,8 @@ public sealed class AppStateStore
                     Id = string.IsNullOrEmpty(f.Id) ? System.Guid.NewGuid().ToString("N") : f.Id,
                     Name = string.IsNullOrEmpty(f.Name) ? "聚合歌单" : f.Name,
                     SourceOrder = (AggregateSourceOrder)(f.SourceOrder ?? 0),
+                    CustomCover = f.CustomCover,
+                    LocalTracks = f.LocalTracks,
                     Members = members,
                 });
             }
@@ -285,6 +295,8 @@ public sealed class AppStateStore
                         Id = a.Id,
                         Name = a.Name,
                         SourceOrder = (int)a.SourceOrder,
+                        CustomCover = a.CustomCover,
+                        LocalTracks = a.LocalTracks,
                         Members = a.Members
                             .Select(m => new AggregateMemberFile
                             {
@@ -298,6 +310,8 @@ public sealed class AppStateStore
                 SearchHistory = SearchHistory.ToList(),
                 PreferredSearchSource = (int)PreferredSearchSource,
                 ArtistAlbumsListMode = ArtistAlbumsListMode,
+                HomeCreatedPlaylistsListMode = HomeCreatedPlaylistsListMode,
+                HomeCollectedPlaylistsListMode = HomeCollectedPlaylistsListMode,
                 RecentSongs = _recentSongs.Select(ToRecentFile).ToList(),
                 WindowWidth = WindowWidth,
                 WindowHeight = WindowHeight,
@@ -448,6 +462,7 @@ public sealed class AppStateStore
         ArtistMids = entry.Song.ArtistMids.ToList(),
         AlbumId = entry.Song.AlbumId,
         AlbumMid = entry.Song.AlbumMid,
+        LocalPath = entry.Song.LocalFilePath,
     };
 
     private sealed record RecentPlaybackEntry(Song Song, long PlayCount);
@@ -458,6 +473,8 @@ public sealed class AppStateStore
         var source = (MusicSource)file.Source;
         if (string.IsNullOrWhiteSpace(file.Name)) return null;
         if (file.Id == 0 && string.IsNullOrWhiteSpace(file.Mid)) return null;
+        // 本地歌曲以文件路径为唯一事实来源;路径缺失(旧版本写入)则放弃恢复该条目。
+        if (source == MusicSource.Local && string.IsNullOrWhiteSpace(file.LocalPath)) return null;
         return new Song
         {
             Id = file.Id,
@@ -474,6 +491,7 @@ public sealed class AppStateStore
             ArtistMids = file.ArtistMids?.ToArray() ?? Array.Empty<string>(),
             AlbumId = file.AlbumId,
             AlbumMid = file.AlbumMid ?? "",
+            LocalFilePath = source == MusicSource.Local ? file.LocalPath : null,
         };
     }
 }

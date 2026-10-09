@@ -24,6 +24,14 @@ public sealed class AggregatePlaylist
     /// <summary>成员按来源的排列顺序(可经聚合歌单设置弹窗修改)。</summary>
     public AggregateSourceOrder SourceOrder { get; set; } = AggregateSourceOrder.NetEaseFirst;
 
+    /// <summary>自定义封面文件名(位于应用数据目录 covers/ 下;null = 用第一个成员歌单的封面)。
+    /// 文件本体由 AggregateCoverStore 管理,不进 state.json。</summary>
+    public string? CustomCover { get; set; }
+
+    /// <summary>导入的本地歌曲绝对路径(state.json 持久化)。行内元数据由文件名派生,
+    /// 播放直接走文件;文件被移动/删除后行仍展示(删除线)但不可播放。</summary>
+    public List<string>? LocalTracks { get; set; }
+
     public List<AggregatePlaylistMember> Members { get; init; } = new();
 }
 

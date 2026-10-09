@@ -1,22 +1,36 @@
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Threading;
 using AsyncImageLoader.Core.Caching;
 using AsyncImageLoader.Core.Pipeline;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using ALyricEase.Services;
 
 namespace ALyricEase.Infrastructure;
 
 /// <summary>
 /// 将原始封面 URL 转成对应像素规格后交给租约式异步加载器。
-/// Image 离开可视树时加载器会取消请求并释放位图租约，避免页面 VM 长期持有 Bitmap。
+/// 本地文件路径(聚合歌单自定义封面)不走 HTTP 管线,直接解码并静态缓存(键含文件修改时间,
+/// 覆盖同名文件后自动失效)。Image 离开可视树时加载器会取消请求并释放位图租约,避免页面 VM 长期持有 Bitmap。
 /// </summary>
 public static class ManagedCoverImage
 {
     public static readonly AttachedProperty<string?> SourceProperty =
         AvaloniaProperty.RegisterAttached<Image, string?>("Source", typeof(ManagedCoverImage));
 
+    /// <summary>默认 360 = 个人主页歌单卡封面的常规解码尺寸。
+    /// 该页的解码尺寸由样式供给（taste 小卡/窄屏单列走更小的值），而 Source 绑定的求值
+    /// 可能早于样式应用 —— 默认值与常规卡一致可保证首帧请求不打错规格
+    /// （其余所有使用点都显式设置 DecodeSize，不受默认值影响）。</summary>
     public static readonly AttachedProperty<int> DecodeSizeProperty =
-        AvaloniaProperty.RegisterAttached<Image, int>("DecodeSize", typeof(ManagedCoverImage), 100);
+        AvaloniaProperty.RegisterAttached<Image, int>("DecodeSize", typeof(ManagedCoverImage), 360);
+
+    private static readonly object LocalCoverGate = new();
+    private static readonly Dictionary<string, IImage> LocalCovers = new();
 
     static ManagedCoverImage()
     {
@@ -36,11 +50,40 @@ public static class ManagedCoverImage
     {
         var source = GetSource(image);
         var size = GetDecodeSize(image);
-        AsyncImageLoader.ImageLoader.SetSource(
-            image,
+        if (!string.IsNullOrWhiteSpace(source) && File.Exists(source))
+        {
+            // 本地文件(自定义封面):不走 HTTP 管线;文件保存时已压到 ≤1024px,整图解码即可。
+            AsyncImageLoader.ImageLoader.SetSource(image, null);
+            image.Source = LoadLocalCover(source);
+            return;
+        }
+        AsyncImageLoader.ImageLoader.SetSource(image,
             string.IsNullOrWhiteSpace(source)
                 ? null
                 : size > 0 ? CoverLoader.BuildSizedUrl(source, size) : source);
+    }
+
+    private static IImage? LoadLocalCover(string path)
+    {
+        // 键带修改时间:同路径文件被新封面覆盖后自动失效
+        var key = path;
+        try { key = $"{path}|{File.GetLastWriteTimeUtc(path):O}"; }
+        catch { }
+        lock (LocalCoverGate)
+        {
+            if (LocalCovers.TryGetValue(key, out var cached)) return cached;
+            try
+            {
+                using var stream = File.OpenRead(path);
+                var bitmap = new Bitmap(stream);
+                LocalCovers[key] = bitmap;
+                return bitmap;
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 }
 

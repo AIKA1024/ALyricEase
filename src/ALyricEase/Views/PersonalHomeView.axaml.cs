@@ -1,9 +1,11 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using ALyricEase.ViewModels;
+using Visual = Avalonia.Visual;
 
 namespace ALyricEase.Views;
 
@@ -32,7 +34,13 @@ public partial class PersonalHomeView : UserControl
 
     private void OnPlaylistTapped(object? sender, TappedEventArgs e)
     {
-        if (sender is Button { DataContext: PlaylistItemViewModel item }) Main.OpenShellPlaylistAuto(item);
+        if (sender is not Button { DataContext: PlaylistItemViewModel item } button) return;
+        // 排除行/卡内操作按钮(▶/•••)的命中:Tapped 独立于 Click 冒泡,点击内部按钮时
+        // 源的最近 Button 祖先不是行/卡自身(CollectedPlaylistsView 同款守卫)。
+        if (e.Source is Visual source
+            && source.FindAncestorOfType<Button>() is { } hit
+            && !ReferenceEquals(hit, button)) return;
+        Main.OpenShellPlaylistAuto(item);
     }
 
     private void OnPlaylistKeyDown(object? sender, KeyEventArgs e)
@@ -44,11 +52,13 @@ public partial class PersonalHomeView : UserControl
 
     private void OnPlayClick(object? sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (sender is Button { DataContext: PlaylistItemViewModel item }) Main.Player.PlayPlaylistCommand.Execute(item);
     }
 
     private void OnMoreClick(object? sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (sender is Button { DataContext: PlaylistItemViewModel item } button)
             PlaylistContextMenu.Create(button, item).ShowAt(button);
     }

@@ -1171,6 +1171,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (AppState.AggregatePlaylists.Remove(aggregate))
         {
+            AggregateCoverStore.Delete(aggregate.Id);
             AppState.Save();
             if (ReferenceEquals(Playlist.CurrentAggregate, aggregate))
                 _playlist.CloseAggregateDetail();

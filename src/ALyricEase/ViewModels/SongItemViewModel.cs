@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using ALyricEase.Infrastructure;
@@ -45,32 +46,17 @@ public sealed partial class SongItemViewModel : ViewModelBase
         catch { return null; }
     }
 
-    private static IImage? s_neBadge;
-    private static IImage? s_qqBadge;
+    /// <summary>音源角标(hover 时封面左下角显示):两站点 favicon,位图加载/缓存在
+    /// <see cref="Infrastructure.SourceBadges"/>(个人主页歌单列表行共用)。</summary>
+    public IImage? SourceBadge => Infrastructure.SourceBadges.For(Song.Source);
 
-    /// <summary>音源角标(hover 时封面左下角显示):取自两站点浏览器标签页 favicon,
-    /// 静态缓存按音源共享一份位图。资源缺失返回 null(Image 空源不渲染)。</summary>
-    public IImage? SourceBadge
-    {
-        get
-        {
-            if (IsNetEase) return s_neBadge ??= LoadBadge("avares://ALyricEase/Assets/TrackTags/SourceNetease.png");
-            return s_qqBadge ??= LoadBadge("avares://ALyricEase/Assets/TrackTags/SourceQQ.png");
-        }
-    }
+    /// <summary>本地歌曲(聚合歌单导入):行内红心隐藏、右键菜单裁剪掉在线专属项。</summary>
+    public bool IsLocal => Song.Source == MusicSource.Local;
 
-    private static IImage? LoadBadge(string uri)
-    {
-        try
-        {
-            using var stream = AssetLoader.Open(new Uri(uri));
-            return new Bitmap(stream);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    /// <summary>本地文件已不存在:歌名加删除线、不可播放,但行仍展示(可右键查看来源)。
+    /// 打开页面/导入时判定,运行中删除文件要到下次打开才刷新删除线。</summary>
+    public bool IsLocalFileMissing =>
+        IsLocal && !string.IsNullOrEmpty(Song.LocalFilePath) && !File.Exists(Song.LocalFilePath);
 
     public SongItemViewModel(Song song, Func<Song, Task<bool>> playSong, int index = 0, NetEaseApiClient? api = null)
         : this(song, (s, _, _) => playSong(s), index, api: api) { }

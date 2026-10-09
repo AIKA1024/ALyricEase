@@ -86,13 +86,16 @@ public partial class AlbumCoverBackground : UserControl
     private readonly IAudioPlayer? _audioPlayer;
     private CompositionVisual[]? _motionVisuals;
     private TopLevel? _motionTopLevel;
+    private TopLevel? _observedTopLevel;
     private TimeSpan _lastMotionTimestamp;
     private bool _hasMotionTimestamp;
+    private bool _resumeFromPresentationPause;
     private double _motionPhase;
     private double _smoothedEnergy;
     private double _previousRawEnergy;
     private double _energyBurst;
     private double _burstCooldown;
+    private double _burstSuppressionSeconds;
     private double _smoothedSpeed = 0.52;
 
     public IImage? Cover
@@ -145,24 +148,35 @@ public partial class AlbumCoverBackground : UserControl
 
     private void OnAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
     {
+        ObserveTopLevel(TopLevel.GetTopLevel(this));
         ApplyMotionPreference();
         QueuePaletteRefresh();
     }
 
-    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e) => StopMotion();
+    private void OnDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        ObserveTopLevel(null);
+        StopMotion();
+    }
 
-    /// <summary>宿主开关与挂载状态一有变化就重算：两者任一不满足都该停。</summary>
+    /// <summary>宿主开关、挂载状态与窗口可呈现性任一变化都重算。</summary>
     private void ApplyMotionPreference()
     {
-        if (MotionEnabled)
-        {
-            _audioPlayer?.SetAudioAnalysisEnabled(true);
-            QueueMotionStart();
-        }
-        else
+        if (!MotionEnabled || !this.IsAttachedToVisualTree())
         {
             StopMotion();
+            return;
         }
+
+        ObserveTopLevel(TopLevel.GetTopLevel(this));
+        if (!IsHostPresentable())
+        {
+            SuspendMotion();
+            return;
+        }
+
+        _audioPlayer?.SetAudioAnalysisEnabled(true);
+        QueueMotionStart();
     }
 
     private void QueuePaletteRefresh()
@@ -220,21 +234,23 @@ public partial class AlbumCoverBackground : UserControl
     private void QueueMotionStart()
     {
         if (_motionStarted || _motionStartQueued || _motionStartAttempts >= 8
-            || !MotionEnabled || !this.IsAttachedToVisualTree()) return;
+            || !MotionEnabled || !this.IsAttachedToVisualTree() || !IsHostPresentable()) return;
 
         var generation = ++_motionGeneration;
         _motionStartQueued = true;
         Dispatcher.UIThread.Post(() =>
         {
             _motionStartQueued = false;
-            if (generation != _motionGeneration || !MotionEnabled || !this.IsAttachedToVisualTree()) return;
+            if (generation != _motionGeneration || !MotionEnabled || !this.IsAttachedToVisualTree()
+                || !IsHostPresentable()) return;
             if (TryStartMotion()) return;
             _motionStartAttempts++;
 
             if (TopLevel.GetTopLevel(this) is not { } topLevel) return;
             topLevel.RequestAnimationFrame(_ =>
             {
-                if (generation == _motionGeneration && MotionEnabled && this.IsAttachedToVisualTree())
+                if (generation == _motionGeneration && MotionEnabled && this.IsAttachedToVisualTree()
+                    && IsHostPresentable())
                     QueueMotionStart();
             });
         }, DispatcherPriority.Loaded);
@@ -246,16 +262,27 @@ public partial class AlbumCoverBackground : UserControl
     /// 漏掉复位会让"关掉再打开"变成单向开关，之后再也不会动。
     /// </summary>
     private void StopMotion()
+        => HaltMotion(preservePosition: false);
+
+    /// <summary>窗口最小化/隐藏只暂停：保留轨道相位和当前 Translation，恢复后从原地继续。</summary>
+    private void SuspendMotion()
+        => HaltMotion(preservePosition: true);
+
+    private void HaltMotion(bool preservePosition)
     {
+        var hadMotion = _motionStarted || _motionVisuals is not null;
         _motionGeneration++;
         _motionStartQueued = false;
         _motionStartAttempts = 0;
         _audioPlayer?.SetAudioAnalysisEnabled(false);
-        foreach (var ellipse in GetLayer(true).Concat(GetLayer(false)))
+        if (!preservePosition)
         {
-            var visual = ElementComposition.GetElementVisual(ellipse);
-            visual?.StopAnimation("Translation");
-            visual?.StopAnimation("Scale");
+            foreach (var ellipse in GetLayer(true).Concat(GetLayer(false)))
+            {
+                var visual = ElementComposition.GetElementVisual(ellipse);
+                visual?.StopAnimation("Translation");
+                visual?.StopAnimation("Scale");
+            }
         }
         _motionVisuals = null;
         _motionTopLevel = null;
@@ -266,6 +293,19 @@ public partial class AlbumCoverBackground : UserControl
         _burstCooldown = 0;
         _smoothedSpeed = 0.52;
         _motionStarted = false;
+
+        if (preservePosition)
+        {
+            _resumeFromPresentationPause |= hadMotion;
+            // 音频分析恢复后的前几个样本会从 0 跳到当前能量，不应被误判成音乐突发。
+            _burstSuppressionSeconds = 0.65;
+        }
+        else
+        {
+            _resumeFromPresentationPause = false;
+            _burstSuppressionSeconds = 0;
+            _motionPhase = 0;
+        }
     }
 
     private bool TryStartMotion()
@@ -275,6 +315,7 @@ public partial class AlbumCoverBackground : UserControl
         var all = GetLayer(true).Concat(GetLayer(false)).ToArray();
         var visuals = all.Select(ElementComposition.GetElementVisual).ToArray();
         if (visuals.Any(visual => visual is null)) return false;
+        var preserveTranslation = _resumeFromPresentationPause;
 
         for (var i = 0; i < all.Length; i++)
         {
@@ -283,7 +324,8 @@ public partial class AlbumCoverBackground : UserControl
 
             visual.StopAnimation("Translation");
             visual.StopAnimation("Scale");
-            visual.Translation = default;
+            if (!preserveTranslation)
+                visual.Translation = default;
             visual.Scale = Vector3.One;
             visual.CenterPoint = new Vector3(
                 (float)(ellipse.Bounds.Width / 2),
@@ -296,6 +338,7 @@ public partial class AlbumCoverBackground : UserControl
         if (_motionTopLevel is null) return false;
         _hasMotionTimestamp = false;
         _motionStarted = true;
+        _resumeFromPresentationPause = false;
         _motionTopLevel.RequestAnimationFrame(OnMotionFrame);
         return true;
     }
@@ -310,6 +353,12 @@ public partial class AlbumCoverBackground : UserControl
         if (!_motionStarted || !MotionEnabled || !this.IsAttachedToVisualTree()
             || _motionVisuals is not { Length: 10 } visuals || _motionTopLevel is null)
             return;
+        if (!IsHostPresentable())
+        {
+            // Avalonia 在最小化时仍可能交付 RAF；这里自断续订并关闭 20Hz 音频分析。
+            SuspendMotion();
+            return;
+        }
 
         var dt = _hasMotionTimestamp
             ? Math.Clamp((timestamp - _lastMotionTimestamp).TotalSeconds, 1.0 / 240.0, 0.05)
@@ -320,7 +369,9 @@ public partial class AlbumCoverBackground : UserControl
         var rawEnergy = Math.Clamp(_audioPlayer?.AudioEnergy ?? 0f, 0f, 1f);
         var rise = rawEnergy - _previousRawEnergy;
         _burstCooldown = Math.Max(0, _burstCooldown - dt);
-        if (rise > 0.13 && _burstCooldown <= 0)
+        var suppressBurst = _burstSuppressionSeconds > 0;
+        _burstSuppressionSeconds = Math.Max(0, _burstSuppressionSeconds - dt);
+        if (!suppressBurst && rise > 0.13 && _burstCooldown <= 0)
         {
             // 只响应明显的强弱跃迁，并留出冷却时间；避免每个采样峰都触发一次加速。
             _energyBurst = Math.Max(_energyBurst, Math.Min(0.65, 0.18 + (rise - 0.13) * 2.8));
@@ -358,6 +409,30 @@ public partial class AlbumCoverBackground : UserControl
         }
 
         _motionTopLevel.RequestAnimationFrame(OnMotionFrame);
+    }
+
+    /// <summary>最小化与 Hide 都不应继续逐帧计算；TopLevel 尚未解析时保持原启动重试行为。</summary>
+    private bool IsHostPresentable()
+    {
+        if (_observedTopLevel is not { } topLevel) return true;
+        if (!topLevel.IsVisible) return false;
+        return topLevel is not Window window || window.WindowState != WindowState.Minimized;
+    }
+
+    private void ObserveTopLevel(TopLevel? topLevel)
+    {
+        if (ReferenceEquals(_observedTopLevel, topLevel)) return;
+        if (_observedTopLevel is not null)
+            _observedTopLevel.PropertyChanged -= OnHostPresentationChanged;
+        _observedTopLevel = topLevel;
+        if (_observedTopLevel is not null)
+            _observedTopLevel.PropertyChanged += OnHostPresentationChanged;
+    }
+
+    private void OnHostPresentationChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property != Visual.IsVisibleProperty && e.Property != Window.WindowStateProperty) return;
+        ApplyMotionPreference();
     }
 
     private static Color[] ExtractPalette(IImage cover)

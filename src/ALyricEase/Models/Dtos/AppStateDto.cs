@@ -29,6 +29,12 @@ public sealed class AppStateFile
     /// <summary>全部专辑页是否使用详细列表；null = 按平台使用默认模式。</summary>
     public bool? ArtistAlbumsListMode { get; set; }
 
+    /// <summary>个人主页"创建的歌单"是否列表显示；null = 按平台使用默认模式。</summary>
+    public bool? HomeCreatedPlaylistsListMode { get; set; }
+
+    /// <summary>个人主页"收藏的歌单"是否列表显示；null = 按平台使用默认模式。</summary>
+    public bool? HomeCollectedPlaylistsListMode { get; set; }
+
     /// <summary>最近成功开始播放的歌曲(最新在前;null = 旧版本尚未记录)。</summary>
     public List<RecentSongFile>? RecentSongs { get; set; }
 
@@ -106,6 +112,12 @@ public sealed class AggregatePlaylistFile
     /// <summary>成员按来源排列顺序(AggregateSourceOrder 枚举值;null = 默认网易云在前)。</summary>
     public int? SourceOrder { get; set; }
 
+    /// <summary>自定义封面文件名(covers/ 目录下;null = 未自定义)。</summary>
+    public string? CustomCover { get; set; }
+
+    /// <summary>导入的本地歌曲绝对路径(null = 未导入)。</summary>
+    public List<string>? LocalTracks { get; set; }
+
     public List<AggregateMemberFile>? Members { get; set; }
 }
 
@@ -138,4 +150,6 @@ public sealed class RecentSongFile
     public List<string>? ArtistMids { get; set; }
     public long AlbumId { get; set; }
     public string? AlbumMid { get; set; }
+    /// <summary>本地音频文件的绝对路径。仅 Source=2(Local) 的条目使用;旧版本数据缺失即 null。</summary>
+    public string? LocalPath { get; set; }
 }

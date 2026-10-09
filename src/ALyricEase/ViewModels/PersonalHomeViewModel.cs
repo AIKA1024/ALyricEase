@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
@@ -12,18 +13,42 @@ namespace ALyricEase.ViewModels;
 public sealed partial class PersonalHomeViewModel : NavigationDetailViewModelBase
 {
     private readonly PlaylistViewModel _library;
+    private readonly AppStateStore _state;
     private Task? _loadTask;
     private bool _rebuildPending;
 
-    public PersonalHomeViewModel(PlaylistViewModel library, AccountViewModel account)
+    public PersonalHomeViewModel(PlaylistViewModel library, AccountViewModel account, AppStateStore state)
     {
         _library = library;
+        _state = state;
         Account = account;
+        // 创建/收藏两段的大图/列表显示偏好。默认值与全部专辑页同规则:移动端列表、桌面大图。
+        var mobileDefault = OperatingSystem.IsAndroid() || OperatingSystem.IsIOS();
+        _createdIsListMode = state.HomeCreatedPlaylistsListMode ?? mobileDefault;
+        _collectedIsListMode = state.HomeCollectedPlaylistsListMode ?? mobileDefault;
         library.Playlists.CollectionChanged += OnLibraryChanged;
         library.NetEaseCollectedPlaylists.CollectionChanged += OnLibraryChanged;
         library.QqPlaylists.CollectionChanged += OnLibraryChanged;
         library.PropertyChanged += OnLibraryPropertyChanged;
         RebuildPlaylists();
+    }
+
+    /// <summary>"创建的歌单"区是否列表显示(否 = 大图卡)。切换即持久化。</summary>
+    [ObservableProperty] private bool _createdIsListMode;
+
+    /// <summary>"收藏的歌单"区是否列表显示(否 = 大图卡)。切换即持久化。</summary>
+    [ObservableProperty] private bool _collectedIsListMode;
+
+    partial void OnCreatedIsListModeChanged(bool value)
+    {
+        _state.HomeCreatedPlaylistsListMode = value;
+        _state.Save();
+    }
+
+    partial void OnCollectedIsListModeChanged(bool value)
+    {
+        _state.HomeCollectedPlaylistsListMode = value;
+        _state.Save();
     }
 
     public AccountViewModel Account { get; }
@@ -54,8 +79,12 @@ public sealed partial class PersonalHomeViewModel : NavigationDetailViewModelBas
         ? "试试切换平台，或刷新以同步最新歌单。"
         : "登录网易云音乐或 QQ 音乐，即可查看喜欢、创建和收藏的歌单。";
 
+    /// <summary>平台筛选为"全部"时列表行封面显示音源角标;选定单一平台后行本身即代表平台,角标隐藏。</summary>
+    public bool ShowSourceBadges => SourceIndex == 0;
+
     partial void OnSourceIndexChanged(int value)
     {
+        OnPropertyChanged(nameof(ShowSourceBadges));
         RebuildPlaylists();
     }
     partial void OnIsRefreshingChanged(bool value) => OnPropertyChanged(nameof(IsEmpty));
@@ -136,6 +165,8 @@ public sealed partial class PersonalHomeViewModel : NavigationDetailViewModelBas
         TastePlaylists.Clear();
         CreatedPlaylists.Clear();
         CollectedPlaylists.Clear();
+        // 分页实化（每段 12 张 + 显示更多）做过一版，应用户要求撤回：全量显示下内存与滚动占用可接受。
+        // 若资料库规模再涨，考虑 SongGridView 式按列分组虚拟化，别再回退到按钮分页。
         if (SourceIndex != 2)
         {
             foreach (var item in _library.Playlists)

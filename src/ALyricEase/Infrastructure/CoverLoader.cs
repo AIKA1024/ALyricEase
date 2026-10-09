@@ -278,13 +278,31 @@ public static class CoverLoader
     /// <summary>QQ 图床支持的固定尺寸档位(任意尺寸如 R100x100 会 404),取 ≥ 目标的最小档。</summary>
     private static readonly int[] QqCoverSizes = [90, 120, 150, 300, 500, 800, 1200, 1500];
 
+    /// <summary>向上取档的宽容度:超档超出该倍数(面积 +56%)且低一档仍够用时改取低档。
+    /// 触发案例:目标 360 → 500 档,解码 0.5MB/张涨到 1MB/张;改取 300(≥ 目标 83%)无可见损失。</summary>
+    private const double MaxUpsnapRatio = 1.25;
+
+    /// <summary>改取低一档的下限:低档小于该比例就不降,宁可多解码也不明显欠采样(如目标 200 不降到 150)。</summary>
+    private const double MinDownsnapRatio = 0.8;
+
+    /// <summary>QQ 档位选择:就近向上,但超档过多时降到低一档;超过最大档用最大档。</summary>
+    private static int SnapQqSize(int target)
+    {
+        var index = Array.FindIndex(QqCoverSizes, size => size >= target);
+        if (index < 0) return QqCoverSizes[^1];
+        var up = QqCoverSizes[index];
+        if (up <= target * MaxUpsnapRatio || index == 0) return up;
+        var down = QqCoverSizes[index - 1];
+        return down >= target * MinDownsnapRatio ? down : up;
+    }
+
     /// <summary>按目标尺寸改写封面 URL:网易云追加 param=WxH;
-    /// QQ 音乐(y.gtimg.cn)改写路径里的 R{w}x{h} 尺寸段(仅固定档位有效,就近向上取档)。</summary>
+    /// QQ 音乐(y.gtimg.cn)改写路径里的 R{w}x{h} 尺寸段(仅固定档位有效,就近取档)。</summary>
     public static string BuildSizedUrl(string url, int size)
     {
         if (url.Contains("y.gtimg.cn", StringComparison.OrdinalIgnoreCase))
         {
-            var snapped = QqCoverSizes.FirstOrDefault(s => s >= size);
+            var snapped = SnapQqSize(size);
             return Regex.Replace(
                 url, @"R\d+x\d+M000", $"R{snapped}x{snapped}M000");
         }

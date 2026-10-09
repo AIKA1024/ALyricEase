@@ -98,9 +98,10 @@
             <StackPanel x:Name="ButtonPanel" Grid.Column="2" Orientation="Horizontal"
                         VerticalAlignment="Center" HorizontalAlignment="Right"
                         IsVisible="{Binding HasProgress}">
-              <!-- 红心 -->
+              <!-- 红心(本地歌曲没有平台红心,隐藏) -->
               <Button Classes="player-button like-button" RenderTransform="none" Width="40" Height="40"
-                      Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心">
+                      Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心"
+                      IsVisible="{Binding ShowLikeButton}">
                 <Grid>
                   <TextBlock Text="{DynamicResource IconHeartFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}" FontSize="20"
                              Foreground="#FFE74C3C" IsVisible="{Binding IsCurrentLiked}" />

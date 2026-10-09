@@ -64,16 +64,28 @@ public sealed partial class LyricViewModel : ViewModelBase
         LyricDocument? doc = null;
         try
         {
-            var lrc = await _cache.TryGetLyricAsync(song).ConfigureAwait(false);
-            if (lrc is null)
+            // 本地文件:不走向线歌词,只找同目录同名 .lrc(常见伴奏/播放器导出形态)。
+            if (song.Source == MusicSource.Local)
             {
-                var api = _sources.Resolve(song);
-                lrc = await api.GetLyricAsync(song).ConfigureAwait(false);
-                if (lrc is not null)
-                    await _cache.CacheLyricAsync(song, lrc).ConfigureAwait(false);
+                var lrcPath = song.LocalFilePath is { } path
+                    ? Path.ChangeExtension(path, ".lrc")
+                    : null;
+                if (lrcPath is not null && File.Exists(lrcPath))
+                    doc = LrcParser.Parse(await File.ReadAllTextAsync(lrcPath).ConfigureAwait(false));
             }
-            if (lrc is not null)
-                doc = LrcParser.Parse(lrc.Original, lrc.Translation);
+            else
+            {
+                var lrc = await _cache.TryGetLyricAsync(song).ConfigureAwait(false);
+                if (lrc is null)
+                {
+                    var api = _sources.Resolve(song);
+                    lrc = await api.GetLyricAsync(song).ConfigureAwait(false);
+                    if (lrc is not null)
+                        await _cache.CacheLyricAsync(song, lrc).ConfigureAwait(false);
+                }
+                if (lrc is not null)
+                    doc = LrcParser.Parse(lrc.Original, lrc.Translation);
+            }
         }
         catch (Exception)
         {

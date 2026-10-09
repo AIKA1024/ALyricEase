@@ -91,6 +91,28 @@ internal static class PersonalHomeProbe
         await Task.Delay(60);
         Capture(window, root, "dual-dark");
         Application.Current.RequestedThemeVariant = ThemeVariant.Light;
+        var images = window.GetVisualDescendants().OfType<Image>().ToList();
+        Check(images.Count(image => ManagedCoverImage.GetDecodeSize(image) == 144) == 2
+              && images.Count(image => ManagedCoverImage.GetDecodeSize(image) == 360) == 6,
+            "taste 小卡解码 144、常规卡 360（解码尺寸由样式供给）");
+        // —— 创建/收藏区大图/列表切换 ——
+        Check(!home.CreatedIsListMode && !home.CollectedIsListMode, "桌面默认大图显示");
+        home.CollectedIsListMode = true;
+        await Task.Delay(40);
+        Check(window.GetVisualDescendants().OfType<Button>()
+                  .Count(button => button.Classes.Contains("home-playlist-row")) == 2,
+            "收藏区切列表后按行实化");
+        int VisibleRowBadges() => window.GetVisualDescendants()
+            .OfType<Button>().Where(button => button.Classes.Contains("home-playlist-row"))
+            .SelectMany(button => button.GetVisualDescendants().OfType<Panel>())
+            .Count(panel => panel.Classes.Contains("source-badge") && panel.IsVisible);
+        Check(VisibleRowBadges() == 2, "全部平台下列表行封面左下角显示音源角标");
+        home.SourceIndex = 1;
+        await Task.Delay(40);
+        Check(VisibleRowBadges() == 0, "筛选单一平台后音源角标隐藏");
+        home.SourceIndex = 0;
+        home.CollectedIsListMode = false;
+        await Task.Delay(40);
         foreach (var width in new[] { 700, 390 })
         {
             window.Width = width;
@@ -99,6 +121,10 @@ internal static class PersonalHomeProbe
             CheckAccounts(window, stacked: true);
             var scroller = view.FindControl<ScrollViewer>("PageScroller")!;
             Check(scroller.Extent.Width <= scroller.Viewport.Width + 1, $"{width}px 无横向溢出");
+            if (width == 390)
+                Check(window.GetVisualDescendants().OfType<Image>()
+                          .All(image => ManagedCoverImage.GetDecodeSize(image) != 360),
+                    "窄屏单列卡片全部改用小图解码");
             Capture(window, root, "dual-" + width);
         }
         var originalScroller = view.FindControl<ScrollViewer>("PageScroller")!;

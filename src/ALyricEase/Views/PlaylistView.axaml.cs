@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
@@ -166,5 +169,35 @@ public partial class PlaylistView : UserControl
         if (DataContext is not PlaylistViewModel { SelectedPlaylist.Playlist: { Id: > 0 } playlist })
             return null;
         return playlist;
+    }
+
+    /// <summary>聚合歌单导入本地歌曲:文件选择器多选音频,路径交给 VM 持久化并追加显示行。</summary>
+    private async void OnImportLocalTracksClick(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        if (DataContext is not PlaylistViewModel { IsAggregate: true } viewModel) return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择要导入的本地歌曲",
+            AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("音频文件")
+                {
+                    Patterns = LocalAudioFiles.SupportedExtensions.Select(ext => "*" + ext).ToList(),
+                },
+            ],
+        });
+        if (files.Count == 0) return;
+
+        var paths = new List<string>();
+        foreach (var file in files)
+        {
+            var path = file.TryGetLocalPath();
+            if (!string.IsNullOrEmpty(path)) paths.Add(path);
+        }
+        viewModel.AddLocalTracks(paths);
     }
 }

@@ -5,6 +5,7 @@ using ALyricEase.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using System.Diagnostics;
 using System.IO;
 using Avalonia.VisualTree;
 
@@ -38,6 +39,10 @@ internal static class SongContextMenu
             Focusable = false,
         });
 
+        // 本地歌曲(聚合歌单导入):没有在线音源,裁剪掉 添加到歌单/表演者/专辑/分享/浏览器/复制链接,
+        // 只保留 播放/下一首播放/来源;文件缺失时"播放"仍可点,由播放器提示文件不存在。
+        var isLocal = song.Source == MusicSource.Local;
+
         if (row is not null)
         {
             var play = MenuItemWithIcon("播放", "\uE912");
@@ -58,47 +63,74 @@ internal static class SongContextMenu
             menu.Items.Add(new Separator());
         }
 
-        var addToPlaylist = MenuItemWithIcon("添加到歌单", "\uE92B");
-        addToPlaylist.Click += (_, _) =>
+        // 本地歌曲:文件还在时提供"打开文件位置"(Windows 资源管理器 /select 选中该文件);
+        // 文件缺失则没有"位置"可开,不显示。
+        if (isLocal && OperatingSystem.IsWindows()
+            && !string.IsNullOrEmpty(song.LocalFilePath) && File.Exists(song.LocalFilePath))
         {
-            try
+            menu.Items.Add(new Separator());
+            var reveal = MenuItemWithIcon("打开文件位置", "\uF4DD");
+            reveal.Click += (_, _) =>
             {
-                ServiceLocator.Get<MainViewModel>().OpenAddSongToPlaylistDialogCommand.Execute(song);
-            }
-            catch { /* 设计器/无头宿主没有应用 DI，仅保留菜单结构。 */ }
-        };
-        menu.Items.Add(addToPlaylist);
+                try
+                {
+                    using var process = System.Diagnostics.Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{song.LocalFilePath}\"",
+                        UseShellExecute = true,
+                    });
+                }
+                catch { /* 打开失败静默返回。 */ }
+            };
+            menu.Items.Add(reveal);
+        }
 
-        AddArtistItem(menu, song);
+        if (!isLocal)
+        {
+            var addToPlaylist = MenuItemWithIcon("添加到歌单", "\uE92B");
+            addToPlaylist.Click += (_, _) =>
+            {
+                try
+                {
+                    ServiceLocator.Get<MainViewModel>().OpenAddSongToPlaylistDialogCommand.Execute(song);
+                }
+                catch { /* 设计器/无头宿主没有应用 DI，仅保留菜单结构。 */ }
+            };
+            menu.Items.Add(addToPlaylist);
 
-        var album = MenuItemWithIcon($"专辑： {song.Album}", "\uE922");
-        album.IsEnabled = HasAlbumTarget(song);
-        if (album.IsEnabled)
-            album.Click += async (_, _) => await OpenAlbumAsync(song);
-        menu.Items.Add(album);
+            AddArtistItem(menu, song);
 
-        menu.Items.Add(new Separator());
+            var album = MenuItemWithIcon($"专辑： {song.Album}", "\uE922");
+            album.IsEnabled = HasAlbumTarget(song);
+            if (album.IsEnabled)
+                album.Click += async (_, _) => await OpenAlbumAsync(song);
+            menu.Items.Add(album);
 
-        var link = SongShareLinks.For(song);
-        var share = MenuItemWithIcon("分享", "\uE918");
-        share.IsEnabled = link is not null;
-        if (link is not null)
-            share.Click += async (_, _) => await ShareSongAsync(anchor, song, link);
-        menu.Items.Add(share);
+            menu.Items.Add(new Separator());
 
-        var openBrowser = MenuItemWithIcon("在浏览器中打开", "\uE94F");
-        openBrowser.IsEnabled = link is not null;
-        if (link is not null)
-            openBrowser.Click += async (_, _) => await OpenBrowserAsync(anchor, link);
-        menu.Items.Add(openBrowser);
+            var link = SongShareLinks.For(song);
+            var share = MenuItemWithIcon("分享", "\uE918");
+            share.IsEnabled = link is not null;
+            if (link is not null)
+                share.Click += async (_, _) => await ShareSongAsync(anchor, song, link);
+            menu.Items.Add(share);
 
-        var copy = MenuItemWithIcon("复制链接", "\uE902");
-        copy.IsEnabled = link is not null;
-        if (link is not null)
-            copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
-        menu.Items.Add(copy);
+            var openBrowser = MenuItemWithIcon("在浏览器中打开", "\uE94F");
+            openBrowser.IsEnabled = link is not null;
+            if (link is not null)
+                openBrowser.Click += async (_, _) => await OpenBrowserAsync(anchor, link);
+            menu.Items.Add(openBrowser);
 
-        menu.Items.Add(new Separator());
+            var copy = MenuItemWithIcon("复制链接", "\uE902");
+            copy.IsEnabled = link is not null;
+            if (link is not null)
+                copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
+            menu.Items.Add(copy);
+
+            menu.Items.Add(new Separator());
+        }
+
         menu.Items.Add(new MenuItem
         {
             Header = $"来源： {SourceText(song, queueSourceName)}",
@@ -255,6 +287,7 @@ internal static class SongContextMenu
 
     private static string SourceText(Song song, string? queueSourceName)
     {
+        if (song.Source == MusicSource.Local) return "本地歌曲";
         if (!string.IsNullOrWhiteSpace(queueSourceName)) return queueSourceName;
         return song.Source == MusicSource.QQ ? "QQ音乐" : "网易云音乐";
     }

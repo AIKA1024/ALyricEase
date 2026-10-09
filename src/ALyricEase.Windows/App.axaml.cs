@@ -56,6 +56,12 @@ public partial class App : Application
       ServiceLocator.Get<ISmtcService>().Initialize(hwnd);
 #endif
 
+      // 本地音频文件启动(双击文件/打开方式):参数里的音频文件全部入队并起播第一个。
+      // 放在 SMTC 初始化之后,避免 NowPlaying 元数据先于 SMTC 就绪。
+      var audioFiles = LocalAudioFiles.FilterPaths(desktop.Args);
+      if (audioFiles.Count > 0)
+        _ = ServiceLocator.Get<PlayerViewModel>().PlayLocalFilesAsync(audioFiles);
+
       // 后台恢复登录态(已存 MUSIC_U 则拉资料+歌单),不阻塞 UI
       _ = RestoreLoginAsync();
     }

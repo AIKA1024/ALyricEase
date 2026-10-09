@@ -30,6 +30,25 @@
                         <RadioButton Content="先网易云,再 QQ" IsChecked="{Binding NetEaseFirst}" FontSize="14" />
                         <RadioButton Content="先 QQ,再网易云" IsChecked="{Binding QqFirst}" FontSize="14" />
                     </StackPanel>
+                    <!-- 自定义封面:预览 + 选图/恢复默认;默认封面 = 第一个成员歌单的封面 -->
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="0,4,0,0">
+                        <Border Width="56" Height="56" CornerRadius="8" ClipToBounds="True"
+                                Background="{DynamicResource ArtFallback}">
+                            <Image Source="{Binding CustomCoverPreview}" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                            <TextBlock Text="自定义封面" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="不设置则使用第一个成员歌单的封面" FontSize="12"
+                                       Foreground="{DynamicResource TextTertiary}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Button Content="选图" MinHeight="32" Click="OnPickCoverClick"
+                                    AutomationProperties.Name="选择自定义封面图片" />
+                            <Button Content="恢复默认" MinHeight="32" Command="{Binding ClearCustomCoverCommand}"
+                                    IsEnabled="{Binding HasCustomCover}"
+                                    AutomationProperties.Name="恢复默认封面" />
+                        </StackPanel>
+                    </Grid>
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Grid.Column="0" FontSize="12"
                                    Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center"

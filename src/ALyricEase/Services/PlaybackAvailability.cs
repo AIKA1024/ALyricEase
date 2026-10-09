@@ -1,3 +1,4 @@
+using System.IO;
 using ALyricEase.Models;
 
 namespace ALyricEase.Services;
@@ -7,6 +8,10 @@ internal static class PlaybackAvailability
 {
     public static bool CanAttempt(Song song, IMusicApi? api)
     {
+        // 本地歌曲:文件存在才可播;缺失(移动/删除)判不可播,行保留展示(删除线)。
+        if (song.Source == MusicSource.Local)
+            return !string.IsNullOrEmpty(song.LocalFilePath) && File.Exists(song.LocalFilePath);
+
         if (song.IsPlaybackUnavailable) return false;
         if (song.IsNoCopyright) return false;
 

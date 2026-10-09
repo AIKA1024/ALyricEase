@@ -30,6 +30,9 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
         ? "QQ 音乐"
         : "网易云音乐";
 
+    /// <summary>音源角标("全部平台"筛选下的列表行封面左下角显示):与个性推荐歌曲行共用同一份位图。</summary>
+    public Avalonia.Media.IImage? SourceBadge => Infrastructure.SourceBadges.For(Playlist.Source);
+
     /// <summary>有简介才显示(API 多数歌单无简介)。</summary>
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
 

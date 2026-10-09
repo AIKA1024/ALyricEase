@@ -231,6 +231,25 @@ public static class Program
             return;
         }
 
+        // 播放详情页背景动画可见性回归(--album-motion-visibility):
+        // 最小化/隐藏时必须停止 RAF 与音频分析，恢复后必须从暂停位置继续。
+        if (args.Length > 0 && args[0] == "--album-motion-visibility")
+        {
+            var albumMotionBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var albumMotionExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { albumMotionExitCode = await AlbumMotionVisibilityProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[album-motion-visibility] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            albumMotionBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = albumMotionExitCode;
+            return;
+        }
+
         // 真窗口进度动画 CPU 对照(--progress-cpu-real):循环开/关单变量对照 + 窗口不可见时是否仍出帧
         if (args.Length > 0 && args[0] == "--progress-cpu-real")
         {
@@ -356,6 +375,27 @@ public static class Program
             });
             flashBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
             Environment.ExitCode = flashExitCode;
+            return;
+        }
+
+        // 个人主页滚动的 GPU 归因(--home-scroll-gpu):真窗口 + 真主页 + 程序化滚动,
+        // 同轮四档消融(静止 / 滚动 / 滚动·无封面 / 静止·无封面),拆开"滚动出帧本身"与
+        // "这页的卡片封面位图"各值多少显卡;收尾再单量一次滚动帧率(RAF 计数放最后,不污染 GPU 采样)。
+        // ⚠ 窗口会置顶约一分钟(GPU 计数只在真的提交到屏幕时才有值)。
+        if (args.Length > 0 && args[0] == "--home-scroll-gpu")
+        {
+            var homeBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var homeExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { homeExitCode = await HomeScrollGpuProbe.RunRealAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[home-scroll] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            homeBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = homeExitCode;
             return;
         }
 
@@ -538,7 +578,7 @@ public static class Program
         // 聚合歌单流式加载回归：来源稳定排序、100/300 批尺寸、范围集合单通知。
         if (args.Length > 0 && args[0] == "--aggregate-load")
         {
-            Environment.ExitCode = AggregateLoadingProbe.Run();
+            Environment.ExitCode = AggregateLoadingProbe.RunAsync().GetAwaiter().GetResult();
             return;
         }
 

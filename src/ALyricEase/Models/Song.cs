@@ -75,4 +75,8 @@ public sealed class Song
 
     /// <summary>该实例来自离线歌单快照且已确认有本地音频；播放时跳过在线音质升级请求。</summary>
     internal bool PreferCachedPlayback { get; set; }
+
+    /// <summary>本地音频文件的绝对路径。仅 Source == MusicSource.Local 时有效;
+    /// 播放/歌词/元数据都以此为唯一事实来源,在线音源恒为 null。</summary>
+    public string? LocalFilePath { get; init; }
 }

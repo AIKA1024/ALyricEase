@@ -127,13 +127,14 @@ internal sealed class PagedSongQueue : ILazySongQueue
 /// </summary>
 internal sealed class AggregateSongQueue : ILazySongQueue
 {
-    internal sealed record Member(AggregatePlaylistMember Playlist, int? KnownCount);
+    internal sealed record Member(AggregatePlaylistMember Playlist, int? KnownCount, IReadOnlyList<string>? LocalPaths = null);
 
     private sealed class MemberState
     {
         public required AggregatePlaylistMember Playlist { get; init; }
         public int? Count { get; set; }
         public IReadOnlyList<long>? NetEaseTrackIds { get; set; }
+        public IReadOnlyList<string>? LocalPaths { get; set; }
         public Task? MetadataTask { get; set; }
     }
 
@@ -151,6 +152,7 @@ internal sealed class AggregateSongQueue : ILazySongQueue
         {
             Playlist = member.Playlist,
             Count = member.KnownCount is >= 0 ? member.KnownCount : null,
+            LocalPaths = member.LocalPaths,
         }).ToArray();
     }
 
@@ -174,7 +176,16 @@ internal sealed class AggregateSongQueue : ILazySongQueue
 
         var state = _members[memberIndex];
         Song? song;
-        if (state.Playlist.Source == MusicSource.NetEase)
+        if (state.Playlist.Source == MusicSource.Local)
+        {
+            // 本地成员:元数据由文件名派生,播放时播放器直接读文件;
+            // 文件缺失仍返回 Song(行已禁用),由播放器对缺失文件统一提示。
+            var path = state.LocalPaths is not null && (uint)localIndex < (uint)state.LocalPaths.Count
+                ? state.LocalPaths[localIndex]
+                : null;
+            song = string.IsNullOrEmpty(path) ? null : LocalAudioFiles.CreateSong(path);
+        }
+        else if (state.Playlist.Source == MusicSource.NetEase)
         {
             await EnsureMetadataAsync(memberIndex, requireTrackIds: true, ct).ConfigureAwait(false);
             IReadOnlyList<long>? ids;
@@ -198,6 +209,14 @@ internal sealed class AggregateSongQueue : ILazySongQueue
     public void Remember(int index, Song song)
     {
         if (index >= 0) _cache.Set(index, song);
+    }
+
+    /// <summary>本地尾段在逻辑队列中的起始下标 = 各成员计数之和。
+    /// 聚合歌单本地歌曲行的播放下标 = 该值 + 本地序号,在播放时才解析(成员计数此时已确定)。</summary>
+    public async ValueTask<int> GetLocalStartIndexAsync()
+    {
+        await GetCountAsync().ConfigureAwait(false);
+        lock (_gate) return _members.Sum(member => member.Count ?? 0);
     }
 
     /// <summary>界面流式加载已经拿到权威网易云概览时同步给播放队列。</summary>

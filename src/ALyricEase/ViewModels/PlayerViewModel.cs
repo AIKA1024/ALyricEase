@@ -235,11 +235,15 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     /// 只有开软件未放歌(无曲目)时才隐藏。</summary>
     public bool HasProgress => CurrentSong is not null;
 
+    /// <summary>播放条红心按钮可见性:本地歌曲(聚合歌单导入)没有平台红心,隐藏。</summary>
+    public bool ShowLikeButton => CurrentSong?.Source != MusicSource.Local;
+
     partial void OnCurrentSongChanged(Song? value)
     {
         OnPropertyChanged(nameof(HasProgress));
         OnPropertyChanged(nameof(DisplayTitle));
         OnPropertyChanged(nameof(DisplayArtist));
+        OnPropertyChanged(nameof(ShowLikeButton)); // 本地歌曲没有平台红心,播放条隐藏红心按钮
         RefreshUpcomingItems(); // 切歌后"接下来播放"从新的当前曲起算
         _ = LoadCurrentLikedAsync();
     }
@@ -358,7 +362,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             source);
 
     /// <summary>支持稀疏物化窗口的懒队列入口：卡片播放只需携带首批已知歌曲及其真实逻辑下标。</summary>
-    private async Task<bool> PlayFromLazyList(
+    internal async Task<bool> PlayFromLazyList(
         Song song,
         ILazySongQueue lazyQueue,
         int logicalIndex,
@@ -777,6 +781,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         if (song is null) return PlayAttemptResult.Unavailable;
 
+        // 本地文件不经过音源 API 与磁盘缓存:直接播绝对路径(双击文件/打开方式的入口)。
+        if (song.Source == MusicSource.Local)
+            return await TryPlayLocalAsync(song, allowCrossfade).ConfigureAwait(true);
+
         // 重播同一首(单曲循环/播完重按)不做交叉:同一音源重叠是回声不是淡化
         if (CurrentSong is not null && SameSong(song, CurrentSong)) allowCrossfade = false;
 
@@ -905,6 +913,44 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         return api.IsVip
             ? "该歌曲暂不可播放(版权或区域限制)"
             : "该歌曲为 VIP 歌曲,当前账号未开通网易云会员(音乐包/黑胶)";
+    }
+
+    /// <summary>本地音频文件播放:文件存在即起播,不查缓存/不请求播放地址。
+    /// 缺失(移动/删除/恢复的历史记录)判不可播并提示。</summary>
+    private async Task<PlayAttemptResult> TryPlayLocalAsync(Song song, bool allowCrossfade)
+    {
+        var path = song.LocalFilePath;
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            song.IsPlaybackUnavailable = true;
+            Message = "本地文件不存在或已被移动";
+            return PlayAttemptResult.Unavailable;
+        }
+
+        _advancing++;
+        Message = null;
+        IsLoading = true;
+        try
+        {
+            song.IsPlaybackUnavailable = false;
+            PrepareSongPlayback(song);
+            await StartPlayerAsync(path, cacheLease: null, allowCrossfade).ConfigureAwait(true);
+            return PlayAttemptResult.Started;
+        }
+        finally
+        {
+            _advancing--;
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>播放一组本地音频文件(打开方式/启动参数入口):全部入普通队列并起播第一个。
+    /// 空列表不动作。返回是否真正开始播放。</summary>
+    public async Task<bool> PlayLocalFilesAsync(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0) return false;
+        var songs = paths.Select(LocalAudioFiles.CreateSong).ToList();
+        return await PlayFromList(songs[0], songs, "本地音乐").ConfigureAwait(true);
     }
 
     [RelayCommand]

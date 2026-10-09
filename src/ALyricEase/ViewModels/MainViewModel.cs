@@ -47,7 +47,9 @@ public sealed partial class MainViewModel : ViewModelBase
         AddAggregateDialog = new AddAggregateDialogViewModel(playlist, appState, OnAggregateConfirmed,
             OnAggregateEditConfirmed);
         AggregateSettingsDialog = new AggregateSettingsDialogViewModel(OnAggregateSettingsSaved);
-        CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed);
+        LocalPlaylistSettingsDialog = new LocalPlaylistSettingsDialogViewModel(OnLocalPlaylistSettingsSaved);
+        CreatePlaylistDialog = new CreatePlaylistDialogViewModel(playlist, OnCreatePlaylistConfirmed,
+            OnLocalPlaylistCreated);
         AddSongToPlaylistDialog = new AddSongToPlaylistDialogViewModel(playlist, OnSongAddedToPlaylist);
         LikeSourceDialog = new LikeSourceDialogViewModel(() => IsLikeSourceDialogOpen = false);
         RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed,
@@ -151,6 +153,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private static readonly NavItemViewModel NetEasePlaylistsHeader = new("PlaylistsHeader", "网易云音乐", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "创建新歌单");
     private static readonly NavItemViewModel QqPlaylistsHeader = new("QqPlaylistsHeader", "QQ音乐", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "创建新歌单");
     private static readonly NavItemViewModel AggregatePlaylistsHeader = new("AggregatePlaylistsHeader", "聚合歌单", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "添加歌单到聚合");
+
+    private static readonly NavItemViewModel LocalPlaylistsHeader = new("LocalPlaylistsHeader", "本地音乐", isHeader: true, isToggleGroup: true, hasAddButton: true, addToolTip: "创建本地音乐歌单");
 
     public ObservableCollection<NavItemViewModel> ShellNavItems { get; } = new();
 
@@ -463,6 +467,16 @@ public sealed partial class MainViewModel : ViewModelBase
                 });
         }
 
+        // 本地音乐分组:不依赖登录,**始终显示分组头**("+"创建入口;没有歌单时也要能创建第一张),
+        // 排在 QQ 音乐之后;有歌单时列出子项。
+        ShellNavItems.Add(LocalPlaylistsHeader);
+        foreach (var local in AppState.LocalPlaylists)
+            ShellNavItems.Add(new NavItemViewModel($"LocalPlaylist:{local.Id}", local.Name, "", localPlaylist: local)
+            {
+                OwnerKey = LocalPlaylistsHeader.Key,
+                ShowAsChild = LocalPlaylistsHeader.IsExpanded,
+            });
+
         // CompactNavItems 是 ShellNavItems 的派生列表,不是它自身变化的通知源 —— 重建后要显式通知
         OnPropertyChanged(nameof(CompactNavItems));
     }
@@ -513,6 +527,13 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(CurrentPageTitle));
             // 中/小屏抽屉内点击导航项后自动收起(原版 NavigationView Compact/Minimal 语义:选中即收起抽屉)
             IsNavigationDrawerOpen = false;
+            if (value.LocalPlaylist is { } localPlaylist)
+            {
+                // 本地音乐歌单:曲目即时可得,无网络参与
+                ActivePage = "Favorites";
+                Playlist.OpenLocalPlaylistCommand.Execute(localPlaylist);
+                return;
+            }
             if (value.Aggregate is { } aggregate)
             {
                 // 聚合歌单:合并各成员歌单曲目展示(复用歌单详情页)
@@ -1008,6 +1029,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>添加聚合歌单对话框(WinUI3 ContentDialog 式窗口内弹层):true=显示。</summary>
     [ObservableProperty] private bool _isAggregateDialogOpen;
 
+    /// <summary>本地音乐歌单设置弹窗 VM(封面自定义;弹窗宿主绑定)。</summary>
+    public LocalPlaylistSettingsDialogViewModel LocalPlaylistSettingsDialog { get; }
+
     /// <summary>分组头"+"统一入口:聚合歌单=添加成员歌单;网易云/QQ 音乐=创建该源歌单(占位,API 待接入)。</summary>
     [RelayCommand]
     private void NavHeaderAdd(string? key)
@@ -1018,6 +1042,11 @@ public sealed partial class MainViewModel : ViewModelBase
             OpenCreatePlaylistDialog(MusicSource.NetEase);
         else if (key == QqPlaylistsHeader.Key)
             OpenCreatePlaylistDialog(MusicSource.QQ);
+        else if (key == LocalPlaylistsHeader.Key)
+        {
+            CreatePlaylistDialog.RefreshLocal();
+            IsCreatePlaylistDialogOpen = true;
+        }
     }
 
     /// <summary>创建歌单弹窗状态(WinUI3 ContentDialog 式窗口内弹层,宿主 MainWindow 绑定)。</summary>
@@ -1171,7 +1200,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (AppState.AggregatePlaylists.Remove(aggregate))
         {
-            AggregateCoverStore.Delete(aggregate.Id);
+            PlaylistCoverStore.Delete("agg-" + aggregate.Id);
             AppState.Save();
             if (ReferenceEquals(Playlist.CurrentAggregate, aggregate))
                 _playlist.CloseAggregateDetail();
@@ -1252,6 +1281,38 @@ public sealed partial class MainViewModel : ViewModelBase
         AppState.Save();
         RebuildShellNavigation(); // 聚合分组下新增子项
         IsAggregateDialogOpen = false;
+    }
+
+    /// <summary>本地音乐歌单创建回调:持久化已在 CreateLocalPlaylist 完成,这里重建侧栏、
+    /// 关弹窗并直接打开新歌单(创建后立即可导入歌曲)。</summary>
+    private void OnLocalPlaylistCreated(Models.LocalPlaylist local)
+    {
+        IsCreatePlaylistDialogOpen = false;
+        RebuildShellNavigation();
+        Playlist.OpenLocalPlaylistCommand.Execute(local);
+    }
+
+    // ---- 本地音乐歌单设置弹窗(封面自定义) ----
+
+    /// <summary>本地音乐歌单设置弹窗状态(WinUI3 ContentDialog 式窗口内弹层)。</summary>
+    [ObservableProperty] private bool _isLocalPlaylistSettingsDialogOpen;
+
+    [RelayCommand]
+    private void OpenLocalPlaylistSettings(Models.LocalPlaylist? local)
+    {
+        if (local is null) return;
+        LocalPlaylistSettingsDialog.Refresh(local);
+        IsLocalPlaylistSettingsDialogOpen = true;
+    }
+
+    [RelayCommand] private void CloseLocalPlaylistSettingsDialog() => IsLocalPlaylistSettingsDialogOpen = false;
+
+    /// <summary>本地歌单设置保存回调:持久化已在弹窗 VM 完成,重开当前页让封面/状态生效。</summary>
+    private void OnLocalPlaylistSettingsSaved(Models.LocalPlaylist local)
+    {
+        IsLocalPlaylistSettingsDialogOpen = false;
+        if (ReferenceEquals(Playlist.CurrentLocalPlaylist, local))
+            Playlist.OpenLocalPlaylistCommand.Execute(local);
     }
 
     // ---- 音频输出设备选择弹窗 ----

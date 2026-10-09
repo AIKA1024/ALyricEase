@@ -20,6 +20,9 @@ public sealed class AppStateFile
     /// <summary>聚合歌单列表(用户经侧栏"+"创建;null = 从未创建过)。</summary>
     public List<AggregatePlaylistFile>? AggregatePlaylists { get; set; }
 
+    /// <summary>本地音乐歌单列表(用户经侧栏"本地音乐"分组"+"创建;null = 从未创建过)。</summary>
+    public List<LocalPlaylistFile>? LocalPlaylists { get; set; }
+
     /// <summary>搜索历史(最新在前;null = 从未搜过)。</summary>
     public List<string>? SearchHistory { get; set; }
 
@@ -115,9 +118,6 @@ public sealed class AggregatePlaylistFile
     /// <summary>自定义封面文件名(covers/ 目录下;null = 未自定义)。</summary>
     public string? CustomCover { get; set; }
 
-    /// <summary>导入的本地歌曲绝对路径(null = 未导入)。</summary>
-    public List<string>? LocalTracks { get; set; }
-
     public List<AggregateMemberFile>? Members { get; set; }
 }
 
@@ -128,7 +128,24 @@ public sealed class AggregateMemberFile
 
     public long? PlaylistId { get; set; }
 
+    /// <summary>本地音乐歌单 Id(仅 Source=2/Local 时有效)。</summary>
+    public string? LocalPlaylistId { get; set; }
+
     public string? PlaylistName { get; set; }
+}
+
+/// <summary>本地音乐歌单落盘形态。</summary>
+public sealed class LocalPlaylistFile
+{
+    public string? Id { get; set; }
+
+    public string? Name { get; set; }
+
+    /// <summary>自定义封面文件名(covers/ 目录下;null = 默认取第一首带内嵌封面的歌)。</summary>
+    public string? CustomCover { get; set; }
+
+    /// <summary>导入的本地音频绝对路径(导入顺序)。</summary>
+    public List<string>? Tracks { get; set; }
 }
 
 /// <summary>最近播放歌曲的稳定落盘形态；不保存运行期可播性与缓存偏好。</summary>

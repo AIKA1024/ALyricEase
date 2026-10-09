@@ -47,6 +47,10 @@
     <views:AggregateSettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAggregateSettingsDialogOpen}"
                                        Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
 
+    <!-- 本地音乐歌单设置对话框(齿轮;布局同聚合设置) -->
+    <views:LocalPlaylistSettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLocalPlaylistSettingsDialogOpen}"
+                                           Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+
     <!-- 播放条“添加到歌单”:单击菜单项打开，位于所有页面与播放详情之上。 -->
     <views:AddSongToPlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAddSongToPlaylistDialogOpen}"
                                        Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />

@@ -1,5 +1,4 @@
 using System.IO;
-using ALyricEase.Models;
 using ALyricEase.Services;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -8,12 +7,12 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>聚合歌单设置对话框 VM:成员按来源的排列顺序 + 自定义封面。
-/// 封面选图即时预览、保存时才落位(取消不生效);落位文件在应用数据目录 covers/ 下,模型只存文件名。</summary>
-public sealed partial class AggregateSettingsDialogViewModel : ViewModelBase
+/// <summary>本地音乐歌单设置弹窗 VM:仅封面自定义(默认取歌单内第一首带内嵌封面的歌)。
+/// 封面选图即时预览、保存时才落位(取消不生效);落位文件在 covers/ 目录,模型只存文件名。</summary>
+public sealed partial class LocalPlaylistSettingsDialogViewModel : ViewModelBase
 {
-    private readonly Action<AggregatePlaylist> _onSaved;
-    private AggregatePlaylist? _current;
+    private readonly Action<Models.LocalPlaylist> _onSaved;
+    private Models.LocalPlaylist? _current;
 
     /// <summary>本次刚选的封面(临时文件,保存时才复制进 covers/);null = 没选新图。</summary>
     private string? _pendingCoverTempPath;
@@ -21,19 +20,13 @@ public sealed partial class AggregateSettingsDialogViewModel : ViewModelBase
     /// <summary>用户点了"恢复默认",保存时删除自定义封面文件并清空引用。</summary>
     private bool _pendingCoverClear;
 
-    public AggregateSettingsDialogViewModel(Action<AggregatePlaylist> onSaved)
+    public LocalPlaylistSettingsDialogViewModel(Action<Models.LocalPlaylist> onSaved)
     {
         _onSaved = onSaved;
     }
 
-    /// <summary>当前聚合歌单名(标题副文案)。</summary>
-    [ObservableProperty] private string _aggregateName = "";
-
-    /// <summary>单选:网易云在前。</summary>
-    [ObservableProperty] private bool _netEaseFirst;
-
-    /// <summary>单选:QQ在前。</summary>
-    [ObservableProperty] private bool _qqFirst;
+    /// <summary>当前本地音乐歌单名(标题副文案)。</summary>
+    [ObservableProperty] private string _localPlaylistName = "";
 
     /// <summary>自定义封面预览(本地解码后的位图;null = 无自定义封面)。</summary>
     [ObservableProperty] private IImage? _customCoverPreview;
@@ -42,15 +35,13 @@ public sealed partial class AggregateSettingsDialogViewModel : ViewModelBase
     [ObservableProperty] private bool _hasCustomCover;
 
     /// <summary>打开对话框时调用:按当前设置初始化。</summary>
-    public void Refresh(AggregatePlaylist aggregate)
+    public void Refresh(Models.LocalPlaylist local)
     {
-        _current = aggregate;
-        AggregateName = aggregate.Name;
-        NetEaseFirst = aggregate.SourceOrder != AggregateSourceOrder.QqFirst;
-        QqFirst = aggregate.SourceOrder == AggregateSourceOrder.QqFirst;
+        _current = local;
+        LocalPlaylistName = local.Name;
         _pendingCoverTempPath = null;
         _pendingCoverClear = false;
-        var path = PlaylistCoverStore.ResolvePath(aggregate.CustomCover);
+        var path = PlaylistCoverStore.ResolvePath(local.CustomCover);
         CustomCoverPreview = LoadPreview(path);
         HasCustomCover = path is not null;
     }
@@ -70,7 +61,7 @@ public sealed partial class AggregateSettingsDialogViewModel : ViewModelBase
                     Math.Max(1, (int)(decoded.PixelSize.Height * scale))))
                 : null;
             var source = scaled ?? decoded;
-            var temp = Path.Combine(Path.GetTempPath(), $"aly-aggregate-cover-{Guid.NewGuid():N}.png");
+            var temp = Path.Combine(Path.GetTempPath(), $"aly-local-cover-{Guid.NewGuid():N}.png");
             using (var file = File.Create(temp)) source.Save(file);
             TryDelete(_pendingCoverTempPath);
             _pendingCoverTempPath = temp;
@@ -84,7 +75,7 @@ public sealed partial class AggregateSettingsDialogViewModel : ViewModelBase
         }
     }
 
-    /// <summary>恢复默认:清掉待存/现用封面(保存时生效)。</summary>
+    /// <summary>恢复默认:清掉待存/现用封面(保存时生效);回退到歌单内第一首带内嵌封面的歌。</summary>
     [RelayCommand]
     private void ClearCustomCover()
     {
@@ -99,7 +90,6 @@ public sealed partial class AggregateSettingsDialogViewModel : ViewModelBase
     private void Save()
     {
         if (_current is null) return;
-        _current.SourceOrder = QqFirst ? AggregateSourceOrder.QqFirst : AggregateSourceOrder.NetEaseFirst;
         CommitCover();
         _onSaved(_current);
     }
@@ -107,16 +97,17 @@ public sealed partial class AggregateSettingsDialogViewModel : ViewModelBase
     private void CommitCover()
     {
         if (_current is null) return;
+        var key = "local-" + _current.Id;
         if (_pendingCoverClear)
         {
-            PlaylistCoverStore.Delete("agg-" + _current.Id);
+            PlaylistCoverStore.Delete(key);
             _current.CustomCover = null;
         }
         else if (_pendingCoverTempPath is not null)
         {
             try
             {
-                _current.CustomCover = PlaylistCoverStore.Save("agg-" + _current.Id, _pendingCoverTempPath);
+                _current.CustomCover = PlaylistCoverStore.Save(key, _pendingCoverTempPath);
             }
             catch
             {

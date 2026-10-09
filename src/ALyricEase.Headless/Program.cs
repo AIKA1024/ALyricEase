@@ -445,9 +445,26 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
+        if (args.Length > 0 && args[0] == "--cover-fallback")
+        {
+            Environment.ExitCode = CoverFallbackProbe.Run();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--desktop-lifecycle")
         {
             Environment.ExitCode = DesktopLifecycleProbe.Run();
+            return;
+        }
+
+        // 默认封面资源可加载性:avares:// 经 AssetLoader 直读(ManagedCoverImage 本地分支同机制)。
+        if (args.Length > 0 && args[0] == "--default-cover")
+        {
+            using var stream = Avalonia.Platform.AssetLoader.Open(
+                new Uri("avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png"));
+            var bmp = new Avalonia.Media.Imaging.Bitmap(stream);
+            Console.WriteLine($"[default-cover] {bmp.PixelSize.Width}x{bmp.PixelSize.Height}");
+            Environment.ExitCode = bmp.PixelSize.Width > 0 ? 0 : 1;
             return;
         }
 
@@ -575,10 +592,25 @@ public static class Program
             return;
         }
 
-        // 聚合歌单流式加载回归：来源稳定排序、100/300 批尺寸、范围集合单通知。
+        // 聚合歌单流式加载回归:本地成员批次会经 Dispatcher 上屏,须走异步泵(与 personal-home 同款)。
         if (args.Length > 0 && args[0] == "--aggregate-load")
         {
-            Environment.ExitCode = AggregateLoadingProbe.RunAsync().GetAwaiter().GetResult();
+            // 共用的 AppBuilder/ConfigureServices 已在上方初始化;本地成员批次会经
+            // Dispatcher 上屏,这里只需异步泵驱动(MainLoop),不能同步阻塞等待。
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { Environment.ExitCode = await AggregateLoadingProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
+            return;
+        }
+
+        // 本地音频标签读取回归:FLAC Vorbis/STREAMINFO + MP3 ID3v2 文本帧 + 文件名兜底。
+        if (args.Length > 0 && args[0] == "--local-tags")
+        {
+            Environment.ExitCode = LocalTagsProbe.Run();
             return;
         }
 

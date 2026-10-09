@@ -10,6 +10,8 @@ namespace ALyricEase.Infrastructure;
 /// 占位图静态懒加载一份(避免每容器 new 800x800 Bitmap),单 Image 即可,无需两层 Image 叠加。</summary>
 public sealed class CoverImageConverter : IValueConverter
 {
+    public const string PlaceholderUri = "avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png";
+
     private static IImage? _placeholder;
 
     /// <summary>XAML 用 {x:Static infra:CoverImageConverter.Instance} 引用。</summary>
@@ -25,7 +27,7 @@ public sealed class CoverImageConverter : IValueConverter
     {
         if (_placeholder is null)
         {
-            using var stream = AssetLoader.Open(new Uri("avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png"));
+            using var stream = AssetLoader.Open(new Uri(PlaceholderUri));
             _placeholder = new Bitmap(stream);
         }
         return _placeholder;

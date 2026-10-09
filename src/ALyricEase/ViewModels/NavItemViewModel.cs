@@ -8,7 +8,7 @@ namespace ALyricEase.ViewModels;
 /// 两个可变属性走最小 INPC 实现:仅这两处需要绑定刷新,其余属性只读。</summary>
 public sealed class NavItemViewModel : INotifyPropertyChanged
 {
-    public NavItemViewModel(string key, string label, string? iconGlyph = null, bool isHeader = false, bool isAccent = false, PlaylistItemViewModel? playlist = null, bool isToggleGroup = false, bool hasAddButton = false, string? addToolTip = null, Models.AggregatePlaylist? aggregate = null)
+    public NavItemViewModel(string key, string label, string? iconGlyph = null, bool isHeader = false, bool isAccent = false, PlaylistItemViewModel? playlist = null, bool isToggleGroup = false, bool hasAddButton = false, string? addToolTip = null, Models.AggregatePlaylist? aggregate = null, Models.LocalPlaylist? localPlaylist = null)
     {
         Key = key;
         Label = label;
@@ -20,6 +20,7 @@ public sealed class NavItemViewModel : INotifyPropertyChanged
         HasAddButton = hasAddButton;
         AddToolTip = addToolTip;
         Aggregate = aggregate;
+        LocalPlaylist = localPlaylist;
     }
 
     public string Key { get; }
@@ -31,6 +32,9 @@ public sealed class NavItemViewModel : INotifyPropertyChanged
 
     /// <summary>聚合歌单(聚合分组下的子项;打开时合并各成员歌单曲目)。</summary>
     public Models.AggregatePlaylist? Aggregate { get; }
+
+    /// <summary>本地音乐歌单(本地音乐分组下的子项;曲目即时可得,无网络参与)。</summary>
+    public Models.LocalPlaylist? LocalPlaylist { get; }
 
     /// <summary>可折叠歌单分组头(网易云音乐/QQ 音乐):带箭头、可点展开收起、有 hover 反馈;
     /// 与普通纯标题("发现/我的音乐")区分。</summary>

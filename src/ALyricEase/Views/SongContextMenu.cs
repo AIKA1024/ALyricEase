@@ -65,10 +65,10 @@ internal static class SongContextMenu
 
         // 本地歌曲:文件还在时提供"打开文件位置"(Windows 资源管理器 /select 选中该文件);
         // 文件缺失则没有"位置"可开,不显示。
+        // ⚠ 不再补分隔线 —— 行内语境(播放/下一首)后已有一条,再补会出现双横线。
         if (isLocal && OperatingSystem.IsWindows()
             && !string.IsNullOrEmpty(song.LocalFilePath) && File.Exists(song.LocalFilePath))
         {
-            menu.Items.Add(new Separator());
             var reveal = MenuItemWithIcon("打开文件位置", "\uF4DD");
             reveal.Click += (_, _) =>
             {
@@ -98,9 +98,18 @@ internal static class SongContextMenu
                 catch { /* 设计器/无头宿主没有应用 DI，仅保留菜单结构。 */ }
             };
             menu.Items.Add(addToPlaylist);
+        }
 
-            AddArtistItem(menu, song);
+        // 表演者/专辑:本地歌也展示(标签来自文件内嵌元数据),只是没有平台跳转目标(自动置灰)
+        AddArtistItem(menu, song);
 
+        if (isLocal)
+        {
+            if (song.Album.Length > 0)
+                menu.Items.Add(new MenuItem { Header = $"专辑： {song.Album}", IsEnabled = false, Focusable = false });
+        }
+        else
+        {
             var album = MenuItemWithIcon($"专辑： {song.Album}", "\uE922");
             album.IsEnabled = HasAlbumTarget(song);
             if (album.IsEnabled)
@@ -131,6 +140,9 @@ internal static class SongContextMenu
             menu.Items.Add(new Separator());
         }
 
+        // 来源行前的分隔线:与平台歌一致;末项已是分隔线时不再补(避免双横线)
+        if (menu.Items.Count == 0 || menu.Items[^1] is not Separator)
+            menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem
         {
             Header = $"来源： {SourceText(song, queueSourceName)}",

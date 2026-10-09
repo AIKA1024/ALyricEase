@@ -29,7 +29,7 @@
                     <TextBox x:Name="NameBox" PlaceholderText="歌单名称"
                              Text="{Binding Name}" MaxLength="40" />
                     <CheckBox IsChecked="{Binding IsPrivate}" Content="设为隐私歌单(仅自己可见)"
-                              IsVisible="{Binding IsNetEase}" />
+                              IsVisible="{Binding ShowIsPrivate}" />
                     <!-- 失败文案:留在框内,红字显示服务端/网络错误 -->
                     <TextBlock Text="{Binding Message}" FontSize="13" TextWrapping="Wrap"
                                Foreground="#FFE74C3C"

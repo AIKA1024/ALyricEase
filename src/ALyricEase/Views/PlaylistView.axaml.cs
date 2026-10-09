@@ -171,12 +171,12 @@ public partial class PlaylistView : UserControl
         return playlist;
     }
 
-    /// <summary>聚合歌单导入本地歌曲:文件选择器多选音频,路径交给 VM 持久化并追加显示行。</summary>
+    /// <summary>本地音乐歌单导入歌曲:文件选择器多选音频,路径交给 VM 持久化并追加显示行。</summary>
     private async void OnImportLocalTracksClick(object? sender, RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel is null) return;
-        if (DataContext is not PlaylistViewModel { IsAggregate: true } viewModel) return;
+        if (DataContext is not PlaylistViewModel { IsLocalPlaylist: true } viewModel) return;
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -199,5 +199,24 @@ public partial class PlaylistView : UserControl
             if (!string.IsNullOrEmpty(path)) paths.Add(path);
         }
         viewModel.AddLocalTracks(paths);
+    }
+
+    /// <summary>本地音乐歌单导入文件夹:选一个目录,递归枚举其中受支持的音频文件。</summary>
+    private async void OnImportLocalFolderClick(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        if (DataContext is not PlaylistViewModel { IsLocalPlaylist: true } viewModel) return;
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "选择要导入的音乐文件夹",
+            AllowMultiple = false,
+        });
+        if (folders.Count == 0) return;
+
+        var path = folders[0].TryGetLocalPath();
+        if (string.IsNullOrEmpty(path)) return;
+        viewModel.AddLocalTracks([path]);
     }
 }

@@ -24,6 +24,7 @@
     <!-- 官方客户端代理登录:Go MITM 代理(仅 win-x64/win-arm64 native),入口按平台守卫 -->
     <PackageReference Include="ProjectCirrus.Copycat" Version="0.1.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="Xaml.Behaviors.Avalonia" Version="12.0.7" />
   </ItemGroup>
 </Project>

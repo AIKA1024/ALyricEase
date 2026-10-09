@@ -28,19 +28,18 @@ public sealed class AggregatePlaylist
     /// 文件本体由 AggregateCoverStore 管理,不进 state.json。</summary>
     public string? CustomCover { get; set; }
 
-    /// <summary>导入的本地歌曲绝对路径(state.json 持久化)。行内元数据由文件名派生,
-    /// 播放直接走文件;文件被移动/删除后行仍展示(删除线)但不可播放。</summary>
-    public List<string>? LocalTracks { get; set; }
-
     public List<AggregatePlaylistMember> Members { get; init; } = new();
 }
 
-/// <summary>聚合歌单成员:引用一个具体音源的用户歌单。</summary>
+/// <summary>聚合歌单成员:引用一个具体音源的用户歌单;Source=Local 时引用本地音乐歌单。</summary>
 public sealed class AggregatePlaylistMember
 {
     public Services.MusicSource Source { get; init; }
 
     public long PlaylistId { get; init; }
+
+    /// <summary>本地音乐歌单 Id(仅 Source == MusicSource.Local 时有效)。</summary>
+    public string? LocalPlaylistId { get; init; }
 
     public string PlaylistName { get; init; } = "";
 }

@@ -67,15 +67,6 @@
                          HorizontalAlignment="Center" VerticalAlignment="Center" />
               <Image infra:ManagedCoverImage.Source="{Binding CoverUrl}"
                      Stretch="UniformToFill" />
-              <!-- 音源角标("全部平台"筛选):左上常显,避开悬停浮现的 ▶(左下) -->
-              <!-- DecodeSize=0:角标不走 ManagedCoverImage 管线,显式置 0 免得被
-                   "playlist-art 内 Image"的解码尺寸样式/注册默认值污染(探针按它统计) -->
-              <Panel Classes="source-badge" HorizontalAlignment="Left" VerticalAlignment="Top"
-                     Margin="6" Width="16" Height="16" IsHitTestVisible="False"
-                     IsVisible="{Binding $parent[ItemsControl].((vm:PersonalHomeViewModel)DataContext).ShowSourceBadges}">
-                <Image infra:ManagedCoverImage.DecodeSize="0" Source="{Binding SourceBadge}" Stretch="Uniform"
-                       RenderOptions.BitmapInterpolationMode="HighQuality" />
-              </Panel>
               <Border Classes="card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
               <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" Click="OnPlayClick"
                       HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8" ToolTip.Tip="播放歌单"
@@ -91,6 +82,16 @@
               </Button>
             </Grid>
           </Border>
+          <!-- 音源角标("全部平台"筛选):钉在封面左下角,悬出圆角(与列表行同款,故放 art 外层
+               免受 ClipToBounds 裁剪);悬停浮现的 ▶ 在其上方,重叠部分由 ▶ 覆盖。
+               DecodeSize=0:不走封面管线,免得被样式/注册默认值污染探针的解码尺寸统计 -->
+          <Panel Classes="source-badge" Grid.Row="0" Grid.ColumnSpan="2"
+                 HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                 Margin="2,0,0,2" Width="16" Height="16" IsHitTestVisible="False"
+                 IsVisible="{Binding $parent[ItemsControl].((vm:PersonalHomeViewModel)DataContext).ShowSourceBadges}">
+            <Image infra:ManagedCoverImage.DecodeSize="0" Source="{Binding SourceBadge}" Stretch="Uniform"
+                   RenderOptions.BitmapInterpolationMode="HighQuality" />
+          </Panel>
           <StackPanel Classes="playlist-caption" Spacing="4">
             <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
             <TextBlock Text="{Binding TrackCountText}" Classes="secondary" />

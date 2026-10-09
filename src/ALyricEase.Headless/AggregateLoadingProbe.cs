@@ -71,25 +71,37 @@ internal static class AggregateLoadingProbe
         var estimateSkipsMissing = vm.EstimateAggregateTrackCount(
             aggregate.Members.Append(Member(MusicSource.NetEase, 5)).ToList()) == 120;
         Console.WriteLine($"[aggregate-load] estimate={estimate}, estimateSkipsMissing={estimateSkipsMissing}");
-        // 本地曲目持久化往返:state.json 写→读后 LocalTracks 必须原样保留(否则下次打开看不到导入的歌)。
+        // 本地音乐歌单持久化往返:state.json 写→读后 Tracks 必须原样保留(否则重开看不到导入的歌)。
         var tempState = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"aly-agg-state-{Guid.NewGuid():N}.json");
         var stateStore = new AppStateStore(tempState);
+        stateStore.LocalPlaylists.Add(new LocalPlaylist
+        {
+            Id = "lp1",
+            Name = "持久化",
+            Tracks = [@"C://music//a.mp3", @"C://music//b.flac"],
+        });
         stateStore.AggregatePlaylists.Add(new AggregatePlaylist
         {
             Id = "agg1",
             Name = "持久化",
-            LocalTracks = [@"C:\music\a.mp3", @"C:\music\b.flac"],
             Members =
             [
                 new AggregatePlaylistMember { Source = MusicSource.NetEase, PlaylistId = 1, PlaylistName = "m1" },
+                // 本地成员:PlaylistId 恒 0,靠 LocalPlaylistId 引用 —— Load 的有效性过滤必须保留它
+                new AggregatePlaylistMember { Source = MusicSource.Local, LocalPlaylistId = "lp1", PlaylistName = "l" },
             ],
         });
         stateStore.Save();
-        var reloaded = new AppStateStore(tempState).AggregatePlaylists[0].LocalTracks;
-        var roundTrip = reloaded is { Count: 2 } && reloaded[0] == @"C:\music\a.mp3";
+        var reloadedState = new AppStateStore(tempState);
+        var reloaded = reloadedState.LocalPlaylists[0].Tracks;
+        var reloadedAgg = reloadedState.AggregatePlaylists[0];
+        var roundTrip = reloaded is { Count: 2 } && reloaded[0] == @"C://music//a.mp3"
+            && reloadedAgg.Members.Count == 2
+            && reloadedAgg.Members[1].Source == MusicSource.Local
+            && reloadedAgg.Members[1].LocalPlaylistId == "lp1";
         Console.WriteLine($"[aggregate-load] localTracksRoundTrip={roundTrip}");
-        // 离线打开含本地歌曲的聚合歌单:先把两套 API 客户端离线化(成员全部失败),
-        // 导入的本地歌曲行仍应显示在末尾。
+        // 离线打开含"本地音乐歌单成员"的聚合歌单:网络成员全部失败,本地成员曲目仍应显示在末尾。
+        // 本地歌单以内存注入方式提供给 VM(AppState 不落盘),避免污染真实 state.json。
         var netEaseApi = ServiceLocator.Get<NetEaseApiClient>();
         var qqApi = ServiceLocator.Get<QQMusicApiClient>();
         typeof(NetEaseApiClient).GetField("_http", BindingFlags.Instance | BindingFlags.NonPublic)!
@@ -97,30 +109,45 @@ internal static class AggregateLoadingProbe
         typeof(QQMusicApiClient).GetField("_http", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(qqApi, new HttpClient(new OfflineHandler()));
         var playlistVm = ServiceLocator.Get<PlaylistViewModel>();
+        var appState = ServiceLocator.Get<MainViewModel>().AppState;
+        appState.LocalPlaylists.Add(new LocalPlaylist
+        {
+            Id = "probe-local",
+            Name = "探针本地歌单",
+            Tracks = new List<string> { @"C://music//local1.mp3", @"C://music//local2.mp3" },
+        });
         var offlineAggregate = new AggregatePlaylist
         {
             Id = "agg-offline",
-            Name = "含本地歌曲",
-            LocalTracks = new List<string> { @"C:\music\local1.mp3", @"C:\music\local2.mp3" },
+            Name = "含本地成员",
             Members =
             [
                 new AggregatePlaylistMember { Source = MusicSource.NetEase, PlaylistId = 1, PlaylistName = "m1" },
+                new AggregatePlaylistMember { Source = MusicSource.Local, LocalPlaylistId = "probe-local", PlaylistName = "探针本地歌单" },
             ],
         };
         await playlistVm.OpenAggregateCommand.ExecuteAsync(offlineAggregate);
-        var localRowsShown = playlistVm._aggregateLocalRows is { Count: 2 }
-            && playlistVm.Tracks.Count == 2
+        var localRowsShown = playlistVm.Tracks.Count == 2
             && playlistVm.Tracks.All(row => row.IsLocal)
             && playlistVm.Tracks.All(row => row.IsLocalFileMissing);
         var renumbered = playlistVm.Tracks.Select(row => row.Index).SequenceEqual([1, 2]);
-        Console.WriteLine($"[aggregate-load] localRows={playlistVm._aggregateLocalRows.Count}, " +
-            $"tracks={playlistVm.Tracks.Count}, " +
-            $"isAggregate={playlistVm.IsAggregate}, isLocalFlags=[{string.Join(',', playlistVm.Tracks.Select(t => t.IsLocal))}], " +
+        Console.WriteLine($"[aggregate-load] tracks={playlistVm.Tracks.Count}, " +
+            $"isLocalFlags=[{string.Join(',', playlistVm.Tracks.Select(t => t.IsLocal))}], " +
             $"missingFlags=[{string.Join(',', playlistVm.Tracks.Select(t => t.IsLocalFileMissing))}], " +
             $"indices=[{string.Join(',', playlistVm.Tracks.Select(t => t.Index))}], " +
             $"localRowsShown={localRowsShown}, renumbered={renumbered}");
+        appState.LocalPlaylists.RemoveAt(appState.LocalPlaylists.Count - 1);
+
+        // 无封面本地歌单:头部 CoverUrl 必须落到应用默认封面(avares 资源)
+        await playlistVm.OpenLocalPlaylistCommand.ExecuteAsync(
+            new LocalPlaylist { Id = "lp-nocover", Name = "无封面歌单" });
+        var defaultCoverApplied = playlistVm.SelectedPlaylist?.Playlist.CoverUrl
+            == PlaylistViewModel.DefaultCoverUri;
+        Console.WriteLine($"[aggregate-load] defaultCoverApplied={defaultCoverApplied} " +
+            $"(cover={playlistVm.SelectedPlaylist?.Playlist.CoverUrl})");
         return stableOrder && ranged && liveCount && batchSizes && virtualized
-            && estimate == 120 && estimateSkipsMissing && roundTrip && localRowsShown && renumbered ? 0 : 1;
+            && estimate == 120 && estimateSkipsMissing && roundTrip && localRowsShown && renumbered
+            && defaultCoverApplied ? 0 : 1;
     }
 
     private static AggregatePlaylistMember Member(MusicSource source, long id) => new()

@@ -51,3 +51,11 @@ licensed under the GNU General Public License v3.0.
 No source code from the original project is included; this notice is provided
 as a courtesy attribution of the protocol reference. The upstream license text
 is available at the repository linked above.
+
+## TagLibSharp
+
+This application uses [TagLibSharp](https://github.com/mono/taglib-sharp)
+(NuGet package `TagLibSharp`) for reading metadata (title/artist/album/duration)
+and embedded cover art from local audio files (MP3, FLAC, M4A/MP4, Ogg, Opus,
+APE, WavPack, WAV, AIFF). The files are opened read-only and never modified.
+TagLibSharp is licensed under the GNU Lesser General Public License v2.1.

@@ -297,7 +297,9 @@ public static class CoverLoader
     }
 
     /// <summary>按目标尺寸改写封面 URL:网易云追加 param=WxH;
-    /// QQ 音乐(y.gtimg.cn)改写路径里的 R{w}x{h} 尺寸段(仅固定档位有效,就近取档)。</summary>
+    /// QQ 音乐(y.gtimg.cn)改写路径里的 R{w}x{h} 尺寸段(仅固定档位有效,就近取档)。
+    /// ⚠ 非 http(s) 源(本地文件路径/avares 打包资源)原样返回 —— 追加 param 会让
+    /// File.Exists/AssetLoader.Exists 匹配失败,管线解析不到图(Image.Source=null)。</summary>
     public static string BuildSizedUrl(string url, int size)
     {
         if (url.Contains("y.gtimg.cn", StringComparison.OrdinalIgnoreCase))
@@ -306,6 +308,9 @@ public static class CoverLoader
             return Regex.Replace(
                 url, @"R\d+x\d+M000", $"R{snapped}x{snapped}M000");
         }
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return url;
         var sep = url.Contains('?') ? '&' : '?';
         return $"{url}{sep}param={size}y{size}";
     }

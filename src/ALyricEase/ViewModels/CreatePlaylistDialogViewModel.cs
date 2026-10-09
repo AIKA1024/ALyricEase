@@ -15,14 +15,20 @@ public sealed partial class CreatePlaylistDialogViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
     private readonly Action<Playlist> _onConfirm;
+    private readonly Action<Models.LocalPlaylist>? _onLocalConfirm;
 
-    /// <summary>当前目标音源(Refresh 设置;决定路由与文案)。</summary>
+    /// <summary>当前目标音源(Refresh 设置;决定路由与文案)。本地模式忽略。</summary>
     private MusicSource _source = MusicSource.NetEase;
 
-    public CreatePlaylistDialogViewModel(PlaylistViewModel playlist, Action<Playlist> onConfirm)
+    /// <summary>本地音乐歌单创建模式(RefreshLocal 打开;确认走本地实体创建而非平台 API)。</summary>
+    private bool _isLocal;
+
+    public CreatePlaylistDialogViewModel(PlaylistViewModel playlist, Action<Playlist> onConfirm,
+        Action<Models.LocalPlaylist>? onLocalConfirm = null)
     {
         _playlist = playlist;
         _onConfirm = onConfirm;
+        _onLocalConfirm = onLocalConfirm;
     }
 
     /// <summary>歌单名。</summary>
@@ -42,8 +48,11 @@ public sealed partial class CreatePlaylistDialogViewModel : ViewModelBase
 
     public bool IsNetEase => !IsQq;
 
-    /// <summary>音源标题(标题内插,如"创建网易云歌单")。</summary>
-    public string SourceLabel => IsQq ? "QQ音乐" : "网易云";
+    /// <summary>隐私歌单勾选框可见性:本地模式与 QQ 音乐都不展示(本地无平台可见性概念)。</summary>
+    public bool ShowIsPrivate => !_isLocal && !IsQq;
+
+    /// <summary>音源标题(标题内插,如"创建网易云歌单"/"创建本地音乐歌单")。</summary>
+    public string SourceLabel => _isLocal ? "本地音乐" : IsQq ? "QQ音乐" : "网易云";
 
     /// <summary>名字非空且不在提交中才可确认。</summary>
     public bool CanConfirm => !IsBusy && Name.Trim().Length > 0;
@@ -52,13 +61,30 @@ public sealed partial class CreatePlaylistDialogViewModel : ViewModelBase
 
     partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanConfirm));
 
-    partial void OnIsQqChanged(bool value) => OnPropertyChanged(nameof(IsNetEase));
+    partial void OnIsQqChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsNetEase));
+        OnPropertyChanged(nameof(ShowIsPrivate));
+    }
 
     /// <summary>打开对话框时调用:按目标音源重置输入。</summary>
     public void Refresh(MusicSource source)
     {
         _source = source;
+        _isLocal = false;
         IsQq = source == MusicSource.QQ;
+        Name = "";
+        IsPrivate = false;
+        Message = null;
+        IsBusy = false;
+        OnPropertyChanged(nameof(SourceLabel));
+    }
+
+    /// <summary>打开对话框时调用(本地音乐歌单创建模式):无平台 API 参与,确认即建实体。</summary>
+    public void RefreshLocal()
+    {
+        _isLocal = true;
+        IsQq = false;
         Name = "";
         IsPrivate = false;
         Message = null;
@@ -71,6 +97,13 @@ public sealed partial class CreatePlaylistDialogViewModel : ViewModelBase
     {
         var name = Name.Trim();
         if (name.Length == 0 || IsBusy) return;
+        if (_isLocal)
+        {
+            // 本地音乐歌单:无 API 调用,实体创建即完成
+            var local = _playlist.CreateLocalPlaylist(name);
+            _onLocalConfirm?.Invoke(local);
+            return;
+        }
         IsBusy = true;
         Message = null;
         try

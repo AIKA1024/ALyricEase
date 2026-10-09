@@ -180,8 +180,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [ObservableProperty] private long _creatorId;
 
     /// <summary>创建者按钮可点:网易云歌单有创建者 id;QQ 仅"自己的歌单"(有资产目录 dirId,
-    /// 创建者 = 登录账号)可跳 QQ 用户页 —— 搜索结果等他人歌单没有跳转协议入口,禁用。</summary>
-    public bool CanOpenCreator => CreatorId > 0
+    /// 创建者 = 登录账号)可跳 QQ 用户页 —— 搜索结果等他人歌单没有跳转协议入口,禁用。
+    /// 聚合歌单恒可点:打开"选择成员歌单"窗口。</summary>
+    public bool CanOpenCreator => IsAggregate
+        || CreatorId > 0
         || (SelectedPlaylist?.Playlist is { Source: MusicSource.QQ } p && p.DirId != 0);
 
     partial void OnCreatorIdChanged(long value) => OnPropertyChanged(nameof(CanOpenCreator));
@@ -194,6 +196,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         try
         {
             var main = ServiceLocator.Get<MainViewModel>();
+            if (IsAggregate && _currentAggregate is not null)
+            {
+                // 聚合歌单:创建者芯片 = "选择成员歌单"窗口(编辑模式,预勾现有成员)
+                main.OpenEditAggregateDialogCommand.Execute(_currentAggregate);
+                return;
+            }
             if (SelectedPlaylist?.Playlist.Source == MusicSource.QQ)
                 main.OpenQqUserCommand.Execute(null);
             else if (CreatorId > 0)
@@ -985,6 +993,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _isCloud = false;
         _currentAggregate = null;
         IsAggregate = false;
+        IsLocalPlaylist = false;
     }
 
     // 增量加载状态:trackIds 是全量权威顺序;仅已解析的歌曲会物化进 Tracks。
@@ -1044,19 +1053,35 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 显示列表 = 网络行 + 尚未被网络覆盖的成员预填行;网络行序号(懒队列 Remember 键)按它计。</summary>
     private readonly List<SongItemViewModel> _aggregateNetworkRows = new();
 
-    /// <summary>聚合歌单导入的本地歌曲行:恒在显示列表末尾(网络/预填之后)。
-    /// 播放走聚合懒队列的本地尾段(见 CreateAggregateLocalRow),序号按全表位置动态重排。</summary>
-    internal readonly List<SongItemViewModel> _aggregateLocalRows = new();
+    /// <summary>当前展示的本地音乐歌单(null = 非本地歌单页)。齿轮设置按钮按它显隐。</summary>
+    private Models.LocalPlaylist? _currentLocalPlaylist;
 
-    /// <summary>本地歌曲实例列表(与 _aggregateLocalRows 同序):构建稀疏物化窗口用
-    /// (本地行的真实逻辑下标 = 各成员总数 + 本地序号,由播放回调在播放时解析)。</summary>
-    private readonly List<Song> _aggregateLocalQueueSongs = new();
+    /// <summary>当前展示的本地音乐歌单(null = 非本地歌单页)。</summary>
+    public Models.LocalPlaylist? CurrentLocalPlaylist => _currentLocalPlaylist;
 
     /// <summary>当前展示的聚合歌单(null = 非聚合页)。齿轮设置按钮按它显隐/定位。</summary>
     private Models.AggregatePlaylist? _currentAggregate;
 
     /// <summary>当前页是否为聚合歌单(驱动右上角齿轮设置按钮显隐)。</summary>
     [ObservableProperty] private bool _isAggregate;
+
+    /// <summary>当前页是否为本地音乐歌单(驱动"导入歌曲/导入文件夹"按钮与设置齿轮显隐)。</summary>
+    [ObservableProperty] private bool _isLocalPlaylist;
+
+    /// <summary>心动模式占位按钮显隐:平台歌单页显示(待接入),聚合页与本地歌单页都不显示。</summary>
+    public bool ShowHeartbeatButton => !IsAggregate && !IsLocalPlaylist;
+
+    /// <summary>创建者芯片提示:聚合页 = 选择成员歌单,其余 = 打开用户页。</summary>
+    public string CreatorToolTip => IsAggregate ? "选择成员歌单" : "打开用户页";
+
+    partial void OnIsAggregateChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowHeartbeatButton));
+        OnPropertyChanged(nameof(CanOpenCreator));
+        OnPropertyChanged(nameof(CreatorToolTip));
+    }
+
+    partial void OnIsLocalPlaylistChanged(bool value) => OnPropertyChanged(nameof(ShowHeartbeatButton));
 
     /// <summary>当前展示的聚合歌单(供设置弹窗引用;null = 非聚合页)。</summary>
     public Models.AggregatePlaylist? CurrentAggregate => _currentAggregate;
@@ -1082,7 +1107,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _aggregateEstimatedTotal = 0;
         _aggregateCachePrefill = null;
         _aggregateNetworkRows.Clear();
-        _aggregateLocalRows.Clear();
         return (++_loadGeneration, _loadCancellation.Token);
     }
 
@@ -1195,6 +1219,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _currentAggregate = null;
         _isCloud = false;
         IsAggregate = false;
+        IsLocalPlaylist = false;
         SelectedPlaylist = null;
         PlaylistTitle = "";
         CreatorName = "";
@@ -1263,10 +1288,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         var pageSongs = cached.Tracks.Select(track => track.Song).ToList();
         _trackIds = cached.TrackIds.ToList();
         _materialized = Math.Max(0, cached.Materialized);
-        // 本地歌曲不进 _queueSongs:它们的队列窗口由 CreateAggregateLocalRow 的稀疏物化提供。
-        _queueSongs.AddRange(cached.Tracks
-            .Where(track => track.IsQueued && track.Song.Source != MusicSource.Local)
-            .Select(track => track.Song));
+        _queueSongs.AddRange(cached.Tracks.Where(track => track.IsQueued).Select(track => track.Song));
 
         if (snapshot.Kind == PlaylistPageKind.NetEase && _trackIds.Count > 0)
             _playbackQueue = new IndexedSongQueue(_trackIds, pageSongs, _api.GetSongsByIdsAsync);
@@ -1291,24 +1313,20 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     if (song.Id != 0) _aggregateLoad.NetEaseKnown[song.Id] = song;
         }
 
+        // ⚠ 只有聚合页需要 _aggregateNetworkRows(组合显示用);其他页面行只进 _allTrackRows,
+        // 否则非聚合页离页后行对象被它强引用,GC 回收不掉(内存回归探针会红)。
+        var isAggregatePage = snapshot.Kind == PlaylistPageKind.Aggregate;
         for (var index = 0; index < cached.Tracks.Count; index++)
         {
             var saved = cached.Tracks[index];
             saved.Song.IsPlaybackUnavailable = saved.IsPlaybackUnavailable;
             saved.Song.PreferCachedPlayback = saved.PreferCachedPlayback;
-            if (saved.Song.Source == MusicSource.Local)
-            {
-                // 本地歌曲行单独收口(非懒队列,恒在显示列表末尾),网络行序号不受其影响。
-                _aggregateLocalRows.Add(CreateAggregateLocalRow(saved.Song));
-                continue;
-            }
             var api = saved.Song.Source == MusicSource.NetEase ? _api : null;
             var row = CreateTrackRow(saved.Song, index, api);
             row.IsPlayable = saved.IsPlayable;
-            _aggregateNetworkRows.Add(row);
+            if (isAggregatePage) _aggregateNetworkRows.Add(row);
+            _allTrackRows.Add(row);
         }
-        _allTrackRows.AddRange(_aggregateNetworkRows);
-        _allTrackRows.AddRange(_aggregateLocalRows);
         Mark($"重建歌曲行(rows={_allTrackRows.Count})");
         IsBusy = false;
         RestoreNavigationUiState(snapshot);
@@ -1362,6 +1380,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _currentAggregate = null;
         _aggregateLoad = null;
         IsAggregate = false;
+        IsLocalPlaylist = false;
         SelectedPlaylist = new PlaylistItemViewModel(new Playlist { Name = "音乐云盘" });
         // 云盘 = 登录用户自己的空间,创建者芯片显示自己并可跳自己主页
         // (此前漏赋值,进场重置把 CreatorName 清空,hero 渲染成空芯片)
@@ -1427,6 +1446,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _currentAggregate = null;
         _aggregateLoad = null;
         IsAggregate = false;
+        IsLocalPlaylist = false;
         SelectedPlaylist = playlist;
         ClearTrackRows();
         Filters.Reset();
@@ -1510,6 +1530,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _currentAggregate = null;
         _aggregateLoad = null;
         IsAggregate = false;
+        IsLocalPlaylist = false;
         SelectedPlaylist = playlist;
         ClearTrackRows();
         Filters.Reset();
@@ -1573,9 +1594,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         IsAggregate = true;
         var members = OrderAggregateMembers(aggregate);
         _aggregateLoad = new AggregateLoadState { Members = members };
-        // 头部总数预估 = 成员曲数加总(平台歌单元数据自带 trackCount) + 导入的本地歌曲数(精确);
+        // 头部总数预估 = 成员曲数加总(平台歌单元数据自带 trackCount;本地音乐歌单成员按导入数精确计);
         // 全部成员拉完后以实际行数为准(见 LoadMoreAggregateAsync 的 batch null 分支)。
-        var estimatedTotal = EstimateAggregateTrackCount(members) + (aggregate.LocalTracks?.Count ?? 0);
+        var estimatedTotal = EstimateAggregateTrackCount(members);
         _aggregateEstimatedTotal = estimatedTotal;
         IsBusy = true;
         Message = null;
@@ -1586,14 +1607,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var prefill = await BuildAggregateCachePrefillAsync(members);
             if (!IsCurrentLoad(generation, ct)) return;
 
-            // 导入的本地歌曲行:恒在显示列表末尾(成员曲目之后)。⚠ 每次打开都要从 LocalTracks 重建。
-            if (aggregate.LocalTracks is { Count: > 0 })
-                foreach (var path in aggregate.LocalTracks)
-                    _aggregateLocalRows.Add(CreateAggregateLocalRow(LocalAudioFiles.CreateSong(path)));
-
             // 封面即时来源:自定义封面 > 成员歌单在资料库中的封面 > 成员缓存快照里第一张有封面的歌;
             // 都没有才等网络首曲回填(旧行为,封面比平台歌单慢一拍的原因)。
-            var headerCover = AggregateCoverStore.ResolvePath(aggregate.CustomCover)
+            var headerCover = PlaylistCoverStore.ResolvePath(aggregate.CustomCover)
                 ?? members.Select(FindAggregateMemberPlaylist)
                     .Select(playlist => playlist?.CoverUrl ?? "")
                     .FirstOrDefault(cover => cover.Length > 0)
@@ -1623,15 +1639,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _playbackQueue = _aggregatePlaybackQueue;
             _materialized = 0;
 
-            if (prefill.Count > 0 || _aggregateLocalRows.Count > 0)
+            if (prefill.Count > 0)
             {
-                if (prefill.Count > 0) _aggregateCachePrefill = prefill;
+                _aggregateCachePrefill = prefill;
                 _allTrackRows.AddRange(prefill.SelectMany(p => p.Rows));
-                _allTrackRows.AddRange(_aggregateLocalRows);
-                RenumberAggregateLocalRows();
                 RefreshVisibleTracks();
                 IsBusy = false;
-                if (prefill.Count > 0) Message = "已显示缓存内容，正在刷新…";
+                Message = "已显示缓存内容，正在刷新…";
             }
 
             // 第一批优先完成并解除页面忙碌态；随后静默补到约 200 首，避免首屏刚出现就断档。
@@ -1672,8 +1686,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     _aggregateCachePrefill = null;
                     _allTrackRows.Clear();
                     _allTrackRows.AddRange(_aggregateNetworkRows);
-                    _allTrackRows.AddRange(_aggregateLocalRows);
-                    RenumberAggregateLocalRows();
                     RefreshVisibleTracks();
                 }
                 SelectedPlaylist?.UpdateTrackCount(_allTrackRows.Count);
@@ -1705,6 +1717,18 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             try
             {
                 var memberIndex = state.MemberIndex;
+                if (member.Source == MusicSource.Local)
+                {
+                    // 本地音乐歌单成员:曲目与元数据即时可得(文件名派生),一次性全部返回;
+                    // 文件缺失的行仍展示(删除线、不可播),由播放器对缺失文件统一提示。
+                    var localSongs = (FindLocalPlaylist(member)?.Tracks ?? new List<string>())
+                        .Select(LocalAudioFiles.CreateSong)
+                        .ToList();
+                    state.AdvanceMember();
+                    if (localSongs.Count > 0)
+                        return new AggregateSongBatch(MusicSource.Local, memberIndex, localSongs);
+                    continue;
+                }
                 if (member.Source == MusicSource.QQ)
                 {
                     var begin = state.QqBegin;
@@ -1797,28 +1821,23 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     batch.Source == MusicSource.QQ ? null : _api)).ToList();
             _aggregateNetworkRows.AddRange(rows);
 
-            // 显示列表 = 网络行 + 未被网络覆盖的成员缓存预填 + 本地歌曲行(恒在末尾)。
-            // 存在预填/本地行时批量重排;纯网络流式保持原有 AddRange 通道。
-            if (_aggregateCachePrefill is not null || _aggregateLocalRows.Count > 0)
+            // 显示列表 = 网络行 + 未被网络覆盖的成员缓存预填。
+            // 存在预填时批量重排;纯网络流式保持原有 AddRange 通道。
+            if (_aggregateCachePrefill is not null)
             {
-                if (_aggregateCachePrefill is not null)
-                {
-                    // 当前成员的网络数据开始落地 ⇒ 该成员及之前的缓存预填整段退位。
-                    _aggregateCachePrefill.RemoveAll(entry => entry.MemberIndex <= batch.MemberIndex);
-                    if (_aggregateCachePrefill.Count == 0) _aggregateCachePrefill = null;
-                }
+                // 当前成员的网络数据开始落地 ⇒ 该成员及之前的缓存预填整段退位。
+                _aggregateCachePrefill.RemoveAll(entry => entry.MemberIndex <= batch.MemberIndex);
+                if (_aggregateCachePrefill.Count == 0) _aggregateCachePrefill = null;
                 _allTrackRows.Clear();
                 _allTrackRows.AddRange(_aggregateNetworkRows);
                 if (_aggregateCachePrefill is not null)
                     foreach (var entry in _aggregateCachePrefill)
                         _allTrackRows.AddRange(entry.Rows);
-                _allTrackRows.AddRange(_aggregateLocalRows);
             }
             else
             {
                 _allTrackRows.AddRange(rows);
             }
-            RenumberAggregateLocalRows();
             RefreshVisibleTracks();
                 // 有预估时显示"预估与实际行数的较大者":预估先稳住总数,实际拉取超过预估(成员曲数漂移/新导入)则跟随实际。
                 UpdateAggregateHeaderCount();
@@ -1851,6 +1870,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         var total = 0;
         foreach (var member in members)
         {
+            if (member.Source == MusicSource.Local)
+            {
+                total += FindLocalPlaylist(member)?.Tracks.Count ?? 0;
+                continue;
+            }
             var playlist = FindAggregateMemberPlaylist(member);
             if (playlist?.TrackCount > 0) total += playlist.TrackCount;
         }
@@ -1895,69 +1919,142 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     /// <summary>聚合歌单导入本地歌曲:路径写入聚合模型并持久化,行追加到显示列表末尾。
     /// 重复路径忽略;行元数据由文件名派生,播放直接走本地文件(播放器对缺失文件自行提示)。</summary>
+    /// <summary>打开本地音乐歌单:曲目与元数据全部即时可得(文件名派生),无网络参与。
+    /// 非懒队列:播放列表就是歌单全量(本地歌单规模可控);文件缺失行仍展示(删除线、不可播)。</summary>
+    [RelayCommand]
+    private async Task OpenLocalPlaylistAsync(Models.LocalPlaylist? local)
+    {
+        if (local is null) return;
+        var (generation, ct) = BeginLoad();
+        _isCloud = false;
+        _currentAggregate = null;
+        _aggregateLoad = null;
+        IsAggregate = false;
+        IsLocalPlaylist = false;
+        _currentLocalPlaylist = local;
+        IsLocalPlaylist = true;
+        SelectedPlaylist = new PlaylistItemViewModel(new Playlist
+        {
+            Name = local.Name,
+            TrackCount = local.Tracks.Count,
+            CoverUrl = ResolveLocalPlaylistCover(local) ?? "",
+        });
+        ClearTrackRows();
+        Filters.Reset();
+        PlaylistTitle = local.Name;
+        CreatorName = "本地音乐";
+        CreatorId = 0;
+        _trackIds = new List<long>();
+        _known.Clear();
+        _queueSongs.Clear();
+        _playbackQueue = null; // 非懒队列:播放列表 = 歌单全量
+        _aggregatePlaybackQueue = null;
+        _materialized = 0;
+        IsBusy = true;
+        Message = null;
+
+        try
+        {
+            var songs = local.Tracks.Select(LocalAudioFiles.CreateSong).ToList();
+            if (!IsCurrentLoad(generation, ct)) return;
+            _queueSongs.AddRange(songs);
+            var rows = songs.Select((song, index) =>
+                CreateTrackRow(song, index, api: null)).ToList();
+            _allTrackRows.AddRange(rows);
+            RefreshVisibleTracks();
+            IsBusy = false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (IsCurrentLoad(generation, ct)) IsBusy = false;
+        }
+        await Task.CompletedTask;
+    }
+
+    /// <summary>创建本地音乐歌单(侧栏"本地音乐"分组头"+"):命名后入 AppState 持久化,
+    /// 侧栏重建由宿主回调负责。返回创建的实体(调用方随后打开该歌单页)。</summary>
+    public Models.LocalPlaylist CreateLocalPlaylist(string name)
+    {
+        var local = new Models.LocalPlaylist
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = string.IsNullOrWhiteSpace(name) ? "本地音乐歌单" : name.Trim(),
+        };
+        var appState = ServiceLocator.Get<MainViewModel>().AppState;
+        appState.LocalPlaylists.Add(local);
+        appState.Save();
+        return local;
+    }
+
+    /// <summary>在资料库中定位聚合歌单成员引用的本地音乐歌单(Source=Local 成员用)。</summary>
+    private Models.LocalPlaylist? FindLocalPlaylist(AggregatePlaylistMember member) =>
+        member.Source == MusicSource.Local && !string.IsNullOrEmpty(member.LocalPlaylistId)
+            ? ServiceLocator.Get<MainViewModel>().AppState.LocalPlaylists
+                .FirstOrDefault(candidate => candidate.Id == member.LocalPlaylistId)
+            : null;
+
+    /// <summary>本地音乐歌单导入:路径展开(支持文件夹递归枚举音频)→ 去重 → 持久化 → 追加显示行。
+    /// 行按追加位置自然编号(追加式,无需重排);若歌单还没有封面,尝试从歌曲内嵌封面补一张。</summary>
     public void AddLocalTracks(IReadOnlyList<string> paths)
     {
-        if (!IsAggregate || _currentAggregate is null || paths.Count == 0) return;
-        var aggregate = _currentAggregate;
-        aggregate.LocalTracks ??= new List<string>();
-        var added = new List<SongItemViewModel>();
-        foreach (var path in LocalAudioFiles.FilterPaths(paths))
+        if (!IsLocalPlaylist || _currentLocalPlaylist is null || paths.Count == 0) return;
+        var local = _currentLocalPlaylist;
+        var addedSongs = new List<Song>();
+        foreach (var path in LocalAudioFiles.ExpandLocalInputs(paths))
         {
-            if (aggregate.LocalTracks.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
-            aggregate.LocalTracks.Add(path);
-            added.Add(CreateAggregateLocalRow(LocalAudioFiles.CreateSong(path)));
+            if (local.Tracks.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
+            local.Tracks.Add(path);
+            addedSongs.Add(LocalAudioFiles.CreateSong(path));
         }
-        if (added.Count == 0) return;
+        if (addedSongs.Count == 0) return;
 
-        // 本地行恒在末尾:直接追加;预估总数计入新导入的数量并刷新头部。
-        if (_aggregateEstimatedTotal > 0) _aggregateEstimatedTotal += added.Count;
-        _allTrackRows.AddRange(added);
-        RenumberAggregateLocalRows();
+        var addedRows = addedSongs.Select((song, i) =>
+            new SongItemViewModel(song, _player.PlayFromList,
+                _allTrackRows.Count + i + 1, _queueSongs, api: null, PlaylistTitle)).ToList();
+        _queueSongs.AddRange(addedSongs);
+        _allTrackRows.AddRange(addedRows);
         RefreshVisibleTracks();
-        UpdateAggregateHeaderCount();
+        SelectedPlaylist?.UpdateTrackCount(_allTrackRows.Count);
         ServiceLocator.Get<MainViewModel>().AppState.Save();
+
+        // 歌单封面兜底:还没有封面(自定义与内嵌都没有)时,新导入可能带来第一张内嵌封面
+        if (string.IsNullOrEmpty(SelectedPlaylist?.Playlist.CoverUrl)
+            && PlaylistCoverStore.ResolvePath(local.CustomCover) is null)
+        {
+            var cover = ResolveLocalPlaylistCover(local);
+            if (!string.IsNullOrEmpty(cover)) SelectedPlaylist?.RefreshCover(cover);
+        }
     }
 
-    /// <summary>聚合歌单导入的本地歌曲行:播放走聚合懒队列的本地尾段,队列下标
-    /// (= 各成员总数 + 本地序号)在播放时才解析 —— 从而播放本地歌时播放列表里
-    /// 是完整的聚合歌单。红心/在线专属菜单项由 IsLocal 裁剪;文件缺失由播放器提示。</summary>
-    private SongItemViewModel CreateAggregateLocalRow(Song song)
+    /// <summary>应用默认专辑封面资源(本地歌单无自定义/无内嵌封面时的兜底,与播放页同款)。</summary>
+    public const string DefaultCoverUri = "avares://ALyricEase/Assets/Placeholders/AlbumCoverPlaceholder.png";
+
+    /// <summary>本地音乐歌单封面解析:自定义封面 > 第一首带内嵌封面的歌(ExtractCoverFile
+    /// 内部按路径+修改时间缓存) > 应用默认封面。无网络参与。</summary>
+    private string? ResolveLocalPlaylistCover(Models.LocalPlaylist local)
     {
-        var localIndex = _aggregateLocalRows.Count;
-        _aggregateLocalQueueSongs.Add(song);
-        return new SongItemViewModel(
-            song,
-            async (candidate, _, _) =>
-            {
-                var lazyQueue = _aggregatePlaybackQueue;
-                if (lazyQueue is null) return false;
-                var start = await lazyQueue.GetLocalStartIndexAsync();
-                var materialized = BuildAggregateSparseMaterialized(start);
-                return await _player.PlayFromLazyList(
-                    candidate, lazyQueue, start + localIndex, materialized, PlaylistTitle);
-            },
-            _aggregateNetworkRows.Count + localIndex + 1,
-            queue: null, api: null);
+        var custom = PlaylistCoverStore.ResolvePath(local.CustomCover);
+        if (custom is not null) return custom;
+        foreach (var path in local.Tracks)
+        {
+            var cover = LocalAudioFiles.ExtractCoverFile(path);
+            if (!string.IsNullOrEmpty(cover)) return cover;
+        }
+        return DefaultCoverUri;
     }
 
-    /// <summary>聚合歌单的稀疏物化窗口:网络行(物化位置 = 逻辑下标) + 本地行(逻辑下标 = 成员总数 + 本地序号)。
-    /// 播放列表因此能同时展示平台曲目与本地歌曲,且推进顺序与显示一致。</summary>
-    private List<(int LogicalIndex, Song Song)> BuildAggregateSparseMaterialized(int localStart)
-        => _queueSongs
-            .Where(s => s.Source != MusicSource.Local)
-            .Select((s, i) => (LogicalIndex: i, Song: s))
-            .Concat(_aggregateLocalQueueSongs.Select((s, i) => (LogicalIndex: localStart + i, Song: s)))
-            .ToList();
-
-    /// <summary>本地行恒在显示列表末尾,序号按全表位置重排(网络行增长后本地行序号要跟着后移;
-    /// Renumber 带 PropertyChanged,行不重建、封面不闪)。</summary>
-    private void RenumberAggregateLocalRows()
+    /// <summary>本地歌单页右上角齿轮:打开本地歌单设置弹窗(封面自定义,布局仿聚合歌单设置)。</summary>
+    [RelayCommand]
+    private void OpenLocalPlaylistSettings()
     {
-        var start = _allTrackRows.Count - _aggregateLocalRows.Count;
-        for (var i = 0; i < _aggregateLocalRows.Count; i++)
-            _aggregateLocalRows[i].Renumber(start + i + 1);
+        if (_currentLocalPlaylist is null) return;
+        ServiceLocator.Get<MainViewModel>().OpenLocalPlaylistSettingsCommand.Execute(_currentLocalPlaylist);
     }
 
+    /// <summary>聚合歌单头部曲数刷新:有预估时显示"预估与实际行数的较大者"
     /// <summary>聚合歌单头部曲数刷新:有预估时显示"预估与实际行数的较大者"
     /// (预估先稳住总数,实际拉取超过预估——成员曲数漂移/新导入——则跟随实际)。</summary>
     private void UpdateAggregateHeaderCount()
@@ -1976,8 +2073,21 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     private AggregateSongQueue CreateAggregatePlaybackQueue(IReadOnlyList<AggregatePlaylistMember> members)
     {
+        var appState = ServiceLocator.Get<MainViewModel>().AppState;
         var descriptors = members.Select(member =>
         {
+            if (member.Source == MusicSource.Local)
+            {
+                // 本地音乐歌单成员:计数与曲目即时可得,作为固定成员进逻辑队列(播放直接走文件)。
+                var local = appState.LocalPlaylists.FirstOrDefault(c => c.Id == member.LocalPlaylistId)
+                    ?? new Models.LocalPlaylist { Id = member.LocalPlaylistId ?? "", Name = member.PlaylistName };
+                var localMember = new AggregatePlaylistMember
+                {
+                    Source = MusicSource.Local,
+                    PlaylistName = local.Name,
+                };
+                return new AggregateSongQueue.Member(localMember, local.Tracks.Count, local.Tracks);
+            }
             var item = member.Source == MusicSource.QQ
                 ? QqPlaylists.FirstOrDefault(candidate => candidate.Id == member.PlaylistId)
                 : Playlists.FirstOrDefault(candidate => candidate.Id == member.PlaylistId);
@@ -1985,18 +2095,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             int? knownCount = item?.Playlist.TrackCount is > 0 ? item.Playlist.TrackCount : null;
             return new AggregateSongQueue.Member(member, knownCount);
         }).ToList();
-        // 导入的本地歌曲 = 逻辑队列末尾的固定成员(计数精确,无网络元数据);
-        // 播放直接走文件,缺失文件由播放器统一提示。
-        if (_currentAggregate?.LocalTracks is { Count: > 0 } localTracks)
-        {
-            var localMember = new AggregatePlaylistMember
-            {
-                Source = MusicSource.Local,
-                PlaylistId = 0,
-                PlaylistName = "本地歌曲",
-            };
-            descriptors.Add(new AggregateSongQueue.Member(localMember, localTracks.Count, localTracks));
-        }
         return new AggregateSongQueue(_api, _qqApi, descriptors);
     }
 
@@ -2308,23 +2406,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
         lazyQueue.Remember(zeroBasedIndex, song);
         var source = PlaylistTitle;
-        // 聚合队列且存在导入的本地歌曲:物化窗口改用稀疏逻辑下标
-        // (网络行 = 物化位置,本地行 = 成员总数 + 本地序号),播放列表才能同时看到平台曲目与本地歌曲。
-        if (lazyQueue is AggregateSongQueue aggregateQueue && _aggregateLocalQueueSongs.Count > 0)
-        {
-            var logicalIndex = zeroBasedIndex;
-            var aggregateLazyRow = new SongItemViewModel(song,
-                async (candidate, _, _) =>
-                {
-                    var localStart = await aggregateQueue.GetLocalStartIndexAsync();
-                    var materialized = BuildAggregateSparseMaterialized(localStart);
-                    return await _player.PlayFromLazyList(
-                        candidate, aggregateQueue, logicalIndex, materialized, source);
-                },
-                zeroBasedIndex + 1, queue: null, api);
-            AttachRemoveCommandIfNeeded(aggregateLazyRow);
-            return aggregateLazyRow;
-        }
         var lazyRow = new SongItemViewModel(song,
             candidate => _player.PlayFromLazyList(
                 candidate, lazyQueue, zeroBasedIndex, _queueSongs, source),
@@ -2447,6 +2528,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _currentAggregate = null;
         _aggregateLoad = null;
         IsAggregate = false;
+        IsLocalPlaylist = false;
         SelectedPlaylist = null;
         PlaylistTitle = "";
         CreatorName = "";

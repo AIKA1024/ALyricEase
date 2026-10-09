@@ -28,6 +28,9 @@ public sealed class AppStateStore
     /// <summary>用户创建的聚合歌单(持久化;顺序即侧栏显示顺序)。</summary>
     public List<AggregatePlaylist> AggregatePlaylists { get; } = new();
 
+    /// <summary>本地音乐歌单(用户在"本地音乐"分组下创建;导入的本地音频按歌单归档)。</summary>
+    public List<LocalPlaylist> LocalPlaylists { get; } = new();
+
     /// <summary>搜索历史(最新在前,SearchViewModel 维护与落盘)。</summary>
     public List<string> SearchHistory { get; } = new();
 
@@ -233,12 +236,17 @@ public sealed class AppStateStore
             AggregatePlaylists.Clear();
             foreach (var f in dto.AggregatePlaylists ?? new List<AggregatePlaylistFile>())
             {
+                // 有效成员 = 平台歌单(PlaylistId>0)或本地音乐歌单(LocalPlaylistId 非空,
+                // 其 PlaylistId 恒为 0)—— ⚠ 漏掉本地成员会在重开软件后静默丢失
                 var members = (f.Members ?? new List<AggregateMemberFile>())
-                    .Where(m => m.PlaylistId is > 0)
+                    .Where(m => m.PlaylistId is > 0
+                        || (m.Source == (int)MusicSource.Local
+                            && !string.IsNullOrEmpty(m.LocalPlaylistId)))
                     .Select(m => new AggregatePlaylistMember
                     {
                         Source = (MusicSource)(m.Source ?? 0),
                         PlaylistId = m.PlaylistId ?? 0,
+                        LocalPlaylistId = m.LocalPlaylistId,
                         PlaylistName = m.PlaylistName ?? "",
                     })
                     .ToList();
@@ -249,8 +257,19 @@ public sealed class AppStateStore
                     Name = string.IsNullOrEmpty(f.Name) ? "聚合歌单" : f.Name,
                     SourceOrder = (AggregateSourceOrder)(f.SourceOrder ?? 0),
                     CustomCover = f.CustomCover,
-                    LocalTracks = f.LocalTracks,
                     Members = members,
+                });
+            }
+
+            LocalPlaylists.Clear();
+            foreach (var f in dto.LocalPlaylists ?? new List<LocalPlaylistFile>())
+            {
+                LocalPlaylists.Add(new LocalPlaylist
+                {
+                    Id = string.IsNullOrEmpty(f.Id) ? System.Guid.NewGuid().ToString("N") : f.Id,
+                    Name = string.IsNullOrEmpty(f.Name) ? "本地音乐歌单" : f.Name,
+                    CustomCover = f.CustomCover,
+                    Tracks = f.Tracks ?? new List<string>(),
                 });
             }
 
@@ -289,6 +308,15 @@ public sealed class AppStateStore
             {
                 NetEaseGroupExpanded = IsNetEaseGroupExpanded,
                 QqGroupExpanded = IsQqGroupExpanded,
+                LocalPlaylists = LocalPlaylists
+                    .Select(l => new LocalPlaylistFile
+                    {
+                        Id = l.Id,
+                        Name = l.Name,
+                        CustomCover = l.CustomCover,
+                        Tracks = l.Tracks,
+                    })
+                    .ToList(),
                 AggregatePlaylists = AggregatePlaylists
                     .Select(a => new AggregatePlaylistFile
                     {
@@ -296,12 +324,12 @@ public sealed class AppStateStore
                         Name = a.Name,
                         SourceOrder = (int)a.SourceOrder,
                         CustomCover = a.CustomCover,
-                        LocalTracks = a.LocalTracks,
                         Members = a.Members
                             .Select(m => new AggregateMemberFile
                             {
                                 Source = (int)m.Source,
                                 PlaylistId = m.PlaylistId,
+                                LocalPlaylistId = m.LocalPlaylistId,
                                 PlaylistName = m.PlaylistName,
                             })
                             .ToList(),

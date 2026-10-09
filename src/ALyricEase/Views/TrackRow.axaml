@@ -46,6 +46,7 @@
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
                   <Image infra:ManagedCoverImage.DecodeSize="50"
+                         infra:ManagedCoverImage.FallbackSource="{x:Static infra:CoverImageConverter.PlaceholderUri}"
                          infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
                          Stretch="UniformToFill" />
                   <!-- 封面红心按钮:黑圆底 + 实心爱心(仿原版 LikeToggleButtonStyle),悬停浮现;未喜欢白,喜欢红 E74C3C -->
@@ -183,6 +184,7 @@
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
                   <Image infra:ManagedCoverImage.DecodeSize="50"
+                         infra:ManagedCoverImage.FallbackSource="{x:Static infra:CoverImageConverter.PlaceholderUri}"
                          infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
                          Stretch="UniformToFill" />
                   <Button Theme="{StaticResource RowButtonTheme}" Classes="row-heart row-play-cover" Command="{Binding PlayCommand}"
@@ -522,10 +524,15 @@
     </Setter>
   </Style>
 
-  <!-- 本地歌曲(聚合歌单导入):没有平台红心。⚠ 不能用"IsVisible=!IsLocal"直接压 row-heart ——
-       那会覆盖悬停显隐机制让红心恒显;正确做法是根 Grid 挂 is-local 类,由这条末位抑制样式
-       只对本地行生效(非本地行的悬停/pressed 行为完全不动)。声明在 hover 样式之后保证赢。 -->
-  <Style Selector="views|TrackRow Grid.is-local Button.row-heart" x:DataType="vm:SongItemViewModel">
+  <!-- 本地歌曲(聚合歌单导入/本地音乐歌单):没有平台红心。⚠ 不能用"IsVisible=!IsLocal"直接压
+       row-heart —— 那会覆盖悬停显隐机制让红心恒显;也不能压 swap-ops 下顶着 row-heart 类名的
+       "封面播放钮"(row-play-cover,它是播放不是红心,否则交换模式下播放钮消失)。
+       正确做法:根 Grid 挂 is-local 类,末位抑制 ①真红心(row-heart:not(.row-play-cover))
+       ②中间的红心(row-like-inline);声明在 hover/swap 样式之后保证赢。 -->
+  <Style Selector="views|TrackRow Grid.is-local Button.row-heart:not(.row-play-cover)" x:DataType="vm:SongItemViewModel">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="views|TrackRow Grid.is-local Button.row-like-inline" x:DataType="vm:SongItemViewModel">
     <Setter Property="IsVisible" Value="False" />
   </Style>
   <!-- 本地文件已删除:歌名加删除线(行仍展示、不可播放) -->

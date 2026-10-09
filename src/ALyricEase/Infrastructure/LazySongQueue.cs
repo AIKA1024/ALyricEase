@@ -211,14 +211,6 @@ internal sealed class AggregateSongQueue : ILazySongQueue
         if (index >= 0) _cache.Set(index, song);
     }
 
-    /// <summary>本地尾段在逻辑队列中的起始下标 = 各成员计数之和。
-    /// 聚合歌单本地歌曲行的播放下标 = 该值 + 本地序号,在播放时才解析(成员计数此时已确定)。</summary>
-    public async ValueTask<int> GetLocalStartIndexAsync()
-    {
-        await GetCountAsync().ConfigureAwait(false);
-        lock (_gate) return _members.Sum(member => member.Count ?? 0);
-    }
-
     /// <summary>界面流式加载已经拿到权威网易云概览时同步给播放队列。</summary>
     public void ConfigureNetEaseMember(int memberIndex, NetEaseApiClient.PlaylistTrackOverview overview)
     {

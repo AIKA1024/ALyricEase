@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.LocalPlaylistSettingsDialogView">
+    <!-- 本地音乐歌单设置对话框(WinUI3 ContentDialog 式窗口内弹层,布局仿聚合歌单设置):
+         封面预览 + 选图/恢复默认;Esc=取消,Enter=保存;不支持点击空白关闭。 -->
+    <Grid x:Name="Root">
+        <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
+        <Panel Background="#99000000" />
+        <Grid DataContext="{Binding LocalPlaylistSettingsDialog}" x:DataType="vm:LocalPlaylistSettingsDialogViewModel"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid.KeyBindings>
+                <KeyBinding Gesture="Enter" Command="{Binding SaveCommand}" />
+            </Grid.KeyBindings>
+            <Border MaxWidth="420" MinWidth="320" Margin="24" Padding="24" CornerRadius="8"
+                    Background="{DynamicResource AppSurface}"
+                    BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+                    BoxShadow="0 32 64 #66000000">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="本地音乐歌单设置" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding LocalPlaylistName, StringFormat='设置「{0}」的歌单封面'}"
+                               FontSize="13" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondary}" />
+                    <!-- 自定义封面:预览 + 选图/恢复默认;默认封面 = 歌单内第一首带内嵌封面的歌 -->
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="0,4,0,0">
+                        <Border Width="56" Height="56" CornerRadius="8" ClipToBounds="True"
+                                Background="{DynamicResource ArtFallback}">
+                            <Image Source="{Binding CustomCoverPreview}" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                            <TextBlock Text="自定义封面" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="不设置则取歌单内第一首带封面的歌曲,没有则用应用默认封面" FontSize="12"
+                                       Foreground="{DynamicResource TextTertiary}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Button Content="选图" MinHeight="32" Click="OnPickCoverClick"
+                                    AutomationProperties.Name="选择自定义封面图片" />
+                            <Button Content="恢复默认" MinHeight="32" Command="{Binding ClearCustomCoverCommand}"
+                                    IsEnabled="{Binding HasCustomCover}"
+                                    AutomationProperties.Name="恢复默认封面" />
+                        </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,4,0,0">
+                        <Button Grid.Column="1" Content="取消"
+                                Command="{Binding $parent[views:LocalPlaylistSettingsDialogView].((vm:MainViewModel)DataContext).CloseLocalPlaylistSettingsDialogCommand}"
+                                HotKeyManager.HotKey="Escape"
+                                MinWidth="96" Height="32" />
+                        <Button Grid.Column="2" Classes="accent" Content="保存"
+                                Command="{Binding SaveCommand}"
+                                MinWidth="96" Height="32" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

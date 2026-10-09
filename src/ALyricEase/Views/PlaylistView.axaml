@@ -144,7 +144,7 @@
                 <Button x:Name="HeroCreator" Classes="creator-chip" Content="{Binding CreatorName}"
                         HorizontalAlignment="Left" Margin="-8,0"
                         Command="{Binding OpenCreatorCommand}" IsEnabled="{Binding CanOpenCreator}"
-                        ToolTip.Tip="打开用户页" />
+                        ToolTip.Tip="{Binding CreatorToolTip}" />
                 <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="16"
                            FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" />
                 <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="14"
@@ -158,16 +158,20 @@
                     <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
                             CornerRadius="4" Height="36" Padding="14,0" IsEnabled="False" ToolTip.Tip="心动模式将在播放队列阶段接入"
                             HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                            IsVisible="{Binding !IsAggregate}">
+                            IsVisible="{Binding ShowHeartbeatButton}">
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="♥" FontSize="17" /><TextBlock Text="心动模式" />
                       </StackPanel>
                     </Button>
-                    <!-- 聚合歌单:导入本地歌曲(文件选择器,行元数据由文件名派生,播放直接走文件) -->
-                    <Button Classes="play-all" Content="导入本地歌曲" Click="OnImportLocalTracksClick"
-                            CornerRadius="4" Padding="14,0" IsVisible="{Binding IsAggregate}"
-                            ToolTip.Tip="选择本地音频文件加入该聚合歌单"
+                    <!-- 本地音乐歌单:导入歌曲(文件多选)/导入文件夹(递归枚举音频) -->
+                    <Button Classes="play-all" Content="导入歌曲" Click="OnImportLocalTracksClick"
+                            CornerRadius="4" Padding="14,0" IsVisible="{Binding IsLocalPlaylist}"
+                            ToolTip.Tip="选择本地音频文件加入该歌单"
                             AutomationProperties.Name="导入本地歌曲" />
+                    <Button Content="导入文件夹" Click="OnImportLocalFolderClick"
+                            CornerRadius="4" Height="36" Padding="14,0" IsVisible="{Binding IsLocalPlaylist}"
+                            ToolTip.Tip="选择一个文件夹,递归导入其中所有受支持的音频"
+                            AutomationProperties.Name="导入文件夹" />
                     <Button Classes="hero-action-more" IsVisible="{Binding CanShareCurrentPlaylist}"
                             ToolTip.Tip="更多操作" AutomationProperties.Name="更多歌单操作">
                       <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
@@ -215,7 +219,7 @@
               <Button Classes="creator-chip" Content="{Binding CreatorName}" HorizontalAlignment="Center"
                       HorizontalContentAlignment="Center" Margin="-8,0"
                       Command="{Binding OpenCreatorCommand}" IsEnabled="{Binding CanOpenCreator}"
-                      ToolTip.Tip="打开用户页" />
+                      ToolTip.Tip="{Binding CreatorToolTip}" />
               <TextBlock Text="{Binding SelectedPlaylist.TrackCountText}" FontSize="14"
                          FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center" />
               <TextBlock Text="{Binding SelectedPlaylist.Description}" FontSize="13"
@@ -262,9 +266,14 @@
                 </ToggleButton>
               </Grid>
             </StackPanel>
-            <!-- 聚合歌单右上角齿轮设置按钮:仅聚合页显示,悬浮于卡片右上角 -->
+            <!-- 歌单设置齿轮:聚合页开聚合设置,本地歌单页开本地设置(封面自定义),其余页隐藏 -->
             <Button Classes="hero-settings" Command="{Binding OpenAggregateSettingsCommand}"
                     IsVisible="{Binding IsAggregate}" ToolTip.Tip="聚合歌单设置"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,16,0">
+              <TextBlock Text="{DynamicResource IconSettings}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16" />
+            </Button>
+            <Button Classes="hero-settings" Command="{Binding OpenLocalPlaylistSettingsCommand}"
+                    IsVisible="{Binding IsLocalPlaylist}" ToolTip.Tip="本地音乐歌单设置"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,12,16,0">
               <TextBlock Text="{DynamicResource IconSettings}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="16" />
             </Button>

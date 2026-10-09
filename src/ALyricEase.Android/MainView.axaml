@@ -51,6 +51,10 @@
         <views:AggregateSettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAggregateSettingsDialogOpen}"
                                            Grid.Row="1" ZIndex="200" />
 
+        <!-- 本地音乐歌单设置对话框(齿轮;布局同聚合设置) -->
+        <views:LocalPlaylistSettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLocalPlaylistSettingsDialogOpen}"
+                                               Grid.Row="1" ZIndex="200" />
+
         <!-- 重命名歌单对话框(侧栏歌单子项右键/长按;同层,声明在聚合设置弹层之后) -->
         <views:RenamePlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsRenamePlaylistDialogOpen}"
                                         Grid.Row="1" ZIndex="200" />

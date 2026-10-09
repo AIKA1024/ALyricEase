@@ -35,20 +35,25 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
 
     public ObservableCollection<AggregatePickerItemViewModel> QqItems { get; } = new();
 
+    public ObservableCollection<AggregatePickerItemViewModel> LocalItems { get; } = new();
+
     /// <summary>网易云分区是否有可选项(驱动分区显隐)。</summary>
     [ObservableProperty] private bool _hasNetEase;
 
     /// <summary>QQ音乐分区是否有可选项。</summary>
     [ObservableProperty] private bool _hasQq;
 
+    /// <summary>本地音乐分区是否有可选项。</summary>
+    [ObservableProperty] private bool _hasLocal;
+
     /// <summary>聚合歌单名称(添加模式可选留空自动命名;编辑模式预填现名,留空保留现名)。</summary>
     [ObservableProperty] private string _name = "";
 
-    /// <summary>两源都没有可选项时显示提示。</summary>
-    public bool HasNothing => !HasNetEase && !HasQq;
+    /// <summary>所有分区都没有可选项时显示提示。</summary>
+    public bool HasNothing => !HasNetEase && !HasQq && !HasLocal;
 
     /// <summary>至少勾选一个歌单才可确认。</summary>
-    public bool CanConfirm => NetEaseItems.Concat(QqItems).Any(i => i.IsChecked);
+    public bool CanConfirm => NetEaseItems.Concat(QqItems).Concat(LocalItems).Any(i => i.IsChecked);
 
     /// <summary>标题(添加/编辑模式区分)。</summary>
     public string TitleText => _editing is null ? "添加聚合歌单" : "选择成员歌单";
@@ -73,10 +78,13 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
         Name = editing?.Name ?? "";
         NetEaseItems.Clear();
         QqItems.Clear();
+        LocalItems.Clear();
         foreach (var p in _playlist.Playlists)
             AddItem(NetEaseItems, MusicSource.NetEase, p.Id, p.Name, p.TrackCount);
         foreach (var p in _playlist.QqPlaylists)
             AddItem(QqItems, MusicSource.QQ, p.Id, p.Name, p.TrackCount);
+        foreach (var lp in _appState.LocalPlaylists)
+            AddLocalItem(lp.Id, lp.Name, lp.Tracks.Count);
 
         if (editing is not null)
         {
@@ -84,6 +92,13 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
             // 保证现有成员始终可见、可主动取消 —— 否则确认会把它们静默丢掉
             foreach (var m in editing.Members)
             {
+                if (m.Source == MusicSource.Local)
+                {
+                    var localItem = LocalItems.FirstOrDefault(i => i.LocalPlaylistId == m.LocalPlaylistId)
+                        ?? AddLocalItem(m.LocalPlaylistId ?? "", m.PlaylistName, 0);
+                    localItem.IsChecked = true;
+                    continue;
+                }
                 var items = m.Source == MusicSource.QQ ? QqItems : NetEaseItems;
                 var existingItem = items.FirstOrDefault(i => i.PlaylistId == m.PlaylistId);
                 if (existingItem is null)
@@ -94,6 +109,7 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
 
         HasNetEase = NetEaseItems.Count > 0;
         HasQq = QqItems.Count > 0;
+        HasLocal = LocalItems.Count > 0;
         OnPropertyChanged(nameof(CanConfirm));
         OnPropertyChanged(nameof(HasNothing));
         OnPropertyChanged(nameof(TitleText));
@@ -115,15 +131,28 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
         return item;
     }
 
+    private AggregatePickerItemViewModel AddLocalItem(string localPlaylistId, string name, int trackCount)
+    {
+        var item = new AggregatePickerItemViewModel(localPlaylistId, name, trackCount);
+        item.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AggregatePickerItemViewModel.IsChecked))
+                OnPropertyChanged(nameof(CanConfirm));
+        };
+        LocalItems.Add(item);
+        return item;
+    }
+
     [RelayCommand]
     private void Confirm()
     {
-        var picked = NetEaseItems.Concat(QqItems).Where(i => i.IsChecked).ToList();
+        var picked = NetEaseItems.Concat(QqItems).Concat(LocalItems).Where(i => i.IsChecked).ToList();
         if (picked.Count == 0) return;
         var members = picked.Select(i => new AggregatePlaylistMember
         {
             Source = i.Source,
             PlaylistId = i.PlaylistId,
+            LocalPlaylistId = i.LocalPlaylistId,
             PlaylistName = i.Name,
         }).ToList();
 
@@ -158,6 +187,16 @@ public sealed partial class AddAggregateDialogViewModel : ViewModelBase
 /// <summary>聚合歌单候选行:源 + 歌单 id + 展示名 + 曲目数 + 勾选状态。</summary>
 public sealed partial class AggregatePickerItemViewModel : ViewModelBase
 {
+    /// <summary>本地音乐歌单专用构造(LocalPlaylistId 非空;PlaylistId 恒 0)。</summary>
+    public AggregatePickerItemViewModel(string localPlaylistId, string name, int trackCount)
+    {
+        Source = MusicSource.Local;
+        LocalPlaylistId = localPlaylistId;
+        Name = name;
+        TrackCountText = trackCount > 0 ? $"{trackCount} 首" : "";
+        SourceLabel = "本地音乐";
+    }
+
     public AggregatePickerItemViewModel(MusicSource source, long playlistId, string name, int trackCount)
     {
         Source = source;
@@ -170,6 +209,9 @@ public sealed partial class AggregatePickerItemViewModel : ViewModelBase
     public MusicSource Source { get; }
 
     public long PlaylistId { get; }
+
+    /// <summary>本地音乐歌单 Id(仅 Source == MusicSource.Local 时有效)。</summary>
+    public string? LocalPlaylistId { get; }
 
     public string Name { get; }
 

@@ -82,7 +82,26 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
-                            <TextBlock Text="当前登录账号暂无可用歌单,请先在侧栏刷新或登录音源。"
+                            <StackPanel Spacing="4" IsVisible="{Binding HasLocal}">
+                                <TextBlock Text="本地音乐" Classes="agg-section-header" />
+                                <ItemsControl ItemsSource="{Binding LocalItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:AggregatePickerItemViewModel">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" MinHeight="28">
+                                                <CheckBox IsChecked="{Binding IsChecked}" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                                                    <CheckBox.Content>
+                                                        <TextBlock Text="{Binding Name}" FontSize="13"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </CheckBox.Content>
+                                                </CheckBox>
+                                                <TextBlock Grid.Column="1" Text="{Binding TrackCountText}" FontSize="12"
+                                                           Foreground="{DynamicResource TextTertiary}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <TextBlock Text="暂无可用歌单:登录音源刷新,或在「本地音乐」分组创建歌单。"
                                        FontSize="13" TextWrapping="Wrap"
                                        Foreground="{DynamicResource TextSecondary}"
                                        IsVisible="{Binding HasNothing}" />

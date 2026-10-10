@@ -58,6 +58,20 @@ public sealed partial class SongItemViewModel : ViewModelBase
     public bool IsLocalFileMissing =>
         IsLocal && !string.IsNullOrEmpty(Song.LocalFilePath) && !File.Exists(Song.LocalFilePath);
 
+    /// <summary>来源歌单(聚合歌单行专用):右键菜单"来源"由此变成可点击的成员歌单跳转。
+    /// 缓存预填/网络批次落地时注入;页面快照按行随存随取(见 NavigationPageCacheTrack)。</summary>
+    public Playlist? SourcePlaylist { get; set; }
+
+    /// <summary>来源本地音乐歌单(本地歌单页行/聚合的本地成员行):右键菜单可点击跳回歌单。</summary>
+    public LocalPlaylist? SourceLocalPlaylist { get; set; }
+
+    /// <summary>行级可用性(TrackRow IsEnabled 绑定):本地歌曲即使文件缺失也保持整行可交互
+    /// (右键菜单/打开文件位置),播放点击由播放器提示文件缺失;平台歌曲维持 IsPlayable 语义。
+    /// ⚠ 不能直接绑 IsPlayable —— 本地缺失行会被整行禁用,连右键菜单都打不开。</summary>
+    public bool IsRowEnabled => IsPlayable || IsLocal;
+
+    partial void OnIsPlayableChanged(bool value) => OnPropertyChanged(nameof(IsRowEnabled));
+
     public SongItemViewModel(Song song, Func<Song, Task<bool>> playSong, int index = 0, NetEaseApiClient? api = null)
         : this(song, (s, _, _) => playSong(s), index, api: api) { }
 

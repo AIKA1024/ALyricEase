@@ -353,15 +353,16 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public ObservableCollection<PlaylistItemViewModel> Playlists { get; } = new();
 
     /// <summary>网易云里收藏的他人歌单(Subscribed=true):不进侧栏分组,「我的收藏」页消费。
-    /// 离线缓存无创建者信息,恢复期间收藏歌单暂留侧栏,在线刷新后纠正。</summary>
+    /// 离线恢复按缓存的写权限保持创建/收藏分组，在线刷新后校准。</summary>
     public ObservableCollection<PlaylistItemViewModel> NetEaseCollectedPlaylists { get; } = new();
 
     /// <summary>按 Subscribed 拆分网易云用户歌单:自己创建的进侧栏(Playlists),
-    /// 收藏的他人歌单进「我的收藏」页。替换两个集合的全部内容。</summary>
+    /// 收藏的他人歌单进「我的收藏」页。相同歌单原地更新，避免缓存转在线时重建封面。</summary>
     private void SplitNetEasePlaylists(System.Collections.Generic.IEnumerable<Models.Dtos.LegacyPlaylistItem> items)
     {
-        Playlists.Clear();
-        NetEaseCollectedPlaylists.Clear();
+        var existing = Playlists.Concat(NetEaseCollectedPlaylists).ToDictionary(p => p.Id);
+        var created = new List<PlaylistItemViewModel>();
+        var collected = new List<PlaylistItemViewModel>();
         foreach (var item in items)
         {
             var pvm = new PlaylistItemViewModel(new Playlist
@@ -378,9 +379,16 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 CreatorName = item.Creator?.Nickname,
                 CreatorId = item.Creator?.UserId ?? 0,
             };
-            if (item.Subscribed) NetEaseCollectedPlaylists.Add(pvm);
-            else Playlists.Add(pvm);
+            if (existing.TryGetValue(item.Id, out var retained))
+            {
+                retained.UpdateFrom(pvm);
+                pvm = retained;
+            }
+            (item.Subscribed ? collected : created).Add(pvm);
         }
+        CollectionSync.Apply(Playlists, created);
+        CollectionSync.Apply(NetEaseCollectedPlaylists, collected);
+        LibraryOverviewVersion++;
     }
 
     /// <summary>QQ 登录用户的歌单(侧边栏"QQ音乐"分组;一次全量拉取,失败静默可重试)。</summary>
@@ -388,6 +396,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     [ObservableProperty] private string? _netEaseLibraryError;
     [ObservableProperty] private string? _qqLibraryError;
+
+    /// <summary>一次资料库同步完成（含仅元数据/喜欢歌单身份变化），通知投影合并刷新。</summary>
+    [ObservableProperty] private int _libraryOverviewVersion;
 
     /// <summary>把歌曲追加到选定歌单，按歌单音源路由至对应账号客户端。</summary>
     public Task AddSongToPlaylistAsync(Playlist playlist, Song song)
@@ -399,10 +410,36 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 服务端删曲成功后原地摘行。行列表是 _trackIds 的前缀窗口,同步摘除 trackId 并回退 _materialized;
     /// 播放队列整体重建(懒队列持 _trackIds 同一引用,原地改会让缓存索引错位),
     /// 删除点之后的行原地改绑播放委托并重排序号 —— 不重建行容器,避免封面重载(同 ApplyFreshRows 口径)。</summary>
+    /// <summary>本地音乐歌单"从歌单中移除":纯本地操作 —— 从 LocalTracks 摘路径并持久化,
+    /// 行/队列同步摘除,删除点之后的行序号 -1(不重建行容器,避免封面重载)。</summary>
+    private void RemoveLocalTrack(SongItemViewModel row)
+    {
+        var local = _currentLocalPlaylist!;
+        var path = row.Song.LocalFilePath;
+        var removed = local.Tracks.RemoveAll(candidate =>
+            string.Equals(candidate, path, StringComparison.OrdinalIgnoreCase));
+        if (removed == 0) return;
+
+        var rowIndex = _allTrackRows.IndexOf(row);
+        _allTrackRows.Remove(row);
+        _queueSongs.Remove(row.Song);
+        _known.Remove(row.Song.Id);
+        for (var i = rowIndex; i < _allTrackRows.Count; i++)
+            _allTrackRows[i].Renumber(i + 1);
+        RefreshVisibleTracks();
+        SelectedPlaylist?.UpdateTrackCount(_allTrackRows.Count);
+        ServiceLocator.Get<MainViewModel>().AppState.Save();
+    }
+
     [RelayCommand]
     private async Task RemoveSongFromPlaylistAsync(SongItemViewModel row)
     {
         if (SelectedPlaylist is null || !CanRemoveTracksNow) return;
+        if (IsLocalPlaylist && _currentLocalPlaylist is not null)
+        {
+            RemoveLocalTrack(row);
+            return;
+        }
         var playlist = SelectedPlaylist.Playlist;
         try
         {
@@ -571,9 +608,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var profile = await _qqApi.GetUserProfileAsync();
             QqUserName = profile.Nickname;
             var playlists = await _qqApi.GetUserPlaylistsAsync();
-            QqPlaylists.Clear();
-            foreach (var p in playlists)
-                QqPlaylists.Add(new PlaylistItemViewModel(p));
+            ApplyQqPlaylists(playlists);
             _qqPlaylistsLoaded = true;
             _qqRestoredFromCache = false;
             await _musicCache.CachePlaylistListAsync(MusicSource.QQ, QqUserName, playlists);
@@ -583,6 +618,20 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             // Cookie 失效/网络失败:分组保持空,下次进入或重启重试
             QqLibraryError = "QQ 音乐歌单同步失败，已保留现有歌单。请稍后刷新。";
         }
+    }
+
+    private void ApplyQqPlaylists(IReadOnlyList<Playlist> playlists)
+    {
+        var existing = QqPlaylists.ToDictionary(p => (p.Id, p.Playlist.DirId));
+        var updated = playlists.Select(p =>
+        {
+            var fresh = new PlaylistItemViewModel(p);
+            if (!existing.TryGetValue((p.Id, p.DirId), out var retained)) return fresh;
+            retained.UpdateFrom(fresh);
+            return retained;
+        }).ToList();
+        CollectionSync.Apply(QqPlaylists, updated);
+        LibraryOverviewVersion++;
     }
 
     [RelayCommand]
@@ -1176,7 +1225,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             row.IsPlayable,
             queued.Contains(row.Song),
             row.Song.IsPlaybackUnavailable,
-            row.Song.PreferCachedPlayback)).ToList();
+            row.Song.PreferCachedPlayback,
+            row.SourcePlaylist,
+            row.SourceLocalPlaylist)).ToList();
         Mark($"构建导航快照(rows={tracks.Count})");
         var aggregateState = _aggregateLoad is null
             ? null
@@ -1324,6 +1375,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var api = saved.Song.Source == MusicSource.NetEase ? _api : null;
             var row = CreateTrackRow(saved.Song, index, api);
             row.IsPlayable = saved.IsPlayable;
+            // 成员歌单引用随快照往返:返回聚合页后右键"歌单:"仍可跳转
+            row.SourcePlaylist = saved.MemberPlaylist;
+            row.SourceLocalPlaylist = saved.MemberLocal;
             if (isAggregatePage) _aggregateNetworkRows.Add(row);
             _allTrackRows.Add(row);
         }
@@ -1819,6 +1873,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var rows = songs.Select((song, index) =>
                 CreateTrackRow(song, rowStart + index,
                     batch.Source == MusicSource.QQ ? null : _api)).ToList();
+            AttachAggregateMemberRef(rows, batch.MemberIndex);
             _aggregateNetworkRows.AddRange(rows);
 
             // 显示列表 = 网络行 + 未被网络覆盖的成员缓存预填。
@@ -1884,6 +1939,34 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>聚合歌单的成员离线缓存预填:按成员顺序读各成员的离线曲目快照并预建行,
     /// 让首屏不用等网络(直接打开平台歌单同款体验)。行挂在独立的缓存队列上自洽播放;
     /// 网络批次到达后按成员整段替换,所以不参与懒队列/移除命令(与快渲行同口径)。</summary>
+    /// <summary>给聚合行注入成员歌单引用(右键菜单"歌单:"可点击跳转)。
+    /// 本地音乐歌单成员没有可跳转的平台页 ⇒ 不注入(菜单回落纯文本)。</summary>
+    private void AttachAggregateMemberRef(List<SongItemViewModel> rows, int memberIndex)
+    {
+        var member = _aggregateLoad?.Members is { } list && (uint)memberIndex < (uint)list.Count
+            ? list[memberIndex]
+            : null;
+        if (member is null) return;
+        if (member.Source == MusicSource.Local)
+        {
+            // 本地成员:跳转目标是本地音乐歌单(无平台页可去)
+            var local = ServiceLocator.Get<MainViewModel>().AppState.LocalPlaylists
+                .FirstOrDefault(candidate => candidate.Id == member.LocalPlaylistId);
+            if (local is null) return;
+            foreach (var row in rows)
+                row.SourceLocalPlaylist = local;
+            return;
+        }
+        var memberPlaylist = new Playlist
+        {
+            Id = member.PlaylistId,
+            Source = member.Source,
+            Name = member.PlaylistName,
+        };
+        foreach (var row in rows)
+            row.SourcePlaylist = memberPlaylist;
+    }
+
     private async Task<List<(int MemberIndex, List<SongItemViewModel> Rows)>> BuildAggregateCachePrefillAsync(
         IReadOnlyList<AggregatePlaylistMember> members)
     {
@@ -1912,6 +1995,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                     song.Source == MusicSource.NetEase ? _api : null,
                     PlaylistTitle));
             }
+            AttachAggregateMemberRef(rows, index);
             prefill.Add((index, rows));
         }
         return prefill;
@@ -1960,6 +2044,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _queueSongs.AddRange(songs);
             var rows = songs.Select((song, index) =>
                 CreateTrackRow(song, index, api: null)).ToList();
+            foreach (var row in rows)
+                row.SourceLocalPlaylist = local;
             _allTrackRows.AddRange(rows);
             RefreshVisibleTracks();
             IsBusy = false;
@@ -2386,8 +2472,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     /// <summary>当前打开的页面是否允许从来源移除歌曲(自己的歌单;云盘/聚合/他人歌单不算)。
     /// 行菜单"从歌单中移除"据此注入。</summary>
+    /// <summary>本地歌单页:移除 = 纯本地操作(摘路径+持久化),无需平台 CanAddTracks。</summary>
     private bool CanRemoveTracksNow => !_isCloud && !IsAggregate
-        && SelectedPlaylist?.Playlist.CanAddTracks == true;
+        && (IsLocalPlaylist || SelectedPlaylist?.Playlist.CanAddTracks == true);
 
     /// <summary>给自己的歌单注入"从歌单中移除"入口;不可移除的页面显式置 null(行 VM 可能来自复用的快照)。</summary>
     private void AttachRemoveCommandIfNeeded(SongItemViewModel row)
@@ -2642,7 +2729,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             UserName = netEase.UserName;
             CreatorName = netEase.UserName;
             foreach (var playlist in netEase.Playlists)
-                Playlists.Add(new PlaylistItemViewModel(playlist));
+                (playlist.CanAddTracks ? Playlists : NetEaseCollectedPlaylists).Add(new PlaylistItemViewModel(playlist));
             // 离线资料的可见性不依赖 Cookie；有本地凭证时才恢复账号登录外观并尝试联网验证。
             if (_cookie.MusicU is { Length: > 0 })
             {

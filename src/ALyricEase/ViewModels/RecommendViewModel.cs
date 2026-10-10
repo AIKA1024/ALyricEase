@@ -17,7 +17,7 @@ namespace ALyricEase.ViewModels;
 public sealed partial class RecommendCardViewModel : ViewModelBase
 {
     private static readonly TimeSpan CoverTransitionDelay = TimeSpan.FromMilliseconds(320);
-    private readonly Func<Task>? _activate;
+    private Func<Task>? _activate;
     private bool _coverRequestScheduled;
 
     public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0, long id = 0, Func<Task>? activate = null)
@@ -30,11 +30,11 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
         _activate = activate;
     }
 
-    public string Title { get; }
+    [ObservableProperty] private string _title = "";
 
-    public string Subtitle { get; }
+    [ObservableProperty] private string _subtitle = "";
 
-    public string CoverUrl { get; }
+    [ObservableProperty] private string _coverUrl = "";
 
     /// <summary>歌单 id 或歌曲 id(仅点击行为用)。</summary>
     public long Id { get; }
@@ -44,7 +44,27 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
     private Task OpenAsync() => _activate?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>播放量(歌曲卡片为 0,歌单卡片才有)。</summary>
-    public long PlayCount { get; }
+    [ObservableProperty] private long _playCount;
+
+    partial void OnPlayCountChanged(long value)
+    {
+        OnPropertyChanged(nameof(HasPlayCount));
+        OnPropertyChanged(nameof(PlayCountText));
+    }
+
+    partial void OnCoverUrlChanged(string value)
+    {
+        if (DisplayCoverUrl is not null) DisplayCoverUrl = value;
+    }
+
+    internal void UpdateFrom(RecommendCardViewModel fresh)
+    {
+        Title = fresh.Title;
+        Subtitle = fresh.Subtitle;
+        CoverUrl = fresh.CoverUrl;
+        PlayCount = fresh.PlayCount;
+        _activate = fresh._activate;
+    }
 
     public bool HasPlayCount => PlayCount > 0;
 
@@ -82,7 +102,7 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
 /// 由隐式 DataTemplate 按类型选择模板。每日区块可携带"播放全部"。</summary>
 public sealed partial class RecommendSectionViewModel : ViewModelBase
 {
-    private readonly Func<Task>? _playAll;
+    private Func<Task>? _playAll;
 
     public RecommendSectionViewModel(string title, IReadOnlyList<object> items, bool isBordered = false, Func<Task>? playAll = null)
     {
@@ -108,6 +128,13 @@ public sealed partial class RecommendSectionViewModel : ViewModelBase
 
     public bool HasPlayAll => _playAll is not null;
 
+    internal void UpdatePlayAll(Func<Task>? playAll)
+    {
+        var hadPlayAll = HasPlayAll;
+        _playAll = playAll;
+        if (hadPlayAll != HasPlayAll) OnPropertyChanged(nameof(HasPlayAll));
+    }
+
     /// <summary>播放全部(每日歌曲区块:第一首 + 全量队列)。</summary>
     [RelayCommand]
     private Task PlayAllAsync() => _playAll?.Invoke() ?? Task.CompletedTask;
@@ -128,7 +155,10 @@ public sealed class RecommendViewModel : ViewModelBase
     private bool _loaded;
 
     /// <summary>上次加载时的双端登录态:任一端登录/登出都触发首页刷新。</summary>
-    private (bool Ne, bool Qq) _lastLoginState;
+    private (bool Ne, int NeGeneration, bool Qq, int QqGeneration) _lastLoginState;
+
+    private (bool Ne, int NeGeneration, bool Qq, int QqGeneration) AccountState =>
+        (_api.IsLoggedIn, _api.AccountGeneration, _qq.IsLoggedIn, _qq.AccountGeneration);
 
     public RecommendViewModel(NetEaseApiClient api, QQMusicApiClient qq, DispatcherService dispatcher, PlayerViewModel player)
     {
@@ -151,14 +181,23 @@ public sealed class RecommendViewModel : ViewModelBase
     public async Task EnsureLoadedAsync()
     {
         if (_loading) return;
-        var state = (_api.IsLoggedIn, _qq.IsLoggedIn);
+        var state = AccountState;
         if (_loaded && state == _lastLoginState) return;
-        _lastLoginState = state;
         _loading = true;
         try
         {
-            await LoadAllSectionsAsync().ConfigureAwait(false);
-            _loaded = true;
+            do
+            {
+                state = AccountState;
+                if (state != _lastLoginState)
+                    await _dispatcher.InvokeAsync(() =>
+                    {
+                        var daily = Sections.FirstOrDefault(section => section.Title == "每日歌曲推荐");
+                        if (daily is not null) Sections.Remove(daily);
+                    }).ConfigureAwait(false);
+                _loaded = await LoadAllSectionsAsync(state).ConfigureAwait(false);
+                _lastLoginState = state;
+            } while (state != AccountState);
         }
         catch
         {
@@ -170,50 +209,77 @@ public sealed class RecommendViewModel : ViewModelBase
         }
     }
 
-    /// <summary>并发拉取各区块(各自容错);数据一到即上屏(固定顺序逐个插入),不等最慢的区块整体刷新。
-    /// 首个非空区块就绪时才清空旧内容:全部失败则保留旧内容不闪空。</summary>
-    private async Task LoadAllSectionsAsync()
+    /// <summary>各区块完成即独立更新；失败保留该区块，账号已改变的迟到结果不再发布。</summary>
+    private async Task<bool> LoadAllSectionsAsync((bool Ne, int NeGeneration, bool Qq, int QqGeneration) state)
     {
-        var dailyTask = SafeAsync(LoadDailyItemsAsync());
-        var playlistsTask = SafeAsync(_api.GetPersonalizedPlaylistsAsync(6));
-        var hotTask = SafeAsync(LoadHotSongsAsync());
-        var newSongsTask = SafeAsync(LoadNewSongsAsync());
-
-        var cleared = false;
-        async Task EnsureClearedAsync()
+        async Task<bool> PublishAsync<T>(Task<List<T>> request, string title,
+            Func<List<T>, IReadOnlyList<object>> convert, bool bordered = false)
         {
-            if (cleared) return;
-            await _dispatcher.InvokeAsync(() => Sections.Clear()).ConfigureAwait(false);
-            cleared = true;
+            try
+            {
+                var data = await request.ConfigureAwait(false);
+                await _dispatcher.InvokeAsync(() =>
+                {
+                    if (state != AccountState) return;
+                    var items = convert(data);
+                    var queue = items.OfType<SongItemViewModel>().Select(row => row.Song).ToArray();
+                    var first = items.OfType<SongItemViewModel>().FirstOrDefault(row => row.IsPlayable)?.Song;
+                    Func<Task>? playAll = first is null ? null : () => _player.PlayFromList(first, queue, title);
+                    ApplySection(title, items, bordered, playAll);
+                }).ConfigureAwait(false);
+                return true;
+            }
+            catch { return false; }
         }
-        async Task AddAsync(string title, IReadOnlyList<object> items, bool isBordered = false, Func<Task>? playAll = null)
+        var results = await Task.WhenAll(
+            PublishAsync(LoadDailyItemsAsync(), "每日歌曲推荐", items => items, true),
+            PublishAsync(_api.GetPersonalizedPlaylistsAsync(6), "推荐歌单", items => items.Select(ToPlaylistCard).ToArray()),
+            PublishAsync(LoadHotSongsAsync(), "热门歌曲", songs => ToSongCards(songs, "热门歌曲")),
+            PublishAsync(LoadNewSongsAsync(), "猜你喜欢", songs => ToSongCards(songs, "猜你喜欢"))).ConfigureAwait(false);
+        return results.All(success => success);
+    }
+
+    private static readonly string[] SectionOrder = ["每日歌曲推荐", "推荐歌单", "热门歌曲", "猜你喜欢"];
+
+    internal void ApplySection(string title, IReadOnlyList<object> items, bool isBordered = false, Func<Task>? playAll = null)
+    {
+        var section = Sections.FirstOrDefault(candidate => candidate.Title == title);
+        if (items.Count == 0)
         {
-            await EnsureClearedAsync().ConfigureAwait(false);
-            var section = new RecommendSectionViewModel(title, items, isBordered, playAll);
-            await _dispatcher.InvokeAsync(() => Sections.Add(section)).ConfigureAwait(false);
+            if (section is not null) Sections.Remove(section);
+            return;
         }
-
-        // 每日歌曲推荐:播全部 = 第一首 + 全量队列(仅歌曲行;兜底歌单卡片无此按钮)
-        var daily = await dailyTask.ConfigureAwait(false);
-        if (daily.Count > 0)
+        if (section is null)
         {
-            var dailyRows = daily.OfType<SongItemViewModel>().ToList();
-            var dailySongs = dailyRows.Select(row => row.Song).ToList();
-            var firstPlayable = dailyRows.FirstOrDefault(row => row.IsPlayable)?.Song;
-            Func<Task>? playAll = firstPlayable is not null
-                ? () => _player.PlayFromList(firstPlayable, dailySongs, "每日歌曲推荐")
-                : null;
-            await AddAsync("每日歌曲推荐", daily, isBordered: true, playAll).ConfigureAwait(false);
+            section = new RecommendSectionViewModel(title, items, isBordered, playAll);
+            var rank = Array.IndexOf(SectionOrder, title);
+            var index = Sections.TakeWhile(s => Array.IndexOf(SectionOrder, s.Title) < rank).Count();
+            Sections.Insert(index, section);
+            return;
         }
-
-        var playlists = await playlistsTask.ConfigureAwait(false);
-        if (playlists.Count > 0) await AddAsync("推荐歌单", playlists.Select(ToPlaylistCard).ToList()).ConfigureAwait(false);
-
-        var hot = await hotTask.ConfigureAwait(false);
-        if (hot.Count > 0) await AddAsync("热门歌曲", ToSongCards(hot, "热门歌曲")).ConfigureAwait(false);
-
-        var newSongs = await newSongsTask.ConfigureAwait(false);
-        if (newSongs.Count > 0) await AddAsync("猜你喜欢", ToSongCards(newSongs, "猜你喜欢")).ConfigureAwait(false);
+        var desired = new List<object>(items.Count);
+        var used = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        var queue = items.OfType<SongItemViewModel>().Select(row => row.Song).ToArray();
+        foreach (var fresh in items)
+        {
+            object retained = fresh;
+            if (fresh is RecommendCardViewModel card
+                && section.Items.OfType<RecommendCardViewModel>().FirstOrDefault(old => old.Id == card.Id && !used.Contains(old)) is { } oldCard)
+            {
+                oldCard.UpdateFrom(card);
+                retained = oldCard;
+            }
+            else if (fresh is SongItemViewModel song
+                && section.Items.OfType<SongItemViewModel>().FirstOrDefault(old => !used.Contains(old) && SongMetadata.Matches(old.Song, song.Song)) is { } oldSong)
+            {
+                oldSong.RebindPlayback(_player.PlayFromList, queue, title);
+                retained = oldSong;
+            }
+            used.Add(retained);
+            desired.Add(retained);
+        }
+        section.UpdatePlayAll(playAll);
+        CollectionSync.Apply(section.Items, desired);
     }
 
     /// <summary>每日歌曲推荐区块:网易云与 QQ 音乐的每日推荐并行拉取,合并进同一个容器(网易云在前)。
@@ -221,18 +287,30 @@ public sealed class RecommendViewModel : ViewModelBase
     /// 两源皆空且网易云已登录时,兜底为网易云每日推荐歌单(卡片);单源失败不影响另一源。</summary>
     private async Task<List<object>> LoadDailyItemsAsync()
     {
-        var neTask = _api.IsLoggedIn ? SafeAsync(_api.GetDailyRecommendSongsAsync()) : Task.FromResult(new List<Song>());
-        var qqTask = _qq.IsLoggedIn ? SafeAsync(_qq.GetDailyRecommendSongsAsync()) : Task.FromResult(new List<Song>());
+        // 一个平台失败时仍展示另一平台；全部无内容且请求失败时保留已有区块。
+        static async Task<(List<Song> Songs, Exception? Error)> FetchAsync(Task<List<Song>> request)
+        {
+            try { return (await request.ConfigureAwait(false), null); }
+            catch (Exception ex) { return ([], ex); }
+        }
+        var neTask = FetchAsync(_api.IsLoggedIn ? _api.GetDailyRecommendSongsAsync() : Task.FromResult(new List<Song>()));
+        var qqTask = FetchAsync(_qq.IsLoggedIn ? _qq.GetDailyRecommendSongsAsync() : Task.FromResult(new List<Song>()));
         await Task.WhenAll(neTask, qqTask).ConfigureAwait(false);
 
-        var queue = (await neTask.ConfigureAwait(false)).Concat(await qqTask.ConfigureAwait(false)).ToList();
+        var ne = await neTask.ConfigureAwait(false);
+        var qq = await qqTask.ConfigureAwait(false);
+        var queue = ne.Songs.Concat(qq.Songs).ToList();
         if (queue.Count > 0)
             return queue.Select(s => (object)new SongItemViewModel(s, _player.PlayFromList,
                 queue: queue, api: _api, source: "每日歌曲推荐")).ToList();
 
         // 兜底:网易云每日推荐歌单卡片(需登录;未登录接口回 code 301 → 空列表)
         if (_api.IsLoggedIn)
-            return (await _api.GetDailyRecommendAsync().ConfigureAwait(false)).Select(ToPlaylistCard).ToList();
+        {
+            var cards = (await _api.GetDailyRecommendAsync().ConfigureAwait(false)).Select(ToPlaylistCard).ToList();
+            if (cards.Count > 0) return cards;
+        }
+        if (ne.Error is not null || qq.Error is not null) throw ne.Error ?? qq.Error!;
         return new();
     }
 

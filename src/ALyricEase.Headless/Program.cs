@@ -24,7 +24,7 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close" or "--personal-home" or "--login-idle-close")
+        if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close" or "--personal-home" or "--home-refresh" or "--playback-list-refresh" or "--login-idle-close" or "--page-refresh")
         {
             AppBuilder.Configure<HeadlessApp>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
@@ -33,7 +33,10 @@ public static class Program
             {
                 try
                 {
-                    if (args[0] == "--login-idle-close") await LoginIdleCloseProbe.RunAsync();
+                    if (args[0] == "--page-refresh") await PageRefreshProbe.RunAsync();
+                    else if (args[0] == "--login-idle-close") await LoginIdleCloseProbe.RunAsync();
+                    else if (args[0] == "--playback-list-refresh") await PlaybackListRefreshProbe.RunAsync();
+                    else if (args[0] == "--home-refresh") await PersonalHomeProbe.RunAsync(refreshOnly: true);
                     else if (args[0] == "--personal-home") await PersonalHomeProbe.RunAsync();
                     else if (args[0] == "--login-close") await LoginCloseProbe.RunAsync();
                     else await QqUserFailureProbe.RunAsync();
@@ -610,7 +613,7 @@ public static class Program
         // 本地音频标签读取回归:FLAC Vorbis/STREAMINFO + MP3 ID3v2 文本帧 + 文件名兜底。
         if (args.Length > 0 && args[0] == "--local-tags")
         {
-            Environment.ExitCode = LocalTagsProbe.Run();
+            Environment.ExitCode = LocalTagsProbe.Run(args.Length > 1 ? args[1] : null);
             return;
         }
 

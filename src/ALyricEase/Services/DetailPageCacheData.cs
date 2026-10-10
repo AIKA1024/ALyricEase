@@ -18,14 +18,28 @@ internal sealed record DetailPageCacheData(
     NavigationPageCacheArtist? PrimaryArtist = null,
     int Offset = 0,
     int Total = -1,
-    bool HasMore = false);
+    bool HasMore = false,
+    UserProfilePageCacheData? UserProfile = null);
+
+internal sealed record UserProfilePageCacheData(
+    string Nickname, string AvatarUrl, string Signature, int Level, int Follows, int Followeds,
+    IReadOnlyList<UserPlaylistCacheItem> Taste,
+    IReadOnlyList<UserPlaylistCacheItem> Created,
+    IReadOnlyList<UserPlaylistCacheItem> Collected,
+    int AccountGeneration, int PlaylistRevision);
+
+internal sealed record UserPlaylistCacheItem(
+    Playlist Playlist, string? CreatorName, long CreatorId, string CoverUrl,
+    int TrackCount, double PlayCount, bool ShowHeart = false);
 
 internal sealed record NavigationPageCacheTrack(
     Song Song,
     bool IsPlayable,
     bool IsQueued = true,
     bool IsPlaybackUnavailable = false,
-    bool PreferCachedPlayback = false);
+    bool PreferCachedPlayback = false,
+    Playlist? MemberPlaylist = null,
+    LocalPlaylist? MemberLocal = null);
 
 internal sealed record NavigationPageCacheAlbum(
     long Id,

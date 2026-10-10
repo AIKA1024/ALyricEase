@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using ALyricEase.Controls;
 using ALyricEase.Models;
 using ALyricEase.ViewModels;
@@ -43,6 +44,23 @@ public static class GridBatchingProbe
         Drain();
         var songDelta = songGrid.RebuildCount - songBaseline;
         var albumDelta = albumGrid.RebuildCount - albumBaseline;
+        var albumRows = albumGrid.FindControl<ItemsControl>("Rows")!;
+        var beforePage = albumRows.ItemsSource!.Cast<AlbumRow>().ToArray();
+        var beforeImages = albumGrid.GetVisualDescendants().OfType<Image>().ToArray();
+        albums.Add(new AlbumCardViewModel(100, "下一页", ""));
+        Drain();
+        var retained = albumRows.ItemsSource!.Cast<AlbumRow>().Count(beforePage.Contains);
+        Console.WriteLine($"[grid-batching] pagination retained rows={retained}/{beforePage.Length}");
+        var retainedImages = beforeImages.Count(albumGrid.GetVisualDescendants().OfType<Image>().Contains);
+        var imagesRetained = beforeImages.Length > 0 && retainedImages == beforeImages.Length;
+        Console.WriteLine($"[grid-batching] pagination retained images={retainedImages}/{beforeImages.Length}");
+        var tail = albumRows.ItemsSource!.Cast<AlbumRow>().Last();
+        albums.Add(new AlbumCardViewModel(101, "补齐尾行", ""));
+        Drain();
+        var tailRetained = ReferenceEquals(tail, albumRows.ItemsSource!.Cast<AlbumRow>().Last());
+        win.Width = 620;
+        Drain();
+        var resizedCorrectly = albumRows.ItemsSource!.Cast<AlbumRow>().SelectMany(row => row.Cards).SequenceEqual(albums);
         win.Close();
         Drain();
         var songDetachedBaseline = songGrid.RebuildCount;
@@ -54,7 +72,15 @@ public static class GridBatchingProbe
         Drain();
         var detachedIgnored = songGrid.RebuildCount == songDetachedBaseline
             && albumGrid.RebuildCount == albumDetachedBaseline;
-        var passed = beforeDrain && songDelta == 1 && albumDelta == 1 && detachedIgnored;
+        var content = win.Content;
+        win.Content = null;
+        var reopened = new Window { Width = 620, Height = 800, Content = content };
+        reopened.Show();
+        Drain();
+        var reattachedCorrectly = albumRows.ItemsSource!.Cast<AlbumRow>().SelectMany(row => row.Cards).SequenceEqual(albums);
+        reopened.Close();
+        var passed = beforeDrain && songDelta == 1 && albumDelta == 1 && detachedIgnored
+            && retained == beforePage.Length && imagesRetained && tailRetained && resizedCorrectly && reattachedCorrectly;
 
         Console.WriteLine($"[grid-batching] 逐项追加 60 项: SongGrid 重建={songDelta}, AlbumGrid 重建={albumDelta}, " +
                           $"排空前未重建={beforeDrain}, 离树后未重建={detachedIgnored}");

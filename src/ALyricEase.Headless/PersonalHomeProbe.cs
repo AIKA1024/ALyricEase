@@ -25,7 +25,7 @@ namespace ALyricEase.Headless;
 /// <summary>离线双平台主页回归：隔离凭证/缓存，验证来源、动态更新、导航、键盘筛选和响应式渲染。</summary>
 internal static class PersonalHomeProbe
 {
-    public static async Task RunAsync()
+    public static async Task RunAsync(bool refreshOnly = false)
     {
         var root = Path.Combine(Path.GetTempPath(), "aly-personal-home-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -85,6 +85,12 @@ internal static class PersonalHomeProbe
         window.Bind(Window.BackgroundProperty, new DynamicResourceExtension("AppBackground"));
         window.Show();
         await Task.Delay(150);
+        if (refreshOnly)
+        {
+            try { await PersonalHomeRefreshProbe.RunAsync(window, home, library); }
+            finally { window.Close(); }
+            return;
+        }
         Capture(window, root, "dual-light");
         CheckAccounts(window, stacked: false);
         Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;

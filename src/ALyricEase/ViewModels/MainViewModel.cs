@@ -377,11 +377,25 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private static bool IsNavItem(string page) => page is "PersonalHome" or "Search" or "Recommend" or "Browse" or "PersonalStation" or "Library" or "CloudDrive" or "Recents" or "Favorites";
 
-    private void OnPlaylistsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildShellNavigation();
+    private bool _shellNavigationRebuildPending;
+
+    private void OnPlaylistsChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueShellNavigationRebuild();
+
+    private void QueueShellNavigationRebuild()
+    {
+        if (_shellNavigationRebuildPending) return;
+        _shellNavigationRebuildPending = true;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _shellNavigationRebuildPending = false;
+            RebuildShellNavigation();
+        }, Avalonia.Threading.DispatcherPriority.Background);
+    }
 
     /// <summary>网易云/QQ 登录态变化 → 重建导航；认证失败时已有离线快照仍保持可见。</summary>
     private void OnPlaylistLoginChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(PlaylistViewModel.LibraryOverviewVersion)) QueueShellNavigationRebuild();
         if (e.PropertyName is nameof(PlaylistViewModel.IsLoggedIn) or nameof(PlaylistViewModel.IsQqLoggedIn))
         {
             // 登录态变化后刷新各页歌曲行；明确的 VIP/购买权益提前判定，未知状态仍由播放地址兜底。
@@ -400,7 +414,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 ((e.PropertyName == nameof(PlaylistViewModel.IsLoggedIn) && Playlist.IsLoggedIn) ||
                  (e.PropertyName == nameof(PlaylistViewModel.IsQqLoggedIn) && Playlist.IsQqLoggedIn)))
                 _ = Account.RefreshAsync();
-            RebuildShellNavigation();
+            QueueShellNavigationRebuild();
         }
     }
 
@@ -426,9 +440,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// 并继承其当前开合态。</summary>
     private void RebuildShellNavigation()
     {
-        ShellNavItems.Clear();
+        var desired = new List<NavItemViewModel>();
         foreach (var item in NavItems)
-            ShellNavItems.Add(item);
+            desired.Add(item);
 
         var hasNetEaseLibrary = Playlist.IsLoggedIn || Playlist.Playlists.Count > 0;
         var hasQqLibrary = Playlist.IsQqLoggedIn || Playlist.QqPlaylists.Count > 0;
@@ -436,9 +450,9 @@ public sealed partial class MainViewModel : ViewModelBase
         // 聚合歌单:在线账号或任一来源的离线快照可用时出现。
         if (hasNetEaseLibrary || hasQqLibrary)
         {
-            ShellNavItems.Add(AggregatePlaylistsHeader);
+            desired.Add(AggregatePlaylistsHeader);
             foreach (var agg in AppState.AggregatePlaylists)
-                ShellNavItems.Add(new NavItemViewModel($"Aggregate:{agg.Id}", agg.Name, "", aggregate: agg)
+                desired.Add(new NavItemViewModel($"Aggregate:{agg.Id}", agg.Name, "", aggregate: agg)
                 {
                     OwnerKey = AggregatePlaylistsHeader.Key,
                     ShowAsChild = AggregatePlaylistsHeader.IsExpanded,
@@ -447,9 +461,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (hasNetEaseLibrary)
         {
-            ShellNavItems.Add(NetEasePlaylistsHeader);
+            desired.Add(NetEasePlaylistsHeader);
             foreach (var playlist in Playlist.Playlists)
-                ShellNavItems.Add(new NavItemViewModel($"Playlist:{playlist.Id}", playlist.Name, "", playlist: playlist)
+                desired.Add(new NavItemViewModel($"Playlist:{playlist.Id}", playlist.Name, "", playlist: playlist)
                 {
                     OwnerKey = NetEasePlaylistsHeader.Key,
                     ShowAsChild = NetEasePlaylistsHeader.IsExpanded,
@@ -458,9 +472,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (hasQqLibrary)
         {
-            ShellNavItems.Add(QqPlaylistsHeader);
+            desired.Add(QqPlaylistsHeader);
             foreach (var playlist in Playlist.QqPlaylists)
-                ShellNavItems.Add(new NavItemViewModel($"QQPlaylist:{playlist.Id}", playlist.Name, "", playlist: playlist)
+                desired.Add(new NavItemViewModel($"QQPlaylist:{playlist.Id}", playlist.Name, "", playlist: playlist)
                 {
                     OwnerKey = QqPlaylistsHeader.Key,
                     ShowAsChild = QqPlaylistsHeader.IsExpanded,
@@ -469,15 +483,36 @@ public sealed partial class MainViewModel : ViewModelBase
 
         // 本地音乐分组:不依赖登录,**始终显示分组头**("+"创建入口;没有歌单时也要能创建第一张),
         // 排在 QQ 音乐之后;有歌单时列出子项。
-        ShellNavItems.Add(LocalPlaylistsHeader);
+        desired.Add(LocalPlaylistsHeader);
         foreach (var local in AppState.LocalPlaylists)
-            ShellNavItems.Add(new NavItemViewModel($"LocalPlaylist:{local.Id}", local.Name, "", localPlaylist: local)
+            desired.Add(new NavItemViewModel($"LocalPlaylist:{local.Id}", local.Name, "", localPlaylist: local)
             {
                 OwnerKey = LocalPlaylistsHeader.Key,
                 ShowAsChild = LocalPlaylistsHeader.IsExpanded,
             });
 
-        // CompactNavItems 是 ShellNavItems 的派生列表,不是它自身变化的通知源 —— 重建后要显式通知
+        var existing = ShellNavItems.ToDictionary(item => item.Key);
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var next = desired[i];
+            if (existing.TryGetValue(next.Key, out var old) && old.Label == next.Label
+                && ReferenceEquals(old.Playlist, next.Playlist)
+                && ReferenceEquals(old.Aggregate, next.Aggregate)
+                && ReferenceEquals(old.LocalPlaylist, next.LocalPlaylist))
+                desired[i] = old;
+        }
+        if (ShellNavItems.SequenceEqual(desired)) return;
+
+        // 集合调整导致 ListBox 重新选中时不得触发导航/重新打开歌单。
+        var selectedKey = SelectedNav?.Key;
+        var wasSuppressed = _suppressSelectedNavNavigation;
+        _suppressSelectedNavNavigation = true;
+        try
+        {
+            CollectionSync.Apply(ShellNavItems, desired);
+            if (selectedKey is not null) SelectedNav = ShellNavItems.FirstOrDefault(item => item.Key == selectedKey);
+        }
+        finally { _suppressSelectedNavNavigation = wasSuppressed; }
         OnPropertyChanged(nameof(CompactNavItems));
     }
 

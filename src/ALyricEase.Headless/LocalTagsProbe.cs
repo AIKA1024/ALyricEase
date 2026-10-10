@@ -8,8 +8,11 @@ namespace ALyricEase.Headless;
 /// 断言 CreateSong 读出真实的 标题/歌手/专辑/时长,以及文件名兜底仍生效。</summary>
 internal static class LocalTagsProbe
 {
-    public static int Run()
+    public static int Run(string? realPath = null)
     {
+        if (realPath is not null && File.Exists(realPath))
+            return RunReal(realPath);
+
         var dir = Path.Combine(Path.GetTempPath(), $"aly-local-tags-{Guid.NewGuid():N}");
         Directory.CreateDirectory(dir);
 
@@ -71,6 +74,20 @@ internal static class LocalTagsProbe
             $"taglib={m4aError}, fallbackOk={fallbackOk}");
         try { Directory.Delete(dir, recursive: true); } catch { }
         return flacOk && mp3Ok && fallbackOk ? 0 : 1;
+    }
+
+    /// <summary>真实文件诊断:打印 CreateSong 的字段结果(注意诊断代码自身不能用
+    /// TagLib.File.Create —— 反射入口在 AOT 下必挂,生产路径走 OpenTagLib 直接构造)。</summary>
+    private static int RunReal(string path)
+    {
+        var song = LocalAudioFiles.CreateSong(path);
+        var ok = song.Name == "说好不哭 (with 五月天阿信)"
+            && song.Artist == "周杰伦"
+            && song.Album == "最伟大的作品"
+            && song.DurationMs > 0;
+        Console.WriteLine($"[local-tags] createSong: name={song.Name}, artist={song.Artist}, " +
+            $"album={song.Album}, duration={song.DurationMs}, ok={ok}");
+        return ok ? 0 : 1;
     }
 
     private static byte[] MakeFlac(int sampleRate, long totalSamples, (string Key, string Value)[] comments)

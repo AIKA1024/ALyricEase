@@ -1550,7 +1550,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     public async Task<List<RecommendItem>> GetPersonalizedPlaylistsAsync(int limit = 6, CancellationToken ct = default)
     {
         var resp = await GetJsonAsync($"{BaseUrl}/api/personalized/playlist?limit={limit}", NetEaseJsonContext.Default.RecommendListResponse, ct).ConfigureAwait(false);
-        if (resp is null || resp.Code != 200 || resp.Result is null) return new();
+        if (resp is null || resp.Code != 200 || resp.Result is null)
+            throw new ApiException("获取推荐歌单失败", resp?.Code ?? -1);
         return resp.Result.Select(MapPlaylistCard).ToList();
     }
 
@@ -1558,7 +1559,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     public async Task<List<RecommendItem>> GetNewSongsAsync(int limit = 6, CancellationToken ct = default)
     {
         var resp = await GetJsonAsync($"{BaseUrl}/api/personalized/newsong?limit={limit}", NetEaseJsonContext.Default.RecommendListResponse, ct).ConfigureAwait(false);
-        if (resp is null || resp.Code != 200 || resp.Result is null) return new();
+        if (resp is null || resp.Code != 200 || resp.Result is null)
+            throw new ApiException("获取新歌推荐失败", resp?.Code ?? -1);
         return resp.Result.Select(MapSongCard).ToList();
     }
 
@@ -1566,7 +1568,9 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     public async Task<List<RecommendItem>> GetDailyRecommendAsync(CancellationToken ct = default)
     {
         var resp = await GetJsonAsync($"{BaseUrl}/api/v1/discovery/recommend/resource", NetEaseJsonContext.Default.RecommendResourceResponse, ct).ConfigureAwait(false);
-        if (resp is null || resp.Code != 200 || resp.Recommend is null) return new();
+        if (resp?.Code == 301) return new();
+        if (resp is null || resp.Code != 200 || resp.Recommend is null)
+            throw new ApiException("获取每日推荐歌单失败", resp?.Code ?? -1);
         return resp.Recommend.Select(MapPlaylistCard).ToList();
     }
 

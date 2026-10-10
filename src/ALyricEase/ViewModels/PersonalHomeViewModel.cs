@@ -132,8 +132,11 @@ public sealed partial class PersonalHomeViewModel : NavigationDetailViewModelBas
     private void ManageAccounts() => ServiceLocator.Get<MainViewModel>().GoAccountCommand.Execute(null);
 
     private void OnLibraryChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => QueueRebuild();
+
+    private void QueueRebuild()
     {
-        // 全量刷新会连续 Clear/Add；一次 UI 调度仅重建一次，避免大资料库逐项重建视图。
+        // 同一批资料库更新只投影一次，保留未变化条目的视图和封面租约。
         if (_rebuildPending) return;
         _rebuildPending = true;
         Dispatcher.UIThread.Post(() =>
@@ -145,6 +148,7 @@ public sealed partial class PersonalHomeViewModel : NavigationDetailViewModelBas
 
     private void OnLibraryPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(PlaylistViewModel.LibraryOverviewVersion)) QueueRebuild();
         if (e.PropertyName is nameof(PlaylistViewModel.NetEaseLibraryError) or nameof(PlaylistViewModel.QqLibraryError))
         {
             OnPropertyChanged(nameof(LibraryStatus));
@@ -156,29 +160,32 @@ public sealed partial class PersonalHomeViewModel : NavigationDetailViewModelBas
             Account.SyncLoginState();
             // 登录状态变化后，下次进入重新验证；歌单集合仍即时同步。
             if (!IsRefreshing) _loadTask = null;
-            RebuildPlaylists();
+            QueueRebuild();
         }
     }
 
     private void RebuildPlaylists()
     {
-        TastePlaylists.Clear();
-        CreatedPlaylists.Clear();
-        CollectedPlaylists.Clear();
+        var taste = new List<PlaylistItemViewModel>();
+        var created = new List<PlaylistItemViewModel>();
+        var collected = new List<PlaylistItemViewModel>();
         // 分页实化（每段 12 张 + 显示更多）做过一版，应用户要求撤回：全量显示下内存与滚动占用可接受。
         // 若资料库规模再涨，考虑 SongGridView 式按列分组虚拟化，别再回退到按钮分页。
         if (SourceIndex != 2)
         {
             foreach (var item in _library.Playlists)
-                (_library.IsLikedPlaylist(item.Playlist) ? TastePlaylists : CreatedPlaylists).Add(item);
-            foreach (var item in _library.NetEaseCollectedPlaylists) CollectedPlaylists.Add(item);
+                (_library.IsLikedPlaylist(item.Playlist) ? taste : created).Add(item);
+            foreach (var item in _library.NetEaseCollectedPlaylists) collected.Add(item);
         }
         if (SourceIndex != 1)
         {
             foreach (var item in _library.QqPlaylists)
-                (_library.IsLikedPlaylist(item.Playlist) ? TastePlaylists
-                    : item.Playlist.DirId != 0 ? CreatedPlaylists : CollectedPlaylists).Add(item);
+                (_library.IsLikedPlaylist(item.Playlist) ? taste
+                    : item.Playlist.DirId != 0 ? created : collected).Add(item);
         }
+        CollectionSync.Apply(TastePlaylists, taste);
+        CollectionSync.Apply(CreatedPlaylists, created);
+        CollectionSync.Apply(CollectedPlaylists, collected);
         foreach (var name in new[] { nameof(HasTaste), nameof(HasCreated), nameof(HasCollected),
                      nameof(IsEmpty), nameof(ConnectionSummary), nameof(EmptyTitle), nameof(EmptyDescription) })
             OnPropertyChanged(name);

@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Collections.ObjectModel;
+using ALyricEase.Infrastructure;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -11,7 +13,10 @@ using ALyricEase.ViewModels;
 namespace ALyricEase.Controls;
 
 /// <summary>一行专辑卡片(<= ColumnsPerRow 张):纵向虚拟化的分块单位。</summary>
-public sealed record AlbumRow(IReadOnlyList<AlbumCardViewModel> Cards);
+public sealed class AlbumRow(IReadOnlyList<AlbumCardViewModel> cards)
+{
+    public ObservableCollection<AlbumCardViewModel> Cards { get; } = new(cards);
+}
 
 /// <summary>
 /// 纵向滚动专辑网格("查看更多"专辑页用):卡片按 ColumnsPerRow 切成行,
@@ -30,13 +35,15 @@ public partial class AlbumGrid : UserControl
     private bool _isAttached;
     private int _rebuildGeneration;
     private int _columnsPerRow = 5;
+    private readonly ObservableCollection<AlbumRow> _rows = new();
 
-    /// <summary>性能回归探针使用：实际发生的全量分块次数。</summary>
+    /// <summary>性能回归探针使用：实际更新行分块的次数。</summary>
     internal int RebuildCount { get; private set; }
 
     public AlbumGrid()
     {
         InitializeComponent();
+        Rows.ItemsSource = _rows;
         SizeChanged += (_, e) => UpdateColumnsPerRow(e.NewSize.Width);
     }
 
@@ -134,18 +141,25 @@ public partial class AlbumGrid : UserControl
         }, DispatcherPriority.Background);
     }
 
-    /// <summary>ItemsSource/列数变化后重建行分块(尾部不足一行的也成行)。</summary>
+    /// <summary>增量同步行分块；分页保留已有行和卡片，尾部不足一行时原地追加。</summary>
     private void RebuildRows()
     {
         if (Rows is null) return; // 属性早于 InitializeComponent 设置时面板尚不存在
-        RebuildCount++;
         var cards = ItemsSource?.OfType<AlbumCardViewModel>().ToList() ?? [];
         var perRow = Math.Max(1, _columnsPerRow);
-        Rows.ItemsSource = cards.Count == 0
-            ? []
-            : Enumerable.Range(0, (cards.Count + perRow - 1) / perRow)
-                .Select(i => new AlbumRow(
-                    cards.GetRange(i * perRow, Math.Min(perRow, cards.Count - i * perRow))))
-                .ToList();
+        var count = (cards.Count + perRow - 1) / perRow;
+        var changed = _rows.Count != count;
+        while (_rows.Count > count) _rows.RemoveAt(_rows.Count - 1);
+        for (var i = 0; i < count; i++)
+        {
+            var slice = cards.GetRange(i * perRow, Math.Min(perRow, cards.Count - i * perRow));
+            if (i >= _rows.Count) _rows.Add(new AlbumRow(slice));
+            else if (!_rows[i].Cards.SequenceEqual(slice))
+            {
+                changed = true;
+                CollectionSync.Apply(_rows[i].Cards, slice);
+            }
+        }
+        if (changed) RebuildCount++;
     }
 }

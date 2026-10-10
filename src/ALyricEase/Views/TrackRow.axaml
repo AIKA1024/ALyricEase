@@ -36,7 +36,7 @@
       <Setter Property="Template">
         <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
           <!-- 根 Grid 画控件的 Background(透明):否则行内空白不可命中,hover 只在内层控件上生效 -->
-          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" IsEnabled="{Binding IsPlayable}">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" Classes.is-local-missing="{Binding IsLocalFileMissing}" IsEnabled="{Binding IsRowEnabled}">
             <!-- 悬停高亮画在内容之后(背景色,仿原版 Grid.Background 动画),不遮罩封面/红心;圆角 4 仿原版 GridViewItemPresenter -->
             <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
             <Border Classes="row-pressed-bg" />
@@ -169,7 +169,7 @@
     <ControlTheme x:Key="TrackRowPlaylistWideTheme" TargetType="views:TrackRow">
       <Setter Property="Template">
         <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
-          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" IsEnabled="{Binding IsPlayable}">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" Classes.is-local-missing="{Binding IsLocalFileMissing}" IsEnabled="{Binding IsRowEnabled}">
             <!-- 悬停高亮画在内容之后(背景色,仿原版 Grid.Background 动画),不遮罩封面/红心;圆角 4 仿原版 ListViewItemPresenter -->
             <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
             <Border Classes="row-pressed-bg" />
@@ -280,7 +280,7 @@
     <ControlTheme x:Key="TrackRowAlbumTheme" TargetType="views:TrackRow">
       <Setter Property="Template">
         <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
-          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" IsEnabled="{Binding IsPlayable}">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" Classes.is-local-missing="{Binding IsLocalFileMissing}" IsEnabled="{Binding IsRowEnabled}">
             <!-- 悬停高亮 -->
             <Border Classes="row-hover-bg" CornerRadius="4" IsHitTestVisible="False" />
             <Border Classes="row-pressed-bg" />
@@ -535,11 +535,21 @@
   <Style Selector="views|TrackRow Grid.is-local Button.row-like-inline" x:DataType="vm:SongItemViewModel">
     <Setter Property="IsVisible" Value="False" />
   </Style>
-  <!-- 本地文件已删除:歌名加删除线(行仍展示、不可播放) -->
-  <Style Selector="views|TrackRow TextBlock.file-missing">
+  <!-- 本地文件已缺失:连"播放"也无处可播 ⇒ 两处播放钮一并隐藏(点击路径只剩右键菜单,
+       由播放器提示文件不存在;整行仍可交互,右键/打开文件位置不受影响) -->
+  <Style Selector="views|TrackRow Grid.is-local-missing Button.row-play-cover" x:DataType="vm:SongItemViewModel">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="views|TrackRow Grid.is-local-missing Button.row-play-inline" x:DataType="vm:SongItemViewModel">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <!-- 本地文件已删除:歌名加粗删除线(下移更贴字身)并淡化 —— 行仍展示,但"死行"观感明确 -->
+  <Style Selector="views|TrackRow TextBlock.fileMissing">
+    <Setter Property="Opacity" Value="0.55" />
     <Setter Property="TextDecorations">
       <TextDecorationCollection>
-        <TextDecoration Location="Strikethrough" StrokeOffset="2" StrokeOffsetUnit="Pixel" />
+        <TextDecoration Location="Strikethrough" StrokeOffset="0" StrokeOffsetUnit="Pixel"
+                        StrokeThickness="1.5" StrokeThicknessUnit="Pixel" />
       </TextDecorationCollection>
     </Setter>
   </Style>
@@ -548,7 +558,8 @@
        注意必须禁用 TrackRow 控件本身(而非只禁模板内 Grid):悬停高亮/操作按钮浮现都是
        TrackRow:pointerover 驱动,控件禁用后 :pointerover 不再触发,hover 一并消失 -->
   <Style Selector="views|TrackRow" x:DataType="vm:SongItemViewModel">
-    <Setter Property="IsEnabled" Value="{Binding IsPlayable}" />
+    <!-- IsRowEnabled:本地行(含文件缺失)保持可交互,平台不可播行照旧整行禁用 -->
+    <Setter Property="IsEnabled" Value="{Binding IsRowEnabled}" />
   </Style>
   <Style Selector="views|TrackRow Grid.track-root:disabled">
     <Setter Property="Opacity" Value="0.45" />

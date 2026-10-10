@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
@@ -40,14 +41,38 @@ public sealed partial class RecentPlaybackViewModel : ViewModelBase
     private void Rebuild()
     {
         var queue = _appState.RecentSongs.ToArray();
-        Songs.Clear();
+        var existing = Songs.ToDictionary(row => (row.Song.Source, row.Song.Id, row.Song.Mid));
+        var desired = new List<SongItemViewModel>(queue.Length);
         for (var i = 0; i < queue.Length; i++)
-            Songs.Add(new SongItemViewModel(
-                queue[i], _player.PlayFromList, i + 1, queue, _api, "最近播放"));
+        {
+            var song = queue[i];
+            if (existing.TryGetValue((song.Source, song.Id, song.Mid), out var row)
+                && SameMetadata(row.Song, song))
+            {
+                row.Renumber(i + 1);
+                // 行复用后也必须改绑最新顺序，否则从历史行播放仍会带入旧队列。
+                row.RebindPlayback(_player.PlayFromList, queue, "最近播放");
+                desired.Add(row);
+            }
+            else
+                desired.Add(new SongItemViewModel(song, _player.PlayFromList, i + 1, queue, _api, "最近播放"));
+        }
+        CollectionSync.Apply(Songs, desired);
         OnPropertyChanged(nameof(HasSongs));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(Subtitle));
     }
+
+    // 历史会复制刚播放的 Song；相同快照复用行，元数据变化时仅替换该行。
+    private static bool SameMetadata(Song a, Song b) => ReferenceEquals(a, b)
+        || a.Name == b.Name && a.Artist == b.Artist && a.Album == b.Album
+        && a.CoverUrl == b.CoverUrl && a.DurationMs == b.DurationMs
+        && a.Fee == b.Fee && a.IsPurchased == b.IsPurchased
+        && a.AlbumId == b.AlbumId && a.AlbumMid == b.AlbumMid
+        && a.LocalFilePath == b.LocalFilePath
+        && a.IsPlaybackUnavailable == b.IsPlaybackUnavailable && a.IsNoCopyright == b.IsNoCopyright
+        && a.ArtistIds.SequenceEqual(b.ArtistIds) && a.ArtistNames.SequenceEqual(b.ArtistNames)
+        && a.ArtistMids.SequenceEqual(b.ArtistMids);
 
     [RelayCommand]
     private async Task PlayAllAsync()

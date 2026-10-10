@@ -40,16 +40,20 @@ internal static class SongContextMenu
         });
 
         // 本地歌曲(聚合歌单导入):没有在线音源,裁剪掉 添加到歌单/表演者/专辑/分享/浏览器/复制链接,
-        // 只保留 播放/下一首播放/来源;文件缺失时"播放"仍可点,由播放器提示文件不存在。
+        // 只保留 播放/下一首播放/来源;文件缺失时两者置灰禁用(行内播放钮同样已隐藏)。
         var isLocal = song.Source == MusicSource.Local;
+        var localFileMissing = isLocal
+            && !string.IsNullOrEmpty(song.LocalFilePath) && !File.Exists(song.LocalFilePath);
 
         if (row is not null)
         {
             var play = MenuItemWithIcon("播放", "\uE912");
+            play.IsEnabled = !localFileMissing;
             play.Click += (_, _) => row.PlayCommand.Execute(null);
             menu.Items.Add(play);
 
             var playNext = MenuItemWithIcon("下一首播放", "\uE913");
+            playNext.IsEnabled = !localFileMissing;
             playNext.Click += (_, _) =>
             {
                 try
@@ -143,12 +147,57 @@ internal static class SongContextMenu
         // 来源行前的分隔线:与平台歌一致;末项已是分隔线时不再补(避免双横线)
         if (menu.Items.Count == 0 || menu.Items[^1] is not Separator)
             menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem
+        if (row?.SourcePlaylist is { } sourcePlaylist)
         {
-            Header = $"来源： {SourceText(song, queueSourceName)}",
-            Focusable = false,
-            IsHitTestVisible = false,
-        });
+            // 聚合歌单的平台成员行:点击跳转成员歌单(按音源自动路由)。
+            // ⚠ 优先用资料库里的既有条目(封面/曲数/DirId 等元数据齐全),
+            //   合成 Playlist 只有 Id/Name,跳过去会是"无封面 0 曲数"的空壳页。
+            // 图标 = 音源 favicon(与封面角标同一位图源);资源缺失回落字体图标。
+            var badge = Infrastructure.SourceBadges.For(sourcePlaylist.Source);
+            var gotoItem = badge is not null
+                ? MenuItemWithImageIcon($"歌单： {sourcePlaylist.Name}", badge)
+                : MenuItemWithIcon($"歌单： {sourcePlaylist.Name}", "\uE922");
+            gotoItem.Click += (_, _) =>
+            {
+                try
+                {
+                    var main = ServiceLocator.Get<MainViewModel>();
+                    var library = main.Playlist;
+                    var item = sourcePlaylist.Source == MusicSource.QQ
+                        ? library.QqPlaylists.FirstOrDefault(candidate => candidate.Id == sourcePlaylist.Id)
+                        : library.Playlists.FirstOrDefault(candidate => candidate.Id == sourcePlaylist.Id);
+                    item ??= new PlaylistItemViewModel(sourcePlaylist);
+                    main.OpenShellPlaylistAuto(item);
+                }
+                catch { /* 设计器/无头宿主没有应用 DI,仅保留菜单结构。 */ }
+            };
+            menu.Items.Add(gotoItem);
+        }
+        else if (row?.SourceLocalPlaylist is { } sourceLocal)
+        {
+            // 本地音乐歌单(本地歌单页行/聚合的本地成员行):跳回本地歌单页
+            var gotoItem = MenuItemWithIcon($"歌单： {sourceLocal.Name}", "\uE922");
+            gotoItem.Click += (_, _) =>
+            {
+                try
+                {
+                    var main = ServiceLocator.Get<MainViewModel>();
+                    main.ActivePage = "Favorites";
+                    main.Playlist.OpenLocalPlaylistCommand.Execute(sourceLocal);
+                }
+                catch { /* 设计器/无头宿主没有应用 DI,仅保留菜单结构。 */ }
+            };
+            menu.Items.Add(gotoItem);
+        }
+        else
+        {
+            menu.Items.Add(new MenuItem
+            {
+                Header = $"来源： {SourceText(song, queueSourceName)}",
+                Focusable = false,
+                IsHitTestVisible = false,
+            });
+        }
 
         // 自己的歌单:底部红色"从歌单中移除"(原版 Delete 字形 E932);命令由歌单页注入行 VM
         if (row?.RemoveFromSourceCommand is { } removeCommand)
@@ -173,6 +222,20 @@ internal static class SongContextMenu
 
         return menu;
     }
+
+    /// <summary>位图图标菜单项(音源 favicon 等):14px 与字体图标对齐,Uniform 缩放。</summary>
+    private static MenuItem MenuItemWithImageIcon(string header, IImage image) => new()
+    {
+        Header = header,
+        Icon = new Image
+        {
+            Source = image,
+            Width = 14,
+            Height = 14,
+            Stretch = Avalonia.Media.Stretch.Uniform,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        },
+    };
 
     private static MenuItem MenuItemWithIcon(string header, string glyph) => new()
     {

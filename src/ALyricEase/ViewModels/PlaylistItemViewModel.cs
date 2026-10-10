@@ -16,7 +16,7 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
         _playCount = playlist.PlayCount;
     }
 
-    public Playlist Playlist { get; }
+    public Playlist Playlist { get; private set; }
 
     public long Id => Playlist.Id;
 
@@ -45,6 +45,7 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
     /// <summary>累计播放次数格式化文本(用户页角标用;0 显示 "0")。
     /// QQ 列表接口不下发(恒 0),用户页后台补拉后经 <see cref="UpdatePlayCount"/> 原地更新。</summary>
     private double _playCount;
+    internal double CurrentPlayCount => _playCount;
 
     public string PlayCountText => Services.NetEase.NetEaseApiClient.FormatPlayCount(_playCount);
 
@@ -57,9 +58,46 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
     }
 
     /// <summary>歌单创建者(用户页 more 菜单"创建者"项/跳用户页用;非用户页入口为 null)。</summary>
-    public string? CreatorName { get; init; }
+    private string? _creatorName;
+    public string? CreatorName { get => _creatorName; init => _creatorName = value; }
 
-    public long CreatorId { get; init; }
+    private long _creatorId;
+    public long CreatorId { get => _creatorId; init => _creatorId = value; }
+
+    /// <summary>资料库联网同步时保留 VM 与图片控件，只通知实际变化的展示字段。</summary>
+    internal void UpdateFrom(PlaylistItemViewModel fresh)
+    {
+        var old = Playlist;
+        Playlist = fresh.Playlist;
+        if (old.Name != Name) OnPropertyChanged(nameof(Name));
+        if (old.Description != Description)
+        {
+            OnPropertyChanged(nameof(Description));
+            OnPropertyChanged(nameof(HasDescription));
+        }
+        if (_currentCoverUrl != fresh.CoverUrl)
+        {
+            _currentCoverUrl = fresh.CoverUrl;
+            OnPropertyChanged(nameof(CoverUrl));
+        }
+        UpdateTrackCount(fresh.TrackCount);
+        UpdatePlayCount(fresh._playCount);
+        if (_creatorName != fresh.CreatorName)
+        {
+            _creatorName = fresh.CreatorName;
+            OnPropertyChanged(nameof(CreatorName));
+        }
+        if (_creatorId != fresh.CreatorId)
+        {
+            _creatorId = fresh.CreatorId;
+            OnPropertyChanged(nameof(CreatorId));
+        }
+        if (old.Name != Playlist.Name || old.Description != Playlist.Description
+            || old.CoverUrl != Playlist.CoverUrl || old.TrackCount != Playlist.TrackCount
+            || old.PlayCount != Playlist.PlayCount || old.CanAddTracks != Playlist.CanAddTracks
+            || old.CreatorName != Playlist.CreatorName)
+            OnPropertyChanged(nameof(Playlist));
+    }
 
     /// <summary>流式加载页面更新已物化数量，不必反复替换整个 VM 或重新加载头部封面。</summary>
     public void UpdateTrackCount(int value)

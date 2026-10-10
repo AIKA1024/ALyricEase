@@ -584,38 +584,40 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>重建"接下来播放"列表:从当前曲下一首开始的循环顺序(当前曲不在列)。</summary>
+    /// <summary>增量同步"接下来播放":从当前曲下一首开始的循环顺序，保留未变化的行与封面。</summary>
     private void RefreshUpcomingItems()
     {
-        UpcomingItems.Clear();
-        if (_queueIndex < 0) return;
+        var desired = new List<QueueItemViewModel>(_queueVms.Count);
+        if (_queueIndex < 0)
+        {
+            CollectionSync.Apply(UpcomingItems, desired);
+            return;
+        }
         if (_lazyQueue is not null)
         {
             // 详情页仍只展示已物化窗口；排序按完整歌单逻辑下标从当前曲之后循环。
-            // 哨兵(逻辑位 -1,"下一首播放"插入)视为当前曲之后立刻播放:排序键取 _queueIndex+0.5。
+            // 哨兵(-1)置于最前；循环排序使用完整逻辑下标，不能用物化窗口长度折算。
             foreach (var pair in _lazyQueueVmIndices
                          .Select((logicalIndex, vmIndex) => (logicalIndex, vmIndex))
                          .Where(pair => pair.logicalIndex != _queueIndex
                                         && pair.logicalIndex != -1
                                         && !_excludedLazyIndices.Contains(pair.logicalIndex))
-                         .Select(pair => (orderKey: pair.logicalIndex > _queueIndex ? (double)pair.logicalIndex
-                                              : pair.logicalIndex + (double)_lazyQueueVmIndices.Count,
-                                          vmIndex: pair.vmIndex))
-                         .Where(pair => pair.orderKey != _queueIndex)
-                         .OrderBy(pair => pair.orderKey > _queueIndex ? 0 : 1)
-                         .ThenBy(pair => pair.orderKey))
-                UpcomingItems.Add(_queueVms[pair.vmIndex]);
+                         .OrderBy(pair => pair.logicalIndex > _queueIndex ? 0 : 1)
+                         .ThenBy(pair => pair.logicalIndex))
+                desired.Add(_queueVms[pair.vmIndex]);
             // 哨兵固定插在最前(它就是"下一首")
             foreach (var vm in _queueVms
                          .Select((vm, vmIndex) => (vm, vmIndex))
                          .Where(pair => _lazyQueueVmIndices[pair.vmIndex] == -1)
                          .OrderByDescending(pair => pair.vmIndex)
                          .Select(pair => pair.vm))
-                UpcomingItems.Insert(0, vm);
+                desired.Insert(0, vm);
+            CollectionSync.Apply(UpcomingItems, desired);
             return;
         }
         for (var i = 1; i < _queueVms.Count; i++)
-            UpcomingItems.Add(_queueVms[(_queueIndex + i) % _queueVms.Count]);
+            desired.Add(_queueVms[(_queueIndex + i) % _queueVms.Count]);
+        CollectionSync.Apply(UpcomingItems, desired);
     }
 
     /// <summary>点播放列表行:直接播该曲(队列不变,仅移动当前位置)。</summary>

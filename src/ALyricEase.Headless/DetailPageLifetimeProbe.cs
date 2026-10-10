@@ -182,6 +182,7 @@ internal static class DetailPageLifetimeProbe
         var cache = ServiceLocator.Get<MusicCacheService>();
         var vm = ServiceLocator.Get<ArtistSongsPageViewModel>();
         var main = ServiceLocator.Get<MainViewModel>();
+        var initialPage = main.ActivePage;
         var tracks = CreateSongs(75)
             .Select(song => new NavigationPageCacheTrack(song, true))
             .ToList();
@@ -205,8 +206,8 @@ internal static class DetailPageLifetimeProbe
             "第一次返回没有恢复歌手全部歌曲页");
 
         main.GoBackCommand.Execute(null);
-        Assert(main.ActivePage == "Recommend" && vm.RetainedTrackCount == 0,
-            "最终返回个性推荐后详情页重数据仍被单例保留");
+        Assert(main.ActivePage == initialPage && vm.RetainedTrackCount == 0,
+            "最终返回起始页后详情页重数据仍被单例保留");
         Assert(!main.CanGoBack, "导航链返回首页后仍残留历史项");
     }
 

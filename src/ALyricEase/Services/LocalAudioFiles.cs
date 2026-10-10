@@ -109,9 +109,10 @@ public static class LocalAudioFiles
 
     private static LocalAudioTags ReadTags(string full)
     {
-        try
+        var file = OpenTagLib(full, Path.GetExtension(full).ToLowerInvariant());
+        if (file is null) return new LocalAudioTags(null, null, null, 0, null);
+        using (file)
         {
-            using var file = TagLib.File.Create(full);
             var tag = file.Tag;
             var title = NullIfEmpty(tag.Title?.Trim());
             var artist = NullIfEmpty(tag.FirstPerformer?.Trim()) ?? NullIfEmpty(tag.FirstAlbumArtist?.Trim());
@@ -120,12 +121,27 @@ public static class LocalAudioFiles
             var cover = ExtractCover(file, full);
             return new LocalAudioTags(title, artist, album, durationMs, cover);
         }
-        catch
-        {
-            // CorruptFileException/UnsupportedException:标签读不出,交由调用方文件名兜底
-            return new LocalAudioTags(null, null, null, 0, null);
-        }
     }
+
+    /// <summary>按扩展名直接构造具体的 TagLib File 子类。
+    /// ⚠ 不能用 TagLib.File.Create —— 它内部靠反射枚举程序集里的 File 子类做格式识别,
+    /// NativeAOT 裁剪下会抛 UnsupportedException ⇒ 全部退回文件名兜底(AOT 发布实测)。
+    /// 直接 new 是 AOT 安全的。未知扩展名返回 null。</summary>
+    private static TagLib.File? OpenTagLib(string full, string ext) => ext switch
+    {
+        ".flac" => new TagLib.Flac.File(full),
+        ".mp3" => new TagLib.Mpeg.AudioFile(full),
+        ".m4a" or ".m4b" or ".mp4" => new TagLib.Mpeg4.File(full),
+        ".ogg" or ".oga" or ".opus" => new TagLib.Ogg.File(
+            new TagLib.File.LocalFileAbstraction(full)),
+        ".mka" => new TagLib.Matroska.File(full),
+        ".wma" => new TagLib.Asf.File(full),
+        ".ape" => new TagLib.Ape.File(full),
+        ".wv" => new TagLib.WavPack.File(full),
+        ".wav" => new TagLib.Riff.File(full),
+        ".aiff" or ".aif" => new TagLib.Aiff.File(full),
+        _ => null,
+    };
 
     /// <summary>提取内嵌专辑封面并落盘为持久缓存文件(covers/,键 = 路径+修改时间),
     /// 返回可直接交给 ManagedCoverImage 本地路径加载的文件路径;无内嵌封面返回 null。</summary>

@@ -129,7 +129,9 @@ internal static class AggregateLoadingProbe
         await playlistVm.OpenAggregateCommand.ExecuteAsync(offlineAggregate);
         var localRowsShown = playlistVm.Tracks.Count == 2
             && playlistVm.Tracks.All(row => row.IsLocal)
-            && playlistVm.Tracks.All(row => row.IsLocalFileMissing);
+            && playlistVm.Tracks.All(row => row.IsLocalFileMissing)
+            // 文件缺失行必须保持整行可交互(IsRowEnabled),否则右键菜单/打开文件位置全失效
+            && playlistVm.Tracks.All(row => row.IsRowEnabled);
         var renumbered = playlistVm.Tracks.Select(row => row.Index).SequenceEqual([1, 2]);
         Console.WriteLine($"[aggregate-load] tracks={playlistVm.Tracks.Count}, " +
             $"isLocalFlags=[{string.Join(',', playlistVm.Tracks.Select(t => t.IsLocal))}], " +

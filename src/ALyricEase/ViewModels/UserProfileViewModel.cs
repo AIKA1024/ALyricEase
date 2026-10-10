@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
@@ -19,12 +19,16 @@ public sealed record UserTasteRowViewModel(PlaylistItemViewModel Playlist, bool 
 /// —— 音乐品味(喜欢的音乐/年度歌单,图标瓦片行)、参与创作的歌单、收藏的歌单(封面行)。
 /// 双音源:网易云 uid=0 表示"自己"(按登录态解析),创建者按钮带创建者 id 跳入;
 /// QQ 仅"自己"(QQ 歌单创建者恒为登录账号,协议无他人主页跳转入口),按登录态解析。
-/// 数据轻量,导航快照只记 source/uid/昵称/滚动位,恢复时重新拉取。</summary>
+/// 导航历史只保留定位参数；页面数据走有界的一次性内存快照，返回无需重复联网。</summary>
 public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 {
     private readonly NetEaseApiClient _api;
     private readonly QQMusicApiClient _qqApi;
     private readonly PlayerViewModel _player;
+    private readonly MusicCacheService _musicCache;
+    private bool _contentLoaded;
+    private int _accountGeneration;
+    private int _playlistRevision;
     private MusicSource _source = MusicSource.NetEase;
     private long _userId;
     private CancellationTokenSource? _loadCancellation;
@@ -32,11 +36,12 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 
     internal event Action<Exception>? QqLoadFailed;
 
-    public UserProfileViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player)
+    public UserProfileViewModel(NetEaseApiClient api, QQMusicApiClient qqApi, PlayerViewModel player, MusicCacheService musicCache)
     {
         _api = api;
         _qqApi = qqApi;
         _player = player;
+        _musicCache = musicCache;
     }
 
     [ObservableProperty] private string _nickname = "";
@@ -57,19 +62,20 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 
     /// <summary>音乐品味:喜欢的音乐(specialType 5)+ 年度歌单(specialType 20)。
     /// 听歌排行未收录:play/record 的 allData 上限 100 首,拿不到真实"累计播放"总数。</summary>
-    public ObservableCollection<UserTasteRowViewModel> TasteRows { get; } = new();
+    public RangeObservableCollection<UserTasteRowViewModel> TasteRows { get; } = new();
 
     /// <summary>参与创作的歌单(创建者 = 该用户)。</summary>
-    public ObservableCollection<PlaylistItemViewModel> CreatedPlaylists { get; } = new();
+    public RangeObservableCollection<PlaylistItemViewModel> CreatedPlaylists { get; } = new();
 
     /// <summary>收藏的歌单(创建者 ≠ 该用户)。</summary>
-    public ObservableCollection<PlaylistItemViewModel> CollectedPlaylists { get; } = new();
+    public RangeObservableCollection<PlaylistItemViewModel> CollectedPlaylists { get; } = new();
 
     /// <summary>歌单被重命名/删除后同步"参与创作"卡片(管理入口只对本人歌单出现,
     /// 收藏行与音乐品味行不涉及):fresh 非空 = 换侧栏刷新出的新实例(Playlist init-only,
     /// 名字/封面随实例更新);null = 移除该行。歌单不在本页时无操作。</summary>
     internal void SyncCreatedPlaylist(Models.Playlist target, PlaylistItemViewModel? fresh)
     {
+        _playlistRevision++;
         for (var i = 0; i < CreatedPlaylists.Count; i++)
         {
             var p = CreatedPlaylists[i].Playlist;
@@ -85,12 +91,15 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
         _loadCancellation = new CancellationTokenSource();
+        _accountGeneration = CurrentAccountGeneration;
         IsLoading = true;
         return (++_loadGeneration, _loadCancellation.Token);
     }
 
     private bool IsCurrentLoad(int generation, CancellationToken token)
         => generation == _loadGeneration && !token.IsCancellationRequested;
+
+    private int CurrentAccountGeneration => _source == MusicSource.QQ ? _qqApi.AccountGeneration : _api.AccountGeneration;
 
     private void CancelCurrentLoad()
     {
@@ -129,6 +138,9 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
             // 其余按 creator.userId 归入 参与创作 / 收藏。
             var items = await _api.GetUserPlaylistItemsAsync(uid, 1000, ct);
             if (!IsCurrentLoad(generation, ct)) return;
+            var taste = new List<UserTasteRowViewModel>();
+            var created = new List<PlaylistItemViewModel>();
+            var collected = new List<PlaylistItemViewModel>();
             foreach (var item in items)
             {
                 var pvm = new PlaylistItemViewModel(new Playlist
@@ -147,21 +159,18 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
                 switch (item.SpecialType)
                 {
                     case 5:
-                        TasteRows.Add(new UserTasteRowViewModel(pvm, ShowHeart: true));
+                        taste.Add(new UserTasteRowViewModel(pvm, ShowHeart: true));
                         break;
                     case 20:
-                        TasteRows.Add(new UserTasteRowViewModel(pvm, ShowHeart: false));
+                        taste.Add(new UserTasteRowViewModel(pvm, ShowHeart: false));
                         break;
                     default:
-                        if (item.Creator?.UserId == uid) CreatedPlaylists.Add(pvm);
-                        else CollectedPlaylists.Add(pvm);
+                        if (item.Creator?.UserId == uid) created.Add(pvm);
+                        else collected.Add(pvm);
                         break;
                 }
             }
-            HasTaste = TasteRows.Count > 0;
-            HasCreated = CreatedPlaylists.Count > 0;
-            HasCollected = CollectedPlaylists.Count > 0;
-            IsLoading = false;
+            ApplyContent(taste, created, collected);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -192,20 +201,20 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 
             var playlists = await _qqApi.GetUserPlaylistsAsync(ct);
             if (!IsCurrentLoad(generation, ct)) return;
+            var taste = new List<UserTasteRowViewModel>();
+            var created = new List<PlaylistItemViewModel>();
+            var collected = new List<PlaylistItemViewModel>();
             foreach (var p in playlists)
             {
                 var pvm = new PlaylistItemViewModel(p);
                 if (p.DirId == QQMusicApiClient.LikedDirId)
-                    TasteRows.Add(new UserTasteRowViewModel(pvm, ShowHeart: true));
+                    taste.Add(new UserTasteRowViewModel(pvm, ShowHeart: true));
                 else if (p.DirId != 0)
-                    CreatedPlaylists.Add(pvm);
+                    created.Add(pvm);
                 else
-                    CollectedPlaylists.Add(pvm);
+                    collected.Add(pvm);
             }
-            HasTaste = TasteRows.Count > 0;
-            HasCreated = CreatedPlaylists.Count > 0;
-            HasCollected = CollectedPlaylists.Count > 0;
-            IsLoading = false;
+            ApplyContent(taste, created, collected);
 
             // 播放量补拉:QQ asset 列表通道 play_cnt 恒 0 不下发(网易云 user/playlist 天然带),
             // 详情通道才有真实值;后台静默按块补,完成逐个原地更新角标
@@ -247,8 +256,22 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         }
     }
 
+    private void ApplyContent(IReadOnlyList<UserTasteRowViewModel> taste,
+        IReadOnlyList<PlaylistItemViewModel> created, IReadOnlyList<PlaylistItemViewModel> collected)
+    {
+        TasteRows.AddRange(taste);
+        CreatedPlaylists.AddRange(created);
+        CollectedPlaylists.AddRange(collected);
+        HasTaste = TasteRows.Count > 0;
+        HasCreated = CreatedPlaylists.Count > 0;
+        HasCollected = CollectedPlaylists.Count > 0;
+        _contentLoaded = true;
+        IsLoading = false;
+    }
+
     private void ClearContent()
     {
+        _contentLoaded = false;
         Nickname = "";
         AvatarUrl = "";
         Signature = "";
@@ -280,6 +303,13 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
             "",
             false,
             PageScrollOffset);
+        if (_contentLoaded)
+            _ = _musicCache.CacheDetailPageSnapshotAsync(snapshot.CacheKey, new DetailPageCacheData([], [], [],
+                UserProfile: new UserProfilePageCacheData(Nickname, AvatarUrl, Signature, Level, Follows, Followeds,
+                    TasteRows.Select(row => ToCacheItem(row.Playlist, row.ShowHeart)).ToArray(),
+                    CreatedPlaylists.Select(row => ToCacheItem(row)).ToArray(),
+                    CollectedPlaylists.Select(row => ToCacheItem(row)).ToArray(),
+                    _accountGeneration, _playlistRevision)));
         ReleaseCurrentPageData();
         return snapshot;
     }
@@ -295,17 +325,53 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 
     internal async Task RestoreNavigationSnapshotAsync(DetailNavigationSnapshot snapshot)
     {
-        // 用户页数据轻量:不落音乐缓存,恢复时按 source/uid 重新拉取
+        _source = snapshot.Source;
+        var (generation, ct) = BeginLoad();
+        ClearContent();
+        _userId = snapshot.Id;
+        var cached = (await _musicCache.TryTakeDetailPageSnapshotAsync(snapshot.CacheKey))?.UserProfile;
+        if (!IsCurrentLoad(generation, ct)) return;
+        if (cached is not null && cached.AccountGeneration == CurrentAccountGeneration
+            && cached.PlaylistRevision == _playlistRevision)
+        {
+            Nickname = cached.Nickname;
+            AvatarUrl = cached.AvatarUrl;
+            Signature = cached.Signature;
+            Level = cached.Level;
+            Follows = cached.Follows;
+            Followeds = cached.Followeds;
+            ApplyContent(cached.Taste.Select(row => new UserTasteRowViewModel(FromCacheItem(row), row.ShowHeart)).ToArray(),
+                cached.Created.Select(FromCacheItem).ToArray(), cached.Collected.Select(FromCacheItem).ToArray());
+            RestorePageScrollState(snapshot.ScrollOffset);
+            return;
+        }
+        // 未完成的页面、被淘汰的快照或账号/歌单已改变时才重新请求。
+        Task reload;
         if (snapshot.Source == MusicSource.QQ)
-            await LoadQqAsync();
+            reload = LoadQqAsync();
         else
-            await LoadAsync(snapshot.Id);
+            reload = LoadAsync(snapshot.Id);
+        var fallbackGeneration = _loadGeneration;
+        await reload;
+        if (fallbackGeneration != _loadGeneration || _loadCancellation is null) return;
         RestorePageScrollState(snapshot.ScrollOffset);
     }
 
     internal void DiscardNavigationSnapshot(DetailNavigationSnapshot? snapshot)
     {
-        // 用户页快照只记 uid,无 DetailPageSnapshot 缓存可清理
+        if (snapshot is not null) _ = _musicCache.DiscardDetailPageSnapshotAsync(snapshot.CacheKey);
+    }
+
+    private static UserPlaylistCacheItem ToCacheItem(PlaylistItemViewModel item, bool heart = false)
+        => new(item.Playlist, item.CreatorName, item.CreatorId, item.CoverUrl, item.TrackCount, item.CurrentPlayCount, heart);
+
+    private static PlaylistItemViewModel FromCacheItem(UserPlaylistCacheItem item)
+    {
+        var vm = new PlaylistItemViewModel(item.Playlist) { CreatorName = item.CreatorName, CreatorId = item.CreatorId };
+        vm.RefreshCover(item.CoverUrl);
+        vm.UpdateTrackCount(item.TrackCount);
+        vm.UpdatePlayCount(item.PlayCount);
+        return vm;
     }
 
     /// <summary>是否有保留的页面数据(被其他详情页顶掉时决定是否值得进导航历史)。</summary>

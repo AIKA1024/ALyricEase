@@ -471,6 +471,7 @@ public sealed class AppStateStore
         ArtistMids = song.ArtistMids.ToArray(),
         AlbumId = song.AlbumId,
         AlbumMid = song.AlbumMid,
+        LocalFilePath = song.LocalFilePath,
     };
 
     private static RecentSongFile ToRecentFile(RecentPlaybackEntry entry) => new()

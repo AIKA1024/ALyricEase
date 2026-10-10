@@ -1,10 +1,41 @@
 # Third-party notices
 
+## Avalonia
+
+This application uses [AvaloniaUI/Avalonia](https://github.com/AvaloniaUI/Avalonia)
+(cross-platform UI framework, NuGet packages `Avalonia`, `Avalonia.Themes.Fluent`,
+`Avalonia.Fonts.Inter`, `Avalonia.Controls.WebView`, etc.),
+licensed under the MIT License.
+
+## CommunityToolkit.Mvvm
+
+This application uses [CommunityToolkit/dotnet](https://github.com/CommunityToolkit/dotnet)
+(MVVM library, NuGet package `CommunityToolkit.Mvvm`),
+licensed under the MIT License.
+
+## Xaml.Behaviors.Avalonia
+
+This application uses [wieslawsoltes/Xaml.Behaviors](https://github.com/wieslawsoltes/Xaml.Behaviors)
+(XAML Behaviors for Avalonia, NuGet package `Xaml.Behaviors.Avalonia`),
+licensed under the MIT License.
+
+## Inter Font
+
+This application bundles the [Inter](https://github.com/rsms/inter) typeface via
+the `Avalonia.Fonts.Inter` package, licensed under the SIL Open Font License 1.1.
+
 ## Velopack
 
 This application uses [velopack/velopack](https://github.com/velopack/velopack)
 (application auto-update framework, NuGet package `Velopack`),
 licensed under the MIT License.
+
+## ProjectCirrus.Copycat
+
+This application uses [ProjectCirrus/Copycat](https://github.com/ProjectCirrus/Copycat)
+(a NativeAOT-compatible .NET library driving a Go-based MITM proxy, used by the
+NetEase official-client proxy login; NuGet package `ProjectCirrus.Copycat`),
+licensed under the Apache License 2.0.
 
 ## AsyncImageLoader.Avalonia
 

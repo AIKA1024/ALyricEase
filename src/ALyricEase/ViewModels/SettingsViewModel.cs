@@ -12,7 +12,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>开源项目引用条目(名称 + 仓库地址;记录类型供 XAML 编译绑定 DataTemplate 使用)。</summary>
+/// <summary>开源项目引用(名称 + 仓库地址;记录类型供 XAML 编译绑定 DataTemplate 使用)。</summary>
 public sealed record OpenSourceProject(string Name, string Url);
 
 /// <summary>设置页(参考网易云 UWP 设置:外观/交互/播放/网络/存储/关于分区卡片)。
@@ -809,13 +809,22 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// 之前手搓"按钮+MaxHeight 过渡"的仿 Expander 已替换为真 Expander)。</summary>
     [ObservableProperty] private bool _openSourceExpanded = true;
 
+    // 条目与 README 致谢 / THIRD-PARTY-NOTICES.md 保持一致。
+    // 顺序:渲染框架 → 基础库 → 工具 → 图标字体 → 接口协议参考。
     /// <summary>开源项目引用(名称 + 仓库地址)。</summary>
     public IReadOnlyList<OpenSourceProject> OpenSourceProjects { get; } =
     [
-        new("Binaryify/NeteaseCloudMusicApi", "https://github.com/Binaryify/NeteaseCloudMusicApi"),
-        new("Fluent UI System Icons (MIT)", "https://github.com/microsoft/fluentui-system-icons"),
         new("Avalonia UI (MIT)", "https://github.com/AvaloniaUI/Avalonia"),
         new("AsyncImageLoader.Avalonia (MIT)", "https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia"),
+        new("Xaml.Behaviors.Avalonia (MIT)", "https://github.com/wieslawsoltes/Xaml.Behaviors"),
+        new("CommunityToolkit.Mvvm (MIT)", "https://github.com/CommunityToolkit/dotnet"),
+        new("Velopack (MIT)", "https://github.com/velopack/velopack"),
+        new("TagLibSharp (LGPL-2.1)", "https://github.com/mono/taglib-sharp"),
+        new("ProjectCirrus/Copycat (Apache-2.0)", "https://github.com/ProjectCirrus/Copycat"),
+        new("Fluent UI System Icons (MIT)", "https://github.com/microsoft/fluentui-system-icons"),
+        new("Binaryify/NeteaseCloudMusicApi", "https://github.com/Binaryify/NeteaseCloudMusicApi"),
+        new("L-1124/QQMusicApi (GPL-3.0)", "https://github.com/L-1124/QQMusicApi"),
+        new("yakult-green-tea/qq-music-api (MIT)", "https://github.com/yakult-green-tea/qq-music-api"),
     ];
 
     /// <summary>在系统浏览器打开开源项目主页(桌面端;Android 端后续接 Intent)。</summary>

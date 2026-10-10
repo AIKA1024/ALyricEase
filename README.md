@@ -50,7 +50,14 @@ dotnet publish src/ALyricEase.Android -f net10.0-android -c Release
 ## 致谢
 
 - **LyricEase**（UWP）—— 原版应用，本项目复刻的参照
+- [AvaloniaUI](https://github.com/AvaloniaUI/Avalonia) —— 跨平台 UI 框架
+- [AvaloniaUtils/AsyncImageLoader.Avalonia](https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia) —— 异步图片加载
+- [wieslawsoltes/Xaml.Behaviors](https://github.com/wieslawsoltes/Xaml.Behaviors) —— XAML Behaviors
+- [CommunityToolkit/dotnet](https://github.com/CommunityToolkit/dotnet) —— MVVM 工具库（CommunityToolkit.Mvvm）
+- [velopack/velopack](https://github.com/velopack/velopack) —— 应用自更新框架
+- [mono/taglib-sharp](https://github.com/mono/taglib-sharp) —— 本地音频元数据与内嵌封面读取
+- [ProjectCirrus/Copycat](https://github.com/ProjectCirrus/Copycat) —— 网易云官方客户端代理登录用的 MITM 代理
+- [microsoft/fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons) —— 界面图标
+- [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) —— 网易云音乐接口协议参考
 - [L-1124/QQMusicApi](https://github.com/L-1124/QQMusicApi) —— QQ 音乐 API 协议参考
 - [yakult-green-tea/qq-music-api](https://github.com/yakult-green-tea/qq-music-api) —— QQ 音乐扫码登录协议改编来源
-- [AvaloniaUtils/AsyncImageLoader.Avalonia](https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia) —— 异步图片加载
-- [AvaloniaUI](https://github.com/AvaloniaUI/Avalonia) —— 跨平台 UI 框架

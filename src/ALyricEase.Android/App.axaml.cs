@@ -78,6 +78,8 @@ public partial class App : Avalonia.Application
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
+        services.AddSingleton<ISongDownloadStorage, AndroidSongDownloadStorage>();
+        services.AddSingleton<SongDownloadService>();
         services.AddSingleton<IPlatformShareService, AndroidShareService>();
         // Android 自更新:GitHub releases/latest 检查 → 下载 APK → 调系统安装器(不走 Velopack)
         services.AddSingleton<ALyricEase.Services.Update.IAppUpdateService,

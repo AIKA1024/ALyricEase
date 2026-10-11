@@ -102,6 +102,23 @@ internal static class SongContextMenu
                 catch { /* 设计器/无头宿主没有应用 DI，仅保留菜单结构。 */ }
             };
             menu.Items.Add(addToPlaylist);
+
+            var download = new MenuItem
+            {
+                Header = "下载",
+                Icon = new PathIcon
+                {
+                    Width = 14, Height = 14,
+                    Data = Geometry.Parse("M7,1 L9,1 L9,8 L11,6 L12.4,7.4 L8,11.8 L3.6,7.4 L5,6 L7,8 Z M2,12 L4,12 L4,14 L12,14 L12,12 L14,12 L14,16 L2,16 Z"),
+                },
+            };
+            download.Click += (_, _) =>
+            {
+                menu.Hide();
+                if (ServiceLocator.Provider is not null)
+                    ServiceLocator.Get<MainViewModel>().OpenDownloadSongDialogCommand.Execute(song);
+            };
+            menu.Items.Add(download);
         }
 
         // 表演者/专辑:本地歌也展示(标签来自文件内嵌元数据),只是没有平台跳转目标(自动置灰)

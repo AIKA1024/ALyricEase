@@ -128,13 +128,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>性能与体验:0=最佳性能(歌词不模糊),1=最佳质量(歌词模糊)。</summary>
     public IReadOnlyList<string> PerformanceOptions { get; } = ["最佳性能", "最佳质量"];
 
-    public IReadOnlyList<string> AudioQualityOptions { get; } =
-    [
-        "标准",
-        "较高",
-        "极高",
-        "无损(仅VIP可用)",
-    ];
+    public IReadOnlyList<string> AudioQualityOptions => AudioQualityMapper.OptionNames;
 
     // ---- 外观 ----
 

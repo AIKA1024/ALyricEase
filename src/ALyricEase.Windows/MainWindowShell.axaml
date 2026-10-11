@@ -70,6 +70,8 @@
     <!-- 综合搜索合并歌曲的红心平台选择；声明在最后，始终是最上层决策对话框。 -->
     <views:LikeSourceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLikeSourceDialogOpen}"
                                 Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
+    <views:DownloadSongDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsDownloadSongDialogOpen}"
+                                  Grid.Row="0" Grid.RowSpan="2" ZIndex="200" />
     <views:ErrorDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsErrorDialogOpen}"
                            Grid.Row="0" Grid.RowSpan="2" ZIndex="210" />
   </Grid>

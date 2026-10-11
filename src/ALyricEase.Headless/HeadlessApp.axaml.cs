@@ -105,6 +105,9 @@ public partial class HeadlessApp : Application
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
         services.AddSingleton<MusicCacheService>();
+        services.AddSingleton<ISongDownloadStorage>(new DirectorySongDownloadStorage(
+            () => Path.Combine(Path.GetTempPath(), "aly-probe-downloads")));
+        services.AddSingleton<SongDownloadService>();
         services.AddSingleton<IPlatformShareService, PlatformShareServiceStub>();
         // 无头探针无自更新能力:注册空实现占位(SettingsViewModel 构造解析需要)
         services.AddSingleton<ALyricEase.Services.Update.IAppUpdateService,

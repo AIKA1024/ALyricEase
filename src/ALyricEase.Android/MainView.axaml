@@ -82,6 +82,8 @@
         <!-- 综合搜索合并歌曲的红心平台选择；移动端长按红心也进入此模态层。 -->
         <views:LikeSourceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsLikeSourceDialogOpen}"
                                     Grid.Row="1" ZIndex="200" />
+        <views:DownloadSongDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsDownloadSongDialogOpen}"
+                                      Grid.Row="1" ZIndex="200" />
         <views:ErrorDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsErrorDialogOpen}"
                                Grid.Row="0" Grid.RowSpan="2" ZIndex="210" />
     </Grid>

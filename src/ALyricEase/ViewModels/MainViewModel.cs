@@ -114,6 +114,19 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>综合搜索合并歌曲的“我喜欢”平台选择对话框。</summary>
     public LikeSourceDialogViewModel LikeSourceDialog { get; }
 
+    [ObservableProperty] private DownloadSongDialogViewModel? _downloadSongDialog;
+    [ObservableProperty] private bool _isDownloadSongDialogOpen;
+
+    [RelayCommand]
+    private void OpenDownloadSongDialog(Models.Song? song)
+    {
+        if (song is null || song.Source == MusicSource.Local || IsDownloadSongDialogOpen) return;
+        DownloadSongDialog ??= new DownloadSongDialogViewModel(
+            ServiceLocator.Get<SongDownloadService>(), () => IsDownloadSongDialogOpen = false);
+        DownloadSongDialog.Refresh(song, AppState.AudioQuality);
+        IsDownloadSongDialogOpen = true;
+    }
+
     /// <summary>重命名歌单对话框 VM(宿主绑定 RenamePlaylistDialogView;打开前按目标歌单 Refresh)。</summary>
     public RenamePlaylistDialogViewModel RenamePlaylistDialog { get; }
 
@@ -640,6 +653,12 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         // 红心平台选择声明在宿主弹层最后，系统返回/Esc 优先关闭它。
+        if (IsDownloadSongDialogOpen)
+        {
+            DownloadSongDialog?.CloseCommand.Execute(null);
+            return true;
+        }
+
         if (IsLikeSourceDialogOpen)
         {
             CloseLikeSourceDialogCommand.Execute(null);

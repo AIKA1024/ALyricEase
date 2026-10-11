@@ -24,6 +24,11 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--song-download")
+        {
+            SongDownloadProbe.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
         if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close" or "--personal-home" or "--home-refresh" or "--playback-list-refresh" or "--login-idle-close" or "--page-refresh")
         {
             AppBuilder.Configure<HeadlessApp>().UseSkia()
@@ -969,6 +974,12 @@ public static class Program
         }
 
         // Fluent 2 综合搜索红心平台选择对话框（桌面/窄屏，不触网）。
+        if (args.Length > 0 && args[0] == "--download-dialog")
+        {
+            DownloadSongDialogProbe.Run(args.Length > 1 ? args[1] : System.IO.Path.Combine("work", "download-dialog"));
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--likesourcedlg")
         {
             LikeSourceDialogProbe.Run();

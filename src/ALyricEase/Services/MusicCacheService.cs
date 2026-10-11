@@ -102,6 +102,10 @@ public sealed class MusicCacheService
     public MusicCacheLease? TryAcquire(Song song, string requestedQuality)
         => TryAcquire(song, GetQualityRank(song.Source, requestedQuality));
 
+    /// <summary>下载必须匹配用户选择的档位，不能以更高档位替代。</summary>
+    public MusicCacheLease? TryAcquireForDownload(Song song, string requestedQuality)
+        => TryAcquire(song, GetQualityRank(song.Source, requestedQuality), exactRank: true);
+
     /// <summary>取得本地最高可用音质，不要求满足当前在线音质偏好；供断网回退使用。</summary>
     public MusicCacheLease? TryAcquireBestAvailable(Song song) => TryAcquire(song, minimumRank: 0);
 
@@ -139,14 +143,14 @@ public sealed class MusicCacheService
     /// <summary>申请播放租约。**这是唯一保留 gate 的"读"**:它要挑候选文件、续期 mtime、
     /// 把文件钉进 <see cref="_pinCounts"/>,而裁剪正是按这份钉表决定"哪些能删" ——
     /// 拆开就会出现"挑中了 → 被裁掉 → 又钉了个已消失的路径"。真正的删/剪都在 gate 里,这段很短。</summary>
-    private MusicCacheLease? TryAcquire(Song song, int minimumRank)
+    private MusicCacheLease? TryAcquire(Song song, int minimumRank, bool exactRank = false)
     {
         var songKey = BuildSongKey(song);
         _mutationGate.Wait();
         try
         {
             var candidate = GetAudioFiles(songKey)
-                .Where(file => file.Rank >= minimumRank)
+                .Where(file => exactRank ? file.Rank == minimumRank : file.Rank >= minimumRank)
                 .OrderByDescending(file => file.Rank)
                 .FirstOrDefault();
             if (candidate is null) return null;
@@ -1022,7 +1026,7 @@ public sealed class MusicCacheService
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
-    private static string GetAudioExtension(string url, string? mediaType)
+    internal static string GetAudioExtension(string url, string? mediaType)
     {
         var extension = mediaType?.ToLowerInvariant() switch
         {
@@ -1037,7 +1041,7 @@ public sealed class MusicCacheService
         try
         {
             extension = Path.GetExtension(new Uri(url).AbsolutePath).ToLowerInvariant();
-            if (extension is ".mp3" or ".flac" or ".m4a" or ".aac" or ".ogg" or ".wav")
+            if (extension is ".mp3" or ".flac" or ".m4a" or ".aac" or ".ogg" or ".wav" or ".nac")
                 return extension;
         }
         catch

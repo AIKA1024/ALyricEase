@@ -8,6 +8,9 @@ internal static class AudioQualityMapper
 {
     public const int OptionCount = 4;
 
+    public static IReadOnlyList<string> OptionNames { get; } =
+        ["标准", "较高", "极高", "无损(仅VIP可用)"];
+
     public static int NormalizeIndex(int index) => Math.Clamp(index, 0, OptionCount - 1);
 
     public static string GetRequestLevel(MusicSource source, int index)

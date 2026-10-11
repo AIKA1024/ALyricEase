@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:services="using:ALyricEase.Services"
+             x:DataType="vm:MainViewModel"
+             x:Class="ALyricEase.Views.DownloadSongDialogView">
+  <Grid>
+    <Panel Background="#99000000" />
+    <Border x:Name="DialogCard" MaxWidth="480" Margin="16" Padding="24" CornerRadius="8"
+            HorizontalAlignment="Stretch" VerticalAlignment="Center"
+            Background="{DynamicResource AppSurface}" BorderThickness="1"
+            BorderBrush="{DynamicResource AppBorderStrong}" BoxShadow="0 24 48 #44000000"
+            KeyboardNavigation.TabNavigation="Cycle"
+            DataContext="{Binding DownloadSongDialog}" x:DataType="vm:DownloadSongDialogViewModel"
+            AutomationProperties.Name="下载歌曲">
+      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="20">
+        <StackPanel Spacing="6">
+          <TextBlock Text="下载歌曲" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding SongText}" FontSize="14" TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource TextSecondary}" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="12">
+            <TextBlock Text="选择音质" FontSize="14" FontWeight="SemiBold" />
+            <ListBox x:Name="QualityList" ItemsSource="{Binding Qualities}"
+                     SelectedItem="{Binding SelectedQuality, Mode=TwoWay}"
+                     IsEnabled="{Binding CanChooseQuality}" SelectionMode="Single"
+                     Background="Transparent" BorderThickness="0" Padding="0"
+                     AutomationProperties.Name="下载音质">
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                  <Setter Property="MinHeight" Value="56" />
+                  <Setter Property="Padding" Value="12,8" />
+                  <Setter Property="Margin" Value="0,2" />
+                  <Setter Property="CornerRadius" Value="4" />
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                </Style>
+              </ListBox.Styles>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="services:SongDownloadQuality">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Name}" FontSize="14" />
+                    <TextBlock Text="{Binding Description}" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextSecondary}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Text="可用音质取决于歌曲及当前平台账号的权限。" FontSize="12"
+                       TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+            <ProgressBar IsVisible="{Binding IsBusy}" IsIndeterminate="{Binding IsIndeterminate}"
+                         Value="{Binding Progress}" Minimum="0" Maximum="100" Height="4"
+                         AutomationProperties.Name="下载进度" />
+            <Border Padding="12" CornerRadius="4" Background="{DynamicResource AppSurfaceElevated}">
+              <StackPanel Spacing="4">
+                <TextBlock Text="未能完成下载" IsVisible="{Binding HasError}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Status}" FontSize="12" LineHeight="18" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSecondary}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+        <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
+          <Button x:Name="CloseButton" Content="{Binding CloseText}" Command="{Binding CloseCommand}"
+                  HorizontalAlignment="Stretch" MinHeight="36" />
+          <Button Grid.Column="1" Content="下载" Classes="accent" Command="{Binding DownloadCommand}"
+                  IsVisible="{Binding !IsComplete}" HorizontalAlignment="Stretch" MinHeight="36" />
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

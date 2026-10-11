@@ -169,6 +169,8 @@ class Program
     services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
     services.AddSingleton<MusicApiProvider>();
     services.AddSingleton<MusicCacheService>();
+    services.AddSingleton<ISongDownloadStorage, WindowsSongDownloadStorage>();
+    services.AddSingleton<SongDownloadService>();
     services.AddSingleton<IPlatformShareService, WindowsShareService>();
     // 应用自更新(Velopack + GitHub Releases;开发目录直跑 IsSupported=false)
     services.AddSingleton<IAppUpdateService, VelopackUpdateService>();

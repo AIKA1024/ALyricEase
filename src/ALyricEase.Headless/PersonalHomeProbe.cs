@@ -74,8 +74,8 @@ internal static class PersonalHomeProbe
         library.Playlists.Add(Item(12, "晚风、耳机和回家的路", MusicSource.NetEase, 36));
         library.QqPlaylists.Add(Item(11, "每个晴天都值得收藏", MusicSource.QQ, 58, 1));
         library.QqPlaylists.Add(Item(12, "写给夜晚的温柔旋律", MusicSource.QQ, 27, 2));
-        library.NetEaseCollectedPlaylists.Add(Item(13, "华语精选 · 在音乐里相遇", MusicSource.NetEase, 80));
-        library.QqPlaylists.Add(Item(13, "轻音乐 · 留一点时间给自己", MusicSource.QQ, 60));
+        library.NetEaseCollectedPlaylists.Add(Item(13, "粤语经典老歌【好听到发疯，一次爱够】", MusicSource.NetEase, 80));
+        library.QqPlaylists.Add(Item(13, "TV动画《薇薇-萤石眼之歌-》原声带vivy", MusicSource.QQ, 60));
         await Task.Delay(50);
         Check(home.TastePlaylists.Count == 2 && home.CreatedPlaylists.Count == 4 && home.CollectedPlaylists.Count == 2,
             "同 ID 跨平台歌单均保留，并按喜欢、创建、收藏分组");
@@ -103,6 +103,7 @@ internal static class PersonalHomeProbe
             "taste 小卡解码 144、常规卡 360（解码尺寸由样式供给）");
         // —— 创建/收藏区大图/列表切换 ——
         Check(!home.CreatedIsListMode && !home.CollectedIsListMode, "桌面默认大图显示");
+        CheckPlaylistCardLayout(window);
         home.CollectedIsListMode = true;
         await Task.Delay(40);
         Check(window.GetVisualDescendants().OfType<Button>()
@@ -119,20 +120,35 @@ internal static class PersonalHomeProbe
         home.SourceIndex = 0;
         home.CollectedIsListMode = false;
         await Task.Delay(40);
-        foreach (var width in new[] { 700, 390 })
+        foreach (var width in new[] { 700, 501, 500, 390, 700, 390 })
         {
             window.Width = width;
             window.Height = 920;
             await Task.Delay(60);
             CheckAccounts(window, stacked: true);
+            CheckPlaylistDisplayMode(window, narrow: width <= 500, expectedRows: width <= 500 ? 6 : 0);
+            if (width > 500) CheckPlaylistCardLayout(window);
+            Check(!home.CreatedIsListMode && !home.CollectedIsListMode, "窗口缩放不改写两个区域的大图偏好");
             var scroller = view.FindControl<ScrollViewer>("PageScroller")!;
             Check(scroller.Extent.Width <= scroller.Viewport.Width + 1, $"{width}px 无横向溢出");
             if (width == 390)
                 Check(window.GetVisualDescendants().OfType<Image>()
+                          .Where(image => image.IsEffectivelyVisible)
                           .All(image => ManagedCoverImage.GetDecodeSize(image) != 360),
-                    "窄屏单列卡片全部改用小图解码");
+                    "窄屏可见列表全部使用小图解码");
             Capture(window, root, "dual-" + width);
         }
+        // 两个区域的偏好可以不同，强制列表不覆盖它们。
+        home.CreatedIsListMode = true;
+        await Task.Delay(40);
+        CheckPlaylistDisplayMode(window, narrow: true, expectedRows: 6);
+        window.Width = 700;
+        await Task.Delay(60);
+        CheckPlaylistDisplayMode(window, narrow: false, expectedRows: 4);
+        Check(home.CreatedIsListMode && !home.CollectedIsListMode, "回到大屏恢复创建列表、收藏大图的独立偏好");
+        home.CreatedIsListMode = false;
+        window.Width = 390;
+        await Task.Delay(60);
         var originalScroller = view.FindControl<ScrollViewer>("PageScroller")!;
         originalScroller.Offset = new Vector(0, 180);
         await Task.Delay(30);
@@ -141,6 +157,7 @@ internal static class PersonalHomeProbe
         view = new PersonalHomeView { DataContext = home };
         window.Content = view;
         await Task.Delay(80);
+        CheckPlaylistDisplayMode(window, narrow: true, expectedRows: 6);
         Check(Math.Abs(view.FindControl<ScrollViewer>("PageScroller")!.Offset.Y - 180) < 1,
             "离开后重建视图可恢复滚动位置");
         var filter = window.GetVisualDescendants().OfType<ListBox>().Single();
@@ -230,6 +247,44 @@ internal static class PersonalHomeProbe
         await load;
         Check(summary.Username == "新帐号", "迟到的帐号资料不会覆盖退出后重新登录的帐号");
         Console.WriteLine($"[personal-home] PASS; previews: {root}");
+    }
+
+    private static void CheckPlaylistDisplayMode(Window window, bool narrow, int expectedRows)
+    {
+        var buttons = window.GetVisualDescendants().OfType<Button>().Where(button => button.IsEffectivelyVisible).ToArray();
+        var rows = buttons.Where(button => button.Classes.Contains("home-playlist-row")).ToArray();
+        Check(rows.Length == expectedRows, $"{window.Width}px 显示 {expectedRows} 个列表条目");
+        Check(buttons.Count(button => button.Classes.Contains("playlist-card")) == 6 - expectedRows,
+            $"{window.Width}px 大图与列表显示互斥");
+        Check(buttons.Count(button => button.Classes.Contains("playlist-mode-switch")) == (narrow ? 0 : 2),
+            $"{window.Width}px 切换按钮按屏幕宽度显隐");
+        if (narrow)
+        {
+            Check(rows.All(row => Math.Abs(row.Bounds.Width - rows[0].Bounds.Width) < 1), "窄屏长短标题的条目宽度一致");
+            Check(window.GetVisualDescendants().OfType<Border>()
+                    .Where(border => border.Classes.Contains("playlist-content"))
+                    .All(border => border.Padding == new Thickness(16)), "窄屏使用列表容器样式");
+        }
+    }
+
+    private static void CheckPlaylistCardLayout(Window window)
+    {
+        var cards = window.GetVisualDescendants().OfType<Button>()
+            .Where(button => button.Classes.Contains("playlist-card") && button.IsEffectivelyVisible).ToArray();
+        Check(cards.Length == 6, "长标题布局检查覆盖创建及收藏歌单");
+        foreach (var card in cards)
+        {
+            var name = ((PlaylistItemViewModel)card.DataContext!).Name;
+            var art = card.GetVisualDescendants().OfType<Border>().Single(border => border.Classes.Contains("playlist-art"));
+            var badge = card.GetVisualDescendants().OfType<Panel>().Single(panel => panel.Classes.Contains("source-badge"));
+            var artOrigin = art.TranslatePoint(default, card)!.Value;
+            var badgeOrigin = badge.TranslatePoint(default, card)!.Value;
+            Check(Math.Abs(art.Bounds.Width - 200) < 1, $"{name}: 封面尺寸正确");
+            Check(Math.Abs(card.Bounds.Width - 200) < 1, $"{name}: 长标题不撑宽大图卡片（实际 {card.Bounds.Width}）");
+            Check(Math.Abs(badgeOrigin.X - artOrigin.X - 2) < 1
+                  && Math.Abs(badgeOrigin.Y + badge.Bounds.Height - (artOrigin.Y + art.Bounds.Height - 2)) < 1,
+                $"{name}: 平台 logo 保持在封面左下角");
+        }
     }
 
     private static PlaylistItemViewModel Item(long id, string name, MusicSource source, int count, long dirId = 0)

@@ -219,13 +219,20 @@
     <Style Selector="TextBlock.section-title">
       <Setter Property="FontSize" Value="20" /><Setter Property="FontWeight" Value="SemiBold" />
     </Style>
-    <Style Selector="Border.playlist-section.list-mode">
+    <Style Selector="Border.playlist-content.list-mode">
       <Setter Property="Background" Value="{DynamicResource UserSectionCardBackground}" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="16" />
     </Style>
-    <Style Selector="Border.playlist-section.list-mode TextBlock.section-title">
-      <Setter Property="FontSize" Value="18" />
+    <!-- 用样式控制实际布局，小屏强制列表时不改写用户保存的显示偏好。 -->
+    <Style Selector="Border.playlist-content ItemsControl.playlist-rows">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Border.playlist-content.list-mode ItemsControl.playlist-rows">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="Border.playlist-content.list-mode ItemsControl.pgrid">
+      <Setter Property="IsVisible" Value="False" />
     </Style>
     <Style Selector="Border.identity-card">
       <Setter Property="Padding" Value="24" /><Setter Property="CornerRadius" Value="12" />
@@ -238,8 +245,9 @@
       <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
       <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="12" />
     </Style>
-    <!-- 卡片容器(用户页同款):整卡透明按钮,封面 8 圆角自裁 -->
+    <!-- 卡片与封面同宽，避免长标题撑宽卡片后封面居中、音源角标仍靠左。 -->
     <Style Selector="Button.playlist-card">
+      <Setter Property="Width" Value="200" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="0" />
@@ -250,8 +258,7 @@
     </Style>
     <!-- 悬停浮现的封面操作按钮(左下 ▶ / 右下 •••,用户页同款):scrim 色系白图标。
          不复用 row-action —— 那套三态是"叠在行背景上的半透明叠层",直接盖封面观感反直觉。
-         ⚠ 72px taste 小卡与窄屏 64px 单列上 32px 按钮会糊满封面且触屏无 hover,
-         隐形却可命中 ⇒ 这两处整体隐藏(长按菜单里仍有播放/更多) -->
+         小屏统一使用列表行，不显示大图卡片及其封面操作按钮。 -->
     <Style Selector="Button.card-op">
       <Setter Property="Width" Value="32" />
       <Setter Property="Height" Value="32" />
@@ -292,7 +299,7 @@
     <Style Selector="Button.playlist-card:pressed Border.card-mask">
       <Setter Property="Opacity" Value="0.4" />
     </Style>
-    <!-- 封面方图(用户页同款 200×200);窄屏容器查询压成 64 小瓦片 -->
+    <!-- 大图模式封面(用户页同款 200×200) -->
     <Style Selector="Border.playlist-art">
       <Setter Property="Width" Value="200" /><Setter Property="Height" Value="200" />
       <Setter Property="Grid.ColumnSpan" Value="2" />
@@ -301,7 +308,7 @@
       <Setter Property="Grid.Row" Value="1" /><Setter Property="Grid.ColumnSpan" Value="2" />
     </Style>
     <Style Selector="TextBlock.art-glyph"><Setter Property="Text" Value="{DynamicResource IconMusicNote}" /></Style>
-    <!-- 解码尺寸由样式供给而非局部值：taste 小卡（72px）与窄屏单列（64px）用小得多的图。
+    <!-- 解码尺寸由样式供给而非局部值：taste 小卡（72px）与列表行（48px）用小得多的图。
          360² 解码 0.5MB/张（QQ 图床向上取档 500² 是 1MB），144² 只有 84KB。
          ⚠ 同优先级"后声明者生效"：taste 覆盖必须写在基础规则之后，容器查询块在其后才会赢。 -->
     <Style Selector="Border.playlist-art Image">
@@ -423,20 +430,19 @@
       <Style Selector="StackPanel.home-content"><Setter Property="Margin" Value="16,20,16,120" /></Style>
       <Style Selector="UniformGrid.taste-grid"><Setter Property="Columns" Value="1" /></Style>
       <Style Selector="Border.identity-card"><Setter Property="Padding" Value="16" /></Style>
-      <Style Selector="Border.playlist-art">
-        <Setter Property="Height" Value="64" /><Setter Property="Width" Value="64" />
-        <Setter Property="Grid.ColumnSpan" Value="1" />
+      <Style Selector="Border.playlist-content">
+        <Setter Property="Background" Value="{DynamicResource UserSectionCardBackground}" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="16" />
       </Style>
-      <Style Selector="Border.playlist-art Image">
-        <Setter Property="infra:ManagedCoverImage.DecodeSize" Value="128" />
-      </Style>
-      <Style Selector="Button.card-op">
+      <Style Selector="ToggleButton.playlist-mode-switch">
         <Setter Property="IsVisible" Value="False" />
       </Style>
-      <Style Selector="StackPanel.playlist-caption">
-        <Setter Property="Grid.Row" Value="0" /><Setter Property="Grid.Column" Value="1" />
-        <Setter Property="Grid.ColumnSpan" Value="1" /><Setter Property="Margin" Value="12,0,0,0" />
-        <Setter Property="VerticalAlignment" Value="Center" />
+      <Style Selector="Border.playlist-content ItemsControl.pgrid">
+        <Setter Property="IsVisible" Value="False" />
+      </Style>
+      <Style Selector="Border.playlist-content ItemsControl.playlist-rows">
+        <Setter Property="IsVisible" Value="True" />
       </Style>
     </ContainerQuery>
   </UserControl.Styles>
@@ -474,74 +480,69 @@
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Classes="taste-grid" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         </ItemsControl>
       </StackPanel>
-      <Border Classes="playlist-section" Classes.list-mode="{Binding CreatedIsListMode}" IsVisible="{Binding HasCreated}">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="创建的歌单" Classes="section-title" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <ToggleButton Classes="filter-expander" IsChecked="{Binding CreatedIsListMode, Mode=TwoWay}"
-                            ToolTip.Tip="切换列表 / 大图显示" AutomationProperties.Name="切换创建歌单的显示方式">
-                <Grid>
-                  <TextBlock Text="{DynamicResource IconViewList}" FontSize="18"
-                             FontFamily="{DynamicResource LyricEaseIconsOriginal}"
-                             Foreground="{DynamicResource TextPrimary}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding !CreatedIsListMode}" />
-                  <TextBlock Text="{DynamicResource IconViewGallery}" FontSize="18"
-                             FontFamily="{DynamicResource LyricEaseIconsOriginal}"
-                             Foreground="{DynamicResource TextPrimary}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding CreatedIsListMode}" />
-                </Grid>
-              </ToggleButton>
-              <TextBlock Text="{Binding CreatedPlaylists.Count, StringFormat='{}{0} 个歌单'}" Classes="secondary" VerticalAlignment="Center" />
-            </StackPanel>
-          </Grid>
-          <Border Height="1" Background="{DynamicResource UserSectionCardDivider}" IsVisible="{Binding CreatedIsListMode}" />
+      <!-- 标题栏独立于模式容器，列表内边距只影响歌单内容。 -->
+      <StackPanel Spacing="12" IsVisible="{Binding HasCreated}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="创建的歌单" Classes="section-title" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <ToggleButton Classes="filter-expander playlist-mode-switch" IsChecked="{Binding CreatedIsListMode, Mode=TwoWay}"
+                          ToolTip.Tip="切换列表 / 大图显示" AutomationProperties.Name="切换创建歌单的显示方式">
+              <Grid>
+                <TextBlock Text="{DynamicResource IconViewList}" FontSize="18"
+                           FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                           Foreground="{DynamicResource TextPrimary}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding !CreatedIsListMode}" />
+                <TextBlock Text="{DynamicResource IconViewGallery}" FontSize="18"
+                           FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                           Foreground="{DynamicResource TextPrimary}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding CreatedIsListMode}" />
+              </Grid>
+            </ToggleButton>
+            <TextBlock Text="{Binding CreatedPlaylists.Count, StringFormat='{}{0} 个歌单'}" Classes="secondary" VerticalAlignment="Center" />
+          </StackPanel>
+        </Grid>
+        <Border Classes="playlist-content" Classes.list-mode="{Binding CreatedIsListMode}">
           <Panel>
-            <ItemsControl Classes="pgrid" ItemsSource="{Binding CreatedPlaylists}" ItemTemplate="{StaticResource PlaylistCard}"
-                          IsVisible="{Binding !CreatedIsListMode}">
+            <ItemsControl Classes="pgrid" ItemsSource="{Binding CreatedPlaylists}" ItemTemplate="{StaticResource PlaylistCard}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             </ItemsControl>
-            <ItemsControl ItemsSource="{Binding CreatedPlaylists}" ItemTemplate="{StaticResource PlaylistRow}"
-                          IsVisible="{Binding CreatedIsListMode}" />
+            <ItemsControl Classes="playlist-rows" ItemsSource="{Binding CreatedPlaylists}" ItemTemplate="{StaticResource PlaylistRow}" />
           </Panel>
-        </StackPanel>
-      </Border>
-      <Border Classes="playlist-section" Classes.list-mode="{Binding CollectedIsListMode}" IsVisible="{Binding HasCollected}">
-        <StackPanel Spacing="12">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Text="收藏的歌单" Classes="section-title" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <ToggleButton Classes="filter-expander" IsChecked="{Binding CollectedIsListMode, Mode=TwoWay}"
-                            ToolTip.Tip="切换列表 / 大图显示" AutomationProperties.Name="切换收藏歌单的显示方式">
-                <Grid>
-                  <TextBlock Text="{DynamicResource IconViewList}" FontSize="18"
-                             FontFamily="{DynamicResource LyricEaseIconsOriginal}"
-                             Foreground="{DynamicResource TextPrimary}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding !CollectedIsListMode}" />
-                  <TextBlock Text="{DynamicResource IconViewGallery}" FontSize="18"
-                             FontFamily="{DynamicResource LyricEaseIconsOriginal}"
-                             Foreground="{DynamicResource TextPrimary}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding CollectedIsListMode}" />
-                </Grid>
-              </ToggleButton>
-              <TextBlock Text="{Binding CollectedPlaylists.Count, StringFormat='{}{0} 个歌单'}" Classes="secondary" VerticalAlignment="Center" />
-            </StackPanel>
-          </Grid>
-          <Border Height="1" Background="{DynamicResource UserSectionCardDivider}" IsVisible="{Binding CollectedIsListMode}" />
+        </Border>
+      </StackPanel>
+      <StackPanel Spacing="12" IsVisible="{Binding HasCollected}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="收藏的歌单" Classes="section-title" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <ToggleButton Classes="filter-expander playlist-mode-switch" IsChecked="{Binding CollectedIsListMode, Mode=TwoWay}"
+                          ToolTip.Tip="切换列表 / 大图显示" AutomationProperties.Name="切换收藏歌单的显示方式">
+              <Grid>
+                <TextBlock Text="{DynamicResource IconViewList}" FontSize="18"
+                           FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                           Foreground="{DynamicResource TextPrimary}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding !CollectedIsListMode}" />
+                <TextBlock Text="{DynamicResource IconViewGallery}" FontSize="18"
+                           FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                           Foreground="{DynamicResource TextPrimary}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding CollectedIsListMode}" />
+              </Grid>
+            </ToggleButton>
+            <TextBlock Text="{Binding CollectedPlaylists.Count, StringFormat='{}{0} 个歌单'}" Classes="secondary" VerticalAlignment="Center" />
+          </StackPanel>
+        </Grid>
+        <Border Classes="playlist-content" Classes.list-mode="{Binding CollectedIsListMode}">
           <Panel>
-            <ItemsControl Classes="pgrid" ItemsSource="{Binding CollectedPlaylists}" ItemTemplate="{StaticResource PlaylistCard}"
-                          IsVisible="{Binding !CollectedIsListMode}">
+            <ItemsControl Classes="pgrid" ItemsSource="{Binding CollectedPlaylists}" ItemTemplate="{StaticResource PlaylistCard}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             </ItemsControl>
-            <ItemsControl ItemsSource="{Binding CollectedPlaylists}" ItemTemplate="{StaticResource PlaylistRow}"
-                          IsVisible="{Binding CollectedIsListMode}" />
+            <ItemsControl Classes="playlist-rows" ItemsSource="{Binding CollectedPlaylists}" ItemTemplate="{StaticResource PlaylistRow}" />
           </Panel>
-        </StackPanel>
-      </Border>
+        </Border>
+      </StackPanel>
       <Border Classes="identity-card" IsVisible="{Binding IsEmpty}">
         <StackPanel Spacing="10" Margin="0,12">
           <TextBlock Text="{Binding EmptyTitle}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />

@@ -9,7 +9,7 @@ using Avalonia.Controls;
 namespace ALyricEase.Headless;
 
 /// <summary>播放条歌曲菜单结构探针(--playerbarmenu)：不触网、不执行命令，验证菜单分组、
-/// 多歌手子菜单、来源文本与两平台公开链接，防止动态构造菜单在改样式时悄悄缺项。</summary>
+/// 多歌手子菜单与两平台公开链接，防止动态构造菜单在改样式时悄悄缺项。</summary>
 public static class PlayerBarMenuProbe
 {
     public static void Run()
@@ -26,10 +26,10 @@ public static class PlayerBarMenuProbe
         };
 
         var view = new PlayerBarView();
-        var menu = view.CreateSongMenu(song, "咸咸的鱼王喜欢的音乐");
+        var menu = view.CreateSongMenu(song);
         var items = menu.Items.ToList();
 
-        Assert(items.Count == 11, $"一级项数量={items.Count},期望 11");
+        Assert(items.Count == 9, $"一级项数量={items.Count},期望 9(播放条不显示来源)");
         Assert(items[0] is MenuItem { Header: "空中散步", IsEnabled: false }, "首项应为禁用歌曲标题");
         Assert(items[1] is MenuItem { Header: "添加到歌单", IsEnabled: true } add && add.Items.Count == 0,
             "添加到歌单应为打开模态窗口的普通菜单项，而不是子菜单");
@@ -37,11 +37,10 @@ public static class PlayerBarMenuProbe
         Assert(items[3] is MenuItem { Header: "表演者" } artists && artists.Items.Count == 2,
             "多歌手应生成二项子菜单");
         Assert(items[4] is MenuItem { Header: "专辑： 空想少女", IsEnabled: true }, "专辑项不正确");
-        Assert(items[5] is Separator && items[9] is Separator, "操作组分隔线不正确");
+        Assert(items[5] is Separator, "操作组分隔线不正确");
         Assert(items[6] is MenuItem { Header: "分享", IsEnabled: true }, "分享项不正确");
         Assert(items[7] is MenuItem { Header: "在浏览器中打开", IsEnabled: true }, "打开浏览器项不正确");
         Assert(items[8] is MenuItem { Header: "复制链接", IsEnabled: true }, "复制链接项不正确");
-        Assert(items[10] is MenuItem { Header: "来源： 咸咸的鱼王喜欢的音乐" }, "来源项不正确");
         Assert(menu.FlyoutPresenterClasses.Contains("player-song-menu"), "未应用播放条菜单宽度样式");
         Assert(SongShareLinks.For(song) == "https://music.163.com/song?id=123", "网易云歌曲链接不正确");
         Assert(SongShareLinks.For(new Song { Source = MusicSource.QQ, Mid = "abc" }) ==

@@ -62,7 +62,7 @@ public sealed partial class SongItemViewModel : ViewModelBase
     /// 缓存预填/网络批次落地时注入;页面快照按行随存随取(见 NavigationPageCacheTrack)。</summary>
     public Playlist? SourcePlaylist { get; set; }
 
-    /// <summary>来源本地音乐歌单(本地歌单页行/聚合的本地成员行):右键菜单可点击跳回歌单。</summary>
+    /// <summary>来源本地音乐歌单(聚合歌单行专用):右键菜单可点击跳回成员歌单。</summary>
     public LocalPlaylist? SourceLocalPlaylist { get; set; }
 
     /// <summary>行级可用性(TrackRow IsEnabled 绑定):本地歌曲即使文件缺失也保持整行可交互
@@ -159,9 +159,6 @@ public sealed partial class SongItemViewModel : ViewModelBase
     }
 
     public Song Song { get; }
-
-    /// <summary>队列来源名(歌单名/歌手名等,构造时传入):歌曲行右键菜单"来源"项展示用;未传则按音源显示平台名。</summary>
-    public string? SourceName => _source;
 
     public string Name => Song.Name;
 

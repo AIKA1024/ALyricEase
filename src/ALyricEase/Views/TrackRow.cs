@@ -53,7 +53,7 @@ public class TrackRow : TemplatedControl
         if (e.TryGetPosition(this, out var pt)
             && (pt.X < 0 || pt.Y < 0 || pt.X > Bounds.Width || pt.Y > Bounds.Height))
             return;
-        SongContextMenu.Create(this, song.Song, song.SourceName, row: song).ShowAt(this, true);
+        SongContextMenu.Create(this, song.Song, row: song).ShowAt(this, true);
         e.Handled = true;
     }
 
@@ -163,7 +163,7 @@ public class TrackRow : TemplatedControl
     {
         if (_moreButton is not { } button) return;
         if (DataContext is not SongItemViewModel song) return;
-        SongContextMenu.Create(this, song.Song, song.SourceName, row: song).ShowAt(button);
+        SongContextMenu.Create(this, song.Song, row: song).ShowAt(button);
         e.Handled = true;
     }
 

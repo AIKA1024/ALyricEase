@@ -44,24 +44,24 @@ public partial class PlayerBarView : UserControl
     /// 松开点不在播放条内(按住拖出去再松开,指针捕获仍会路由回来)则不弹,语义同按钮点击。</summary>
     private void OnPlayerContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (DataContext is not PlayerViewModel { CurrentSong: { } song } player) return;
+        if (DataContext is not PlayerViewModel { CurrentSong: { } song }) return;
         if (e.TryGetPosition(PlayerRoot, out var pt)
             && (pt.X < 0 || pt.Y < 0 || pt.X > PlayerRoot.Bounds.Width || pt.Y > PlayerRoot.Bounds.Height))
             return;
 
-        var menu = CreateSongMenu(song, player.QueueSourceName);
+        var menu = CreateSongMenu(song);
         menu.ShowAt(PlayerRoot, true);
         e.Handled = true;
     }
 
-    internal MenuFlyout CreateSongMenu(Song song, string? queueSourceName)
-        => SongContextMenu.Create(PlayerRoot, song, queueSourceName);
+    internal MenuFlyout CreateSongMenu(Song song)
+        => SongContextMenu.Create(PlayerRoot, song);
 
     /// <summary>更多按钮(中屏/大屏显示)点击:贴按钮弹出当前歌曲菜单。无当前曲目时不弹。</summary>
     private void OnMoreButtonClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not PlayerViewModel { CurrentSong: { } song } player) return;
-        CreateSongMenu(song, player.QueueSourceName).ShowAt(MoreButton);
+        if (DataContext is not PlayerViewModel { CurrentSong: { } song }) return;
+        CreateSongMenu(song).ShowAt(MoreButton);
         e.Handled = true;
     }
 }

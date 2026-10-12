@@ -210,7 +210,7 @@ public partial class NowPlayingView : UserControl
   {
     var player = _vm?.Player;
     if (player is null || player.CurrentSong is null) return;
-    SongContextMenu.Create(MoreButton, player.CurrentSong, player.QueueSourceName).ShowAt(MoreButton);
+    SongContextMenu.Create(MoreButton, player.CurrentSong).ShowAt(MoreButton);
   }
 
   /// <summary>覆盖层常驻(关闭时在屏幕外),打开(ShowNowPlaying=true)时聚焦本视图。</summary>

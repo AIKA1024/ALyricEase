@@ -71,7 +71,7 @@ public static class MenuHeightProbe
                 Album = "空想少女",
                 AlbumId = 20,
             };
-            var flyout = new PlayerBarView().CreateSongMenu(song, "咸咸的鱼王喜欢的音乐");
+            var flyout = new PlayerBarView().CreateSongMenu(song);
             return new WrapperMenuFlyout(flyout);
         }, button);
 

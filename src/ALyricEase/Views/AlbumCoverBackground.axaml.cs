@@ -71,11 +71,28 @@ public partial class AlbumCoverBackground : UserControl
         Color.FromRgb(106, 53, 91),
     ];
 
-    private static readonly TimeSpan s_motionCycle = TimeSpan.FromSeconds(26);
-    private static readonly Vector3[] s_motionPaths =
+    private const double MotionTimeScale = Math.Tau / 26;
+    private static readonly DriftPath[] s_motionPaths =
     [
-        new(148, 58, 0), new(-86, 146, 0), new(-152, -70, 0), new(108, -128, 0), new(-104, 92, 0),
+        new(new(125, 100), new(0.83f, 1.07f), new(0.4f, 2.1f)),
+        new(new(105, 135), new(-1.13f, 0.79f), new(2.3f, 0.7f)),
+        new(new(140, 95), new(0.71f, -0.97f), new(4.1f, 3.2f)),
+        new(new(100, 125), new(-0.93f, -1.19f), new(1.5f, 4.8f)),
+        new(new(115, 90), new(1.17f, 0.67f), new(5.2f, 1.3f)),
     ];
+
+    private readonly record struct DriftPath(Vector2 Extent, Vector2 Rate, Vector2 Phase)
+    {
+        // 两个轴分别叠加慢波，轨迹会持续游移，不再沿同一圆轨道同步聚散。
+        // 减去起点使首次启动的位移为零；两层封面使用同一轨迹，换色时保持位置一致。
+        public Vector3 GetOffset(double time) => new(
+            (float)(Extent.X * (Sample(time * Rate.X, Phase.X) - Sample(0, Phase.X))),
+            (float)(Extent.Y * (Sample(time * Rate.Y, Phase.Y) - Sample(0, Phase.Y))),
+            0);
+
+        private static double Sample(double time, double phase) =>
+            0.72 * Math.Sin(time + phase) + 0.28 * Math.Sin(time * 0.381966 + phase * 1.618034);
+    }
 
     private bool _showingLayerA = true;
     private bool _motionStarted;
@@ -90,7 +107,7 @@ public partial class AlbumCoverBackground : UserControl
     private TimeSpan _lastMotionTimestamp;
     private bool _hasMotionTimestamp;
     private bool _resumeFromPresentationPause;
-    private double _motionPhase;
+    private double _motionTime;
     private double _smoothedEnergy;
     private double _previousRawEnergy;
     private double _energyBurst;
@@ -304,7 +321,7 @@ public partial class AlbumCoverBackground : UserControl
         {
             _resumeFromPresentationPause = false;
             _burstSuppressionSeconds = 0;
-            _motionPhase = 0;
+            _motionTime = 0;
         }
     }
 
@@ -385,27 +402,21 @@ public partial class AlbumCoverBackground : UserControl
         var follow = 1 - Math.Exp(-dt / tau);
         _smoothedEnergy += (rawEnergy - _smoothedEnergy) * follow;
 
-        // 用开方型曲线展开实际音乐常见的中低能量区间：暂停约 50s/圈，普通段约 18~24s，
-        // 强段约 12~15s，偶发跃迁可短促进入约 10s/圈，强弱差异肉眼可见。
+        // 用开方型曲线展开实际音乐常见的中低能量区间；音乐只影响轨迹上的行进速度，
+        // 不改变位移幅度，避免强弱切换让色团突然跳到另一个位置。
         var perceivedEnergy = Math.Pow(_smoothedEnergy, 0.58);
         var targetSpeed = 0.52 + 1.72 * perceivedEnergy + _energyBurst;
         // 最终速度再做一层连续过渡，播放/暂停时只改变速度，不会产生速度阶跃。
         var speedTau = targetSpeed > _smoothedSpeed ? 0.24 : 1.10;
         _smoothedSpeed += (targetSpeed - _smoothedSpeed) * (1 - Math.Exp(-dt / speedTau));
-        _motionPhase = (_motionPhase + dt * Math.Tau / s_motionCycle.TotalSeconds * _smoothedSpeed) % Math.Tau;
+        // 各条轨迹频率不同，时间必须连续积累，不能在一圈后共同归零。
+        _motionTime += dt * MotionTimeScale * _smoothedSpeed;
 
-        for (var i = 0; i < visuals.Length; i++)
+        for (var i = 0; i < s_motionPaths.Length; i++)
         {
-            var burst = s_motionPaths[i % s_motionPaths.Length];
-            var dir = Vector3.Normalize(burst);
-            var perp = new Vector3(-dir.Y, dir.X, 0);
-            // 音乐只影响沿轨道的速度，不改变轨道半径；否则幅度变化会让当前坐标瞬移。
-            var amplitude = burst.Length() * 0.75;
-            var offset = new Vector3(
-                (float)((Math.Sin(_motionPhase) * dir.X - (1 - Math.Cos(_motionPhase)) * perp.X) * amplitude),
-                (float)((Math.Sin(_motionPhase) * dir.Y - (1 - Math.Cos(_motionPhase)) * perp.Y) * amplitude),
-                0);
+            var offset = s_motionPaths[i].GetOffset(_motionTime);
             visuals[i].Translation = offset;
+            visuals[i + s_motionPaths.Length].Translation = offset;
         }
 
         _motionTopLevel.RequestAnimationFrame(OnMotionFrame);

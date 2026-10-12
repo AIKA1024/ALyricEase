@@ -27,7 +27,7 @@ internal static class SongContextMenu
     /// <summary>构造歌曲菜单。row 传歌曲行的 SongItemViewModel 时(播放条不传),歌名下方多出
     /// "播放 / 下一首播放"两项(行内语境:播放走该行所在队列;下一首播放插到当前曲之后),横线后才是其余项。
     /// 图标用原版字体码位:E912 PlayFilled / E913 PlayNext(docs/icon-fonts.md)。</summary>
-    public static MenuFlyout Create(Visual anchor, Song song, string? queueSourceName, SongItemViewModel? row = null)
+    public static MenuFlyout Create(Visual anchor, Song song, SongItemViewModel? row = null)
     {
         var menu = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
         menu.FlyoutPresenterClasses.Add("player-song-menu");
@@ -39,8 +39,8 @@ internal static class SongContextMenu
             Focusable = false,
         });
 
-        // 本地歌曲(聚合歌单导入):没有在线音源,裁剪掉 添加到歌单/表演者/专辑/分享/浏览器/复制链接,
-        // 只保留 播放/下一首播放/来源;文件缺失时两者置灰禁用(行内播放钮同样已隐藏)。
+        // 本地歌曲没有在线音源,裁剪掉添加到歌单/分享/浏览器/复制链接。
+        // 文件缺失时播放/下一首播放置灰禁用(行内播放钮同样已隐藏)。
         var isLocal = song.Source == MusicSource.Local;
         var localFileMissing = isLocal
             && !string.IsNullOrEmpty(song.LocalFilePath) && !File.Exists(song.LocalFilePath);
@@ -157,15 +157,12 @@ internal static class SongContextMenu
             if (link is not null)
                 copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
             menu.Items.Add(copy);
-
-            menu.Items.Add(new Separator());
         }
 
-        // 来源行前的分隔线:与平台歌一致;末项已是分隔线时不再补(避免双横线)
-        if (menu.Items.Count == 0 || menu.Items[^1] is not Separator)
-            menu.Items.Add(new Separator());
+        // 只有聚合歌单行携带成员歌单引用;来源分组和横线一起添加。
         if (row?.SourcePlaylist is { } sourcePlaylist)
         {
+            menu.Items.Add(new Separator());
             // 聚合歌单的平台成员行:点击跳转成员歌单(按音源自动路由)。
             // ⚠ 优先用资料库里的既有条目(封面/曲数/DirId 等元数据齐全),
             //   合成 Playlist 只有 Id/Name,跳过去会是"无封面 0 曲数"的空壳页。
@@ -192,7 +189,8 @@ internal static class SongContextMenu
         }
         else if (row?.SourceLocalPlaylist is { } sourceLocal)
         {
-            // 本地音乐歌单(本地歌单页行/聚合的本地成员行):跳回本地歌单页
+            menu.Items.Add(new Separator());
+            // 聚合歌单的本地成员行:跳回本地歌单页。
             var gotoItem = MenuItemWithIcon($"歌单： {sourceLocal.Name}", "\uE922");
             gotoItem.Click += (_, _) =>
             {
@@ -205,15 +203,6 @@ internal static class SongContextMenu
                 catch { /* 设计器/无头宿主没有应用 DI,仅保留菜单结构。 */ }
             };
             menu.Items.Add(gotoItem);
-        }
-        else
-        {
-            menu.Items.Add(new MenuItem
-            {
-                Header = $"来源： {SourceText(song, queueSourceName)}",
-                Focusable = false,
-                IsHitTestVisible = false,
-            });
         }
 
         // 自己的歌单:底部红色"从歌单中移除"(原版 Delete 字形 E932);命令由歌单页注入行 VM
@@ -375,12 +364,5 @@ internal static class SongContextMenu
                 await launcher.LaunchUriAsync(new Uri(link));
         }
         catch { /* 平台没有可处理该链接的应用时静默返回。 */ }
-    }
-
-    private static string SourceText(Song song, string? queueSourceName)
-    {
-        if (song.Source == MusicSource.Local) return "本地歌曲";
-        if (!string.IsNullOrWhiteSpace(queueSourceName)) return queueSourceName;
-        return song.Source == MusicSource.QQ ? "QQ音乐" : "网易云音乐";
     }
 }

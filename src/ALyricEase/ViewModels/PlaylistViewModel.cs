@@ -1376,8 +1376,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             var row = CreateTrackRow(saved.Song, index, api);
             row.IsPlayable = saved.IsPlayable;
             // 成员歌单引用随快照往返:返回聚合页后右键"歌单:"仍可跳转
-            row.SourcePlaylist = saved.MemberPlaylist;
-            row.SourceLocalPlaylist = saved.MemberLocal;
+            row.SourcePlaylist = isAggregatePage ? saved.MemberPlaylist : null;
+            row.SourceLocalPlaylist = isAggregatePage ? saved.MemberLocal : null;
             if (isAggregatePage) _aggregateNetworkRows.Add(row);
             _allTrackRows.Add(row);
         }
@@ -2044,8 +2044,6 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _queueSongs.AddRange(songs);
             var rows = songs.Select((song, index) =>
                 CreateTrackRow(song, index, api: null)).ToList();
-            foreach (var row in rows)
-                row.SourceLocalPlaylist = local;
             _allTrackRows.AddRange(rows);
             RefreshVisibleTracks();
             IsBusy = false;

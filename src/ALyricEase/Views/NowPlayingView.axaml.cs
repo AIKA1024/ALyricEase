@@ -288,10 +288,12 @@ public partial class NowPlayingView : UserControl
     UpdateDesktopLayout();
   }
 
-  /// <summary>收起按钮:顶部居中(y=48,与右上"更多"按钮对齐,都让位窗口控制三键浮层);
-  /// 与封面顶部冲突的布局(大屏/小屏无面板、中屏无面板)改放左上(12,48) —— 原版让位行为。</summary>
+  // 仅桌面 Window 为窗口控制三键留位;移动端的系统安全区已由宿主处理。
+  private double TopActionInset => TopLevel.GetTopLevel(this) is Window ? 48 : 0;
+
+  /// <summary>收起按钮与右上"更多"按钮对齐;与封面/信息区冲突的布局改放左上。</summary>
   private void PlaceCollapseButton(double w, bool topLeft)
-    => MoveTo(CollapseButton, topLeft ? 12 : w / 2 - 25, 48);
+    => MoveTo(CollapseButton, topLeft ? 12 : w / 2 - 25, TopActionInset);
 
   /// <summary>信息区文本对齐:中屏无面板时居中(窗口正上方),其余状态左对齐。</summary>
   private void SetInfoCentered(bool centered)
@@ -310,6 +312,7 @@ public partial class NowPlayingView : UserControl
     // 布局尚未就绪(或 Android 首次测量给极小值)时不排:后续 SizeChanged 会再触发。
     // 若在此处放过极小 w,LayoutSmall 的 rowW = w-84 会算出负数,Width 不接受负值直接抛异常。
     if (w < 60 || h <= 0) return;
+    MoreButton.Margin = new Thickness(0, TopActionInset, 20, 0);
     // DataContext 尚未继承到时必须按“无面板”排版；nullable is-not 会把 null 误判为已打开，
     // 导致首帧先落到迷你封面坐标，随后动画从错误起点飞入。
     var panelOpen = _vm is { NowPlayingPanel: not NowPlayingPanel.None };
@@ -350,7 +353,7 @@ public partial class NowPlayingView : UserControl
     var infoWidth = Math.Min(600, w - 160);
     SetRect(InfoPanel, (w - infoWidth) / 2, 36, infoWidth, 54);
     SetInfoCentered(true);
-    MoveTo(CollapseButton, 0, 48);
+    MoveTo(CollapseButton, 0, TopActionInset);
 
     // 以下 Y 坐标锚定窗口底部，避免 1300×584 时切换按钮落到屏幕外。
     var togglesY = h - 65;
@@ -529,27 +532,28 @@ public partial class NowPlayingView : UserControl
       queueToggle: true);
   }
 
-  /// <summary>小屏(&lt;700,502x954 截图基准)。无面板:与大屏相同的完整控件栈,但各行横跨整列(边距 42),
-  /// 封面居中收窄;控件栈锚定底部,封面锚定顶部(0.17h),中间空隙留给封面→信息区。
+  /// <summary>小屏(&lt;700)。无面板:完整控件栈锚定底部,按可用高度收紧行间距,
+  /// 封面放在顶部按钮与歌名之间的剩余空间内。
   /// 开面板:左上迷你头 + 面板撑满 + 底部行(歌词/全屏/播放列表)。</summary>
   private void LayoutSmall(double w, double h, bool panelOpen)
   {
     if (!panelOpen)
     {
-      // 500×1000 原版实测基准:左右各 40、下方各行是 584/666/752/844/938 的节奏。
-      // 封面不再贴顶:在「顶部按钮行(收起/更多,y 48~98)」与「歌名区 infoY」之间垂直居中 ——
-      // 高窄窗口不再出现封面下方的大片空白;空间不足时封面按需收缩并保底 160。
+      // 高窄窗口保留原来的舒展间距;手机按逻辑尺寸排版(1080p/480dpi 仅有 360×616)。
+      // 先收紧控件间的空白,保留按钮触控尺寸;封面只能使用剩余高度,不能用 160 的下限挤进歌名。
       var rowX = SmallSideMargin;
       var rowW = w - SmallSideMargin * 2;
+      var spacing = Math.Clamp((h - TopActionInset - 640) / 240, 0, 1);
       var togglesY = h - 62;
-      var secondaryY = togglesY - 94;
-      var transportY = secondaryY - 92;
-      var progressY = transportY - 86;
-      var infoY = progressY - 82;
-      const double buttonsBottom = 102; // 收起/更多按钮行底(48+50)+4 间隙
-      var availableCover = Math.Max(160, infoY - buttonsBottom - 44);
-      var cover = Math.Clamp(Math.Min(rowW, availableCover), 160, 600);
-      var coverTop = Math.Max(buttonsBottom, buttonsBottom + (infoY - buttonsBottom - cover) / 2);
+      var secondaryY = togglesY - 50 - (16 + 28 * spacing);
+      var transportY = secondaryY - 60 - (12 + 20 * spacing);
+      var progressY = transportY - 52 - (12 + 22 * spacing);
+      var infoY = progressY - 54 - (8 + 20 * spacing);
+      var buttonsBottom = TopActionInset + 50 + 4;
+      var coverPadding = 16 + 6 * spacing;
+      var availableCover = Math.Max(0, infoY - buttonsBottom - 2 * coverPadding);
+      var cover = Math.Clamp(Math.Min(rowW, availableCover), 0, 600);
+      var coverTop = buttonsBottom + Math.Max(0, (infoY - buttonsBottom - cover) / 2);
       Artwork.CornerRadius = new CornerRadius(16);
       SetRect(Artwork, rowX + (rowW - cover) / 2, coverTop, cover, cover);
       var center = rowX + rowW / 2;
@@ -564,7 +568,7 @@ public partial class NowPlayingView : UserControl
       MoveTo(LyricsToggle, rowX, togglesY);
       MoveTo(FullScreenToggle, center - 24, togglesY);
       MoveTo(QueueToggle, rowX + rowW - 48, togglesY);
-      // 封面已垂直居中(顶 ≥102),按钮行(48~98)不再与之重叠 → 收起按钮回水平居中
+      // 封面始终位于顶部按钮行之下,收起按钮可以保持水平居中。
       PlaceCollapseButton(w, topLeft: false);
       SetInfoCentered(false);
       SetVisibility(progress: true, prev: true, play: true, next: true, like: true, mode: true, volume: true,

@@ -358,9 +358,8 @@
             </Grid>
         </Canvas>
 
-        <!-- 更多操作:右上,但在窗口控制三键浮层(ZIndex 200,见 MainWindow.axaml)之下,
-             top 48 起步避开三键行,同 UWP 应用在全屏呈现时为自己顶部控件让位的做法 -->
-        <Button x:Name="MoreButton" Classes="player-button top-action" Width="50" Height="50" Margin="0,48,20,0"
+        <!-- 更多操作:右上;布局代码仅在桌面窗口预留 48px 三键行,移动端从安全区顶部开始。 -->
+        <Button x:Name="MoreButton" Classes="player-button top-action" Width="50" Height="50" Margin="0,0,20,0"
                 HorizontalAlignment="Right" VerticalAlignment="Top"
                 ToolTip.Tip="更多操作" ZIndex="2">
             <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="28" Foreground="White" />

@@ -458,6 +458,12 @@ public static class Program
 
         HeadlessApp.ConfigureServices();
 
+        if (args.Length > 0 && args[0] == "--personal-fm")
+        {
+            Environment.ExitCode = PersonalFmProbe.Run();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--cover-fallback")
         {
             Environment.ExitCode = CoverFallbackProbe.Run();

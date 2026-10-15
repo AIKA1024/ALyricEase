@@ -4,25 +4,176 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
+             xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:PlayerViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
              x:Class="ALyricEase.Views.PersonalFmView">
 
-  <!-- 居中:封面 + 曲名/歌手(播放控制走底部播放条/SMTC);未登录/失败时 Message 提示 -->
-  <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
-    <Border Width="300" Height="300" CornerRadius="8" ClipToBounds="True"
-            Background="{DynamicResource ArtFallback}" BoxShadow="0 8 24 #33000000">
-      <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
-             Stretch="UniformToFill" />
-    </Border>
-    <StackPanel Spacing="4" IsVisible="{Binding CurrentSong, Converter={x:Static ObjectConverters.IsNotNull}}">
-      <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"
-                 TextTrimming="CharacterEllipsis" MaxLines="1" />
-      <TextBlock Text="{Binding Artist}" FontSize="14" HorizontalAlignment="Center"
-                 Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" MaxLines="1" />
-    </StackPanel>
-    <TextBlock Text="{Binding Message}" FontSize="13" HorizontalAlignment="Center"
-               Foreground="{DynamicResource TextSecondary}"
-               IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
-  </StackPanel>
+  <UserControl.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <x:Double x:Key="FmPaletteOpacity">0.05</x:Double>
+          <SolidColorBrush x:Key="FmAccent" Color="#347763" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <x:Double x:Key="FmPaletteOpacity">0.16</x:Double>
+          <SolidColorBrush x:Key="FmAccent" Color="#8AC9AE" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Button.fm-action">
+      <Setter Property="MinHeight" Value="44" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{DynamicResource AppControlFill}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+    </Style>
+    <Style Selector="Button.fm-action:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillHover}" />
+    </Style>
+    <Style Selector="Button.fm-action:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillPressed}" />
+    </Style>
+    <Style Selector="Button.fm-action.liked">
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseRed}" />
+    </Style>
+    <Style Selector="Button.fm-action.quiet">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.fm-cover">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.fm-cover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.fm-cover:pointerover Border#Artwork">
+      <Setter Property="BoxShadow" Value="0 16 40 #30000000" />
+    </Style>
+    <Style Selector="Border#Artwork">
+      <Setter Property="BoxShadow" Value="0 12 32 #24000000" />
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.22" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="views|PersonalFmView.loading Border#Artwork">
+      <Setter Property="Opacity" Value="0.65" />
+    </Style>
+    <Style Selector="views|PersonalFmView.stacked Border#ListeningBadgeHost">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid Background="{DynamicResource AppBackground}" ClipToBounds="True">
+    <!-- 复用封面取色，只在切歌时更新；FM 页面不额外启动常驻背景动画。 -->
+    <views:AlbumCoverBackground Cover="{Binding Cover}" MotionEnabled="False"
+                                Opacity="{DynamicResource FmPaletteOpacity}"
+                                IsVisible="{Binding IsFmActive}" />
+    <ScrollViewer x:Name="PageScroll" HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+      <Grid x:Name="PageLayout" Margin="40,28" MaxWidth="1000" RowDefinitions="Auto,*,Auto">
+        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,24">
+          <StackPanel Spacing="8">
+            <TextBlock Text="私人 FM" FontSize="24" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimary}" />
+            <TextBlock Text="随心听，遇见下一首喜欢。" FontSize="13"
+                       Foreground="{DynamicResource TextSecondary}" />
+          </StackPanel>
+          <Border x:Name="ListeningBadgeHost" Grid.Column="1">
+            <StackPanel x:Name="ListeningBadge" Orientation="Horizontal"
+                        Spacing="8" VerticalAlignment="Center" IsVisible="{Binding IsFmActive}">
+              <Ellipse Width="5" Height="5" Fill="{DynamicResource FmAccent}" />
+              <TextBlock Text="为你推荐" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <Grid x:Name="ListeningBody" Grid.Row="1" ColumnDefinitions="Auto,48,*" MaxWidth="800"
+              VerticalAlignment="Center" IsVisible="{Binding IsFmActive}">
+          <Button x:Name="CoverButton" Classes="fm-cover" Width="300" Height="300"
+                  Click="OnCoverClicked" VerticalAlignment="Center"
+                  ToolTip.Tip="打开播放详情" AutomationProperties.Name="打开当前歌曲的播放详情">
+            <Border x:Name="Artwork" CornerRadius="12" ClipToBounds="True"
+                    Background="{DynamicResource ArtFallback}">
+              <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                     Stretch="UniformToFill" />
+            </Border>
+          </Button>
+          <StackPanel x:Name="SongPanel" Grid.Column="2" Spacing="24" VerticalAlignment="Center">
+            <StackPanel Spacing="8">
+              <TextBlock x:Name="RecommendationLabel" Text="为你而来的一首" FontSize="12"
+                         Foreground="{DynamicResource FmAccent}" Margin="0,0,0,6" />
+              <TextBlock x:Name="SongTitle" Text="{Binding Title}" FontSize="28" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimary}" TextWrapping="Wrap"
+                         TextTrimming="CharacterEllipsis" MaxLines="2" />
+              <TextBlock x:Name="SongArtist" Text="{Binding Artist}" FontSize="14"
+                         Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="SongAlbum" Text="{Binding CurrentSong.Album}" FontSize="12"
+                         Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis"
+                         IsVisible="{Binding CurrentSong.Album, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+            <StackPanel x:Name="Actions" Orientation="Horizontal" Spacing="12">
+              <Button x:Name="LikeButton" Classes="fm-action" Classes.liked="{Binding IsCurrentLiked}"
+                      Command="{Binding ToggleLikeCommand}" AutomationProperties.Name="喜欢或取消喜欢当前歌曲">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Grid VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource IconHeartFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                               FontSize="18" IsVisible="{Binding IsCurrentLiked}" />
+                    <TextBlock Text="{DynamicResource IconHeartOutline}" FontFamily="{DynamicResource LyricEaseIconsOutline}"
+                               FontSize="18" IsVisible="{Binding !IsCurrentLiked}" />
+                  </Grid>
+                  <TextBlock Text="喜欢" IsVisible="{Binding !IsCurrentLiked}" />
+                  <TextBlock Text="已喜欢" IsVisible="{Binding IsCurrentLiked}" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="NextButton" Classes="fm-action quiet" Command="{Binding PlayNextCommand}"
+                      IsEnabled="{Binding !IsLoading}" AutomationProperties.Name="换一首私人 FM 歌曲">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="{DynamicResource IconNext}" FontFamily="{DynamicResource LyricEaseIcons}"
+                             FontSize="18" VerticalAlignment="Center" />
+                  <TextBlock Text="换一首" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+            <TextBlock x:Name="DiscoveryHint" Text="点击封面，查看歌词与播放详情" FontSize="12"
+                       TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+          </StackPanel>
+        </Grid>
+
+        <StackPanel x:Name="EmptyState" Grid.Row="1" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" Spacing="18" MaxWidth="380" IsVisible="{Binding !IsFmActive}">
+          <TextBlock Text="{DynamicResource IconRadio}" FontFamily="{DynamicResource LyricEaseIcons}"
+                     FontSize="52" Foreground="{DynamicResource FmAccent}" HorizontalAlignment="Center" />
+          <TextBlock Text="开启你的私人电台" FontSize="22" FontWeight="SemiBold" TextAlignment="Center"
+                     Foreground="{DynamicResource TextPrimary}" />
+          <TextBlock Text="随心听，遇见下一首喜欢。" FontSize="14" TextAlignment="Center"
+                     Foreground="{DynamicResource TextSecondary}" />
+          <Button x:Name="StartButton" Classes="fm-action" Content="开始收听" Click="OnStartClicked"
+                  IsEnabled="{Binding !StartPersonalFmCommand.IsRunning}"
+                  HorizontalAlignment="Center" AutomationProperties.Name="开始收听私人 FM" />
+          <TextBlock Text="正在寻找好音乐…" HorizontalAlignment="Center" FontSize="13"
+                     Foreground="{DynamicResource TextSecondary}"
+                     IsVisible="{Binding StartPersonalFmCommand.IsRunning}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Spacing="12" Margin="0,24,0,0">
+          <TextBlock x:Name="StatusMessage" Text="{Binding Message}" FontSize="13" TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSecondary}"
+                     IsVisible="{Binding Message, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </Grid>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

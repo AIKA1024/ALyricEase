@@ -101,6 +101,7 @@ public partial class AlbumCoverBackground : UserControl
     private int _motionGeneration;
     private int _paletteVersion;
     private readonly IAudioPlayer? _audioPlayer;
+    private bool _audioAnalysisRequested;
     private CompositionVisual[]? _motionVisuals;
     private TopLevel? _motionTopLevel;
     private TopLevel? _observedTopLevel;
@@ -193,6 +194,7 @@ public partial class AlbumCoverBackground : UserControl
         }
 
         _audioPlayer?.SetAudioAnalysisEnabled(true);
+        _audioAnalysisRequested = true;
         QueueMotionStart();
     }
 
@@ -291,7 +293,12 @@ public partial class AlbumCoverBackground : UserControl
         _motionGeneration++;
         _motionStartQueued = false;
         _motionStartAttempts = 0;
-        _audioPlayer?.SetAudioAnalysisEnabled(false);
+        // 静态 FM 背景从未请求音频分析，挂载/卸载时不能关闭播放详情页正在使用的分析。
+        if (_audioAnalysisRequested)
+        {
+            _audioPlayer?.SetAudioAnalysisEnabled(false);
+            _audioAnalysisRequested = false;
+        }
         if (!preservePosition)
         {
             foreach (var ellipse in GetLayer(true).Concat(GetLayer(false)))

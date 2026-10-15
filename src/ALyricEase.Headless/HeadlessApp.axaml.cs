@@ -28,6 +28,8 @@ public partial class HeadlessApp : Application
     public long PositionMs { get; set; }
     public long DurationMs { get; set; }
     public int Volume { get; set; }
+    public bool AudioAnalysisEnabled { get; private set; }
+    public void SetAudioAnalysisEnabled(bool enabled) => AudioAnalysisEnabled = enabled;
     public event EventHandler? StateChanged;
     public event EventHandler<long>? PositionChanged;
     public event EventHandler<long>? DurationChanged;

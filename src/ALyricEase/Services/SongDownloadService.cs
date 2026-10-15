@@ -33,14 +33,17 @@ public sealed class SongDownloadService
     {
         if (source is not (MusicSource.NetEase or MusicSource.QQ)) return [];
 
-        // 与设置页和播放共用四档名称、顺序和协议映射，不单独扩展下载档位。
+        // 保留设置页和播放的四档顺序及协议映射，下载窗口展示当前平台的实际音质名称。
+        string[] names = source == MusicSource.NetEase
+            ? ["极高 · HQ", "无损 · SQ", "高清臻音", "臻音全景声"]
+            : ["标准", "NAC", "高品质 · HQ", "无损 · SQ"];
         string[] descriptions = source == MusicSource.NetEase
-            ? ["极高 · HQ · 最高 320 kbps", "无损 · SQ", "高清臻音 · 空间音频", "臻音全景声 · 沉浸式空间音频"]
-            : ["128 kbps · MP3", "腾讯 AICodec", "320 kbps · MP3", "FLAC 无损音频"];
+            ? ["最高 320 kbps", "保留更多声音细节", "空间音频", "沉浸式空间音频"]
+            : ["128 kbps · MP3", "腾讯 AICodec", "320 kbps · MP3", "FLAC 格式"];
         return Enumerable.Range(0, AudioQualityMapper.OptionCount)
             .Select(index => new SongDownloadQuality(
                 AudioQualityMapper.GetRequestLevel(source, index),
-                AudioQualityMapper.OptionNames[index], descriptions[index]))
+                names[index], descriptions[index]))
             .ToArray();
     }
 

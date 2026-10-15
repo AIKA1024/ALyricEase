@@ -246,7 +246,9 @@
           </DockPanel>
         </Border>
 
-        <Border Grid.Column="1" Background="{DynamicResource AppBackground}" CornerRadius="8,0,0,0">
+        <!-- 内容页可以自带铺满背景；在壳层统一裁剪，避免子页面盖住左上角圆角。 -->
+        <Border Grid.Column="1" Background="{DynamicResource AppBackground}" CornerRadius="8,0,0,0"
+                ClipToBounds="True">
           <Grid x:Name="ContentArea" ClipToBounds="True">
             <!-- 内容页:延伸到播放条后面,滚动内容从播放条下方穿过 -->
             <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentContent}"

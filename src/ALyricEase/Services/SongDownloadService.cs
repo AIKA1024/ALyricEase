@@ -1,5 +1,7 @@
 using System.Net.Http;
 using ALyricEase.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALyricEase.Services;
 
@@ -14,13 +16,18 @@ public sealed class SongDownloadService
     private readonly MusicCacheService _cache;
     private readonly ISongDownloadStorage _storage;
     private readonly HttpClient _http;
+    private readonly ILogger<SongDownloadService> _logger;
 
-    public SongDownloadService(MusicApiProvider apis, MusicCacheService cache, ISongDownloadStorage storage)
-        : this(apis, cache, storage, SharedHttp) { }
+    public SongDownloadService(MusicApiProvider apis, MusicCacheService cache, ISongDownloadStorage storage,
+        ILogger<SongDownloadService>? logger = null)
+        : this(apis, cache, storage, SharedHttp, logger) { }
 
     internal SongDownloadService(MusicApiProvider apis, MusicCacheService cache,
-        ISongDownloadStorage storage, HttpClient http)
-        => (_apis, _cache, _storage, _http) = (apis, cache, storage, http);
+        ISongDownloadStorage storage, HttpClient http, ILogger<SongDownloadService>? logger = null)
+    {
+        (_apis, _cache, _storage, _http) = (apis, cache, storage, http);
+        _logger = logger ?? NullLogger<SongDownloadService>.Instance;
+    }
 
     public static IReadOnlyList<SongDownloadQuality> GetQualities(MusicSource source)
     {
@@ -38,6 +45,32 @@ public sealed class SongDownloadService
     }
 
     public async Task<SongDownloadResult> DownloadAsync(Song song, SongDownloadQuality quality,
+        IProgress<SongDownloadProgress>? progress, CancellationToken cancellationToken)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        _logger.LogInformation("Song download started. Source={Source} SongId={SongId} Quality={Quality}",
+            song.Source, song.Id, quality.Level);
+        try
+        {
+            var result = await DownloadCoreAsync(song, quality, progress, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Song download completed. Source={Source} SongId={SongId} FromCache={FromCache} ElapsedMs={ElapsedMs}",
+                song.Source, song.Id, result.FromCache, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Song download cancelled. Source={Source} SongId={SongId}", song.Source, song.Id);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Song download failed. Source={Source} SongId={SongId} Quality={Quality}",
+                song.Source, song.Id, quality.Level);
+            throw;
+        }
+    }
+
+    private async Task<SongDownloadResult> DownloadCoreAsync(Song song, SongDownloadQuality quality,
         IProgress<SongDownloadProgress>? progress, CancellationToken cancellationToken)
     {
         if (!GetQualities(song.Source).Any(option => option.Level == quality.Level))

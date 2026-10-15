@@ -1,6 +1,9 @@
 using System.Net.Http;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALyricEase.Services.Update;
 
@@ -17,21 +20,31 @@ public static partial class GitHubReleaseFetcher
     private const string RepoApiBase = "https://api.github.com/repos/AIKA1024/ALyricEase/releases";
 
     /// <summary>取最新正式 release(releases/latest 自动忽略 prerelease)。失败返回 null。</summary>
-    public static Task<GitHubRelease?> GetLatestAsync() => FetchAsync($"{RepoApiBase}/latest");
+    public static Task<GitHubRelease?> GetLatestAsync(ILogger? logger = null) =>
+        FetchAsync($"{RepoApiBase}/latest", "latest", logger ?? NullLogger.Instance);
 
     /// <summary>按 tag 取 release(vpk 发布的 tag = 版本号)。失败返回 null。</summary>
-    public static Task<GitHubRelease?> GetByTagAsync(string tag) =>
-        FetchAsync($"{RepoApiBase}/tags/{Uri.EscapeDataString(tag)}");
+    public static Task<GitHubRelease?> GetByTagAsync(string tag, ILogger? logger = null) =>
+        FetchAsync($"{RepoApiBase}/tags/{Uri.EscapeDataString(tag)}", "tag", logger ?? NullLogger.Instance);
 
-    private static async Task<GitHubRelease?> FetchAsync(string url)
+    private static async Task<GitHubRelease?> FetchAsync(string url, string lookup, ILogger logger)
     {
+        var timer = Stopwatch.StartNew();
+        logger.LogInformation("GitHub release metadata request started. Lookup={Lookup}", lookup);
         try
         {
             using var client = new HttpClient();
             client.DefaultRequestHeaders.UserAgent.ParseAdd("ALyricEase-UpdateCheck");
             client.Timeout = TimeSpan.FromSeconds(15);
             using var resp = await client.GetAsync(url).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode) return null;
+            logger.LogInformation("GitHub release metadata response. Lookup={Lookup} StatusCode={StatusCode} ElapsedMs={ElapsedMs}",
+                lookup, (int)resp.StatusCode, timer.ElapsedMilliseconds);
+            if (!resp.IsSuccessStatusCode)
+            {
+                logger.LogWarning("GitHub release metadata request rejected; returning no metadata. Lookup={Lookup} StatusCode={StatusCode}",
+                    lookup, (int)resp.StatusCode);
+                return null;
+            }
             await using var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
             using var doc = await JsonDocument.ParseAsync(stream).ConfigureAwait(false);
             var root = doc.RootElement;
@@ -53,14 +66,22 @@ public static partial class GitHubReleaseFetcher
 
             var tag = root.TryGetProperty("tag_name", out var t) && t.ValueKind == JsonValueKind.String
                 ? t.GetString() : null;
-            if (tag is null) return null;
+            if (tag is null)
+            {
+                logger.LogWarning("GitHub release metadata has no tag_name; returning no metadata. Lookup={Lookup}", lookup);
+                return null;
+            }
 
             var body = root.TryGetProperty("body", out var b) && b.ValueKind == JsonValueKind.String
                 ? b.GetString() : null;
+            logger.LogInformation("GitHub release metadata parsed. Lookup={Lookup} Version={Version} AssetCount={AssetCount} ElapsedMs={ElapsedMs}",
+                lookup, tag, assets.Count, timer.ElapsedMilliseconds);
             return new GitHubRelease(tag, body ?? "", assets);
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogWarning(ex, "GitHub release metadata request or parsing failed; returning no metadata. Lookup={Lookup} TimedOut={TimedOut} ElapsedMs={ElapsedMs}",
+                lookup, ex is OperationCanceledException, timer.ElapsedMilliseconds);
             return null;
         }
     }

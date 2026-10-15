@@ -14,6 +14,8 @@ using ALyricEase.Services.Smtc;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALyricEase.ViewModels;
 
@@ -31,6 +33,7 @@ public enum PlaybackMode
 public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 {
     private readonly IAudioPlayer _player;
+    private readonly ILogger<PlayerViewModel> _logger;
     private readonly NetEaseApiClient _api;
     private readonly MusicApiProvider _sources;
     private readonly LyricViewModel _lyric;
@@ -89,8 +92,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         LyricViewModel lyric,
         ISmtcService smtc,
         AppStateStore appState,
-        MusicCacheService musicCache)
+        MusicCacheService musicCache,
+        ILogger<PlayerViewModel>? logger = null)
     {
+        _logger = logger ?? NullLogger<PlayerViewModel>.Instance;
         _player = player;
         _api = api;
         _sources = sources;
@@ -782,6 +787,25 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private async Task<PlayAttemptResult> TryPlayAsync(Song? song, bool allowCrossfade = true)
     {
         if (song is null) return PlayAttemptResult.Unavailable;
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            var result = await TryPlayCoreAsync(song, allowCrossfade);
+            _logger.LogInformation("Playback request finished. Source={Source} SongId={SongId} Result={Result} ElapsedMs={ElapsedMs}",
+                song.Source, song.Id, result, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return result;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Playback failed. Source={Source} SongId={SongId}", song.Source, song.Id);
+            throw;
+        }
+    }
+
+    private async Task<PlayAttemptResult> TryPlayCoreAsync(Song? song, bool allowCrossfade)
+    {
+        if (song is null) return PlayAttemptResult.Unavailable;
 
         // 本地文件不经过音源 API 与磁盘缓存:直接播绝对路径(双击文件/打开方式的入口)。
         if (song.Source == MusicSource.Local)
@@ -873,6 +897,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
         {
+            _logger.LogWarning(ex, "Playback source request failed. Source={Source} SongId={SongId} HasOfflineFallback={HasOfflineFallback}",
+                song.Source, song.Id, offlineFallback is not null);
             if (offlineFallback is not null)
             {
                 song.IsPlaybackUnavailable = false;
@@ -1765,6 +1791,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnError(object? sender, string message)
     {
+        _logger.LogError("Audio player error. Source={Source} SongId={SongId} Error={Error}",
+            CurrentSong?.Source, CurrentSong?.Id, message);
         _playbackCache.Cancel();
         Message = message;
     }

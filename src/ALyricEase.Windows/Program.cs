@@ -13,6 +13,8 @@ using ALyricEase.Services.Smtc;
 using ALyricEase.Services.Update;
 using ALyricEase.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ALyricEase.Infrastructure.Logging;
 using Velopack;
 
 namespace ALyricEase;
@@ -28,6 +30,40 @@ class Program
     // Velopack 启动钩子:处理 Update.exe 的安装/更新/卸载回调参数(--squirrel-*),
     // 必须在任何其它逻辑前调用;未安装(开发目录直跑)时只记警告不阻断。
     VelopackApp.Build().Run();
+    var loggingProbe = args.Length > 0 && args[0] == "--selftest-logging";
+    AppLogging.Initialize(loggingProbe && args.Length > 1 ? args[1] : null);
+    Dispatcher.UIThread.UnhandledException += OnUiUnhandledException;
+    try
+    {
+      Velopack.Locators.VelopackLocator.Current.AddLogger(
+        new VelopackLogAdapter(AppLogging.Factory.CreateLogger("Velopack")));
+      if (loggingProbe)
+      {
+        LoggingProbe.Run();
+        return;
+      }
+      Run(args);
+    }
+    catch (Exception ex)
+    {
+      AppLogging.Factory.CreateLogger("Startup").LogCritical(ex, "Application terminated unexpectedly");
+      throw;
+    }
+    finally
+    {
+      Dispatcher.UIThread.UnhandledException -= OnUiUnhandledException;
+      AppLogging.Shutdown();
+    }
+  }
+
+  private static void OnUiUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
+  {
+    AppLogging.Factory.CreateLogger("Avalonia.Dispatcher").LogCritical(e.Exception, "Unhandled UI exception");
+    // 只记录，不设置 Handled，保留原来的崩溃行为。
+  }
+
+  private static void Run(string[] args)
+  {
     // selftest(无 UI)模式下:先在主线程钉住 UIThread,保证 DispatcherService.Post 能排队
     _ = Avalonia.Threading.Dispatcher.UIThread;
 
@@ -156,6 +192,7 @@ class Program
   public static AppBuilder BuildAvaloniaApp()
   {
     var services = new ServiceCollection();
+    AppLogging.AddServices(services);
     services.AddSingleton<DispatcherService>();
     services.AddSingleton<CookieStore>();
     services.AddSingleton<AppStateStore>();
@@ -206,9 +243,9 @@ class Program
     ServiceLocator.Provider = services.BuildServiceProvider();
     CoverImagePipeline.Configure(ServiceLocator.Get<MusicCacheService>());
 
+    AppLogging.ConnectAvalonia();
     return AppBuilder.Configure<App>()
       .UsePlatformDetect()
-      .WithInterFont()
-      .LogToTrace();
+      .WithInterFont();
   }
 }

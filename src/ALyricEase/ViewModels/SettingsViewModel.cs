@@ -9,6 +9,9 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ALyricEase.Infrastructure.Logging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALyricEase.ViewModels;
 
@@ -29,6 +32,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>应用自更新服务(Windows=Velopack 实现;Android/无头探针=空实现或 null)。</summary>
     private readonly IAppUpdateService? _update;
     private readonly IStartupService? _startup;
+    private readonly ILogger<SettingsViewModel> _logger;
 
     /// <summary>当前枚举到的输出设备(不含"跟随系统默认设备"伪项);索引 i 对应下拉第 i+1 项。</summary>
     private readonly List<AudioOutputDevice> _devices = new();
@@ -39,8 +43,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string? _status;
 
     public SettingsViewModel(AppStateStore state, MusicCacheService musicCache, IAudioPlayer player,
-        IAppUpdateService? updateService = null, IStartupService? startupService = null)
+        IAppUpdateService? updateService = null, IStartupService? startupService = null,
+        ILogger<SettingsViewModel>? logger = null)
     {
+        _logger = logger ?? NullLogger<SettingsViewModel>.Instance;
         _state = state;
         _musicCache = musicCache;
         _player = player;
@@ -643,6 +649,25 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // ---- 关于:详细信息(版本/安装日期/检查更新) ----
 
+    public bool LogFolderSupported => OperatingSystem.IsWindows();
+    public bool LogFolderUnavailable => LogFolderSupported && !AppLogging.IsFileLoggingAvailable;
+
+    [RelayCommand]
+    private void OpenLogFolder()
+    {
+        if (!LogFolderSupported) return;
+        try
+        {
+            System.IO.Directory.CreateDirectory(AppLogging.DirectoryPath);
+            Process.Start(new ProcessStartInfo(AppLogging.DirectoryPath) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Opening log folder failed");
+            Status = "无法打开日志文件夹：" + AppLogging.DirectoryPath;
+        }
+    }
+
     /// <summary>当前宿主是否具备自更新条件(Velopack 只认 vpk 安装后的目录结构;
     /// 开发目录直跑与 Android 均为 false,"检查更新"按钮随之隐藏)。</summary>
     public bool UpdateSupported => _update is { IsSupported: true };
@@ -699,17 +724,20 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private async Task CheckForUpdatesAsync()
     {
         if (_update is not { IsSupported: true } update || IsCheckingUpdate) return;
+        _logger.LogInformation("Checking for application updates. CurrentVersion={CurrentVersion}", update.CurrentVersion);
         IsCheckingUpdate = true;
         try
         {
             var info = await update.CheckForUpdatesAsync();
             if (info is null)
             {
+                _logger.LogInformation("Update service returned no update; displaying up-to-date status");
                 Status = "当前已是最新版本";
                 return;
             }
 
             PendingVersion = info.Version;
+            _logger.LogInformation("Application update available. Version={Version}", info.Version);
             ReleaseNotes = string.IsNullOrWhiteSpace(info.ReleaseNotes)
                 ? "暂无更新说明"
                 : info.ReleaseNotes;
@@ -720,6 +748,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         catch (Exception ex)
         {
             Status = $"检查更新失败:{ex.Message}";
+            _logger.LogError(ex, "Checking for application updates failed");
         }
         finally
         {
@@ -746,6 +775,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private async Task ConfirmUpdateAsync()
     {
         if (_update is not { IsSupported: true } update || IsDownloadingUpdate) return;
+        _logger.LogInformation("Application update download started. Version={Version}", PendingVersion);
         IsDownloadingUpdate = true;
         UpdateProgress = 0;
         try
@@ -754,12 +784,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 Dispatcher.UIThread.Post(() => UpdateProgress = p));
             UpdateProgress = 100;
             IsUpdateReady = true;
+            _logger.LogInformation("Application update downloaded. Version={Version}", PendingVersion);
         }
         catch (Exception ex)
         {
             IsUpdateReady = false;
             TryCloseUpdateDialog();
             Status = $"下载更新失败:{ex.Message}";
+            _logger.LogError(ex, "Application update download failed. Version={Version}", PendingVersion);
         }
         finally
         {
@@ -776,12 +808,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
         {
             // 更新器会强杀进程,窗口关闭路径的 Flush 未必执行,先把偏好落盘
             _state.Flush();
+            _logger.LogInformation("Applying application update. Version={Version}", PendingVersion);
             update.ApplyUpdatesAndRestart();
         }
         catch (Exception ex)
         {
             TryCloseUpdateDialog();
             Status = $"应用更新失败:{ex.Message}";
+            _logger.LogError(ex, "Applying application update failed. Version={Version}", PendingVersion);
         }
     }
 

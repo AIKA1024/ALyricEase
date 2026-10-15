@@ -1,7 +1,8 @@
 using System.Reflection;
 using ALyricEase.Services.Update;
 using Velopack;
-using Velopack.Sources;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALyricEase.Services;
 
@@ -19,15 +20,20 @@ public sealed class VelopackUpdateService : IAppUpdateService
 
     private UpdateManager? _manager;
     private UpdateInfo? _pending;
+    private readonly ILogger<VelopackUpdateService> _logger;
 
-    public VelopackUpdateService()
+    public VelopackUpdateService(ILogger<VelopackUpdateService>? logger = null)
     {
+        _logger = logger ?? NullLogger<VelopackUpdateService>.Instance;
         try
         {
-            _manager = new UpdateManager(new GithubSource(RepoUrl, null, false));
+            _manager = new UpdateManager(new LoggingGithubSource(RepoUrl, _logger));
+            _logger.LogInformation("Application updater initialized. IsInstalled={IsInstalled} CurrentVersion={CurrentVersion}",
+                _manager.IsInstalled, _manager.CurrentVersion?.ToNormalizedString());
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Application updater initialization failed");
             _manager = null; // 定位器异常等极端情况:视作不支持
         }
     }
@@ -67,14 +73,24 @@ public sealed class VelopackUpdateService : IAppUpdateService
     public async Task<AppUpdateInfo?> CheckForUpdatesAsync()
     {
         var mgr = _manager;
-        if (mgr is null || !mgr.IsInstalled) return null;
+        if (mgr is null || !mgr.IsInstalled)
+        {
+            _logger.LogWarning("Update check skipped: updater is unavailable or application is not installed");
+            return null;
+        }
 
+        _logger.LogInformation("Velopack update check started. CurrentVersion={CurrentVersion}", CurrentVersion);
         var info = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
-        if (info is null) return null;
+        if (info is null)
+        {
+            _logger.LogInformation("Velopack returned no update. CurrentVersion={CurrentVersion}; see feed and version comparison logs for the reason", CurrentVersion);
+            return null;
+        }
 
         _pending = info;
         var version = info.TargetFullRelease.Version.ToNormalizedString();
-        var notes = await GitHubReleaseFetcher.GetByTagAsync(version).ConfigureAwait(false);
+        _logger.LogInformation("Velopack update selected. CurrentVersion={CurrentVersion} TargetVersion={TargetVersion}", CurrentVersion, version);
+        var notes = await GitHubReleaseFetcher.GetByTagAsync(version, _logger).ConfigureAwait(false);
         return new AppUpdateInfo(version, GitHubReleaseFetcher.CleanMarkdown(notes?.Body) ?? "");
     }
 

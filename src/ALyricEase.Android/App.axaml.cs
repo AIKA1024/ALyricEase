@@ -12,6 +12,8 @@ using ALyricEase.Services.Sharing;
 using ALyricEase.Services.Smtc;
 using ALyricEase.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using ALyricEase.Infrastructure.Logging;
 
 namespace ALyricEase;
 
@@ -19,6 +21,8 @@ public partial class App : Avalonia.Application
 {
     public override void Initialize()
     {
+        AppLogging.Initialize();
+        AppLogging.ConnectAvalonia();
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -56,8 +60,9 @@ public partial class App : Avalonia.Application
         {
             await ServiceLocator.Get<PlaylistViewModel>().EnsureLoadedAsync();
         }
-        catch
+        catch (Exception ex)
         {
+            AppLogging.Factory.CreateLogger("LoginRestore").LogWarning(ex, "Login restoration failed");
             // 恢复登录失败不阻塞启动
         }
     }
@@ -65,6 +70,7 @@ public partial class App : Avalonia.Application
     private static void ConfigureServices()
     {
         var services = new ServiceCollection();
+        AppLogging.AddServices(services);
         services.AddSingleton<DispatcherService>();
         services.AddSingleton<CookieStore>();
         // 主窗口几何 + 侧栏分组折叠状态持久化(MainViewModel 构造注入)

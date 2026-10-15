@@ -9,6 +9,8 @@ using ALyricEase.Services;
 using ALyricEase.Services.Smtc;
 using ALyricEase.Services.Taskbar;
 using ALyricEase.ViewModels;
+using ALyricEase.Infrastructure.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace ALyricEase;
 
@@ -111,8 +113,9 @@ public partial class App : Application
         }
       };
     }
-    catch
+    catch (Exception ex)
     {
+      AppLogging.Factory.CreateLogger("Taskbar").LogWarning(ex, "Taskbar buttons initialization failed");
       // 缩略图工具栏失败 → 静默降级
     }
   }
@@ -124,8 +127,9 @@ public partial class App : Application
     {
       await ServiceLocator.Get<PlaylistViewModel>().EnsureLoadedAsync();
     }
-    catch
+    catch (Exception ex)
     {
+      AppLogging.Factory.CreateLogger("LoginRestore").LogWarning(ex, "Login restoration failed");
       // 恢复登录失败不阻塞启动
     }
   }

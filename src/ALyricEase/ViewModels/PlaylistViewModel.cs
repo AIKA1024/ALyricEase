@@ -13,6 +13,8 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALyricEase.ViewModels;
 
@@ -35,6 +37,7 @@ public enum NetEaseLoginMethod
 /// 登录对话框支持双音源切换:网易云(MUSIC_U)与 QQ 音乐(uin+qqmusic_key cookie,解锁 VIP 音质)。</summary>
 public sealed partial class PlaylistViewModel : ViewModelBase
 {
+    private readonly ILogger<PlaylistViewModel> _logger;
     internal const int AggregateNetEaseBatchSize = 100;
     internal const int AggregateQqPageSize = 300;
     private const int AggregateUiBatchSize = 50;
@@ -60,8 +63,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         QQMusicApiClient qqApi,
         CookieStore cookie,
         PlayerViewModel player,
-        MusicCacheService musicCache)
+        MusicCacheService musicCache,
+        ILogger<PlaylistViewModel>? logger = null)
     {
+        _logger = logger ?? NullLogger<PlaylistViewModel>.Instance;
         _api = api;
         _qqApi = qqApi;
         _cookie = cookie;
@@ -577,19 +582,22 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             }
             catch (ApiException ex) when (QQMusicApiClient.RequiresFreshLogin(ex.Code))
             {
+                _logger.LogWarning("QQ login expired. Code={Code}", ex.Code);
                 _qqApi.ClearCookie();
                 IsQqLoggedIn = false;
                 QqLibraryError = "QQ 音乐登录已失效，请重新登录。";
                 return;
             }
-            catch (ApiException)
+            catch (ApiException ex)
             {
+                _logger.LogWarning(ex, "QQ login restoration failed");
                 QqLibraryError = "QQ 音乐暂时无法同步，请稍后刷新。";
                 // 网络/服务端瞬时异常保留本地 Cookie 与离线快照，下次进入再验证。
                 return;
             }
             catch (Exception ex) when (IsConnectivityFailure(ex))
             {
+                _logger.LogWarning(ex, "QQ login restoration connection failed");
                 QqLibraryError = "QQ 音乐暂时无法连接，请检查网络后刷新。";
                 // HttpClient 在完全断网时不会包装成 ApiException；保留已恢复的离线账号。
                 return;
@@ -616,6 +624,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
             // Cookie 失效/网络失败:分组保持空,下次进入或重启重试
+            _logger.LogWarning(ex, "QQ library synchronization failed");
             QqLibraryError = "QQ 音乐歌单同步失败，已保留现有歌单。请稍后刷新。";
         }
     }
@@ -656,6 +665,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (ApiException ex)
         {
             Message = $"登录失败:{ex.Message}";
+            _logger.LogWarning(ex, "NetEase login failed");
         }
         finally
         {
@@ -688,6 +698,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (ApiException ex)
         {
             _qqApi.ClearCookie(); // 服务端不认:不留半残登录态(内存 + 存档一并清)
+            _logger.LogWarning(ex, "QQ cookie login failed");
             IsQqLoggedIn = false;
             Message = $"登录失败:{ex.Message}";
         }
@@ -909,6 +920,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             if (ReferenceEquals(_qqQrLoginCancellation, cancellation))
             {
                 Message = $"扫码登录失败:{ex.Message}";
+                _logger.LogWarning(ex, "QQ QR login failed");
                 QqQrStatus = "二维码不可用，请点击重新获取";
             }
         }
@@ -918,6 +930,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             {
                 Message = $"扫码登录失败:{ex.Message}";
                 QqQrStatus = "连接失败，请点击重新获取";
+                _logger.LogWarning(ex, "QQ QR login connection failed");
             }
         }
         finally
@@ -2705,6 +2718,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
+            _logger.LogWarning(ex, "NetEase login restoration or library synchronization failed");
             Message = _netEaseRestoredFromCache
                 ? "当前网络不可用，已恢复离线歌单"
                 : $"登录失败:{ex.Message}";

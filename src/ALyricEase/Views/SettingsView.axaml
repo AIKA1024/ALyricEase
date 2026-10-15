@@ -433,7 +433,7 @@
             <TextBlock Grid.Column="2" MinWidth="24" />
           </Grid>
         </Expander.Header>
-        <Grid Margin="20,4,0,10" ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto">
+        <Grid Margin="20,4,0,10" ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
           <Grid.Styles>
             <Style Selector="TextBlock.info-label">
               <Setter Property="FontSize" Value="13" />
@@ -460,6 +460,13 @@
           <!-- 安装日期 -->
           <TextBlock Grid.Row="2" Grid.Column="0" Classes="info-label" Text="安装日期" />
           <TextBlock Grid.Row="2" Grid.Column="1" Classes="info-value" Text="{Binding InstallDateText}" />
+          <TextBlock Grid.Row="3" Grid.Column="0" Classes="info-label" Text="问题排查"
+                     IsVisible="{Binding LogFolderSupported}" Margin="0,12,0,0" />
+          <Button Grid.Row="3" Grid.Column="1" Classes="setting-action" Content="打开日志文件夹"
+                  HorizontalAlignment="Left" Margin="0,12,0,0"
+                  IsVisible="{Binding LogFolderSupported}" Command="{Binding OpenLogFolderCommand}" />
+          <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Classes="info-label" TextWrapping="Wrap" Margin="0,8,0,0"
+                     IsVisible="{Binding LogFolderUnavailable}" Text="日志目录不可写，本次运行未启用文件日志。" />
         </Grid>
       </Expander>
 

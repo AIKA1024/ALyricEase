@@ -3,6 +3,8 @@ using Android.Content;
 using Android.OS;
 using Android.Provider;
 using AndroidX.Core.Content;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using AApplication = global::Android.App.Application;
 using AUri = Android.Net.Uri;
 
@@ -23,9 +25,11 @@ public sealed class AndroidUpdateService : IAppUpdateService
     private GitHubReleaseAsset? _pendingApk;
     private string? _pendingVersion;
     private string? _downloadedApkPath;
+    private readonly ILogger<AndroidUpdateService> _logger;
 
-    public AndroidUpdateService()
+    public AndroidUpdateService(ILogger<AndroidUpdateService>? logger = null)
     {
+        _logger = logger ?? NullLogger<AndroidUpdateService>.Instance;
         // 服务在启动解析 SettingsViewModel 时构造:借这个时机清掉"装完没用掉"的安装包
         CleanupStaleDownloads();
     }
@@ -69,17 +73,36 @@ public sealed class AndroidUpdateService : IAppUpdateService
 
     public async Task<AppUpdateInfo?> CheckForUpdatesAsync()
     {
-        var release = await GitHubReleaseFetcher.GetLatestAsync().ConfigureAwait(false);
-        if (release is null) return null;
+        var release = await GitHubReleaseFetcher.GetLatestAsync(_logger).ConfigureAwait(false);
+        if (release is null)
+        {
+            _logger.LogWarning("Android update check returned no update because release metadata is unavailable; latest version could not be confirmed");
+            return null;
+        }
 
         // 版本比较:tag(versionName 形如 1.0 / 1.2.3,允许 v 前缀)按数值段比较,远端不高直接算无更新
         var local = CurrentVersion;
-        if (local is null || CompareVersions(release.Tag, local) <= 0) return null;
+        if (local is null)
+        {
+            _logger.LogWarning("Android update check returned no update because the installed version is unknown");
+            return null;
+        }
+        var comparison = CompareVersions(release.Tag, local);
+        _logger.LogInformation("Android update version comparison. CurrentVersion={CurrentVersion} RemoteVersion={RemoteVersion} Comparison={Comparison}",
+            local, release.Tag, comparison);
+        if (comparison <= 0) return null;
 
         // release 里没有可安装的 APK 资产 = 对安卓不可更新,视作无更新
         var apk = PickApkAsset(release);
-        if (apk is null) return null;
+        if (apk is null)
+        {
+            _logger.LogWarning("Android update check returned no update because the release has no APK. RemoteVersion={RemoteVersion} AssetCount={AssetCount}",
+                release.Tag, release.Assets.Count);
+            return null;
+        }
 
+        _logger.LogInformation("Android update APK selected. Version={Version} Asset={Asset} SizeBytes={SizeBytes}",
+            release.Tag, apk.Name, apk.SizeBytes);
         _pendingApk = apk;
         _pendingVersion = release.Tag;
         _downloadedApkPath = null;
@@ -98,6 +121,8 @@ public sealed class AndroidUpdateService : IAppUpdateService
         using var client = new HttpClient();
         using var resp = await client.GetAsync(apk.Url, HttpCompletionOption.ResponseHeadersRead)
             .ConfigureAwait(false);
+        _logger.LogInformation("Android update download response. Version={Version} StatusCode={StatusCode}",
+            _pendingVersion, (int)resp.StatusCode);
         resp.EnsureSuccessStatusCode();
 
         var total = apk.SizeBytes > 0 ? apk.SizeBytes : resp.Content.Headers.ContentLength ?? 0;
@@ -142,6 +167,7 @@ public sealed class AndroidUpdateService : IAppUpdateService
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O &&
             context.PackageManager!.CanRequestPackageInstalls() == false)
         {
+            _logger.LogInformation("Android update requires permission to install unknown applications. Version={Version}", _pendingVersion);
             var settings = new Intent(Settings.ActionManageUnknownAppSources,
                 AUri.Parse("package:" + context.PackageName));
             settings.AddFlags(ActivityFlags.NewTask);
@@ -155,6 +181,7 @@ public sealed class AndroidUpdateService : IAppUpdateService
         var intent = new Intent(Intent.ActionView);
         intent.SetDataAndType(uri, "application/vnd.android.package-archive");
         intent.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.NewTask);
+        _logger.LogInformation("Launching Android update installer. Version={Version}", _pendingVersion);
         context.StartActivity(intent);
     }
 

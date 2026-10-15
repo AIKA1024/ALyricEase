@@ -24,6 +24,11 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--logging")
+        {
+            LoggingProbe.Run();
+            return;
+        }
         if (args.Length > 0 && args[0] == "--song-download")
         {
             SongDownloadProbe.RunAsync().GetAwaiter().GetResult();

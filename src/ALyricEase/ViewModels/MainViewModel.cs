@@ -356,6 +356,9 @@ public sealed partial class MainViewModel : ViewModelBase
         if (value == "Recommend")
             _ = Recommend.EnsureLoadedAsync();
 
+        if (value == "Library")
+            _ = Playlist.EnsureLibraryOverviewAsync();
+
         if (value == "PersonalHome")
         {
             PersonalHome.RestoreScrollPosition();

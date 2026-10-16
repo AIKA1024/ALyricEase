@@ -8,24 +8,23 @@ using Visual = Avalonia.Visual;
 
 namespace ALyricEase.Views;
 
-/// <summary>「我的收藏」页:网易云里收藏的他人歌单列表。点击行进歌单详情,
+/// <summary>「我的收藏」页:两个平台收藏的歌单列表。点击行进歌单详情,
 /// 悬停浮现打开/更多(••• 弹 PlaylistContextMenu)。</summary>
 public partial class CollectedPlaylistsView : UserControl
 {
     public CollectedPlaylistsView()
     {
         InitializeComponent();
-        // 空态开关:集合为空时显示引导文案。DataContext 先于订阅就绪时立即算一次。
-        DataContextChanged += (_, _) =>
-        {
-            UpdateEmptyState();
-            if (DataContext is CollectedPlaylistsViewModel vm)
-                vm.Playlists.CollectionChanged += (_, _) => UpdateEmptyState();
-        };
-        UpdateEmptyState();
     }
 
-    private void UpdateEmptyState() => EmptyState.IsVisible = Rows.ItemCount == 0;
+    private void OnPlaylistKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Space)
+            || sender is not Button { DataContext: PlaylistItemViewModel item } button
+            || !ReferenceEquals(e.Source, button)) return;
+        e.Handled = true;
+        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(item);
+    }
 
     /// <summary>行/行内 ▶:▶ 播放歌单(共用 PlayerViewModel.PlayPlaylist);点击行其余区域进歌单详情。
     /// 行激活走 Tapped 手势层(TrackRow 同款):触屏长按弹菜单后手势层不发 Tapped,

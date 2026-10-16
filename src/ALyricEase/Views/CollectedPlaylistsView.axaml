@@ -19,10 +19,39 @@
     </Style>
     <Style Selector="TextBlock.page-title">
       <Setter Property="FontSize" Value="28" />
-      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style Selector="TextBlock.page-sub">
       <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem">
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="ListBox.platform-filter > ListBoxItem:selected">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.row-title">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.row-sub">
+      <Setter Property="FontSize" Value="12" />
       <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
     </Style>
     <!-- 歌单行:48px 瓦片 + 标题/曲数,悬停高亮浮现操作(与用户页窄屏行同款) -->
@@ -79,29 +108,59 @@
     <Style Selector="Button.user-row:pressed StackPanel.row-actions">
       <Setter Property="IsVisible" Value="True" />
     </Style>
+    <Style Selector="Button.user-row:focus-within StackPanel.row-actions">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector=".narrow StackPanel.row-actions">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector=".narrow Button.row-play">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
     <!-- ▶/••• 圆钮复用全局 row-action + RowButtonTheme(与歌曲行同一套) -->
   </UserControl.Styles>
 
   <ScrollViewer Classes="page-scroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Classes="page-root" Spacing="18">
+    <StackPanel Classes="page-root" Spacing="24">
       <StackPanel Orientation="Vertical" Spacing="4">
         <TextBlock Classes="page-title" Text="我的收藏" />
-        <TextBlock Classes="page-sub" Text="网易云里收藏的他人歌单；侧栏分组只显示你自己创建的歌单。" />
+        <TextBlock Classes="page-sub" Text="收藏的好音乐，都在这里。" />
       </StackPanel>
 
-      <!-- 空态:未收藏任何歌单 -->
-      <StackPanel Spacing="6" Margin="0,40,0,0" IsVisible="False"
-                  x:Name="EmptyState">
-        <TextBlock Text="还没有收藏的歌单" FontSize="16" FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextSecondary}" />
-        <TextBlock Text="在歌单的“更多”菜单里选择“收藏”，就会出现在这里。"
-                   FontSize="13" Foreground="{DynamicResource TextSecondary}" />
+      <StackPanel Spacing="12">
+        <ListBox x:Name="PlatformFilter" Classes="platform-filter"
+                 SelectedIndex="{Binding SourceIndex, Mode=TwoWay}"
+                 Background="Transparent" BorderThickness="0" Padding="0"
+                 SelectionMode="AlwaysSelected" AutomationProperties.Name="筛选收藏歌单的平台">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBoxItem Content="全部" />
+          <ListBoxItem Content="网易云音乐" />
+          <ListBoxItem Content="QQ 音乐" />
+        </ListBox>
+        <TextBlock Classes="page-sub" Text="{Binding CountSummary}" />
       </StackPanel>
+      <TextBlock Classes="page-sub" Text="{Binding LibraryStatus}" IsVisible="{Binding HasError}" />
 
+      <Border IsVisible="{Binding IsEmpty}" x:Name="EmptyState" Padding="24,32" CornerRadius="8"
+              Background="{DynamicResource UserSectionCardBackground}"
+              BorderBrush="{DynamicResource ListCardBorder}" BorderThickness="1">
+        <StackPanel Spacing="8">
+          <TextBlock Text="{Binding EmptyTitle}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Classes="page-sub" Text="{Binding EmptyDescription}" />
+        </StackPanel>
+      </Border>
+
+      <Border IsVisible="{Binding !IsEmpty}" CornerRadius="8" Padding="4"
+              Background="{DynamicResource UserSectionCardBackground}"
+              BorderBrush="{DynamicResource ListCardBorder}" BorderThickness="1">
       <ItemsControl x:Name="Rows" ItemsSource="{Binding Playlists}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-            <Button Classes="user-row" Tapped="OnPlaylistRowTapped" ContextRequested="OnPlaylistContextRequested">
+            <Button Classes="user-row" Tapped="OnPlaylistRowTapped" KeyDown="OnPlaylistKeyDown"
+                    ContextRequested="OnPlaylistContextRequested"
+                    AutomationProperties.Name="{Binding Name, StringFormat='打开歌单 {0}'}" ToolTip.Tip="{Binding Name}">
               <Panel>
                   <Border Classes="user-row-hover" />
                   <Border Classes="user-row-pressed" />
@@ -114,16 +173,22 @@
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
                   <TextBlock Classes="row-title" Text="{Binding Name}" />
-                  <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Classes="row-sub" Text="{Binding SourceLabel}" />
+                    <TextBlock Classes="row-sub" Text="·" />
+                    <TextBlock Classes="row-sub" Text="{Binding TrackCountText}" />
+                  </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Classes="row-actions">
-                  <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
-                          Click="OnRowPlayClick" ToolTip.Tip="播放歌单">
+                  <Button Classes="row-action row-play" Theme="{StaticResource RowButtonTheme}"
+                          Click="OnRowPlayClick" ToolTip.Tip="播放歌单"
+                          AutomationProperties.Name="{Binding Name, StringFormat='播放 {0}'}">
                     <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
                                FontFamily="{DynamicResource LyricEaseIconsFilled}" />
                   </Button>
                   <Button Classes="row-action" Theme="{StaticResource RowButtonTheme}"
-                          Click="OnRowMoreClick" ToolTip.Tip="更多操作">
+                          Click="OnRowMoreClick" ToolTip.Tip="更多操作"
+                          AutomationProperties.Name="{Binding Name, StringFormat='{}{0}的更多操作'}">
                     <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
                                FontFamily="{DynamicResource LyricEaseIcons}" />
                   </Button>
@@ -134,6 +199,7 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
+      </Border>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

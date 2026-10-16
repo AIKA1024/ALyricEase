@@ -64,6 +64,18 @@ public static class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--qq-native-credential")
+        {
+            Environment.ExitCode = QqNativeCredentialProbe.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--qq-native-refresh")
+        {
+            Environment.ExitCode = QqNativeRefreshProbe.RunAsync().GetAwaiter().GetResult();
+            return;
+        }
+
         if (args.Length > 0 && args[0] is "--submenu-animation" or "--submenu-animation-desktop"
             or "--submenu-hover" or "--submenu-hover-desktop")
         {

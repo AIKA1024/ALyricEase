@@ -25,7 +25,18 @@ public sealed record QQMusicQrCredential(
     string MusicKey,
     int LoginType,
     string Nickname,
-    string AvatarUrl);
+    string AvatarUrl)
+{
+    public string OpenId { get; init; } = "";
+    public string AccessToken { get; init; } = "";
+    public string RefreshToken { get; init; } = "";
+    public string RefreshKey { get; init; } = "";
+    public string UnionId { get; init; } = "";
+    public string EncryptUin { get; init; } = "";
+    public long ExpiredAt { get; init; }
+    public long MusicKeyCreateTime { get; init; }
+    public long KeyExpiresIn { get; init; }
+}
 
 public enum QQMusicPhoneCodeStage
 {
@@ -245,6 +256,32 @@ internal sealed class QQMusicQrLoginService : IDisposable
         }
     }
 
+    /// <summary>复用原生设备身份续签；refresh_token 等未返回的可选字段按空值发送。</summary>
+    public async Task<JsonElement> RefreshStoredCredentialAsync(QQMusicQrCredential credential, CancellationToken ct)
+    {
+        if (credential.RefreshKey.Length == 0)
+            throw new ApiException("QQ 音乐原生登录凭证已过期，缺少刷新凭据，请重新登录", 104401);
+        await PrepareAndroidSessionAsync(ct).ConfigureAwait(false);
+        return await CallMusicuAsync("music.login.LoginServer", "Login", w =>
+        {
+            w.WriteString("openid", credential.OpenId);
+            w.WriteString("access_token", credential.AccessToken);
+            w.WriteString("refresh_token", credential.RefreshToken);
+            w.WriteNumber("expired_in", credential.ExpiredAt);
+            if (long.TryParse(credential.MusicId, out var id)) w.WriteNumber("musicid", id);
+            else w.WriteString("musicid", credential.MusicId);
+            if (credential.LoginType != 2)
+            {
+                w.WriteString("str_musicid", credential.MusicId);
+                w.WriteString("unionid", credential.UnionId);
+            }
+            w.WriteString("musickey", credential.MusicKey);
+            w.WriteString("refresh_key", credential.RefreshKey);
+            w.WriteNumber("loginMode", 2);
+        }, new Credential(credential.MusicId, credential.MusicKey, credential.LoginType, default),
+            null, ct).ConfigureAwait(false);
+    }
+
     private async Task EnsureQimeiAsync(CancellationToken ct)
     {
         if (_device.Qimei is { Length: > 0 } && _device.Qimei36 is { Length: > 0 } &&
@@ -418,7 +455,19 @@ internal sealed class QQMusicQrLoginService : IDisposable
         var avatar = FirstNonEmpty(GetString(info, "logo"), GetString(data, "avatarUrl"),
             GetString(credential.Raw, "logo"), GetString(credential.Raw, "avatarUrl"));
         return new QQMusicQrCredential(credential.MusicId, credential.MusicKey,
-            credential.LoginType, nickname, avatar);
+            credential.LoginType, nickname, avatar)
+        {
+            // 刷新信息来自 Login 的原始响应，资料校验响应不能替代它。
+            OpenId = GetString(credential.Raw, "openid"),
+            AccessToken = GetString(credential.Raw, "access_token"),
+            RefreshToken = GetString(credential.Raw, "refresh_token"),
+            RefreshKey = GetString(credential.Raw, "refresh_key"),
+            UnionId = GetString(credential.Raw, "unionid"),
+            EncryptUin = GetString(credential.Raw, "encryptUin"),
+            ExpiredAt = GetLong(credential.Raw, "expired_at") ?? 0,
+            MusicKeyCreateTime = GetLong(credential.Raw, "musickeyCreateTime") ?? 0,
+            KeyExpiresIn = GetLong(credential.Raw, "keyExpiresIn") ?? 0,
+        };
     }
 
     private async Task<JsonElement> CallMusicuAsync(
@@ -684,6 +733,14 @@ internal sealed class QQMusicQrLoginService : IDisposable
         var value = GetProperty(element, name);
         if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
         return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out number) ? number : null;
+    }
+    private static long? GetLong(JsonElement element, string name)
+    {
+        var value = GetProperty(element, name);
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number)) return number;
+        return value.ValueKind == JsonValueKind.String &&
+               long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
+            ? number : null;
     }
     private static JsonElement ParseObjectValue(JsonElement element)
     {

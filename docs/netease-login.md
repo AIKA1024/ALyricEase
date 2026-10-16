@@ -76,3 +76,41 @@ fee 只决定"为什么不可播"的提示文案(VIP 锁/需购买),不参与可
 对 ALyricEase 的意义:歌单/详情页想提前灰掉不可播的歌(像网页版那样),
 用 privilege 的 pl>0 一步判定即可,不必逐首试探 play-url;
 需要区分"灰色"与"VIP 锁"时看 st<0 vs fee=1。
+
+## 5. QQ 原生登录凭据保存与续签（2026-10-16）
+
+扫码与手机号验证码登录共用 `QQMusicApiClient.ApplyNativeCredential` 保存路径。
+`QQMusicQrLoginService` 在资料校验后继续传递 **Login 原始响应**里的
+`openid`、`access_token`、`refresh_token`、`refresh_key`、`unionid`、`encryptUin`，
+以及 `expired_at`、`musickeyCreateTime`、`keyExpiresIn`；数字与字符串时间值都支持。
+不能只保存 musicid/musickey，也不能拿 GetLoginUserInfo 的资料响应替代原始凭据。
+
+以上字段保存在已有 `CookieStore.QQCookieRaw` 中：刷新字段沿用 `psrf_*` 键，
+musickey 寿命使用项目元数据键 `alyric_qq_key_expires_in`（秒），加密账号标识使用 `euin`。
+凭据刷新成功后也更新创建时间和寿命；重启读取凭据快照时恢复这些字段。
+服务端未返回的可选信息不伪造、不串用上一账号的值；原生 MQTT token 兜底及旧 Cookie 仍兼容。
+旧版保存时已丢失的字段无法事后恢复，需重新扫码或验证码登录才能保存新响应中的信息。
+
+### 原生续签
+
+- 验证码凭据实测有 `openid` / `access_token` / `refresh_key`，没有 `refresh_token`。
+  原生通道以 `refresh_key` 为刷新前提；其余可选字段缺失时发送空值，不能沿用网页 OAuth 的强制门槛。
+- 扫码与验证码通过 `alyric_native_login=qr/phone` 标记来源；兼容旧扫码 `tmeLoginType=6`。
+  两者都经 `QQMusicQrLoginService.RefreshStoredCredentialAsync`，复用持久设备、QIMEI 与 Android 会话，
+  调用 `music.login.LoginServer/Login`（`loginMode=2`，保留各自 `tmeLoginType`）。
+  网页 Cookie 保持原 Web comm/OAuth 路径，不能只凭 `loginType=2` 就认为是原生登录。
+- 原生凭据在到期前最多 6 小时进入提前刷新窗口（短寿命最多提前四分之一），
+  由启动恢复或正常 QQ 业务请求的 `EnsureCredentialValidAsync` 按需触发；不创建后台定时器，应用关闭时不运行。
+  刷新后保存新 key、刷新字段、创建时间和寿命，并验证新 key；新 key 缺少时间字段时不借用旧 key 的有效期。
+- 并发刷新共用 `_credentialGate`。提前刷新失败时，刚通过服务端校验的旧 key 继续使用，至少等 5 分钟再试。
+  已失效凭据的失败重试仍限制为一次；原生成功换得新 key 后可开始新的续签周期。
+  续签期间登出/换号的响应不能写回当前账号。
+
+协议参考（只参考行为，C# 实现）：
+[L-1124 刷新参数](https://github.com/L-1124/QQMusicApi/blob/HEAD/qqmusic_api/modules/login.py#L121)、
+[原生设备通道](https://github.com/yakult-green-tea/qq-music-api/blob/HEAD/src/services/auth/authenticatedReads.ts#L133)、
+[提前刷新及重试](https://github.com/yakult-green-tea/qq-music-api/blob/HEAD/src/services/auth/sessionState.ts#L243)。
+
+回归线 `--qq-native-credential`（模拟响应、保存、重启恢复、刷新轮换、缺字段及旧格式兼容），不触网、不打印凭据值。
+续签回归线 `--qq-native-refresh`（无 refresh_token、Android/Web 通道区分、提前刷新、失败退避、轮换、并发、换号和取消）。
+续签的触发、结果和重试计划通过现有 Serilog 文件日志记录，字段与排查入口见 [logging.md](logging.md)。

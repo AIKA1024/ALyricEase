@@ -6,6 +6,14 @@ Windows 日志位于 `%LOCALAPPDATA%\ALyricEase.Data\Logs`，可在「设置 →
 
 目前覆盖启动/退出、播放请求与播放器错误、登录恢复、部分登录失败、歌曲下载、应用更新，以及 UI/进程未处理异常和未观察的任务异常。异常兜底只记录，不吞掉异常或改变原有终止行为。强杀、断电、原生崩溃无法保证最后一条日志；`UnobservedTaskException` 也不保证及时触发，重要后台任务仍需主动捕获。
 
+QQ 登录和续签由 `ILogger<QQMusicApiClient>` 接入同一个 Serilog 文件：记录原生登录方式、刷新字段是否存在、
+key 创建时间/寿命、验证结果、提前续签计划、续签触发原因（`approaching-expiry` / `expired` / `manual`）、
+刷新响应应用与新 key 校验确认、耗时、失败错误码/异常类型、保留旧凭据后的下次重试时间，以及取消/换号丢弃响应。
+从 `QQ credential refresh started` 查同一 PID 的后续记录；`response applied` 表示已应用响应，
+`refresh confirmed` 才表示新 key 已通过校验。验证缓存命中不写日志，不记录每个业务请求。
+这些日志只传显式标量，不包含账号 ID、Cookie、token、refresh_key 值、请求/响应正文，也不传可能包含敏感 URL 的网络异常文本。
+回归 `--qq-native-refresh` 使用临时目录的真实 Serilog File sink 验证事件覆盖与敏感信息缺席，不连接用户账号。
+
 更新诊断包括：本地/远端版本、检查/下载/应用结果；Windows 将 Velopack 的 Information 及以上日志接入同一文件（包括版本比较、增量回退），并记录 GitHub 发布列表数量、更新通道、完整包数量、最高版本、缺失索引和请求耗时/异常。Android 记录版本比较、无版本信息/无 APK 的返回原因及安装授权/安装器启动。共用 GitHub 元数据请求记录 HTTP 状态码、解析失败和超时，不记录响应正文或更新说明。不逐次记录下载进度。
 
 排查“明明有更新却提示最新”时，从 `Checking for application updates` 开始查看同一 PID 的记录。`Velopack returned no update` 只说明库返回了空结果；结合 `Update feed received` 的 `FullCount`、`LatestVersion` 和 Velopack 的版本比较日志判断原因。`GitHub release asset unavailable` 表示发布缺少所需索引或资产；请求异常需查看异常类型和堆栈。本次仅补诊断，不改变原有检查结果和界面文案。

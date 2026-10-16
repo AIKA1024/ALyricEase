@@ -57,7 +57,8 @@ internal static class DetailPageLifetimeProbe
             .ToList();
 
         await VerifyArtistAsync(cache, tracks, albums);
-        await VerifyAlbumAsync(cache, tracks.Take(48).ToList());
+        await VerifyAlbumAsync(cache, tracks.Take(48).ToList(), MusicSource.NetEase);
+        await VerifyAlbumAsync(cache, tracks.Take(48).ToList(), MusicSource.QQ);
         await VerifyArtistAlbumsAsync(cache, albums);
         await VerifyArtistSongsAsync(cache, tracks);
     }
@@ -90,11 +91,19 @@ internal static class DetailPageLifetimeProbe
 
     private static async Task VerifyAlbumAsync(
         MusicCacheService cache,
-        IReadOnlyList<NavigationPageCacheTrack> tracks)
+        IReadOnlyList<NavigationPageCacheTrack> tracks,
+        MusicSource source)
     {
         var vm = ServiceLocator.Get<AlbumViewModel>();
         vm.ReleaseCurrentPageData();
         var snapshot = NewSnapshot(DetailPageKind.Album, scroll: 360, id: 9201, name: "专辑生命周期");
+        var artists = new[]
+        {
+            new NavigationPageCacheArtist(source, source == MusicSource.NetEase ? 9101 : 0,
+                source == MusicSource.QQ ? "singer-first" : "", "测试歌手"),
+            new NavigationPageCacheArtist(source, source == MusicSource.NetEase ? 9102 : 0,
+                source == MusicSource.QQ ? "singer-second" : "", "第二位歌手"),
+        };
         await cache.CacheDetailPageSnapshotAsync(
             snapshot.CacheKey,
             new DetailPageCacheData(
@@ -106,15 +115,20 @@ internal static class DetailPageLifetimeProbe
                 TrackCountText: $"{tracks.Count} 首",
                 Description: "生命周期测试",
                 CoverUrl: "https://invalid/album.jpg",
-                PrimaryArtist: new NavigationPageCacheArtist(MusicSource.NetEase, 9101, "", "测试歌手")));
+                PrimaryArtist: artists[0], Artists: artists));
         await vm.RestoreNavigationSnapshotAsync(snapshot);
         Assert(vm.RetainedTrackCount == tracks.Count, "专辑页快照恢复数量错误");
         var weak = CaptureAlbumAndRelease(vm, out var captured);
         Assert(vm.RetainedTrackCount == 0 && !vm.HasRetainedPageData, "专辑页离页后仍保留曲目");
+        Assert(vm.Artists.Count == 0 && !vm.HasArtist, "专辑页离页后仍保留表演者");
         AssertCollected(weak, "专辑页歌曲行");
         await vm.RestoreNavigationSnapshotAsync(captured);
         Assert(vm.RetainedTrackCount == tracks.Count && vm.PrimaryArtist is not null,
             "专辑页返回恢复失败");
+        Assert(vm.HasMultipleArtists && vm.Artists.Count == 2 &&
+               vm.Artists[1].Id == artists[1].NetEaseId && vm.Artists[1].Mid == artists[1].QqMid &&
+               vm.Artists[1].Name == artists[1].Name && vm.Artists[1].HasTarget,
+            $"{source} 专辑页返回后丢失第二位表演者的导航目标");
         vm.ReleaseCurrentPageData();
     }
 

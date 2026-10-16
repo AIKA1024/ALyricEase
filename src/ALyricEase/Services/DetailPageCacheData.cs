@@ -19,7 +19,8 @@ internal sealed record DetailPageCacheData(
     int Offset = 0,
     int Total = -1,
     bool HasMore = false,
-    UserProfilePageCacheData? UserProfile = null);
+    UserProfilePageCacheData? UserProfile = null,
+    IReadOnlyList<NavigationPageCacheArtist>? Artists = null);
 
 internal sealed record UserProfilePageCacheData(
     string Nickname, string AvatarUrl, string Signature, int Level, int Follows, int Followeds,

@@ -50,13 +50,19 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasArtist))]
-    private ArtistNavItem? _primaryArtist;
+    [NotifyPropertyChangedFor(nameof(HasMultipleArtists))]
+    [NotifyPropertyChangedFor(nameof(PrimaryArtist))]
+    private IReadOnlyList<ArtistNavItem> _artists = [];
 
     [ObservableProperty] private string _coverUrl = "";
 
     public bool HasDescription => !string.IsNullOrEmpty(Description);
 
     public bool HasArtist => PrimaryArtist is not null;
+
+    public bool HasMultipleArtists => Artists.Count > 1;
+
+    public ArtistNavItem? PrimaryArtist => Artists.FirstOrDefault(artist => artist.HasTarget);
 
     /// <summary>发行日期(如 2026-08-13);未知为空。</summary>
     public string PublishDateText => PublishTimeMs > 0
@@ -82,10 +88,7 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
                 .Where(artist => !string.IsNullOrWhiteSpace(artist.Name))
                 .ToList() ?? [];
             ArtistName = string.Join("/", artists.Select(artist => artist.Name));
-            var primaryArtist = artists.FirstOrDefault(artist => artist.Id != 0);
-            PrimaryArtist = primaryArtist is null
-                ? null
-                : new ArtistNavItem(primaryArtist.Id, primaryArtist.Name);
+            Artists = artists.Select(artist => new ArtistNavItem(artist.Id, artist.Name)).ToList();
             TrackCountText = $"{album.Songs.Count} 首";
             PublishTimeMs = album.Info.PublishTime;
             Description = album.Info.Description ?? "";
@@ -118,11 +121,11 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
             await firstPlayable.PlayCommand.ExecuteAsync(null);
     }
 
-    /// <summary>点击专辑头部歌手名，按音源进入主歌手详情页。</summary>
+    /// <summary>单歌手直接进入详情；多歌手由视图弹出选择菜单。</summary>
     [RelayCommand]
     private async Task OpenArtistAsync()
     {
-        if (PrimaryArtist is not null)
+        if (!HasMultipleArtists && PrimaryArtist is not null)
             await PrimaryArtist.OpenCommand.ExecuteAsync(null);
     }
 
@@ -146,12 +149,12 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
             Name = info.Name;
             var leadSong = songs.FirstOrDefault();
             ArtistName = leadSong?.Artist ?? "";
-            var primaryArtist = leadSong?.ArtistMids
+            Artists = leadSong?.ArtistMids
                 .Zip(leadSong.ArtistNames, (mid, name) => (Mid: mid, Name: name))
-                .FirstOrDefault(artist => !string.IsNullOrWhiteSpace(artist.Mid));
-            PrimaryArtist = string.IsNullOrWhiteSpace(primaryArtist?.Mid)
-                ? null
-                : new ArtistNavItem(0, primaryArtist.Value.Name, primaryArtist.Value.Mid);
+                .Where(artist => !string.IsNullOrWhiteSpace(artist.Name))
+                .Select(artist => new ArtistNavItem(0, artist.Name,
+                    string.IsNullOrWhiteSpace(artist.Mid) ? "" : artist.Mid))
+                .ToList() ?? [];
             TrackCountText = $"{songs.Count} 首";
             PublishTimeMs = DateTimeOffset.TryParse(info.PublishDate, CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var d) ? d.ToUnixTimeMilliseconds() : 0;
@@ -220,7 +223,10 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
                     PublishTimeMs: PublishTimeMs,
                     Description: Description,
                     CoverUrl: CoverUrl,
-                    PrimaryArtist: primaryArtist));
+                    PrimaryArtist: primaryArtist,
+                    Artists: Artists.Select(artist => new NavigationPageCacheArtist(
+                        artist.IsQq ? MusicSource.QQ : MusicSource.NetEase,
+                        artist.Id, artist.Mid, artist.Name)).ToList()));
         }
 
         ReleaseCurrentPageData();
@@ -264,12 +270,9 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
         PublishTimeMs = cached.PublishTimeMs;
         Description = cached.Description;
         CoverUrl = cached.CoverUrl;
-        PrimaryArtist = cached.PrimaryArtist is null
-            ? null
-            : new ArtistNavItem(
-                cached.PrimaryArtist.NetEaseId,
-                cached.PrimaryArtist.Name,
-                cached.PrimaryArtist.QqMid);
+        var cachedArtists = cached.Artists ?? (cached.PrimaryArtist is { } primary ? [primary] : []);
+        Artists = cachedArtists.Select(artist => new ArtistNavItem(
+            artist.NetEaseId, artist.Name, artist.QqMid)).ToList();
         var queue = cached.Tracks.Where(track => track.IsQueued).Select(track => track.Song).ToList();
         var index = 1;
         foreach (var track in cached.Tracks)
@@ -342,7 +345,7 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
         TrackCountText = "";
         PublishTimeMs = 0;
         Description = "";
-        PrimaryArtist = null;
+        Artists = [];
         CoverUrl = "";
         Songs.Clear();
     }

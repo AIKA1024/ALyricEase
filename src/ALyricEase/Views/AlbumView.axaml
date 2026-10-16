@@ -125,11 +125,25 @@
                 <TextBlock Text="{Binding Name}" FontSize="24" FontWeight="SemiBold"
                            TextTrimming="CharacterEllipsis" MaxLines="1" />
                 <Button x:Name="HeroHorizontalArtistButton" Classes="artist-link"
+                        Click="OnArtistButtonClick"
                         Command="{Binding OpenArtistCommand}" IsEnabled="{Binding HasArtist}"
                         HorizontalAlignment="Left" Margin="-4,4,-4,0"
                         AutomationProperties.Name="{Binding ArtistName}">
                   <TextBlock Text="{Binding ArtistName}" FontSize="20"
                              TextTrimming="CharacterEllipsis" MaxLines="1" />
+                  <Button.Resources>
+                    <MenuFlyout x:Key="ArtistMenuFlyout" ItemsSource="{Binding Artists}"
+                                ShowMode="Transient" FlyoutPresenterClasses="track-menu-presenter">
+                      <MenuFlyout.ItemContainerTheme>
+                        <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
+                                      BasedOn="{StaticResource {x:Type MenuItem}}">
+                          <Setter Property="Header" Value="{Binding Name}" />
+                          <Setter Property="Command" Value="{Binding OpenCommand}" />
+                          <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
+                        </ControlTheme>
+                      </MenuFlyout.ItemContainerTheme>
+                    </MenuFlyout>
+                  </Button.Resources>
                 </Button>
                 <TextBlock Text="{Binding PublishDateText}" FontSize="16" FontWeight="Medium"
                            Foreground="{DynamicResource TextSecondary}" />
@@ -168,11 +182,25 @@
                          TextAlignment="Center" TextWrapping="Wrap"
                          TextTrimming="CharacterEllipsis" MaxLines="2" />
               <Button x:Name="HeroVerticalArtistButton" Classes="artist-link"
+                      Click="OnArtistButtonClick"
                       Command="{Binding OpenArtistCommand}" IsEnabled="{Binding HasArtist}"
                       HorizontalAlignment="Center"
                       AutomationProperties.Name="{Binding ArtistName}">
                 <TextBlock Text="{Binding ArtistName}" FontSize="18" TextAlignment="Center"
                            TextTrimming="CharacterEllipsis" MaxLines="1" />
+                <Button.Resources>
+                  <MenuFlyout x:Key="ArtistMenuFlyout" ItemsSource="{Binding Artists}"
+                              ShowMode="Transient" FlyoutPresenterClasses="track-menu-presenter">
+                    <MenuFlyout.ItemContainerTheme>
+                      <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
+                                    BasedOn="{StaticResource {x:Type MenuItem}}">
+                        <Setter Property="Header" Value="{Binding Name}" />
+                        <Setter Property="Command" Value="{Binding OpenCommand}" />
+                        <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
+                      </ControlTheme>
+                    </MenuFlyout.ItemContainerTheme>
+                  </MenuFlyout>
+                </Button.Resources>
               </Button>
               <TextBlock Text="{Binding PublishDateText}" FontSize="14" FontWeight="Medium"
                          Foreground="{DynamicResource TextSecondary}" HorizontalAlignment="Center" />

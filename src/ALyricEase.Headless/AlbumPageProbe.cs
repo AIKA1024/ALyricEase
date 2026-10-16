@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -13,6 +14,7 @@ using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
+using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.Headless;
 
@@ -24,7 +26,7 @@ internal static class AlbumPageProbe
         var vm = ServiceLocator.Get<AlbumViewModel>();
         vm.Name = "一张名字很长很长、需要在小屏完整展示更多内容的测试专辑";
         vm.ArtistName = "测试歌手与另一位测试歌手";
-        vm.PrimaryArtist = new ArtistNavItem(1, "测试歌手");
+        vm.Artists = [new ArtistNavItem(1, "测试歌手")];
         vm.PublishTimeMs = DateTimeOffset.Now.ToUnixTimeMilliseconds();
         vm.Songs.Add(new SongItemViewModel(
             new Song
@@ -42,6 +44,7 @@ internal static class AlbumPageProbe
             index: 1));
 
         var failed = false;
+        foreach (var qq in new[] { false, true })
         foreach (var (width, expectNarrow) in new[] { (400, true), (700, false), (1000, false) })
         {
             // 模拟真实加载顺序：视图先绑定空描述，再在请求完成后写入描述。
@@ -136,10 +139,59 @@ internal static class AlbumPageProbe
                 bitmap.Save(path, PngBitmapEncoderOptions.Default);
             }
             Console.WriteLine($"[albumpage:{width}] 截图: {path}");
+            var artistSelectionOk = VerifyArtistSelection(window, artistButton, vm, qq);
+            Console.WriteLine($"[albumpage:{width}] qq={qq} artistSelectionOk={artistSelectionOk}");
+            if (!artistSelectionOk) failed = true;
             window.Close();
         }
 
         return failed ? 1 : 0;
+    }
+
+    private static bool VerifyArtistSelection(Window window, Button button, AlbumViewModel vm, bool qq)
+    {
+        var command = button.Command;
+        var directOpens = 0;
+        button.Command = new RelayCommand(() => directOpens++);
+        var flyout = (MenuFlyout)button.Resources["ArtistMenuFlyout"]!;
+        var ok = true;
+        vm.Artists = qq
+            ? [new ArtistNavItem(0, "第一位", "first-mid"), new ArtistNavItem(0, "第二位", "second-mid"), new ArtistNavItem(0, "无目标")]
+            : [new ArtistNavItem(1, "第一位"), new ArtistNavItem(2, "第二位"), new ArtistNavItem(0, "无目标")];
+        Drain();
+        var center = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(center, MouseButton.Left);
+        window.MouseUp(center, MouseButton.Left);
+        Drain();
+        window.UpdateLayout();
+        var items = window.GetVisualDescendants().OfType<MenuItem>()
+            .Where(item => item.DataContext is ArtistNavItem artist && vm.Artists.Contains(artist)).ToArray();
+        ok &= flyout.IsOpen && directOpens == 0 && items.Length == 3 &&
+              Equals(items[1].Header, "第二位") &&
+              ReferenceEquals(items[1].Command, vm.Artists[1].OpenCommand) &&
+              items[1].IsEnabled && !items[2].IsEnabled;
+        flyout.Hide();
+        Drain();
+        button.Focus();
+        window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        window.KeyRelease(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        Drain();
+        ok &= flyout.IsOpen && directOpens == 0;
+        flyout.Hide();
+        Drain();
+        vm.Artists = [new ArtistNavItem(1, "测试歌手")];
+        Drain();
+        button.Focus();
+        window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        window.KeyRelease(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        Drain();
+        ok &= !flyout.IsOpen && directOpens == 1;
+        vm.Artists = [];
+        Drain();
+        ok &= !button.IsEnabled;
+        vm.Artists = [new ArtistNavItem(1, "测试歌手")];
+        button.Command = command;
+        return ok;
     }
 
     private static bool IsInside(Control child, Border card)

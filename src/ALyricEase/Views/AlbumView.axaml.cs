@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 
@@ -14,6 +15,15 @@ public partial class AlbumView : UserControl
         _scrollController = new DetailPageScrollController(this, PageScroller);
         SizeChanged += (_, e) => ResponsiveClasses.ApplyByWindow(this);
         AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
+    }
+
+    private void OnArtistButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button ||
+            button.DataContext is not AlbumViewModel { HasMultipleArtists: true }) return;
+        if (button.Resources["ArtistMenuFlyout"] is not MenuFlyout flyout) return;
+        flyout.ShowAt(button);
+        e.Handled = true;
     }
 
     /// <summary>容器 realized 时加载红心状态；封面由 Image 按可见性加载。</summary>

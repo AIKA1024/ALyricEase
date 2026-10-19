@@ -1723,3 +1723,121 @@ OnDetachedFromVisualTree 清理(虚拟化回收防残留按下态带进复用行
 样式(row-ops、row-heart、时长隐藏、标题 ColumnSpan)各加一条 `:pressed` 版本锁存,紧跟对应
 `:pointerover` 之后、末尾触屏 `.touch` 覆盖之前。一处覆盖全部 ControlTheme 变体
 (Search/PlaylistWide/Album)。⚠ `VisualTreeAttachmentEventArgs` 在 Avalonia 根命名空间。
+
+## ComboBox 下拉层:模板里写死的值,外面用 Style 压不过(2026-10-19)
+
+**现象**:项目里的 ComboBox 和 WinUI 3 Gallery 差得远 —— 弹出层的条目贴着左右边缘、
+弹出位置永远贴在控件下沿(而不是"选中项盖住控件")、打开时没有任何展开动画。
+
+**根因一(边距全死)**:Fluent 模板里的
+
+```xml
+<Border x:Name="PopupBorder" Padding="{DynamicResource ComboBoxDropdownBorderPadding}">
+  <ScrollViewer><ItemsPresenter Margin="{DynamicResource ComboBoxDropdownContentMargin}" /></ScrollViewer>
+</Border>
+```
+
+这两个值以 **Template 优先级**落在模板元素上,`ControlTheme` 里的
+`<Style Selector="^ /template/ Border#PopupBorder"><Setter Property="Padding" .../>` 是
+**Style 优先级**,压不过 ⇒ 之前写的 `Padding="4"`、`Margin="0"` 全是死码
+(实际生效的是 `ComboBoxDropdownBorderPadding=0`、`ComboBoxDropdownContentMargin=0,4`)。
+同一道理也解释了 App.axaml 里 MenuFlyout 那几条"改资源而不是改样式"的备注。
+**要改弹出层结构就只能整份替换 ControlTemplate**,别再指望 `/template/` 选择器。
+
+**根因二(位置)**:Avalonia 的 Popup 默认 `Placement=Bottom`,窗口固定在控件下沿。
+WinUI 的行为是"**选中项正好盖在控件上**":弹层整体上下平移
+`Δ = 选中项中心 - 控件中心`。WinUI 短列表里看到的"上下各露几项"就是这条规则的自然结果。
+
+**实现**(`Controls/PickerPopupReveal.cs` + `Controls/RevealBorder.cs`,模板里
+`PART_Popup` 挂 `controls:PickerPopupReveal.Enabled="True"`,全项目 ComboBox 经
+`Styles/Controls/FluentComboBox.axaml` 底部的全局 Style 自动套用):
+
+1. **平移量用屏幕坐标实测**(`PointToScreen` 差值 ÷ `RenderScaling`),不手算阴影预留边距:
+   Windows 下弹层是真窗口,`Popup.Child` 的 `Margin` 会进宿主矩形,手算必错。
+   横向也做一次同样的修正(实测为 0,说明定位器已经把 content 矩形对齐了)。
+2. **展开原点之前的定位要在首帧前完成**:`OnOpened` 里先 `_surface.UpdateLayout()` 同步
+   排一次版再量。靠 `Dispatcher.UIThread.Post(..., DispatcherPriority.Render)` 在
+   "整层被剪成不可见"时会拖到 ~250ms 才有响应;靠 `LayoutUpdated` 在**第二次打开**
+   时根本不触发(尺寸没变、没有布局脏标记)。
+3. **计时从第一帧开始**:首次打开要建弹层窗口(实测 `Opened` 在 120~140ms 后才到),
+   若在 `OnOpened` 就 `Restart` 秒表,露面时动画已走完一半,看起来"没有动画"。
+4. **展开用裁剪而不是缩放**:`RevealBorder` 以选中项中心为锚,上下两条边同时向外推
+   (`Clip` + `RectangleGeometry`),文字不会被压扁 —— WinUI 的 SplitOpenThemeAnimation 同理。
+   `RevealProgress=1` 时把 `Clip` 清成 `null`。
+5. **阴影单独一层**:`BoxShadow` 画在 Border 边界外,弹层窗口会裁掉 ⇒ 弹层内容外面包
+   `Margin="24"` 的空位,阴影 Border 与内容 Border 同尺寸叠放。阴影 `Opacity` 延迟
+   200ms 再 220ms 淡入(揭示 200ms),和 WinUI"展开完阴影才出现"一致(比原版稍快一档,用户要求)。
+6. **长列表要先把选中项滚进可用区间**:`ScrollIntoView` 在首次布局里可能还没生效,
+   直接把 900px 处的选中项对到控件会把弹层顶到屏幕外。把选中项在视口里的目标位置限制在
+   `[max(comboTop + H - screenBottom, 0), min(comboTop - screenTop, H - itemHeight)]`
+   (上界同时要求 item 自己完整可见),滚到位再对位;Extent 没量全时允许几轮。
+7. **逐帧驱动必须"帧泵 + RAF"，不能用 DispatcherTimer**:展开动画最初用
+   `DispatcherTimer(15ms, Render)` 推进,实测帧间隔 p95 ≈ 92~103ms(大量帧被拖到 ~90ms),
+   用户直接反馈"相当卡"。根因就是项目已知的「UI 线程静息长睡 ~79ms、WM_TIMER 唤不醒」
+   (见 `Infrastructure/UiFramePacer.cs` 上的排除记录)。改成:动画期间
+   `UiFramePacer.Acquire()` 持租约 + `TopLevel.RequestAnimationFrame` 自行续订,
+   同一台 165Hz 屏上帧间隔变成 p50 6.0ms / p95 6.6ms(96% 的帧 ≤18ms),收尾归还租约
+   (`Describe()` 里持有者回到 0)。⚠ 别用"改大定时器频率"绕:15ms 与 16.7ms 帧预算互相拍频,
+   反而一半帧里写两次、一半帧里一次不写。
+8. **能不能做成纯合成动画**:不能。Avalonia 12 的 `CompositionVisual` 只有
+   `Opacity/Scale/CenterPoint/Offset/Translation/Size/Visible` 等是 `Animated` 的,
+   `Clip` 在 `composition-schema.xml` 里明确**不可动画**。想走纯合成只能换成 `ScaleY`,
+   但那样文字会被压扁,和 WinUI 的 SplitOpen(裁剪揭示)不是一回事 —— 所以保留 clip,
+   只把"驱动"换成渲染帧。实测这套在 165Hz 上已经稳定吃到每一帧。
+9. **控件贴着屏幕下沿时要"缩高度"而不是"上移"**:选中项在列表顶部时,滚动帮不了忙
+   (offset 已经在 0),只靠 Slide 约束会把整层往上推、选中项被推到控件之外(实测偏 200px)。
+   先把 `MaxHeight` 压到 `screenBottom - (comboTop - itemTop)`,顶边就能留在控件位置,
+   相当于 WinUI 的 Resize 约束;可用高度不足两项时不缩,交给 Slide。
+
+**回归**:`ALyricEase.Headless --combobox`(真窗口 + BitBlt 抓屏)。
+期望值:选中项屏幕 Y 与 ComboBox 差 <1px;`t=0` 时 `RevealProgress=0`;
+阴影在 `reveal=1` 之前恒为 0。环境变量 `ALY_CB_COUNT` / `ALY_CB_SELECTED` /
+`ALY_CB_LIGHT` / `ALY_CB_CYCLES` 覆盖长列表、浅色、重复开合(验偏移不累积)。
+
+## 菜单 / Flyout 第一次打开"蹦"出来(不是动画参数的问题)
+
+用户反馈:菜单展开动画和 WinUI3 观感不一样、"说不上来哪里不对"。参数(250ms、
+`cubic-bezier(0,0,0,1)`、`closedRatio=0.5`)其实一直是对的 —— 问题在**第一次**打开。
+
+**实测**(`--menu-frames`:后台线程 6ms 一帧 BitBlt 抓屏,`DiffBox` 取变化包围盒当菜单矩形,
+不打扰 UI 线程):
+
+| | 首轮 | 第二轮 |
+|---|---|---|
+| `ShowAt` → `Popup.Opened` | 249~319ms | 34~52ms |
+| 首帧可见时动画已跑掉 | **143ms(≈84%)** | ~20ms(≈0%) |
+| 揭示曲线(可见高度) | 首帧 205/224,已经没有"展开" | 107→159→170→179→…→224 |
+
+结论:**菜单动画本身没问题**(第二轮的曲线与 `cubic-bezier(0,0,0,1)` 理论值逐帧吻合),
+坏在首轮那 250~320ms 一次性成本发生在动画**开始之前**。动画时钟按"第一帧提交"起算,
+所以窗口真正呈现出来的那一帧,动画已经跑到 84% —— 用户看到的是"菜单弹出来"。
+
+**成本拆账**(Release,进程里第一个弹窗用裸 `Popup` 先量):
+
+- 裸 `Popup`(无模板,只有 `Border`)= **71ms** —— 建弹窗 HWND + 首次合成,OS/DWM 的钱;
+- `MenuFlyout` 预热 = **225~320ms**(= 建窗 + ~150ms 模板/MenuItem 容器/首次布局);
+- 普通 `Flyout`(第二个弹窗)= **90~98ms**。
+
+**AOT 能不能缓解**:只有一点。Release 构建(优化后 JIT)首轮反而量到 319ms(与 Debug 的
+249ms 同量级,属样本噪声),说明瓶颈不在 JIT/托管代码温度;上面 71ms 的建窗+首次合成
+AOT 一分也省不掉,`OptimizationPreference=Size` 还会削弱剩下那部分代码质量。
+⇒ 别等 AOT,把这笔钱**挪走**。
+
+**做法**:`Controls/FlyoutPrewarm.cs`(`WarmMenu` / `WarmFlyout`)走一次
+`ShowAt` + `Hide`,两步在同一个 dispatcher 回合内完成、中间没有渲染回合 ⇒ 屏幕上不闪。
+调用点在 `MainWindow.AttachShell`:
+
+- `WarmMenu(ShellHost)` 必须放在 `ShellHost.IsVisible = true` **之前**。放到壳层滑入动画
+  之后会把 ~280ms 冻结夹在"动画已起表"和"壳层首帧提交"之间,350ms 的滑入会被吃掉大半
+  (和菜单是同一个坑)。此时锚点 `IsVisible=false` 也能预热(探针 `ALY_MENU_PREWARM_ANCHOR=hidden` 验过);
+- `WarmFlyout` 排到壳层首帧之后的 `DispatcherPriority.Background`(只有 ~90ms,不占启动关键路径)。
+
+预热后首轮:`opened 37~49ms`、首帧可见时动画 ≈0%(与第二轮一致)。
+
+**回归**:`ALyricEase.Headless --menu-frames`,`ALY_MENU_PREWARM=1
+ALY_MENU_PREWARM_ANCHOR=hidden` 时期望 `c1 opened` < 60ms 且 `sinceStart` 处可见高度 ≈
+起始值(= 总高 − `dy`)。`ALY_MENU_PREWARM_BARE=1` 可复现上面那张拆账表。
+
+**仍存的差异**(没做,别误当 bug):① 原版阴影层单独 83ms 淡入,我们的 `BoxShadow` 跟表面
+同层、被弹窗窗口一起裁,所以没有"阴影后出现"的层次;② 每次打开仍要新建弹窗 HWND,首帧
+比 WinUI 的常驻宿主晚 ~40~90ms。

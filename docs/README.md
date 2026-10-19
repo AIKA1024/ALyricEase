@@ -15,6 +15,8 @@
 |---|---|
 | 控件位置不对 / 样式不生效 / 改了一条样式波及别处 | [avalonia-tips.md](avalonia-tips.md)「布局与外观一律走 XAML」 |
 | 小屏适配、断点切换"改一半" | [avalonia-tips.md](avalonia-tips.md)「容器查询」小节 |
+| ComboBox 弹出层没边距 / 位置贴控件下沿 / 没有展开动画 | [avalonia-tips.md](avalonia-tips.md)「ComboBox 下拉层」(探针 `--combobox`) |
+| 菜单**第一次**打开像"蹦"出来、动画看不全(参数却对) | [avalonia-tips.md](avalonia-tips.md)「菜单 / Flyout 第一次打开」(`--menu-frames`;AOT 也不解决) |
 | 页面往返内存一直涨 / 返回后空白一下 | [memory-audit.md](memory-audit.md);[avalonia-tips.md](avalonia-tips.md)「页面往返的内存/生命周期回归」「详情页返回卡顿」 |
 | 个人主页"内存高 / 封面请求尺寸" | [memory-audit.md](memory-audit.md) §六(taste/窄屏小图解码、创建/收藏分页实化、QQ 取档规则;**租约"全部在租时允许超预算"是非虚拟化页面的放大器**) |
 | 打开另一个歌单时行封面"闪一下" | [avalonia-tips.md](avalonia-tips.md)「改集合就会回收行容器」 |

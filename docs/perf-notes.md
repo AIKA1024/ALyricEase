@@ -536,6 +536,8 @@ vs 位图填充 9.02% ⇒ +0.32%」。两次**互换了哪个是"现状"**、绝
 | `--sgbottom` | `SongGridView` 到底边框的留白（判据安全边 ∈ [1,5]） | — |
 | `--accountlike` | 换号时红心缓存代次（`AccountGeneration`） | — |
 | `--neproxy` | 代理登录回归线 | — |
+| `--combobox` | ComboBox 弹层:选中项对齐 <1px、`t=0` 不可见、阴影在揭示完成后才淡入 | `ALY_CB_COUNT/SELECTED/LIGHT/CYCLES` |
+| `--menu-frames` | 菜单展开的**逐帧**揭示曲线(后台 6ms 抓屏);首轮 `opened` < 60ms 才算预热生效 | `ALY_MENU_PREWARM` / `_ANCHOR=hidden` / `_BARE` |
 
 加上新档后别忘 `artifacts/` 里的日志当回归线留档（尤其**跨轮**读数不可比，见第二节那条警告）。
 

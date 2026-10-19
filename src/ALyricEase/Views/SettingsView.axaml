@@ -54,17 +54,31 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
-    <!-- 开源项目链接按钮 -->
-    <Style Selector="Button.link-button">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
+    <!-- 开源项目链接:对齐原版 LyricEase 的自定义 HyperlinkButton 主题,而不是 WinUI 默认样式。
+         原版在其 Generic.xaml 合并的 Buttons.xaml 里给 HyperlinkButton 下了隐式 Style
+         (shell_xaml/Buttons.xaml:1186):Padding="4"(四边)、不设 FontSize ⇒ 走默认 14、
+         CornerRadius=4、Foreground=AccentTextFillColorPrimary、悬停/按下换
+         AccentTextFillColorSecondary/Tertiary 并叠 SubtleFillColorSecondary/Tertiary 淡底。
+         WinUI 默认的 ButtonPadding(11,5,11,6)+13 号字会做出一个更宽、字更小的浅底方块,
+         和原版胶囊明显不同。另需压掉 Fluent 主题自带、原版没有的两处:① 常驻下划线;
+         ② 按下 scale(0.98)。 -->
+    <Style Selector="HyperlinkButton.link">
+      <!-- TextDecorations 没有 "None" 字面量(只认 underline/strikethrough/overline/baseline),清空只能给 null -->
+      <Setter Property="TextBlock.TextDecorations" Value="{x:Null}" />
+      <Setter Property="RenderTransform" Value="none" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Padding" Value="4" />
       <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
     </Style>
-    <Style Selector="Button.link-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+    <!-- WinUI 的 AccentTextFillColorSecondary/Tertiary 是"悬停变一档、按下再变一档",
+         取值沿用本项目播放全部按钮那套 teal 梯度(暗色更亮、亮色更暗) -->
+    <Style Selector="HyperlinkButton.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource LinkForegroundPointerOver}" />
+    </Style>
+    <Style Selector="HyperlinkButton.link:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource LinkForegroundPressed}" />
     </Style>
     <!-- 设置卡片式 Expander:外观与 setting-card 一致,展开箭头/动画用内置实现 -->
     <Style Selector="Expander.setting-expander">
@@ -323,6 +337,10 @@
           </Grid>
           <!-- 开启后展开"淡化时长"行(原版 = 同一卡片内的子行:图标 + 标题 + 时长 + 滑杆);
                行间距由上方 StackPanel 的 Spacing 提供,这里不再写 Margin -->
+          <!-- 时长文本 MinWidth+右对齐(Fluent2 设置行惯例):值列宽恒定,拖动时数字
+               "3s"→"3.5s"→"11.5s" 变宽只在本列内换字,不挤滑杆列、不触发任何 reflow
+               —— 此前 Auto 列宽随数字伸缩,与 code-behind 的滑杆定宽快照错位,行内
+               元素左右振荡。右对齐让数字变化时右缘(贴滑杆侧)不动 -->
           <!-- 滑杆宽度由 code-behind 按行宽动态设置(= min(280, 行宽-固定件)):
                写死 Width 窄屏溢出卡片;Stretch+MaxWidth 会在宽屏被居中(实测)都不行 -->
           <Grid x:Name="CrossfadeRow" IsVisible="{Binding Crossfade}" ColumnDefinitions="Auto,Auto,Auto,*"
@@ -332,7 +350,8 @@
                        VerticalAlignment="Center" />
             <TextBlock x:Name="CrossfadeSecondsText" Grid.Column="2" Text="{Binding CrossfadeSecondsText}"
                        FontSize="13" Foreground="{DynamicResource TextSecondary}"
-                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                       VerticalAlignment="Center" Margin="0,0,20,0"
+                       MinWidth="36" TextAlignment="Right" />
             <Slider x:Name="CrossfadeSlider" Grid.Column="3" HorizontalAlignment="Right"
                     Minimum="0" Maximum="12" TickFrequency="0.5"
                     Value="{Binding CrossfadeSeconds}" VerticalAlignment="Center" />
@@ -412,11 +431,12 @@
         <ItemsControl Margin="20,0,0,6" ItemsSource="{Binding OpenSourceProjects}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:OpenSourceProject">
-              <Button Classes="link-button" Margin="0,6,0,0"
-                      Command="{Binding $parent[views:SettingsView].((vm:SettingsViewModel)DataContext).OpenProjectCommand}"
-                      CommandParameter="{Binding}">
-                <TextBlock Text="{Binding Name}" FontSize="13" TextDecorations="Underline" />
-              </Button>
+              <!-- 不用负 Margin 顶 Padding:HyperlinkButton 自带 ClipToBounds,负 Margin 会把按钮
+                   推出父容器左缘,父容器把左侧那截(含左内边距与左圆角)裁掉 ⇒ 文字贴死左边。
+                   让按钮左缘就落在 20px 缩进线上,文字自然内缩 4px(与原版一致)。 -->
+              <HyperlinkButton Classes="link" Margin="0,2,0,0" Content="{Binding Name}"
+                               Command="{Binding $parent[views:SettingsView].((vm:SettingsViewModel)DataContext).OpenProjectCommand}"
+                               CommandParameter="{Binding}" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>

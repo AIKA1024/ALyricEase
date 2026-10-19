@@ -22,15 +22,17 @@ public partial class SettingsView : UserControl
         _ = vm.RefreshAudioDevicesCommand.ExecuteAsync(null);
     }
 
-    /// <summary>淡化时长滑杆宽 = min(280, 行宽 - 图标/标题/时长文本实际宽度)。
+    /// <summary>淡化时长滑杆宽 = min(280, 行宽 - 图标/标题/时长文本实际占用)。
     /// 写死 280 窄屏溢出卡片;Stretch+MaxWidth 会被居中(实测,宽屏不靠右)。
     /// 行宽变化驱动,滑杆宽度不反推行宽,无布局反馈回路。子元素 Bounds 在行 arrange 时
-    /// 已同步更新,首帧即正确。</summary>
+    /// 已同步更新,首帧即正确。
+    /// ⚠ 必须把每个元素的水平 Margin 一并计入(setting-icon 样式自带右侧 16px):
+    /// 漏算会让滑杆比 * 列宽同样多、右对齐后向左溢出,恰好盖掉文本右侧的间隙,
+    /// 观感"文本和滑杆贴在一起"且改文本 Margin 几乎无效(被溢出吃掉)。</summary>
     private void OnCrossfadeRowSizeChanged(object? sender, SizeChangedEventArgs e)
     {
-        var fixedParts = CrossfadeIcon.Bounds.Width + CrossfadeTitle.Bounds.Width
-            + CrossfadeSecondsText.Bounds.Width + CrossfadeSecondsText.Margin.Left
-            + CrossfadeSecondsText.Margin.Right;
+        static double Hrz(TextBlock el) => el.Bounds.Width + el.Margin.Left + el.Margin.Right;
+        var fixedParts = Hrz(CrossfadeIcon) + Hrz(CrossfadeTitle) + Hrz(CrossfadeSecondsText);
         CrossfadeSlider.Width = Math.Clamp(e.NewSize.Width - fixedParts, 0, 280);
     }
 }

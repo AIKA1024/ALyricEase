@@ -835,7 +835,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     /// <summary>开源项目引用列表展开状态(默认展开;内置 Expander 的 IsExpanded 双向绑定,
     /// 之前手搓"按钮+MaxHeight 过渡"的仿 Expander 已替换为真 Expander)。</summary>
-    [ObservableProperty] private bool _openSourceExpanded = true;
+    [ObservableProperty] private bool _openSourceExpanded;
 
     // 条目与 README 致谢 / THIRD-PARTY-NOTICES.md 保持一致。
     // 顺序:渲染框架 → 基础库 → 工具 → 图标字体 → 接口协议参考。

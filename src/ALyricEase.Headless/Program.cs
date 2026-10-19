@@ -170,6 +170,23 @@ public static class Program
             return;
         }
 
+        // 音量滑杆刻度命中探针(--sliderhit):刻度区域是否参与命中/按下是否改值。
+        if (args.Length > 0 && args[0] == "--sliderhit")
+        {
+            var hitBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+            HeadlessApp.ConfigureServices();
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { SliderHitProbe.Run(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[sliderhit] 异常: {ex}"); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            hitBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            return;
+        }
+
         // 封面取色回归(--palette):直接像素采样路径 + 缺失槽位同色相变体规则。
         if (args.Length > 0 && args[0] == "--palette")
         {            var paletteBuilder = AppBuilder.Configure<HeadlessApp>()

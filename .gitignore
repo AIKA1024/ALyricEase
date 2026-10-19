@@ -1,7 +1,10 @@
 bin/
 obj/
 /packages/
-/artifacts/
+# 回归线日志留档:任何项目目录下的 artifacts 都不入仓(含 src/*/artifacts)
+artifacts/
+# 探针临时输出目录(tmp_shareprobe 之类)
+tmp_*/
 riderModule.iml
 /_ReSharper.Caches/
 .idea/

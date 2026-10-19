@@ -384,6 +384,24 @@ public static class Program
             return;
         }
 
+        // WinUI 风格 ComboBox 弹出层(--combobox):真窗口 + 抓屏,量边距/选中项对齐/展开动画时序。
+        if (args.Length > 0 && args[0] == "--combobox")
+        {
+            var comboBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var comboExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { comboExitCode = await ComboBoxProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[combobox] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            comboBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = comboExitCode;
+            return;
+        }
+
         // 打开别的歌单时曲目封面"又加载一遍"(--pl-cover-flash):真窗口 + 真歌单页 + 真实封面,
         // 同进程对照"清空重建 vs 逐位替换"两档下"本该显示封面却没显示"的可见行数逐帧曲线。
         if (args.Length > 0 && args[0] == "--pl-cover-flash")

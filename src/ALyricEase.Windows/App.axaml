@@ -20,6 +20,8 @@
 
     <Application.Styles>
         <FluentTheme />
+        <!-- ComboBox 统一外观(WinUI 弹出层边距/定位/展开动画);必须在 FluentTheme 之后 -->
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/FluentComboBox.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Foundation/Typography.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Controls/Buttons.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Controls/Common.axaml" />

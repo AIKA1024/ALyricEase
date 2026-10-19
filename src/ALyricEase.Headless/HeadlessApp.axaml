@@ -45,6 +45,7 @@
     </Application.Resources>
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="avares://ALyricEase/Styles/Controls/FluentComboBox.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Foundation/Typography.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Controls/Buttons.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Controls/Sliders.axaml" />

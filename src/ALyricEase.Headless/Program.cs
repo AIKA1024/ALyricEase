@@ -384,6 +384,24 @@ public static class Program
             return;
         }
 
+        // MenuFlyout 打开动画逐帧观察(--menu-frames):后台线程抓屏,不打扰动画帧。
+        if (args.Length > 0 && args[0] == "--menu-frames")
+        {
+            var menuBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var menuExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { menuExitCode = await MenuFramesProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[menu-frames] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            menuBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = menuExitCode;
+            return;
+        }
+
         // WinUI 风格 ComboBox 弹出层(--combobox):真窗口 + 抓屏,量边距/选中项对齐/展开动画时序。
         if (args.Length > 0 && args[0] == "--combobox")
         {

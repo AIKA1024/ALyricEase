@@ -15,6 +15,7 @@ using Avalonia.VisualTree;
 #if WINDOWS
 using Avalonia.Win32;
 #endif
+using ALyricEase.Controls;
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
@@ -106,6 +107,16 @@ public partial class MainWindow : Window
     private void AttachShell()
     {
         if (_shell is not null) return;
+
+        // 趁启动画面还在转,把"第一次打开菜单"的一次性模板/建窗成本先付掉:
+        // 这笔成本(实测 230~320ms)原本落在 ShowAt 里,会把 250ms 的展开动画吃掉大半,
+        // 导致首次点开菜单像"蹦出来"、第二次起才正常展开(230ms 是 Release 也逃不掉的,
+        // 见 docs/avalonia-tips.md「菜单 / Flyout 第一次打开」)。此刻 UI 线程本来就空闲、
+        // 启动画面的转圈是合成动画(不受 UI 阻塞影响),是唯一看不出停顿的时机。
+        // ⚠ 必须在 ShellHost.IsVisible=true 之前:否则这段冻结会夹在壳层滑入动画起表
+        // 与首帧提交之间,350ms 的滑入会被吃掉大半 —— 和菜单本身是同一个坑。
+        FlyoutPrewarm.WarmMenu(ShellHost);
+
         _shell = new MainWindowShell { DataContext = DataContext };
         ShellHost.Content = _shell;
         ShellHost.IsVisible = true;
@@ -153,6 +164,10 @@ public partial class MainWindow : Window
         UpdateTitleBarHamburgerVisibility();
         UpdateFullScreenChrome();
         UpdateMaximizeGlyph();
+
+        // 普通 Flyout(音量、歌词字号等)的模板成本不占启动关键路径:排到壳层首帧之后的
+        // 首个空闲回合(Background 低于 Render/Input),此时画面已经出来,停顿看不出来。
+        Dispatcher.UIThread.Post(() => FlyoutPrewarm.WarmFlyout(ShellHost), DispatcherPriority.Background);
     }
 
     /// <summary>启动画面旋转指示:合成线程驱动,UI 线程被壳层构建阻塞时照样转。</summary>

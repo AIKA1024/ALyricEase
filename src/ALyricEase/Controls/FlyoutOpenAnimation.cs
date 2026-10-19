@@ -212,9 +212,12 @@ public class FlyoutOpenAnimation
         box.Value = true;
 
         var (dx, dy) = ComputeStart(surface);
-        StartComposition(surface, dx, dy);
+        LastAnimated = StartComposition(surface, dx, dy);
         Started?.Invoke(surface, dx, dy);
     }
+
+    /// <summary>探针诊断:最近一次打开是否真的建立并启动了合成动画。</summary>
+    internal static bool LastAnimated { get; private set; }
 
     private static (double dx, double dy) ComputeStart(Visual surface)
     {
@@ -301,7 +304,7 @@ public class FlyoutOpenAnimation
         }
     }
 
-    private static void StartComposition(Visual surface, double dx, double dy)
+    private static bool StartComposition(Visual surface, double dx, double dy)
     {
         var visual = ElementComposition.GetElementVisual(surface);
         if (visual is null)
@@ -309,7 +312,7 @@ public class FlyoutOpenAnimation
             RestorePrimedOpacity(surface);
             Logger.TryGet(LogEventLevel.Warning, LogArea.Control)?.Log(surface,
                 "FlyoutOpenAnimation: 合成视觉不可用,跳过打开动画");
-            return;
+            return false;
         }
 
         var compositor = visual.Compositor;
@@ -328,6 +331,7 @@ public class FlyoutOpenAnimation
         slide.InsertKeyFrame(0f, baseTranslation + new Vector3((float)dx, (float)dy, 0f));
         slide.InsertKeyFrame(1f, baseTranslation, SlideEasing);
         visual.StartAnimation("Translation", slide);
+        return true;
     }
 
     /// <summary>在表面 attach 前用可撤销的动画优先级值预隐藏；不会替换原有样式或绑定。</summary>

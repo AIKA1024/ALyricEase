@@ -9,3 +9,7 @@ using System.Runtime.CompilerServices;
 // internal 诊断成员 —— 尤其是 ImageMemoryBudget 的生效值。桌面能用 Headless 探针离线
 // 核对预算,但 ImageMemoryBudget 的平台分支只有在真机上跑才算闭环。
 [assembly: InternalsVisibleTo("ALyricEase.Android")]
+
+// 桌面壳(MainWindow)在启动阶段调 FlyoutPrewarm 预热弹层 —— 这类"内部时机"工具
+// 不该变成公开 API(调用点只有一个),按 Android 的先例开放 internal。
+[assembly: InternalsVisibleTo("ALyricEase.Windows")]

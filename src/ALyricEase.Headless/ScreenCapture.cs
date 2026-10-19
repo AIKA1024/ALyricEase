@@ -40,6 +40,17 @@ internal static class ScreenCapture
     }
 
     /// <summary>
+    /// 抓屏幕上任意一块矩形(物理像素)。给"不能打扰 UI 线程"的逐帧观察用:
+    /// 在后台线程循环抓,不会像 <see cref="Save"/> 那样把 PNG 编码塞进动画帧里。
+    /// </summary>
+    public static Frame GrabScreenRect(int x, int y, int width, int height)
+    {
+        if (width <= 0 || height <= 0) return new Frame([], 0, 0, 0);
+        var pixels = GrabScreen(x, y, width, height, out var stride);
+        return new Frame(pixels, width, height, stride);
+    }
+
+    /// <summary>
     /// 区域内"差异显著"的像素占比(0~1)。阈值取通道最大差,用来滤掉抗锯齿与
     /// 亚像素取整带来的 1~2 级抖动 —— 不设阈值的话,连"完全一样的两帧"都会报出差异。
     /// </summary>

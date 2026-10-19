@@ -74,7 +74,7 @@ public sealed class SearchAlbumItemViewModel : SearchItemViewModelBase
     public bool IsQq => Item.Source == MusicSource.QQ;
 }
 
-/// <summary>用户分区行(仅网易云;本移植无用户主页,行仅展示不可点)。</summary>
+/// <summary>用户分区行:网易云按 uid、QQ 按 encrypt_uin 打开共用用户页。</summary>
 public sealed class SearchUserItemViewModel : SearchItemViewModelBase
 {
     public SearchUserItemViewModel(SearchUserItem item)
@@ -88,4 +88,9 @@ public sealed class SearchUserItemViewModel : SearchItemViewModelBase
     public string Name => Item.Name;
 
     public string Subtitle => Item.Signature;
+
+    /// <summary>行是否可点:网易云有数字 uid;QQ 有 encrypt_uin(搜索只给这个)。</summary>
+    public bool CanOpen => Item.Source == MusicSource.QQ
+        ? Item.EncryptUin.Length > 0
+        : Item.Id != 0;
 }

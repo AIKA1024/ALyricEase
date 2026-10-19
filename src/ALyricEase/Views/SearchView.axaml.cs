@@ -77,6 +77,13 @@ public partial class SearchView : UserControl
     {
         if (e.PropertyName is nameof(SearchViewModel.ShowResults) or nameof(SearchViewModel.IsSearching))
             _resultsScroll?.Offset = new Avalonia.Vector(0, 0);
+        if (e.PropertyName == nameof(SearchViewModel.ShowResults) && Vm is { ShowResults: true })
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!IsViewModelSubscribed || Vm is not { ShowResults: true }) return;
+                ResultsSearchBox.Focus();
+                ResultsSearchBox.CaretIndex = ResultsSearchBox.Text?.Length ?? 0;
+            }, DispatcherPriority.Loaded);
     }
 
     /// <summary>结果页滚动:超过 400px 显示回顶按钮(原版为滚过头部后浮现)。</summary>
@@ -182,7 +189,7 @@ public partial class SearchView : UserControl
         }
 
         TabOverflowButton.IsVisible = overflow;
-        TabItems.HorizontalAlignment = overflow ? HorizontalAlignment.Left : HorizontalAlignment.Center;
+        TabItems.HorizontalAlignment = HorizontalAlignment.Left;
 
         if (!overflow) return;
         var flyout = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };

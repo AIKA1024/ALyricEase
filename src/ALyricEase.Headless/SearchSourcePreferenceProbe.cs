@@ -7,10 +7,11 @@ using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace ALyricEase.Headless;
 
-/// <summary>搜索来源持久化和 Fluent 2 分段选择器渲染回归；不触网。</summary>
+/// <summary>搜索来源持久化和 Fluent 下拉选择器渲染回归；不触网。</summary>
 public static class SearchSourcePreferenceProbe
 {
     public static void Run()
@@ -62,6 +63,11 @@ public static class SearchSourcePreferenceProbe
         Dispatcher.UIThread.RunJobs();
         Thread.Sleep(200);
         Dispatcher.UIThread.RunJobs();
+
+        var sourcePicker = window.GetVisualDescendants().OfType<ComboBox>()
+            .Single(combo => combo.IsEffectivelyVisible && combo.Classes.Contains("source-selector"));
+        Assert(sourcePicker.SelectedIndex == vm.SelectedSourceIndex && sourcePicker.ItemCount == 3,
+            "音源下拉框显示当前保存的选项");
 
         var pixelSize = new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height);
         using var bitmap = new RenderTargetBitmap(pixelSize, new Vector(96, 96));

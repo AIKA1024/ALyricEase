@@ -12,10 +12,10 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>搜索 VM:登录页(大标题 + 搜索框 + 热门搜索 + 搜索历史)→ 结果页("kw"的搜索结果 +
-/// 类型 Tab + 分区卡片,对齐原版 SearchResultView);歌曲行复用 SongItemViewModel(双击播放)。
+/// <summary>搜索 VM:落地页(搜索框 + 热门搜索 + 历史)→ 结果页(可继续搜索 + 音源 +
+/// 类型 Tab + 分区卡片);歌曲行复用 SongItemViewModel(双击播放)。
 /// 独立音源经 MusicApiProvider 选择；综合模式并行搜索两源并保守合并同一录音。
-/// 多类型走 IMusicApi.SearchAllAsync(QQ 仅歌曲+歌单,网易全量);
+/// 多类型走 IMusicApi.SearchAllAsync(网易云/QQ 均为全类型);
 /// 搜索历史写入 AppStateStore(state.json)持久化,最新在前去重,上限 10 条。</summary>
 public sealed partial class SearchViewModel : ViewModelBase
 {
@@ -78,6 +78,22 @@ public sealed partial class SearchViewModel : ViewModelBase
 
     public bool IsQQSource => !IsCombinedSource && SelectedSource.Source == MusicSource.QQ;
 
+    public IReadOnlyList<string> SearchSourceLabels { get; } = ["综合", "网易云", "QQ音乐"];
+
+    public int SelectedSourceIndex
+    {
+        get => IsCombinedSource ? 0 : IsNetEaseSource ? 1 : 2;
+        set
+        {
+            switch (value)
+            {
+                case 0: SelectCombinedSource(); break;
+                case 1: SelectNetEaseSource(); break;
+                case 2: SelectQQSource(); break;
+            }
+        }
+    }
+
     [RelayCommand]
     private void SelectCombinedSource()
     {
@@ -109,9 +125,17 @@ public sealed partial class SearchViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsCombinedSource));
         OnPropertyChanged(nameof(IsNetEaseSource));
         OnPropertyChanged(nameof(IsQQSource));
+        OnPropertyChanged(nameof(SelectedSourceIndex));
         OnPropertyChanged(nameof(TrendingKeywords));
+        var previousTab = SelectedTab;
+        _suppressTabLoad = true;
         OnPropertyChanged(nameof(Tabs));
         OnPropertyChanged(nameof(ShowTabBar));
+        SelectedTab = Tabs.Any(tab => tab.Kind == previousTab) ? previousTab : Tabs[0].Kind;
+        OnPropertyChanged(nameof(SelectedTabIndex));
+        _suppressTabLoad = false;
+        if (HasSearched)
+            _ = LoadTabAsync(SelectedTab);
     }
 
     private (IMusicApi Source, bool Combined) RestoreSourceSelection(
@@ -129,7 +153,18 @@ public sealed partial class SearchViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SearchCommand))]
+    [NotifyPropertyChangedFor(nameof(HasKeyword))]
     private string _keyword = "";
+
+    public bool HasKeyword => Keyword.Length > 0;
+
+    [RelayCommand]
+    private void ClearKeyword() => Keyword = "";
+
+    /// <summary>当前结果对应的已提交关键词；编辑搜索框不改变结果上下文。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ResultsTitle))]
+    private string _submittedKeyword = "";
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SearchCommand))]
@@ -182,14 +217,14 @@ public sealed partial class SearchViewModel : ViewModelBase
     /// <summary>回顶按钮显隐(滚动超过一屏由视图回报)。</summary>
     [ObservableProperty] private bool _showBackToTop;
 
-    /// <summary>类型 Tab(按音源能力:网易云全量;QQ 仅 歌曲+歌单)。</summary>
+    /// <summary>类型 Tab(网易云与 QQ 均为全量;综合搜索只有歌曲)。</summary>
     public IReadOnlyList<SearchTabItem> Tabs
     {
         get
         {
             if (IsCombinedSource)
                 return [new(SearchKind.Track, "歌曲")];
-            if (IsNetEaseSource)
+            if (IsNetEaseSource || IsQQSource)
                 return
                 [
                     new(SearchKind.All, "全部"),
@@ -199,13 +234,6 @@ public sealed partial class SearchViewModel : ViewModelBase
                     new(SearchKind.Playlist, "歌单"),
                     new(SearchKind.User, "用户"),
                 ];
-            if (IsQQSource)
-                return
-                [
-                    new(SearchKind.All, "全部"),
-                    new(SearchKind.Track, "歌曲"),
-                    new(SearchKind.Playlist, "歌单"),
-                ];
             return [new(SearchKind.Track, "歌曲")];
         }
     }
@@ -213,8 +241,8 @@ public sealed partial class SearchViewModel : ViewModelBase
     /// <summary>单 Tab 无切换意义时隐藏整条 Tab 栏。</summary>
     public bool ShowTabBar => Tabs.Count > 1;
 
-    /// <summary>"kw"的搜索结果(结果页大标题,对齐原版)。</summary>
-    public string ResultsTitle => $"\"{Keyword.Trim()}\"的搜索结果";
+    /// <summary>结果页摘要显示已提交的关键词，编辑中的草稿不影响它。</summary>
+    public string ResultsTitle => $"\"{SubmittedKeyword}\"的搜索结果";
 
     // ---- 结果页分区(All 页只显示非空区;单类型 Tab 只有一个区) ----
 
@@ -283,6 +311,22 @@ public sealed partial class SearchViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsUserTab));
         if (HasSearched && !_suppressTabLoad)
             _ = LoadTabAsync(value);
+    }
+
+    /// <summary>打开搜索结果里的用户页:网易云按 uid,QQ 按 encrypt_uin(网页主页同源)。</summary>
+    [RelayCommand]
+    private async Task OpenSearchUser(SearchUserItemViewModel? item)
+    {
+        if (item is null || !item.CanOpen) return;
+        var main = ServiceLocator.Get<MainViewModel>();
+        try
+        {
+            if (item.Item.Source == MusicSource.QQ)
+                await main.OpenQqUserCommand.ExecuteAsync(item.Item.EncryptUin).ConfigureAwait(true);
+            else
+                await main.OpenUserCommand.ExecuteAsync(item.Item.Id).ConfigureAwait(true);
+        }
+        catch { /* 网络失败:停留在用户页空内容 */ }
     }
 
     /// <summary>打开搜索结果里的歌单:按源路由侧边栏同款歌单详情页(复用 Favorites 页)。</summary>
@@ -356,7 +400,9 @@ public sealed partial class SearchViewModel : ViewModelBase
     {
         _loadGeneration++; // 在途请求全部作废
         HasSearched = false;
+        IsSearching = false;
         Keyword = "";
+        SubmittedKeyword = "";
         Message = null;
         ShowBackToTop = false;
         // HasSearched 已为 false,OnSelectedTabChanged 不会触发加载
@@ -377,76 +423,54 @@ public sealed partial class SearchViewModel : ViewModelBase
         var keyword = Keyword.Trim();
         if (keyword.Length == 0) return;
 
-        _loadGeneration++; // 作废在途加载
-        HasSearched = true;
-        IsSearching = true;
-        Message = null;
-        OnPropertyChanged(nameof(ResultsTitle));
-
-        // 综合搜索只有歌曲页；独立音源新搜索回“全部”。抑制属性回调的重复加载。
-        var initialTab = IsCombinedSource ? SearchKind.Track : SearchKind.All;
+        // 结果页继续搜索保留当前分类；首次搜索或分类不可用时选音源默认分类。
+        var initialTab = HasSearched && Tabs.Any(tab => tab.Kind == SelectedTab)
+            ? SelectedTab : Tabs[0].Kind;
         if (SelectedTab != initialTab)
         {
             _suppressTabLoad = true;
             SelectedTab = initialTab;
             _suppressTabLoad = false;
         }
-        try
-        {
-            await LoadTabCoreAsync(initialTab, keyword).ConfigureAwait(true);
-            if (Message is null)
-                RecordHistory(keyword); // 仅成功返回时记入历史(网络失败不算)
-        }
-        finally
-        {
-            IsSearching = false;
-        }
+        SubmittedKeyword = keyword;
+        HasSearched = true;
+        if (await LoadTabCoreAsync(initialTab, keyword).ConfigureAwait(true))
+            RecordHistory(keyword); // 仅当前请求成功返回时记入历史
     }
 
     private bool CanSearch() => !IsSearching && Keyword.Trim().Length > 0;
 
     private bool _suppressTabLoad;
 
-    partial void OnKeywordChanged(string value) => OnPropertyChanged(nameof(ResultsTitle));
-
     /// <summary>切 Tab:重新拉该类型(30 条;All 5 条/区)。</summary>
     private async Task LoadTabAsync(SearchKind tab)
     {
         if (_suppressTabLoad || !HasSearched) return;
-        var keyword = Keyword.Trim();
+        var keyword = SubmittedKeyword;
         if (keyword.Length == 0) return;
 
-        IsSearching = true;
-        Message = null;
-        try
-        {
-            await LoadTabCoreAsync(tab, keyword).ConfigureAwait(true);
-        }
-        finally
-        {
-            IsSearching = false;
-        }
+        await LoadTabCoreAsync(tab, keyword).ConfigureAwait(true);
     }
 
     /// <summary>实际加载:按 kind 调 SearchAllAsync 并填充分区;过期代次直接丢弃。</summary>
-    private async Task LoadTabCoreAsync(SearchKind kind, string keyword)
+    private async Task<bool> LoadTabCoreAsync(SearchKind kind, string keyword)
     {
         var generation = ++_loadGeneration;
+        IsSearching = true;
+        Message = null;
+        ClearResultCollections();
         try
         {
             var limit = kind == SearchKind.All ? SectionLimit : TabLimit;
             var result = IsCombinedSource
                 ? await SearchCombinedAsync(keyword, limit).ConfigureAwait(true)
                 : await SelectedSource.SearchAllAsync(keyword, kind, limit).ConfigureAwait(true);
-            if (generation != _loadGeneration) return; // 期间新搜索/切页,丢弃过期结果
-
-            Songs.Clear(); Playlists.Clear(); Artists.Clear(); Albums.Clear(); Users.Clear();
-            NotifySectionFlags();
+            if (generation != _loadGeneration) return false; // 期间新搜索/切页,丢弃过期结果
 
             if (result is null)
             {
                 Message = "没有搜索结果";
-                return;
+                return false;
             }
             foreach (var song in result.Songs)
                 Songs.Add(new SongItemViewModel(song, _player.PlayFromList, queue: result.Songs,
@@ -463,9 +487,15 @@ public sealed partial class SearchViewModel : ViewModelBase
         }
         catch (ApiException ex)
         {
-            if (generation != _loadGeneration) return;
+            if (generation != _loadGeneration) return false;
             Message = $"搜索失败:{ex.Message}";
         }
+        finally
+        {
+            if (generation == _loadGeneration)
+                IsSearching = false;
+        }
+        return Message is null;
     }
 
     private async Task<SearchAllResult> SearchCombinedAsync(string keyword, int limit)

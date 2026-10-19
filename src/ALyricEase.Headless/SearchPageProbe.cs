@@ -115,6 +115,33 @@ public static class SearchPageProbe
         Console.WriteLine($"[sp] tabs@517 选中用户: 可见={VisibleTabs()}/6 ···可见={MoreButton()?.IsVisible} " +
             $"users={vm.Users.Count} (期望 选中项被带回可视区、内容=用户)");
         Shot(window, "search-tabs-user-selected");
+
+        // 用户行点击:网易云有数字 uid,应进入共用用户页;QQ 行 CanOpen=false
+        if (vm.Users.Count == 0)
+        {
+            Console.WriteLine("[sp] 网易云用户结果为空,改搜周杰伦验证用户行跳转");
+            vm.Keyword = "周杰伦";
+            vm.SearchCommand.Execute(null);
+            WaitIdle(vm, seconds: 30);
+            vm.SelectedTab = SearchKind.User;
+            WaitIdle(vm, seconds: 30);
+        }
+        if (vm.Users.Count > 0)
+        {
+            var main = ServiceLocator.Get<MainViewModel>();
+            var target = vm.Users[0];
+            Console.WriteLine($"[sp] 点击用户行: [{target.Name}] uid={target.Item.Id} CanOpen={target.CanOpen}");
+            vm.OpenSearchUserCommand.Execute(target);
+            for (var i = 0; i < 200 && (main.ActivePage != "User" || main.UserProfile.IsLoading); i++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                Thread.Sleep(100);
+                Dispatcher.UIThread.RunJobs();
+            }
+            Console.WriteLine($"[sp] 用户页: page={main.ActivePage} nickname=[{main.UserProfile.Nickname}] " +
+                $"taste={main.UserProfile.TasteRows.Count} created={main.UserProfile.CreatedPlaylists.Count} " +
+                $"collected={main.UserProfile.CollectedPlaylists.Count}");
+        }
         vm.SelectedTab = SearchKind.All;
         WaitIdle(vm, seconds: 30);
 
@@ -150,7 +177,42 @@ public static class SearchPageProbe
         WaitIdle(vm, seconds: 30);
         Shot(window, "search-results-qq");
         Console.WriteLine($"[sp] results/qq: songs={vm.Songs.Count} playlists={vm.Playlists.Count} " +
+            $"artists={vm.Artists.Count} albums={vm.Albums.Count} users={vm.Users.Count} " +
             $"message={vm.Message ?? "-"}");
+
+        // QQ 用户行:按 encrypt_uin 打开共用用户页(网页 profile 同源)
+        if (vm.Users.Count > 0 && vm.Users[0].CanOpen)
+        {
+            var main = ServiceLocator.Get<MainViewModel>();
+            var target = vm.Users[0];
+            Console.WriteLine($"[sp] QQ 点击用户行: [{target.Name}] euin={target.Item.EncryptUin} CanOpen={target.CanOpen}");
+            vm.OpenSearchUserCommand.Execute(target);
+            for (var i = 0; i < 200 && (main.ActivePage != "User" || main.UserProfile.IsLoading); i++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                Thread.Sleep(100);
+                Dispatcher.UIThread.RunJobs();
+            }
+            Console.WriteLine($"[sp] QQ 用户页: page={main.ActivePage} nickname=[{main.UserProfile.Nickname}] " +
+                $"taste={main.UserProfile.TasteRows.Count} created={main.UserProfile.CreatedPlaylists.Count} " +
+                $"collected={main.UserProfile.CollectedPlaylists.Count}");
+        }
+
+        // 有多歌单的 QQ 他人主页:验证三个分区映射(周杰伦音乐盒:11 自建 / 9 收藏 / 1 喜欢)
+        {
+            var main = ServiceLocator.Get<MainViewModel>();
+            _ = main.UserProfile.LoadQqUserAsync("owvP7KnP7e6q");
+            for (var i = 0; i < 200 && main.UserProfile.IsLoading; i++)
+            {
+                Dispatcher.UIThread.RunJobs();
+                Thread.Sleep(100);
+                Dispatcher.UIThread.RunJobs();
+            }
+            Console.WriteLine($"[sp] QQ 多歌单主页: nickname=[{main.UserProfile.Nickname}] " +
+                $"follow={main.UserProfile.Follows} fans={main.UserProfile.Followeds} " +
+                $"taste={main.UserProfile.TasteRows.Count} created={main.UserProfile.CreatedPlaylists.Count} " +
+                $"collected={main.UserProfile.CollectedPlaylists.Count}");
+        }
 
         Console.WriteLine("[sp] done");
     }

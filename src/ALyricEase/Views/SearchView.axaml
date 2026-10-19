@@ -7,23 +7,32 @@
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
              x:DataType="vm:SearchViewModel"
+             Background="{DynamicResource AppBackground}"
              mc:Ignorable="d" d:DesignWidth="930" d:DesignHeight="600"
              x:Class="ALyricEase.Views.SearchView">
     <UserControl.KeyBindings>
-        <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
         <KeyBinding Gesture="Escape" Command="{Binding BackToLandingCommand}" />
     </UserControl.KeyBindings>
+    <UserControl.Resources>
+        <ResourceDictionary>
+        <DataTemplate x:Key="SourceSwitcherTemplate" x:DataType="vm:SearchViewModel">
+            <ComboBox Classes="source-selector" ItemsSource="{Binding SearchSourceLabels}"
+                      SelectedIndex="{Binding SelectedSourceIndex}" IsEnabled="{Binding !IsSearching}"
+                      AutomationProperties.Name="搜索音源" ToolTip.Tip="搜索音源" />
+        </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
     <UserControl.Styles>
         <!-- 搜索框(对齐原版 AutoSuggestBox):细边框浅底、聚焦时整体边框保持细线,
              由外层 Grid:focus-within 点亮底部 2px 强调线(Fluent 默认聚焦是 2px 全描边,压回 1px) -->
         <Style Selector="TextBox.search-box">
             <Setter Property="Height" Value="40" />
-            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Background" Value="{DynamicResource AppSurface}" />
             <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="FontSize" Value="16" />
-            <Setter Property="Watermark" Value="搜索歌曲 / 歌手" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Watermark" Value="搜索歌曲、歌手、专辑" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <Style Selector="TextBox.search-box:pointerover /template/ Border#PART_BorderElement">
@@ -94,62 +103,36 @@
         <Style Selector="Button.txt:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
         </Style>
-        <!-- Fluent 2 分段选择器:中性容器 + 选中浅填充 + 强调色短指示条。 -->
-        <Style Selector="Border.source-switcher">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="3" />
+        <!-- 尺寸由页面负责；状态色与弹出项由 FluentPickerTheme 统一定义。 -->
+        <Style Selector="ComboBox.source-selector">
+            <Setter Property="Width" Value="124" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="MinHeight" Value="40" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
-        <Style Selector="Button.src">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="12,4" />
-            <Setter Property="MinWidth" Value="76" />
-            <Setter Property="MinHeight" Value="36" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        <Style Selector="Grid.search-toolbar">
+            <Setter Property="ColumnSpacing" Value="12" />
+            <Setter Property="RowSpacing" Value="12" />
         </Style>
-        <Style Selector="Button.src /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
+        <Style Selector="ContentControl.source-picker">
+            <Setter Property="Grid.Column" Value="1" />
         </Style>
-        <Style Selector="Button.src:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+        <Style Selector=".narrow Grid.search-toolbar > Grid.search-wrap">
+            <Setter Property="Grid.ColumnSpan" Value="2" />
         </Style>
-        <Style Selector="Button.src.active /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+        <Style Selector=".narrow ContentControl.source-picker">
+            <Setter Property="Grid.Row" Value="1" />
         </Style>
-        <Style Selector="Button.src.active:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+        <Style Selector=".narrow ComboBox.source-selector">
+            <Setter Property="Width" Value="108" />
         </Style>
-        <Style Selector="Button.src:focus /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}" />
+        <Style Selector="Grid.result-tabs">
+            <Setter Property="Grid.Row" Value="1" />
+            <Setter Property="Grid.ColumnSpan" Value="2" />
         </Style>
-        <Style Selector="TextBlock.src-label">
-            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
-        </Style>
-        <Style Selector="Button.src.active TextBlock.src-label">
-            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
-        <Style Selector="Border.src-indicator">
-            <Setter Property="Opacity" Value="0" />
-            <Setter Property="Transitions">
-                <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
-                </Transitions>
-            </Setter>
-        </Style>
-        <Style Selector="Button.src.active Border.src-indicator">
-            <Setter Property="Opacity" Value="1" />
+        <Style Selector=".narrow Grid.result-tabs">
+            <Setter Property="Grid.ColumnSpan" Value="1" />
         </Style>
         <!-- 宽屏:热门搜索左列 / 搜索历史右列(原版 Wide VisualState);默认堆叠各占整行 -->
         <Style Selector=".wide Grid.suggest > StackPanel">
@@ -162,18 +145,19 @@
         <Style Selector=".narrow StackPanel.landing">
             <Setter Property="Margin" Value="24,90" />
         </Style>
+        <Style Selector="Grid.results-header">
+            <Setter Property="Margin" Value="24,24,24,0" />
+        </Style>
         <Style Selector=".narrow Grid.results-header">
-            <Setter Property="Margin" Value="16,0,12,0" />
+            <Setter Property="Margin" Value="16,16,16,0" />
         </Style>
-        <!-- ⚠ 这条现在**不生效**:StackPanel.results-body 自带局部 Margin(24,12,24,120),局部值
-             优先级高于样式 setter ⇒ 小屏结果区仍是 24/12/24/120。底边仍须写 PlayerBarReserve(120):
-             一旦摘掉局部值让这条生效,底边写 8 就吃掉了小屏的播放条预留(2026-10-03 pagereserve 探针
-             实测过这条是死码)。回归线:Headless 的 pagereserve 探针。 -->
+        <Style Selector="StackPanel.results-body">
+            <Setter Property="Margin" Value="24,16,24,120" />
+        </Style>
         <Style Selector=".narrow StackPanel.results-body">
-            <Setter Property="Margin" Value="12,8,12,120" />
+            <Setter Property="Margin" Value="16,12,16,120" />
         </Style>
-        <!-- 回顶按钮(原版 BackToTopButton:40x40 圆形)。常驻占位:显隐走透明度 + 命中穿透,
-             不用 IsVisible——出现/消失时会挤压标题行宽度造成布局跳动 -->
+        <!-- 回顶按钮浮在结果区域右下角，不占用搜索工具栏。 -->
         <Style Selector="Button.top-btn">
             <Setter Property="Width" Value="40" />
             <Setter Property="Height" Value="40" />
@@ -185,6 +169,7 @@
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Opacity" Value="0" />
             <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Focusable" Value="False" />
             <Setter Property="Transitions">
                 <Setter.Value>
                     <Transitions>
@@ -196,12 +181,12 @@
         <Style Selector="Button.top-btn.show">
             <Setter Property="Opacity" Value="1" />
             <Setter Property="IsHitTestVisible" Value="True" />
+            <Setter Property="Focusable" Value="True" />
         </Style>
         <Style Selector="Button.top-btn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
         </Style>
-        <!-- 类型 Tab(原版 NavigationView 顶栏):图标细线体 + 文字常态白(选中不变色),
-             选中仅底部居中短胶囊;悬停浅底 -->
+        <!-- 分类使用左对齐文字标签与短下划线，避免图标和边框抢占搜索入口。 -->
         <Style Selector="ListBox.search-tabs">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -209,7 +194,7 @@
         <Style Selector="ListBox.search-tabs > ListBoxItem">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="MinHeight" Value="48" />
+            <Setter Property="MinHeight" Value="40" />
         </Style>
         <Style Selector="ListBox.search-tabs > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
@@ -223,6 +208,13 @@
             <Setter Property="FontSize" Value="16" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         </Style>
+        <Style Selector="ListBox.search-tabs > ListBoxItem TextBlock.tab-label">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+        <Style Selector="ListBox.search-tabs > ListBoxItem:selected TextBlock.tab-label">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
         <Style Selector="ListBox.search-tabs > ListBoxItem Border.tab-pill">
             <Setter Property="Background" Value="Transparent" />
         </Style>
@@ -234,8 +226,8 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Padding" Value="14,10" />
-            <Setter Property="MinHeight" Value="48" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="MinHeight" Value="40" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <Style Selector="Button.tab-more:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -310,19 +302,31 @@
                             Margin="50,90" Spacing="20">
                     <TextBlock Text="LyricEase" FontSize="40" FontWeight="Bold" LetterSpacing="-0.02"
                                HorizontalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                    <Grid Classes="search-wrap">
-                        <TextBox Classes="search-box" Text="{Binding Keyword}">
-                            <TextBox.InnerRightContent>
-                                <Button Classes="query-icon" Command="{Binding SearchCommand}"
-                                        ToolTip.Tip="搜索">
-                                    <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
-                                              Width="18" Height="18" Foreground="{DynamicResource TextSecondary}" />
-                                </Button>
-                            </TextBox.InnerRightContent>
-                        </TextBox>
-                        <!-- 聚焦下划线:默认透明,search-wrap:focus-within 时点亮 teal -->
-                        <Border Classes="focus-line" Height="2" VerticalAlignment="Bottom"
-                                Margin="2,0" CornerRadius="1" IsHitTestVisible="False" />
+                    <Grid Classes="search-toolbar" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <Grid Classes="search-wrap">
+                            <TextBox Classes="search-box" Text="{Binding Keyword}" AutomationProperties.Name="搜索关键词">
+                                <TextBox.KeyBindings>
+                                    <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
+                                </TextBox.KeyBindings>
+                                <TextBox.InnerRightContent>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Classes="query-icon" Content="×" Command="{Binding ClearKeywordCommand}"
+                                                IsVisible="{Binding HasKeyword}" ToolTip.Tip="清空关键词"
+                                                AutomationProperties.Name="清空关键词" Margin="0" />
+                                        <Button Classes="query-icon" Command="{Binding SearchCommand}"
+                                                ToolTip.Tip="搜索" AutomationProperties.Name="搜索">
+                                            <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
+                                                      Width="18" Height="18" Foreground="{DynamicResource TextSecondary}" />
+                                        </Button>
+                                    </StackPanel>
+                                </TextBox.InnerRightContent>
+                            </TextBox>
+                            <!-- 聚焦下划线:默认透明,search-wrap:focus-within 时点亮 teal -->
+                            <Border Classes="focus-line" Height="2" VerticalAlignment="Bottom"
+                                    Margin="2,0" CornerRadius="1" IsHitTestVisible="False" />
+                        </Grid>
+                        <ContentControl Classes="source-picker" Content="{Binding}"
+                                        ContentTemplate="{StaticResource SourceSwitcherTemplate}" />
                     </Grid>
                     <!-- 关键词区:负边距抵消 chip 内边距,使 chip 文字与区块标题左对齐(原版 -8 + 8)。
                          宽屏热门/历史各占一列,其余宽度堆叠 -->
@@ -369,100 +373,74 @@
                             </ItemsControl>
                         </StackPanel>
                     </Grid>
-                    <Border Classes="source-switcher" HorizontalAlignment="Center" Margin="0,4,0,0">
-                        <StackPanel Orientation="Horizontal" Spacing="2">
-                            <Button Classes="src" Classes.active="{Binding IsCombinedSource}"
-                                    Command="{Binding SelectCombinedSourceCommand}"
-                                    AutomationProperties.Name="综合搜索">
-                                <Grid RowDefinitions="*,3" RowSpacing="2">
-                                    <TextBlock Classes="src-label" Text="综合" HorizontalAlignment="Center" />
-                                    <Border Grid.Row="1" Classes="src-indicator" Width="18" Height="3"
-                                            CornerRadius="2" HorizontalAlignment="Center"
-                                            Background="{DynamicResource SystemAccentColor}" />
-                                </Grid>
-                            </Button>
-                            <Button Classes="src" Classes.active="{Binding IsNetEaseSource}"
-                                    Command="{Binding SelectNetEaseSourceCommand}"
-                                    AutomationProperties.Name="使用网易云音乐搜索">
-                                <Grid RowDefinitions="*,3" RowSpacing="2">
-                                    <TextBlock Classes="src-label" Text="网易云" HorizontalAlignment="Center" />
-                                    <Border Grid.Row="1" Classes="src-indicator" Width="18" Height="3"
-                                            CornerRadius="2" HorizontalAlignment="Center"
-                                            Background="{DynamicResource SystemAccentColor}" />
-                                </Grid>
-                            </Button>
-                            <Button Classes="src" Classes.active="{Binding IsQQSource}"
-                                    Command="{Binding SelectQQSourceCommand}"
-                                    AutomationProperties.Name="使用 QQ 音乐搜索">
-                                <Grid RowDefinitions="*,3" RowSpacing="2">
-                                    <TextBlock Classes="src-label" Text="QQ音乐" HorizontalAlignment="Center" />
-                                    <Border Grid.Row="1" Classes="src-indicator" Width="18" Height="3"
-                                            CornerRadius="2" HorizontalAlignment="Center"
-                                            Background="{DynamicResource SystemAccentColor}" />
-                                </Grid>
-                            </Button>
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </Grid>
         </ScrollViewer>
 
-        <!-- 结果页:吸顶头部(标题 + 回顶)→ 类型 Tab → 分区卡片(对齐原版 SearchResultView;
-             无页内搜索框/返回钮——再搜索走标题栏 ← 或 Esc 回登录页,与原版一致) -->
-        <Grid IsVisible="{Binding ShowResults}" RowDefinitions="Auto,Auto,Auto,*">
-            <!-- 吸顶头部:标题行 96px(标题/回顶钮垂直居中)+ Tab 行 48px = 144,与原版
-                 StickyHeaderGrid(Hight 144 = 96 + 48)一致;回顶钮常驻占位,显隐不挤动布局 -->
-            <Grid Grid.Row="0" Classes="results-header" Margin="28,0,24,0"
-                  Height="96" ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                <TextBlock Text="{Binding ResultsTitle}" FontSize="24" FontWeight="Bold" LetterSpacing="-0.02"
-                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource TextPrimary}" />
-                <Button Grid.Column="1" Classes="top-btn" Classes.show="{Binding ShowBackToTop}"
-                        Command="{Binding BackToTopCommand}" ToolTip.Tip="回到顶部">
-                    <PathIcon Width="16" Height="16" Foreground="{DynamicResource TextPrimary}"
-                              Data="M 8,2.6 L 13.4,8 L 12,9.4 L 9,6.4 L 9,13.4 L 7,13.4 L 7,6.4 L 4,9.4 L 2.6,8 Z" />
-                </Button>
+        <!-- 两行吸顶工具栏：搜索 + 音源，分类；窄屏搜索独占首行。 -->
+        <Grid IsVisible="{Binding ShowResults}" RowDefinitions="Auto,3,*">
+            <Grid Grid.Row="0" Classes="results-header search-toolbar" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                <Grid Classes="search-wrap">
+                    <TextBox x:Name="ResultsSearchBox" Classes="search-box" Text="{Binding Keyword}" AutomationProperties.Name="搜索关键词">
+                        <TextBox.KeyBindings>
+                            <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}" />
+                        </TextBox.KeyBindings>
+                        <TextBox.InnerRightContent>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Classes="query-icon" Content="×" Command="{Binding ClearKeywordCommand}"
+                                        IsVisible="{Binding HasKeyword}" ToolTip.Tip="清空关键词"
+                                        AutomationProperties.Name="清空关键词" Margin="0" />
+                                <Button Classes="query-icon" Command="{Binding SearchCommand}"
+                                        ToolTip.Tip="搜索" AutomationProperties.Name="搜索">
+                                    <PathIcon Data="M 10,2 C 5.582,2 2,5.582 2,10 C 2,14.418 5.582,18 10,18 C 11.848,18 13.553,17.371 14.905,16.32 L 20.293,21.707 L 21.707,20.293 L 16.32,14.905 C 17.371,13.553 18,11.848 18,10 C 18,5.582 14.418,2 10,2 Z M 10,4 C 13.309,4 16,6.691 16,10 C 16,13.309 13.309,16 10,16 C 6.691,16 4,13.309 4,10 C 4,6.691 6.691,4 10,4 Z"
+                                              Width="18" Height="18" Foreground="{DynamicResource TextSecondary}" />
+                                </Button>
+                            </StackPanel>
+                        </TextBox.InnerRightContent>
+                    </TextBox>
+                    <!-- 聚焦下划线:默认透明,search-wrap:focus-within 时点亮 teal -->
+                    <Border Classes="focus-line" Height="2" VerticalAlignment="Bottom"
+                            Margin="2,0" CornerRadius="1" IsHitTestVisible="False" />
+                </Grid>
+                <ContentControl Classes="source-picker" Content="{Binding}"
+                                ContentTemplate="{StaticResource SourceSwitcherTemplate}" />
+                <Grid Classes="result-tabs" x:Name="TabBarHost" IsVisible="{Binding ShowTabBar}" MinHeight="40"
+                      SizeChanged="OnTabBarHostSizeChanged">
+                    <ListBox x:Name="TabItems" Classes="search-tabs" ItemsSource="{Binding Tabs}"
+                             SelectedIndex="{Binding SelectedTabIndex}" HorizontalAlignment="Left"
+                             ContainerPrepared="OnTabContainerPrepared" LayoutUpdated="OnTabItemsLayoutUpdated">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SearchTabItem">
+                                <Panel Margin="12,0">
+                                    <TextBlock Classes="tab-label" Text="{Binding Label}" FontSize="14"
+                                               VerticalAlignment="Center" />
+                                    <!-- 选中项使用半粗文字和短强调线。 -->
+                                    <Border Classes="tab-pill" Width="22" Height="3" CornerRadius="1.5"
+                                            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+                                </Panel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button x:Name="TabOverflowButton" Classes="tab-more" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" IsVisible="False" ToolTip.Tip="更多">
+                        <TextBlock Classes="tab-glyph" Text="{DynamicResource IconTabMore}" Margin="0,2,0,0" />
+                    </Button>
+                </Grid>
             </Grid>
-            <!-- 类型 Tab:居中横排(原版 NavigationView 顶栏);宽度不足时溢出项收进右侧
-                 "···" 按钮(宿主代码按容器实测宽度计算),Flyout 列出被收起的项 -->
-            <Grid Grid.Row="1" x:Name="TabBarHost" IsVisible="{Binding ShowTabBar}" MinHeight="48"
-                  SizeChanged="OnTabBarHostSizeChanged">
-                <ListBox x:Name="TabItems" Classes="search-tabs" ItemsSource="{Binding Tabs}"
-                         SelectedIndex="{Binding SelectedTabIndex}" HorizontalAlignment="Center"
-                         ContainerPrepared="OnTabContainerPrepared" LayoutUpdated="OnTabItemsLayoutUpdated">
-                    <ListBox.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ListBox.ItemsPanel>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SearchTabItem">
-                            <Panel Margin="17,0">
-                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                    <TextBlock Classes="tab-glyph" Margin="0,2,0,0"
-                                               Text="{Binding Kind, Converter={x:Static infra:SearchTabIconConverter.Instance}}" />
-                                    <TextBlock Text="{Binding Label}" FontSize="14" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextPrimary}" />
-                                </StackPanel>
-                                <!-- 选中胶囊:居中 22x3(原版 SelectionIndicator 形态),文字不变色 -->
-                                <Border Classes="tab-pill" Width="22" Height="3" CornerRadius="1.5"
-                                        HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2" />
-                            </Panel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-                <Button x:Name="TabOverflowButton" Classes="tab-more" HorizontalAlignment="Right"
-                        VerticalAlignment="Center" IsVisible="False" ToolTip.Tip="更多">
-                    <TextBlock Classes="tab-glyph" Text="{DynamicResource IconTabMore}" Margin="0,2,0,0" />
-                </Button>
-            </Grid>
-            <ProgressBar Grid.Row="2" Height="3" IsIndeterminate="True" Margin="24,8,24,0"
+            <ProgressBar Grid.Row="1" Height="3" IsIndeterminate="True" Margin="24,0"
                          infra:IndeterminateAnimationGate.IsActive="True"
                          IsVisible="{Binding IsSearching}" Foreground="{DynamicResource SystemAccentColor}" />
 
-            <ScrollViewer Grid.Row="3" x:Name="ResultsScroll" HorizontalScrollBarVisibility="Disabled"
+            <ScrollViewer Grid.Row="2" x:Name="ResultsScroll" HorizontalScrollBarVisibility="Disabled"
                           ScrollChanged="OnResultsScrollChanged" Classes="page-scroll">
-                <StackPanel Classes="results-body" Margin="24,12,24,120" Spacing="18">
+                <StackPanel Classes="results-body" Spacing="16">
+                    <TextBlock Text="{Binding ResultsTitle}" FontSize="13"
+                               Foreground="{DynamicResource TextTertiary}" TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding Message}" FontSize="20" HorizontalAlignment="Center" Margin="0,40"
                                IsVisible="{Binding ShowEmpty}" Foreground="{DynamicResource TextTertiary}" />
 
@@ -599,7 +577,7 @@
                                 </ItemsControl>
                             </Border>
                         </StackPanel>
-                        <!-- 用户(本移植无用户主页,仅展示) -->
+                        <!-- 用户(网易云按 uid、QQ 按 encrypt_uin 进共用用户页) -->
                         <StackPanel IsVisible="{Binding HasUsers}" Spacing="8">
                             <Grid ColumnDefinitions="*,Auto" Margin="4,0">
                                 <TextBlock Classes="result-section-title" Text="用户" />
@@ -613,7 +591,11 @@
                                 <ItemsControl ItemsSource="{Binding Users}" ContainerPrepared="OnResultContainerPrepared">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:SearchUserItemViewModel">
-                                            <Border Classes="result-row" Background="Transparent">
+                                            <Button Classes="result-row"
+                                                    IsHitTestVisible="{Binding CanOpen}"
+                                                    Focusable="{Binding CanOpen}"
+                                                    Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchUserCommand}"
+                                                    CommandParameter="{Binding}">
                                                 <Grid ColumnDefinitions="52,*">
                                                     <Border Width="48" Height="48" CornerRadius="24"
                                                             Background="{DynamicResource ArtFallback}" ClipToBounds="True"
@@ -629,7 +611,7 @@
                                                                    Foreground="{DynamicResource TextSecondary}" />
                                                     </StackPanel>
                                                 </Grid>
-                                            </Border>
+                                            </Button>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
@@ -729,7 +711,11 @@
                         <ItemsControl ItemsSource="{Binding Users}" ContainerPrepared="OnResultContainerPrepared">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SearchUserItemViewModel">
-                                    <Border Classes="result-row" Background="Transparent">
+                                    <Button Classes="result-row"
+                                            IsHitTestVisible="{Binding CanOpen}"
+                                            Focusable="{Binding CanOpen}"
+                                            Command="{Binding $parent[views:SearchView].((vm:SearchViewModel)DataContext).OpenSearchUserCommand}"
+                                            CommandParameter="{Binding}">
                                         <Grid ColumnDefinitions="52,*">
                                             <Border Width="48" Height="48" CornerRadius="24"
                                                     Background="{DynamicResource ArtFallback}" ClipToBounds="True"
@@ -745,7 +731,7 @@
                                                            Foreground="{DynamicResource TextSecondary}" />
                                             </StackPanel>
                                         </Grid>
-                                    </Border>
+                                    </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -756,6 +742,12 @@
                                IsVisible="{Binding ShowNoMore}" Foreground="{DynamicResource TextTertiary}" />
                 </StackPanel>
             </ScrollViewer>
+            <Button Grid.Row="2" Classes="top-btn" Classes.show="{Binding ShowBackToTop}"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,128"
+                    Command="{Binding BackToTopCommand}" ToolTip.Tip="回到顶部" AutomationProperties.Name="回到顶部">
+                <PathIcon Width="16" Height="16" Foreground="{DynamicResource TextPrimary}"
+                          Data="M 8,2.6 L 13.4,8 L 12,9.4 L 9,6.4 L 9,13.4 L 7,13.4 L 7,6.4 L 4,9.4 L 2.6,8 Z" />
+            </Button>
         </Grid>
     </Grid>
 </UserControl>

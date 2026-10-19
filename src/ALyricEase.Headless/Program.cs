@@ -1013,7 +1013,7 @@ public static class Program
             return;
         }
 
-        // 搜索来源持久化与 Fluent 2 分段选择器渲染回归（不触网）。
+        // 搜索来源持久化与 Fluent 下拉选择器渲染回归（不触网）。
         if (args.Length > 0 && args[0] == "--searchsource")
         {
             SearchSourcePreferenceProbe.Run();
@@ -1030,6 +1030,12 @@ public static class Program
         if (args.Length > 0 && args[0] == "--likesourcedlg")
         {
             LikeSourceDialogProbe.Run();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--search-continuation")
+        {
+            Environment.ExitCode = SearchContinuationProbe.Run();
             return;
         }
 

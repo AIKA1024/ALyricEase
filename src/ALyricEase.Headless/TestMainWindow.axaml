@@ -137,19 +137,21 @@
       <!-- 原版风格自绘标题栏：左侧拖拽区，右侧窗口控制。 -->
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent" PointerPressed="OnTitleBarPointerPressed"
             ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0" VerticalAlignment="Center">
+        <!-- 间距按 Fluent 2 / Windows 标题栏规范:图标距返回键 16、标题距图标 16(逐元素 Margin,不用 Spacing)。 -->
+        <StackPanel Orientation="Horizontal" Margin="4,0" VerticalAlignment="Center">
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
             <TextBlock x:Name="BackGlyph" Text="{DynamicResource IconBack}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="12" />
           </Button>
           <!-- 小屏汉堡按钮(仿原版 NavigationView Minimal):窄窗无侧栏,汉堡移入标题栏、在返回键右侧,点开抽屉。
                IsVisible 由代码后置按宽度控制(ResponsiveClasses 的 narrow)。 -->
-          <Button x:Name="TitleBarHamburger" Classes="back-button" IsVisible="False"
+          <Button x:Name="TitleBarHamburger" Classes="back-button" IsVisible="False" Margin="4,0,0,0"
                   Command="{Binding ToggleNavigationDrawerCommand}" ToolTip.Tip="展开侧边栏">
             <TextBlock x:Name="TitleBarHamburgerGlyph" Text="☰" FontSize="16" />
           </Button>
-          <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" />
+          <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" Margin="16,0,0,0" />
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                     Margin="16,0,0,0"
                      Foreground="{DynamicResource TextPrimary}" />
         </StackPanel>
         <StackPanel Grid.Column="2" x:Name="WindowControls" Orientation="Horizontal">

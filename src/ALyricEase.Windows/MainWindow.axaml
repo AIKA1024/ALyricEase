@@ -124,7 +124,10 @@
            同 UWP 原生 caption buttons;标题栏其余部分(返回/汉堡/标题)照旧被覆盖层盖住。 -->
       <Grid Grid.Row="0" x:Name="TitleBar" Background="Transparent" PointerPressed="OnTitleBarPointerPressed"
             ColumnDefinitions="Auto,*" IsEnabled="{Binding !IsErrorDialogOpen}">
-        <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0" VerticalAlignment="Center">
+        <!-- 间距按 Fluent 2 / Windows 标题栏规范(微软 titlebar-design：图标距返回键 16、标题距图标 16)，
+             逐个元素写 Margin 而不是 StackPanel.Spacing —— 返回键与汉堡是一对同族按钮(4)，图标与标题各自另算，
+             统一 4 会把图标挤到按钮和文字中间。 -->
+        <StackPanel Orientation="Horizontal" Margin="4,0" VerticalAlignment="Center">
           <Button Classes="back-button" Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}"
                   ToolTip.Tip="返回上一页">
             <TextBlock x:Name="BackGlyph" Text="{DynamicResource IconBack}"
@@ -132,12 +135,13 @@
           </Button>
           <!-- 小屏汉堡按钮(仿原版 NavigationView Minimal):窄窗无侧栏,汉堡移入标题栏、在返回键右侧,点开抽屉。
                IsVisible 由代码后置按宽度控制(ResponsiveClasses 的 narrow)。 -->
-          <Button x:Name="TitleBarHamburger" Classes="back-button" IsVisible="False"
+          <Button x:Name="TitleBarHamburger" Classes="back-button" IsVisible="False" Margin="4,0,0,0"
                   Command="{Binding ToggleNavigationDrawerCommand}" ToolTip.Tip="展开侧边栏">
             <TextBlock x:Name="TitleBarHamburgerGlyph" Text="☰" FontSize="16" />
           </Button>
-          <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" />
+          <Image Source="avares://ALyricEase/Assets/icon_24.png" Width="24" Height="24" Margin="16,0,0,0" />
           <TextBlock Text="ALyricEase" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                     Margin="16,0,0,0"
                      Foreground="{DynamicResource TextPrimary}" />
         </StackPanel>
       </Grid>

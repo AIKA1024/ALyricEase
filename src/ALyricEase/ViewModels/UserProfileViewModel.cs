@@ -18,7 +18,7 @@ public sealed record UserTasteRowViewModel(PlaylistItemViewModel Playlist, bool 
 /// <summary>用户页(原版 UWP 结构):英雄卡(头像采样背景/昵称/关注粉丝)+ 三个分组
 /// —— 音乐品味(喜欢的音乐/年度歌单,图标瓦片行)、参与创作的歌单、收藏的歌单(封面行)。
 /// 双音源:网易云 uid=0 表示"自己"(按登录态解析),创建者按钮带创建者 id 跳入;
-/// QQ 仅"自己"(QQ 歌单创建者恒为登录账号,协议无他人主页跳转入口),按登录态解析。
+/// QQ 自己走账号摘要,他人走 encrypt_uin(网页 /n/ryqq_v2/profile 同源)。
 /// 导航历史只保留定位参数；页面数据走有界的一次性内存快照，返回无需重复联网。</summary>
 public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 {
@@ -31,6 +31,8 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
     private int _playlistRevision;
     private MusicSource _source = MusicSource.NetEase;
     private long _userId;
+    /// <summary>QQ 他人主页的 encrypt_uin(QQ 搜索只给这个,没有数字 uin)。</summary>
+    private string _euin = "";
     private CancellationTokenSource? _loadCancellation;
     private int _loadGeneration;
 
@@ -231,6 +233,51 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         }
     }
 
+    /// <summary>打开 QQ 他人主页(网页 /n/ryqq_v2/profile?uin=euin 同源):
+    /// 主页 fcg 的 userid 直接收 encrypt_uin;喜欢 → 音乐品味,自建 → 参与创作,收藏 → 收藏分组。
+    /// 隐私账号或未登录时照常渲染主页头,缺的分区隐藏。</summary>
+    public async Task LoadQqUserAsync(string euin)
+    {
+        if (string.IsNullOrWhiteSpace(euin)) return;
+        _source = MusicSource.QQ;
+        _euin = euin;
+        var (generation, ct) = BeginLoad();
+        ClearContent();
+        try
+        {
+            var home = await _qqApi.GetUserHomepageAsync(euin, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            _userId = 0;
+            Nickname = home.Nickname;
+            AvatarUrl = home.AvatarUrl;
+            Follows = home.Follows;
+            Followeds = home.Followeds;
+            Level = 0; // 他人主页无轻量等级字段
+
+            var taste = new List<UserTasteRowViewModel>();
+            if (home.Liked is not null)
+                taste.Add(new UserTasteRowViewModel(ToPlaylistVm(home.Liked), ShowHeart: true));
+            var created = home.Created.Select(ToPlaylistVm).ToList();
+            var collected = home.Collected.Select(ToPlaylistVm).ToList();
+            ApplyContent(taste, created, collected);
+
+            _ = FillQqPlayCountsAsync(home.Created.Concat(home.Collected).ToList(), generation, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!IsCurrentLoad(generation, ct)) return;
+            IsLoading = false;
+            QqLoadFailed?.Invoke(ex);
+        }
+    }
+
+    /// <summary>用户页歌单行:保留创建者昵称(收藏分组 more 菜单"创建者"用)。</summary>
+    private static PlaylistItemViewModel ToPlaylistVm(Playlist playlist)
+        => new(playlist) { CreatorName = playlist.CreatorName.Length > 0 ? playlist.CreatorName : null };
+
     /// <summary>QQ 歌单播放量后台补拉:按块多模块请求,完成后逐行原地更新(不改集合结构)。</summary>
     private async Task FillQqPlayCountsAsync(List<Playlist> playlists, int generation, CancellationToken ct)
     {
@@ -286,7 +333,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 
     internal DetailNavigationSnapshot? CaptureAndReleaseNavigationSnapshot()
     {
-        if (_userId == 0)
+        if (_userId == 0 && _euin.Length == 0)
         {
             ReleaseCurrentPageData();
             return null;
@@ -297,7 +344,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
             DetailPageKind.User,
             _source,
             _userId,
-            "",
+            _source == MusicSource.QQ ? _euin : "",
             Nickname,
             0,
             "",
@@ -319,6 +366,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         CancelCurrentLoad();
         ClearContent();
         _userId = 0;
+        _euin = "";
         _source = MusicSource.NetEase;
         ResetPageScrollState();
     }
@@ -326,6 +374,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
     internal async Task RestoreNavigationSnapshotAsync(DetailNavigationSnapshot snapshot)
     {
         _source = snapshot.Source;
+        _euin = snapshot.Source == MusicSource.QQ ? snapshot.Mid : "";
         var (generation, ct) = BeginLoad();
         ClearContent();
         _userId = snapshot.Id;
@@ -348,7 +397,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         // 未完成的页面、被淘汰的快照或账号/歌单已改变时才重新请求。
         Task reload;
         if (snapshot.Source == MusicSource.QQ)
-            reload = LoadQqAsync();
+            reload = snapshot.Mid.Length > 0 ? LoadQqUserAsync(snapshot.Mid) : LoadQqAsync();
         else
             reload = LoadAsync(snapshot.Id);
         var fallbackGeneration = _loadGeneration;
@@ -375,6 +424,6 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
     }
 
     /// <summary>是否有保留的页面数据(被其他详情页顶掉时决定是否值得进导航历史)。</summary>
-    internal bool HasRetainedPageData => _userId != 0 || TasteRows.Count > 0 || CreatedPlaylists.Count > 0
+    internal bool HasRetainedPageData => _userId != 0 || _euin.Length > 0 || TasteRows.Count > 0 || CreatedPlaylists.Count > 0
         || CollectedPlaylists.Count > 0 || Nickname.Length > 0;
 }

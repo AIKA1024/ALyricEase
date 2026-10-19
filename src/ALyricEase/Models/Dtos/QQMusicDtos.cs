@@ -214,6 +214,10 @@ public sealed record QQHomepageData
     public QQCreatorDto? Creator { get; init; }
 
     public QQMyDiss? Mydiss { get; init; }
+
+    /// <summary>音乐品味瓦片:type=1 为"喜欢"(id 即喜欢歌单 tid),type=2 年度歌单/那年今日,
+    /// type=5 评论入口(不建歌单)。</summary>
+    [JsonPropertyName("mymusic")] public List<QQMyMusicDto>? MyMusic { get; init; }
 }
 
 /// <summary>主页创建者资料。字段随端版本漂移,nick/avatar 多候选兜底。</summary>
@@ -230,11 +234,49 @@ public sealed record QQCreatorDto
     [JsonPropertyName("faceurl")] public string? FaceUrl { get; init; }
 
     [JsonPropertyName("headpic")] public string? Headpic { get; init; }
+
+    /// <summary>加密 uin:网页主页路由与歌单接口都直接用它。</summary>
+    [JsonPropertyName("encrypt_uin")] public string? EncryptUin { get; init; }
+
+    /// <summary>关注/粉丝数(nums.fansnum / nums.follownum)。</summary>
+    [JsonPropertyName("nums")] public QQUserNumsDto? Nums { get; init; }
+}
+
+public sealed record QQUserNumsDto
+{
+    [JsonPropertyName("fansnum")] public int FansNum { get; init; }
+
+    [JsonPropertyName("follownum")] public int FollowNum { get; init; }
 }
 
 public sealed record QQMyDiss
 {
+    /// <summary>歌单总数(列表本身不分页,老主页通道一次给全)。</summary>
+    public int Num { get; init; }
+
     public List<QQDissItem>? List { get; init; }
+}
+
+/// <summary>音乐品味瓦片。</summary>
+public sealed record QQMyMusicDto
+{
+    public string? Title { get; init; }
+
+    [JsonPropertyName("picurl")] public string? PicUrl { get; init; }
+
+    /// <summary>type=1 时为"喜欢"歌单 tid(字符串形态)。</summary>
+    public string? Id { get; init; }
+
+    public int Type { get; init; }
+
+    /// <summary>喜欢瓦片的歌曲/专辑/歌单数。</summary>
+    public int Num0 { get; init; }
+
+    public int Num1 { get; init; }
+
+    public int Num2 { get; init; }
+
+    public string? Subtitle { get; init; }
 }
 
 /// <summary>歌单项(老主页通道回落用)。id 兼容 dissid/disstid,名兼容 dissname/dirname,封面兼容 picurl/logo。</summary>
@@ -248,6 +290,14 @@ public sealed record QQDissItem
 
     [JsonPropertyName("dirname")] public string? Dirname { get; init; }
 
+    /// <summary>老主页 mydiss.list 的展示名(与 dissname/dirname 三选一)。</summary>
+    public string? Title { get; init; }
+
+    /// <summary>老主页 mydiss.list 的副标题("734首    0次播放")。</summary>
+    public string? Subtitle { get; init; }
+
+    [JsonPropertyName("dirid")] public long DirId { get; init; }
+
     [JsonPropertyName("picurl")] public string? Picurl { get; init; }
 
     public string? Logo { get; init; }
@@ -257,6 +307,45 @@ public sealed record QQDissItem
     [JsonPropertyName("songcount")] public int SongcountAlt { get; init; }
 
     public string? Intro { get; init; }
+}
+
+// ---------- 他人主页收藏歌单(fcg_get_profile_order_asset.fcg,按 encrypt_uin 查询)----------
+
+public sealed record QQProfileOrderAssetResponse
+{
+    public int Code { get; init; }
+
+    public int Subcode { get; init; }
+
+    public string? Msg { get; init; }
+
+    public QQProfileOrderAssetData? Data { get; init; }
+}
+
+public sealed record QQProfileOrderAssetData
+{
+    [JsonPropertyName("totaldiss")] public long TotalDiss { get; init; }
+
+    [JsonPropertyName("has_more")] public int HasMore { get; init; }
+
+    [JsonPropertyName("cdlist")] public List<QQProfileOrderPlaylistDto>? CdList { get; init; }
+}
+
+public sealed record QQProfileOrderPlaylistDto
+{
+    [JsonPropertyName("dissid")] public long DissId { get; init; }
+
+    [JsonPropertyName("dissname")] public string? DissName { get; init; }
+
+    [JsonPropertyName("songnum")] public int SongNum { get; init; }
+
+    [JsonPropertyName("listennum")] public double ListenNum { get; init; }
+
+    [JsonPropertyName("logo")] public string? Logo { get; init; }
+
+    [JsonPropertyName("dirid")] public long DirId { get; init; }
+
+    public string? Nickname { get; init; }
 }
 
 // ---------- 官方"每日30首"入口(music.recommend.RecommendFeed/get_recommend_feed)----------
@@ -617,18 +706,11 @@ public sealed record QQVipUserInfoDto
 }
 
 
-// ---------- musicu.fcg music.search.SearchCgiService(搜索歌单/歌曲) ----------
+// ---------- musicu.fcg music.search.SearchCgiService(搜索歌曲/歌单/歌手/专辑/用户) ----------
 
-/// <summary>musicu 复合响应外壳(req_1 节点,SearchCgiService 歌单通道)。</summary>
-public sealed record QQMusicuSearchPlaylistResponse
-{
-    public int Code { get; init; }
-
-    [JsonPropertyName("req_1")] public QQMusicuSearchNode? Req1 { get; init; }
-}
-
-/// <summary>musicu 复合响应外壳(req_0 节点,SearchCgiService 歌曲通道)。</summary>
-public sealed record QQMusicuSearchSongResponse
+/// <summary>musicu 复合响应外壳(req_0 节点;SearchCgiService 的
+/// search_type 0/1/2/3/8 共用同一形状)。</summary>
+public sealed record QQMusicuSearchResponse
 {
     public int Code { get; init; }
 
@@ -654,6 +736,15 @@ public sealed record QQMusicuSearchBody
 
     /// <summary>search_type=0 返回的歌曲容器(body.song.list;条目为 songid/songmid 平铺形态,复用 QQTrackDto)。</summary>
     [JsonPropertyName("song")] public QQSearchSongContainer? Song { get; init; }
+
+    /// <summary>search_type=1 返回的歌手容器(body.singer.list)。</summary>
+    [JsonPropertyName("singer")] public QQMusicuSingerContainer? Singer { get; init; }
+
+    /// <summary>search_type=2 返回的专辑容器(body.album.list)。</summary>
+    [JsonPropertyName("album")] public QQMusicuAlbumContainer? Album { get; init; }
+
+    /// <summary>search_type=8 返回的用户容器(body.user.list)。</summary>
+    [JsonPropertyName("user")] public QQMusicuUserContainer? User { get; init; }
 }
 
 public sealed record QQMusicuPlaylistContainer
@@ -678,4 +769,71 @@ public sealed record QQMusicuPlaylistDto
 public sealed record QQMusicuPlaylistCreatorDto
 {
     [JsonPropertyName("name")] public string? Name { get; init; }
+}
+
+public sealed record QQMusicuSingerContainer
+{
+    [JsonPropertyName("list")] public List<QQMusicuSingerDto>? List { get; init; }
+}
+
+/// <summary>搜索歌手条目(singerID 为数字 id,singerMID 用于歌手页路由)。</summary>
+public sealed record QQMusicuSingerDto
+{
+    [JsonPropertyName("singerID")] public long SingerID { get; init; }
+
+    [JsonPropertyName("singerMID")] public string? SingerMid { get; init; }
+
+    [JsonPropertyName("singerName")] public string? SingerName { get; init; }
+
+    [JsonPropertyName("singerPic")] public string? SingerPic { get; init; }
+
+    [JsonPropertyName("songNum")] public int SongNum { get; init; }
+
+    [JsonPropertyName("albumNum")] public int AlbumNum { get; init; }
+}
+
+public sealed record QQMusicuAlbumContainer
+{
+    [JsonPropertyName("list")] public List<QQMusicuAlbumDto>? List { get; init; }
+}
+
+/// <summary>搜索专辑条目(albumMID 用于专辑页路由;publicTime 形如 2026-03-25)。</summary>
+public sealed record QQMusicuAlbumDto
+{
+    [JsonPropertyName("albumID")] public long AlbumID { get; init; }
+
+    [JsonPropertyName("albumMID")] public string? AlbumMid { get; init; }
+
+    [JsonPropertyName("albumName")] public string? AlbumName { get; init; }
+
+    [JsonPropertyName("albumPic")] public string? AlbumPic { get; init; }
+
+    [JsonPropertyName("singerName")] public string? SingerName { get; init; }
+
+    [JsonPropertyName("publicTime")] public string? PublicTime { get; init; }
+
+    [JsonPropertyName("song_count")] public int SongCount { get; init; }
+}
+
+public sealed record QQMusicuUserContainer
+{
+    [JsonPropertyName("list")] public List<QQMusicuUserDto>? List { get; init; }
+}
+
+/// <summary>搜索用户条目(无个人签名,展示身份标签与粉丝数;encrypt_uin 供后续跳转预留)。</summary>
+public sealed record QQMusicuUserDto
+{
+    [JsonPropertyName("title")] public string? Title { get; init; }
+
+    [JsonPropertyName("pic")] public string? Pic { get; init; }
+
+    [JsonPropertyName("identify_title")] public string? IdentifyTitle { get; init; }
+
+    [JsonPropertyName("fans_title")] public string? FansTitle { get; init; }
+
+    [JsonPropertyName("gedan_title")] public string? GedanTitle { get; init; }
+
+    [JsonPropertyName("diss_num")] public int DissNum { get; init; }
+
+    [JsonPropertyName("encrypt_uin")] public string? EncryptUin { get; init; }
 }

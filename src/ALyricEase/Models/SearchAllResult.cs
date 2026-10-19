@@ -80,14 +80,19 @@ public sealed class SearchAlbumItem
     public string ArtistName { get; init; } = "";
 }
 
-/// <summary>搜索结果里的用户项(仅网易云;本移植无用户主页,行仅展示)。</summary>
+/// <summary>搜索结果里的用户项(双音源共用;Source 决定能否打开用户页)。</summary>
 public sealed class SearchUserItem
 {
     public long Id { get; init; }
+
+    public MusicSource Source { get; init; } = MusicSource.NetEase;
 
     public string Name { get; init; } = "";
 
     public string AvatarUrl { get; init; } = "";
 
     public string Signature { get; init; } = "";
+
+    /// <summary>QQ 他人主页标识(搜索只给 encrypt_uin;网易云为空)。</summary>
+    public string EncryptUin { get; init; } = "";
 }

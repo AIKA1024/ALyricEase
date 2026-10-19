@@ -662,11 +662,157 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     /// <summary>歌曲搜索:musicu.fcg SearchCgiService/DoSearchForQQMusicDesktop(search_type=0)。
     /// 旧 client_search_cp(c.y.qq.com 明文 GET)已被服务端下线 —— 一律 HTTP 500(2026-09-30 实测)。
-    /// comm 必须 ct=19/cv=1859(与网页端一致):复用 PostMusicuAsync 的 ct=24/cv=4747474 会 code=0
-    /// 但全空列表(与 SearchPlaylistsAsync 同一坑)。响应条目 songid/songmid 平铺形态,复用 MapTrack。</summary>
+    /// 响应条目 songid/songmid 平铺形态,复用 MapTrack。</summary>
     public async Task<List<Song>> SearchAsync(string keyword, int limit = 30, int offset = 0, CancellationToken ct = default)
     {
         var page = offset / Math.Max(limit, 1) + 1;
+        var body = await SearchBodyAsync(keyword, 0, limit, page, "搜索失败", ct).ConfigureAwait(false);
+        var list = body.Song?.List;
+        if (list is null)
+            throw new ApiException("搜索失败(响应缺少歌曲列表)", -1);
+        return list.Select(MapTrack).ToList();
+    }
+
+    /// <summary>多类型搜索:SearchCgiService 的 search_type 0 歌曲 / 1 歌手 / 2 专辑 / 3 歌单 / 8 用户。
+    /// 登录态下五路均可返回(2026-10-19 实测,含专辑/歌手/用户);匿名仅用户通道放行,
+    /// 其余回 2001 强制登录。全部页五路并行,单类型只发一路。</summary>
+    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
+    {
+        if (kind == SearchKind.All)
+        {
+            var songs = SearchAsync(keyword, limit, 0, ct);
+            var playlists = SafeSearchAsync(SearchPlaylistsAsync(keyword, limit, ct));
+            var artists = SafeSearchAsync(SearchArtistsAsync(keyword, limit, ct));
+            var albums = SafeSearchAsync(SearchAlbumsAsync(keyword, limit, ct));
+            var users = SafeSearchAsync(SearchUsersAsync(keyword, limit, ct));
+
+            var all = new SearchAllResult();
+            try
+            {
+                // 歌曲沿用整体失败语义(全空时调用方显示错误而非"没有结果");
+                // 其余分区失败只留空,切到对应 Tab 时再显式报错。
+                all.Songs.AddRange(await songs.ConfigureAwait(false));
+            }
+            finally
+            {
+                await Task.WhenAll(playlists, artists, albums, users).ConfigureAwait(false);
+            }
+            all.Playlists.AddRange(await playlists.ConfigureAwait(false));
+            all.Artists.AddRange(await artists.ConfigureAwait(false));
+            all.Albums.AddRange(await albums.ConfigureAwait(false));
+            all.Users.AddRange(await users.ConfigureAwait(false));
+            return all;
+        }
+
+        var result = new SearchAllResult();
+        switch (kind)
+        {
+            case SearchKind.Track:
+                result.Songs.AddRange(await SearchAsync(keyword, limit, 0, ct).ConfigureAwait(false));
+                break;
+            case SearchKind.Album:
+                result.Albums.AddRange(await SearchAlbumsAsync(keyword, limit, ct).ConfigureAwait(false));
+                break;
+            case SearchKind.Artist:
+                result.Artists.AddRange(await SearchArtistsAsync(keyword, limit, ct).ConfigureAwait(false));
+                break;
+            case SearchKind.Playlist:
+                result.Playlists.AddRange(await SearchPlaylistsAsync(keyword, limit, ct).ConfigureAwait(false));
+                break;
+            case SearchKind.User:
+                result.Users.AddRange(await SearchUsersAsync(keyword, limit, ct).ConfigureAwait(false));
+                break;
+        }
+        return result;
+    }
+
+    /// <summary>全部页分区容错:单路失败只空该分区。</summary>
+    private static async Task<List<T>> SafeSearchAsync<T>(Task<List<T>> task)
+    {
+        try
+        {
+            return await task.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>搜索歌单(search_type=3)。登录态带 Cookie 与 comm uin;
+    /// 匿名请求只有头 1~2 次配额,之后一律回 2001(响应内附登录页 feedbackURL)。</summary>
+    private async Task<List<SearchPlaylistItem>> SearchPlaylistsAsync(string keyword, int limit, CancellationToken ct)
+    {
+        var body = await SearchBodyAsync(keyword, 3, limit, 1, "搜索歌单失败", ct).ConfigureAwait(false);
+        var items = new List<SearchPlaylistItem>();
+        foreach (var p in body.Songlist?.List ?? [])
+        {
+            if (!long.TryParse(p.DissId, out var tid)) continue; // dissid 上游为字符串
+            items.Add(new SearchPlaylistItem
+            {
+                Id = tid,
+                Name = p.DissName ?? "",
+                CoverUrl = p.ImgUrl ?? "",
+                Creator = p.Creator?.Name ?? "",
+                TrackCount = p.SongCount,
+                Source = MusicSource.QQ,
+            });
+        }
+        return items;
+    }
+
+    /// <summary>搜索歌手(search_type=1):singerMID 走歌手页,singerPic 作头像。</summary>
+    private async Task<List<SearchArtistItem>> SearchArtistsAsync(string keyword, int limit, CancellationToken ct)
+    {
+        var body = await SearchBodyAsync(keyword, 1, limit, 1, "搜索歌手失败", ct).ConfigureAwait(false);
+        return (body.Singer?.List ?? []).Select(a => new SearchArtistItem
+        {
+            Id = a.SingerID,
+            Mid = a.SingerMid ?? "",
+            Name = a.SingerName ?? "",
+            AvatarUrl = a.SingerPic ?? "",
+            Source = MusicSource.QQ,
+        }).ToList();
+    }
+
+    /// <summary>搜索专辑(search_type=2):albumMID 走专辑页;publicTime 上游形如 2026-03-25。</summary>
+    private async Task<List<SearchAlbumItem>> SearchAlbumsAsync(string keyword, int limit, CancellationToken ct)
+    {
+        var body = await SearchBodyAsync(keyword, 2, limit, 1, "搜索专辑失败", ct).ConfigureAwait(false);
+        return (body.Album?.List ?? []).Select(a => new SearchAlbumItem
+        {
+            Id = a.AlbumID,
+            Mid = a.AlbumMid ?? "",
+            Name = a.AlbumName ?? "",
+            CoverUrl = a.AlbumPic ?? "",
+            ArtistName = a.SingerName ?? "",
+            PublishDateText = a.PublicTime ?? "",
+            SongCount = a.SongCount,
+            Source = MusicSource.QQ,
+        }).ToList();
+    }
+
+    /// <summary>搜索用户(search_type=8):QQ 无个人签名,副标题用身份标签,缺失时退粉丝数。
+    /// 该通道上游会超发(limit=10 回 14、limit=30 回 54),此处按请求条数截断。</summary>
+    private async Task<List<SearchUserItem>> SearchUsersAsync(string keyword, int limit, CancellationToken ct)
+    {
+        var body = await SearchBodyAsync(keyword, 8, limit, 1, "搜索用户失败", ct).ConfigureAwait(false);
+        return (body.User?.List ?? []).Take(Math.Max(limit, 1)).Select(u => new SearchUserItem
+        {
+            Name = u.Title ?? "",
+            AvatarUrl = u.Pic ?? "",
+            Signature = FirstNonEmpty(u.IdentifyTitle ?? "", u.FansTitle ?? ""),
+            Source = MusicSource.QQ,
+            EncryptUin = u.EncryptUin ?? "",
+        }).ToList();
+    }
+
+    /// <summary>musicu SearchCgiService 通用搜索请求(一次一模块,req_0)。
+    /// comm 必须 ct=19/cv=1859(与网页端一致):复用 PostMusicuAsync 的 ct=24/cv=4747474 会
+    /// code=0 但全空列表(歌曲/歌单实测同一坑)。</summary>
+    private async Task<QQMusicuSearchBody> SearchBodyAsync(
+        string keyword, int searchType, int limit, int page, string errorMessage, CancellationToken ct)
+    {
         string json;
         using (var ms = new MemoryStream())
         {
@@ -676,13 +822,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 w.WriteStartObject("comm");
                 w.WriteNumber("ct", 19);
                 w.WriteNumber("cv", 1859);
-                w.WriteString("uin", "");
+                w.WriteString("uin", IsLoggedIn ? _uin : "");
                 w.WriteEndObject();
                 w.WriteStartObject("req_0");
                 w.WriteString("module", "music.search.SearchCgiService");
                 w.WriteString("method", "DoSearchForQQMusicDesktop");
                 w.WriteStartObject("param");
-                w.WriteNumber("search_type", 0);
+                w.WriteNumber("search_type", searchType);
                 w.WriteString("query", keyword);
                 w.WriteNumber("page_num", page);
                 w.WriteNumber("num_per_page", limit);
@@ -702,102 +848,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         await EnsureSuccessAsync(respMsg, ct).ConfigureAwait(false);
         var respBody = await respMsg.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         using var doc = ParseJson(respBody);
-        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQMusicuSearchSongResponse);
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQMusicuSearchResponse);
         if (resp is null || resp.Code != 0 || resp.Req0 is not { Code: 0 })
-            throw new ApiException("搜索失败", resp?.Req0?.Code ?? resp?.Code ?? -1);
-        var list = resp.Req0.Data?.Body?.Song?.List;
-        if (list is null)
-            throw new ApiException("搜索失败(响应缺少歌曲列表)", -1);
-        return list.Select(MapTrack).ToList();
-    }
-
-    /// <summary>多类型搜索:歌曲复用 SearchCgiService 歌曲通道;歌单走 SearchCgiService 歌单通道。
-    /// client_search_cp 的专辑/歌手通道已废(实测 t=8/9 对热词恒空),musicu 匿名仅放行歌单,
-    /// 故本源只支持 全部(歌曲+歌单)/歌曲/歌单 三类,其余 kind 返回 null。</summary>
-    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
-    {
-        if (kind is SearchKind.Album or SearchKind.Artist or SearchKind.User)
-            return null;
-        var result = new SearchAllResult();
-        if (kind is SearchKind.All or SearchKind.Track)
-            result.Songs.AddRange(await SearchAsync(keyword, limit, 0, ct).ConfigureAwait(false));
-        if (kind is SearchKind.All or SearchKind.Playlist)
-        {
-            // All 页歌单路失败只空分区;歌单 Tab 失败整体抛给调用方
-            try
-            {
-                result.Playlists.AddRange(await SearchPlaylistsAsync(keyword, limit, ct).ConfigureAwait(false));
-            }
-            catch (ApiException)
-            {
-                if (kind == SearchKind.Playlist) throw;
-            }
-        }
-        return result;
-    }
-
-    /// <summary>搜索歌单(musicu.fcg SearchCgiService,search_type=3)。
-    /// 注意:comm 版本必须用 ct=19/cv=1859(与网页端一致)——复用 PostMusicuAsync 的 ct=24/cv=4747474
-    /// 会得到 code=0 但全空列表(实测 2026-08),故此处在客户端外单独构造请求体。
-    /// 登录态必须带 Cookie + comm uin:匿名请求只有头 1~2 次配额,之后一律回 2001(响应内附
-    /// 登录页 feedbackURL,实测 2026-09-30);登录态连续 6 发全部 code=0(见 --qqsearch)。</summary>
-    private async Task<List<SearchPlaylistItem>> SearchPlaylistsAsync(string keyword, int limit, CancellationToken ct)
-    {
-        string json;
-        using (var ms = new MemoryStream())
-        {
-            using (var w = new Utf8JsonWriter(ms))
-            {
-                w.WriteStartObject();
-                w.WriteStartObject("comm");
-                w.WriteNumber("ct", 19);
-                w.WriteNumber("cv", 1859);
-                w.WriteString("uin", IsLoggedIn ? _uin : "");
-                w.WriteEndObject();
-                w.WriteStartObject("req_1");
-                w.WriteString("module", "music.search.SearchCgiService");
-                w.WriteString("method", "DoSearchForQQMusicDesktop");
-                w.WriteStartObject("param");
-                w.WriteNumber("search_type", 3);
-                w.WriteString("query", keyword);
-                w.WriteNumber("page_num", 1);
-                w.WriteNumber("num_per_page", limit);
-                w.WriteEndObject();
-                w.WriteEndObject();
-                w.WriteEndObject();
-            }
-            json = Encoding.UTF8.GetString(ms.ToArray());
-        }
-        using var httpReq = new HttpRequestMessage(HttpMethod.Post, MusicuUrl)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json"),
-        };
-        httpReq.Headers.TryAddWithoutValidation("Referer", "https://y.qq.com/n/ryqq/search");
-        if (IsLoggedIn) httpReq.Headers.TryAddWithoutValidation("Cookie", _cookieHeader);
-        using var respMsg = await _http.SendAsync(httpReq, ct).ConfigureAwait(false);
-        await EnsureSuccessAsync(respMsg, ct).ConfigureAwait(false);
-        var respBody = await respMsg.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        using var doc = ParseJson(respBody);
-        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQMusicuSearchPlaylistResponse);
-        if (resp is null || resp.Code != 0)
-            throw new ApiException("搜索歌单失败", resp?.Code ?? -1);
-        if (resp.Req1 is not { Code: 0 })
-            throw new ApiException("搜索歌单失败", resp.Req1?.Code ?? -1);
-        var items = new List<SearchPlaylistItem>();
-        foreach (var p in resp.Req1.Data?.Body?.Songlist?.List ?? new List<QQMusicuPlaylistDto>())
-        {
-            if (!long.TryParse(p.DissId, out var tid)) continue; // dissid 上游为字符串
-            items.Add(new SearchPlaylistItem
-            {
-                Id = tid,
-                Name = p.DissName ?? "",
-                CoverUrl = p.ImgUrl ?? "",
-                Creator = p.Creator?.Name ?? "",
-                TrackCount = p.SongCount,
-                Source = MusicSource.QQ,
-            });
-        }
-        return items;
+            throw new ApiException(errorMessage, resp?.Req0?.Code ?? resp?.Code ?? -1);
+        return resp.Req0.Data?.Body
+               ?? throw new ApiException($"{errorMessage}(响应缺少 body)", -1);
     }
 
     /// <summary>播放地址:vkey.GetVkeyServer/CgiGetVkey。按档位取文件名前缀
@@ -1554,7 +1609,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private const string HomepageBase = "https://c6.y.qq.com";
 
     /// <summary>用户主页(资料 + 歌单),code=1000 表示登录失效/凭据不完整。</summary>
-    private async Task<QQHomepageResponse> GetHomepageAsync(CancellationToken ct)
+    private Task<QQHomepageResponse> GetHomepageAsync(CancellationToken ct) => GetHomepageAsync(_uin, _uin, ct);
+
+    /// <summary>按 userid 拉主页。网页同款:userid 可以是数字 uin,也可以是 encrypt_uin
+    /// (搜索/主页路由只给后者);loginUin 始终是当前登录账号。</summary>
+    private async Task<QQHomepageResponse> GetHomepageAsync(string userId, string refererUin, CancellationToken ct)
     {
         var query = new Dictionary<string, string?>
         {
@@ -1563,19 +1622,22 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             ["ct"] = "24",
             ["inCharset"] = "utf-8",
             ["uin"] = _uin,
-            ["userid"] = _uin,
+            ["userid"] = userId,
             ["reqfrom"] = "1",
             ["reqtype"] = "0",
             ["loginUin"] = _uin,
             ["cid"] = "205360838",
         };
         using var doc = await GetCAsync("/rsc/fcgi-bin/fcg_get_profile_homepage.fcg", query, ct,
-            HomepageBase, $"https://y.qq.com/portal/profile.html?uin={_uin}").ConfigureAwait(false);
+            HomepageBase, $"https://y.qq.com/n/ryqq_v2/profile?uin={refererUin}").ConfigureAwait(false);
         var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQHomepageResponse);
         if (resp is null || resp.Code != 0 || resp.Data is null)
-            throw new ApiException(resp?.Code == 1000
-                ? "登录已失效或 Cookie 不完整,请重新粘贴完整浏览器 Cookie"
-                : "获取用户信息失败", resp?.Code ?? -1);
+            throw new ApiException(resp?.Code switch
+            {
+                1000 => "登录已失效或 Cookie 不完整,请重新粘贴完整浏览器 Cookie",
+                4000 => "该用户设置了隐私权限",
+                _ => "获取用户信息失败",
+            }, resp?.Code ?? -1);
         return resp;
     }
 
@@ -1628,6 +1690,118 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             Nickname = nick.Length > 0 ? nick : $"QQ {_uin}",
             AvatarUrl = FirstNonEmpty(c?.Avatar, c?.FaceUrl, c?.Headpic),
         };
+    }
+
+    /// <summary>他人主页(网页 /n/ryqq_v2/profile?uin=euin 同源):
+    /// 主页 fcg 的 userid 直接收 encrypt_uin,返回 creator 资料 + mydiss.list(自建歌单) + mymusic(喜欢);
+    /// 收藏歌单再走 fcg_get_profile_order_asset(userid 同样收 euin,隐私账号回 4000 → 空分区)。
+    /// 两步都要求登录 Cookie。</summary>
+    public async Task<QQUserHomepage> GetUserHomepageAsync(string euin, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(euin))
+            throw new ApiException("缺少用户标识", -1);
+        await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
+
+        var homeTask = GetHomepageAsync(euin, euin, ct);
+        var favTask = GetUserFavPlaylistsSafeAsync(euin, ct);
+        await Task.WhenAll(homeTask, favTask).ConfigureAwait(false);
+
+        var home = await homeTask.ConfigureAwait(false);
+        var collected = await favTask.ConfigureAwait(false);
+        var data = home.Data!;
+        var creator = data.Creator;
+        var likedTile = data.MyMusic?.FirstOrDefault(m => m.Type == 1 && long.TryParse(m.Id, out var id) && id != 0);
+        var liked = likedTile is null
+            ? null
+            : new Playlist
+            {
+                Id = long.Parse(likedTile.Id!),
+                DirId = 201,
+                Source = MusicSource.QQ,
+                Name = FirstNonEmpty(likedTile.Title ?? "", "喜欢"),
+                CoverUrl = likedTile.PicUrl ?? "",
+                TrackCount = likedTile.Num0,
+                CanAddTracks = false,
+            };
+
+        return new QQUserHomepage
+        {
+            Nickname = FirstNonEmpty(creator?.Nick ?? "", creator?.Nickname ?? ""),
+            AvatarUrl = FirstNonEmpty(creator?.Avatar ?? "", creator?.FaceUrl ?? "", creator?.Headpic ?? ""),
+            Follows = creator?.Nums?.FollowNum ?? 0,
+            Followeds = creator?.Nums?.FansNum ?? 0,
+            Liked = liked,
+            Created = (data.Mydiss?.List ?? []).Select(MapHomepageDiss)
+                .Where(p => p.Id != 0 && p.DirId != LikedDirId).ToList(),
+            Collected = collected,
+        };
+    }
+
+    /// <summary>他人收藏歌单(网页主页"收藏"Tab 同源)。隐私/失败只空分区,不影响主页头。</summary>
+    private async Task<List<Playlist>> GetUserFavPlaylistsSafeAsync(string euin, CancellationToken ct)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["ct"] = "20",
+            ["cid"] = "205360956",
+            ["userid"] = euin,
+            ["reqtype"] = "3",
+            ["sin"] = "0",
+            ["ein"] = "200",
+            ["format"] = "json",
+        };
+        try
+        {
+            using var doc = await GetCAsync("/fav/fcgi-bin/fcg_get_profile_order_asset.fcg", query, ct,
+                CBase, $"https://y.qq.com/n/ryqq_v2/profile?uin={euin}").ConfigureAwait(false);
+            var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQProfileOrderAssetResponse);
+            if (resp is null || resp.Code != 0)
+                return [];
+            return (resp.Data?.CdList ?? [])
+                .Where(p => p.DissId != 0)
+                .Select(p => new Playlist
+                {
+                    Id = p.DissId,
+                    DirId = p.DirId,
+                    Source = MusicSource.QQ,
+                    Name = p.DissName ?? "",
+                    CoverUrl = p.Logo ?? "",
+                    TrackCount = p.SongNum,
+                    PlayCount = p.ListenNum,
+                    CreatorName = p.Nickname ?? "",
+                    CanAddTracks = false,
+                })
+                .ToList();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
+        {
+            return [];
+        }
+    }
+
+    private static Playlist MapHomepageDiss(QQDissItem item)
+    {
+        var name = FirstNonEmpty(item.Title ?? "", item.DissName ?? "", item.Dirname ?? "");
+        var count = item.SongCount != 0 ? item.SongCount : item.SongcountAlt;
+        if (count == 0) count = ParseLeadingInt(item.Subtitle);
+        return new Playlist
+        {
+            Id = item.DissId != 0 ? item.DissId : item.DissTid,
+            DirId = item.DirId,
+            Source = MusicSource.QQ,
+            Name = name,
+            CoverUrl = FirstNonEmpty(item.Picurl ?? "", item.Logo ?? ""),
+            TrackCount = count,
+            CanAddTracks = false,
+        };
+    }
+
+    private static int ParseLeadingInt(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        var length = 0;
+        while (length < text.Length && char.IsDigit(text[length])) length++;
+        return length > 0 && int.TryParse(text[..length], out var value) ? value : 0;
     }
 
     public async Task<MusicAccountSummary> GetAccountSummaryAsync(CancellationToken ct = default)

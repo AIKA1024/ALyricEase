@@ -955,14 +955,17 @@ public sealed partial class MainViewModel : ViewModelBase
         catch { /* 网络失败:停留在用户页空内容 */ }
     }
 
-    /// <summary>打开 QQ 自己的用户页(QQ 歌单创建者按钮):QQ 歌单创建者恒为登录账号,
-    /// 协议无他人主页跳转入口,恒解析"自己"。与网易云用户页共用同一视图。</summary>
+    /// <summary>打开 QQ 用户页:euin 为空/缺省 = 自己(侧栏/歌单创建者);
+    /// 传入搜索结果里的 encrypt_uin = 他人主页(网页 /n/ryqq_v2/profile 同源)。</summary>
     [RelayCommand]
-    private async Task OpenQqUserAsync()
+    private async Task OpenQqUserAsync(string? euin)
     {
         PreserveDetailBeforeReplacement("User", UserProfile.HasRetainedPageData);
         ActivePage = "User";
-        await UserProfile.LoadQqAsync();
+        if (string.IsNullOrEmpty(euin))
+            await UserProfile.LoadQqAsync();
+        else
+            await UserProfile.LoadQqUserAsync(euin);
     }
 
     /// <summary>QQ 音乐曲目点击歌手 → 歌手页(按 singer mid)。</summary>

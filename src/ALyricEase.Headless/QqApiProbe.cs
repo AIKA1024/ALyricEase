@@ -186,7 +186,45 @@ public static class QqApiProbe
             var songs = await api.SearchAsync("任然", 10);
             Console.WriteLine($"[qqsearch] 生产 SearchAsync: {songs.Count} 首,首曲=[{songs.FirstOrDefault()?.Name} - {songs.FirstOrDefault()?.Artist}]");
             var all = await api.SearchAllAsync("任然", SearchKind.All, 10);
-            Console.WriteLine($"[qqsearch] 生产 SearchAllAsync: 歌曲 {all?.Songs.Count ?? -1} 首 / 歌单 {all?.Playlists.Count ?? -1} 个");
+            Console.WriteLine($"[qqsearch] 生产 SearchAllAsync: 歌曲 {all?.Songs.Count ?? -1} 首 / 歌单 {all?.Playlists.Count ?? -1} 个"
+                + $" / 歌手 {all?.Artists.Count ?? -1} / 专辑 {all?.Albums.Count ?? -1} / 用户 {all?.Users.Count ?? -1}");
+            foreach (var (kind, label) in new[]
+                     {
+                         (SearchKind.Album, "专辑"), (SearchKind.Artist, "歌手"),
+                         (SearchKind.Playlist, "歌单"), (SearchKind.User, "用户"),
+                     })
+            {
+                try
+                {
+                    var r = await api.SearchAllAsync("任然", kind, 10);
+                    var n = kind switch
+                    {
+                        SearchKind.Album => r?.Albums.Count ?? -1,
+                        SearchKind.Artist => r?.Artists.Count ?? -1,
+                        SearchKind.Playlist => r?.Playlists.Count ?? -1,
+                        _ => r?.Users.Count ?? -1,
+                    };
+                    Console.WriteLine($"[qqsearch] {label}Tab: {n} 条");
+                }
+                catch (ApiException ex)
+                {
+                    Console.WriteLine($"[qqsearch] {label}Tab FAIL code={ex.Code}: {ex.Message}");
+                }
+            }
+            // 他人主页(网页 /n/ryqq_v2/profile 同源):userid 直接收 encrypt_uin
+            foreach (var euin in new[] { "owvP7KnP7e6q", "7eoP7e4koi4qNn**" })
+            {
+                try
+                {
+                    var page = await api.GetUserHomepageAsync(euin);
+                    Console.WriteLine($"[qqsearch] 他人主页 {euin}: nick=[{page.Nickname}] 关注={page.Follows} " +
+                        $"粉丝={page.Followeds} 喜欢=[{page.Liked?.Name}] 自建={page.Created.Count} 收藏={page.Collected.Count}");
+                }
+                catch (ApiException ex)
+                {
+                    Console.WriteLine($"[qqsearch] 他人主页 {euin} FAIL code={ex.Code}: {ex.Message}");
+                }
+            }
             // 歌单通道稳定性:多关键词 × 重复,定位"搜索歌单失败"的触发条件
             foreach (var kw in new[] { "流行", "周杰伦", "粤语", "睡前", "任然" })
             {

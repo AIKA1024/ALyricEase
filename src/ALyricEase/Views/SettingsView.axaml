@@ -31,6 +31,19 @@
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
+    <!-- 缓存上限在窄屏分两行，避免标题和帮助按钮被数值输入框挤压。 -->
+    <Style Selector="Grid.cache-limit-row > StackPanel.cache-limit-editor">
+      <Setter Property="Grid.Column" Value="2" />
+      <Setter Property="Grid.Row" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+    <Style Selector="Grid.cache-limit-row.compact > StackPanel.cache-limit-editor">
+      <Setter Property="Grid.Column" Value="1" />
+      <Setter Property="Grid.Row" Value="1" />
+      <Setter Property="Grid.ColumnSpan" Value="2" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="Margin" Value="0,8,0,0" />
+    </Style>
     <!-- "关于该选项"青色下划线链接(悬停提示说明) -->
     <Style Selector="TextBlock.about-link">
       <Setter Property="FontSize" Value="12" />
@@ -374,17 +387,32 @@
       <!-- ============ 存储 ============ -->
       <TextBlock Classes="section-header" Text="存储" />
 
-      <Border Classes="setting-card" Margin="0,0,0,8">
-        <Grid ColumnDefinitions="Auto,*,Auto">
+      <Border x:Name="CacheLimitCard" Classes="setting-card" Margin="0,0,0,8">
+        <Grid Classes="cache-limit-row" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto"
+              SizeChanged="OnCacheLimitRowSizeChanged">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
-          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                      VerticalAlignment="Center" Margin="0,0,16,0">
             <TextBlock Classes="setting-title" Text="缓存上限" />
-            <TextBlock Text="音乐、封面、歌词和离线歌单索引共用此容量;每首歌优先保留最高已缓存音质,超出上限后自动清理最久未使用的内容。"
-                       FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"
-                       Margin="0,2,0,0" />
+            <!-- Fluent Info label：说明按需打开，触屏和键盘都可访问。 -->
+            <Button x:Name="CacheLimitInfoButton" Classes="icon-button" Width="40" Height="40"
+                    Padding="10" VerticalAlignment="Center"
+                    AutomationProperties.Name="缓存上限的更多信息"
+                    ToolTip.Tip="缓存上限说明">
+              <TextBlock Text="{DynamicResource IconInfo}" FontFamily="{DynamicResource LyricEaseIconsOutline}"
+                         FontSize="20" Foreground="{DynamicResource TextSecondary}" />
+              <Button.Flyout>
+                <Flyout Placement="Top">
+                  <TextBlock MaxWidth="280" Margin="12" TextWrapping="Wrap" FontSize="14"
+                             Foreground="{DynamicResource TextPrimary}"
+                             Text="音乐、封面、歌词和离线歌单索引共用此容量，每首歌优先保留已缓存的最高音质。超出上限时，会自动清理最久未使用的内容。" />
+                </Flyout>
+              </Button.Flyout>
+            </Button>
           </StackPanel>
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <StackPanel Classes="cache-limit-editor" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
             <NumericUpDown Width="140" Height="32"
+                           AutomationProperties.Name="缓存上限（MB）"
                            Minimum="128" Maximum="10240" Increment="128"
                            Value="{CompiledBinding MusicCacheMaximumSizeMb, Mode=TwoWay}" />
             <TextBlock Text="MB" FontSize="13" VerticalAlignment="Center"

@@ -22,6 +22,12 @@ public partial class SettingsView : UserControl
         _ = vm.RefreshAudioDevicesCommand.ExecuteAsync(null);
     }
 
+    private void OnCacheLimitRowSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (sender is Grid row)
+            row.Classes.Set("compact", e.NewSize.Width < 360);
+    }
+
     /// <summary>淡化时长滑杆宽 = min(280, 行宽 - 图标/标题/时长文本实际占用)。
     /// 写死 280 窄屏溢出卡片;Stretch+MaxWidth 会被居中(实测,宽屏不靠右)。
     /// 行宽变化驱动,滑杆宽度不反推行宽,无布局反馈回路。子元素 Bounds 在行 arrange 时

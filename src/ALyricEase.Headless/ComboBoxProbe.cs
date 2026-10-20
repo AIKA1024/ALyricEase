@@ -18,11 +18,12 @@ namespace ALyricEase.Headless;
 /// WinUI 风格 ComboBox 弹出层探针(--combobox)：真窗口 + 抓屏，量三件事。
 ///
 /// 1. 边距：选中块的左右留缝(5px)、弹出层内边距(ItemsPresenter 上下 4px)。
-/// 2. 位置：选中项在屏幕上的位置必须和 ComboBox 完全重合(误差 &lt; 1px)，横向左边缘对齐。
+/// 2. 位置：选中项与 ComboBox 对齐；空间不足时 Overlay 必须停在安全区域边缘，横向左边缘对齐。
 /// 3. 动画：t=0 内容必须完全不可见；中途 RevealProgress 单调增；阴影在揭示结束后才淡入。
 ///
 /// 环境变量：ALY_CB_COUNT(项数)、ALY_CB_SELECTED(选中下标)、ALY_CB_LIGHT=1(浅色)、
-/// ALY_CB_CYCLES(开合次数，验偏移不累积)、ALY_CB_SHOTS=0(不抓屏，只量帧节奏/几何)。
+/// ALY_CB_CYCLES(开合次数，验偏移不累积)、ALY_CB_SHOTS=0(不抓屏，只量帧节奏/几何)、
+/// ALY_CB_OVERLAY=1(Android 同款宿主)、ALY_CB_WIDTH/ALY_CB_HEIGHT(客户区尺寸)。
 ///
 /// 帧节奏基线(165Hz 屏)：p50≈6ms、p95≈7ms、≤18ms ≥95%；结尾 1~3 帧大间隔是弹层关闭，
 /// 首帧的 ~100ms 是弹层窗口创建。若 p95 回到 ~90ms，说明帧泵租约没生效(见 UiFramePacer)。
@@ -45,8 +46,8 @@ internal static class ComboBoxProbe
 
         var window = new Window
         {
-            Width = 760,
-            Height = 520,
+            Width = EnvInt("ALY_CB_WIDTH", 760),
+            Height = EnvInt("ALY_CB_HEIGHT", 520),
             RequestedThemeVariant = light ? ThemeVariant.Light : ThemeVariant.Dark,
             Background = new SolidColorBrush(Color.Parse(light ? "#F3F3F3" : "#1F1F1F")),
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -100,6 +101,8 @@ internal static class ComboBoxProbe
             return 1;
         }
 
+        popup.ShouldUseOverlayLayer = Environment.GetEnvironmentVariable("ALY_CB_OVERLAY") == "1";
+        var failures = 0;
         var root = popup.Child as Panel;
         var surface = root?.Children.OfType<RevealBorder>().FirstOrDefault();
         var shadow = root?.Children.OfType<Border>().FirstOrDefault(b => b.Name == "PART_DropDownShadow");
@@ -176,6 +179,31 @@ internal static class ComboBoxProbe
                 }
 
                 var aligned = itemScreenTop >= 0 && Math.Abs(itemScreenTop - comboOrigin.Y) <= 1.5;
+                if (at == 700 && surface is not null)
+                {
+                    var scale = window.RenderScaling;
+                    var centerError = Math.Abs(itemScreenTop + itemHeight * scale / 2 -
+                                               comboOrigin.Y - combo.Bounds.Height * scale / 2);
+                    var leftError = Math.Abs(surfaceOrigin.X - comboOrigin.X);
+                    var positionError = centerError;
+                    if (popup.IsUsingOverlayLayer)
+                    {
+                        // 首尾项无法继续滚动时，完整弹层可能无法让选中项盖住触发器。
+                        // 此时验证 Slide 将弹层限制在窗口安全区域，不能要求它越界。
+                        var safeArea = new Rect(window.ClientSize)
+                            .Deflate(window.InsetsManager?.SafeAreaPadding ?? default);
+                        var top = window.PointToScreen(safeArea.TopLeft).Y;
+                        var bottom = window.PointToScreen(safeArea.BottomRight).Y - surface.Bounds.Height * scale;
+                        var desiredTop = comboOrigin.Y + (combo.Bounds.Height / 2 - itemTop - itemHeight / 2) * scale;
+                        var expectedTop = Math.Clamp(desiredTop, top, Math.Max(top, bottom));
+                        positionError = Math.Abs(surfaceOrigin.Y - expectedTop);
+                    }
+                    if (positionError > 1.5 || leftError > 1.5 || surface.RevealProgress < 1)
+                    {
+                        failures++;
+                        Console.WriteLine($"[combobox] FAIL overlay={popup.IsUsingOverlayLayer} positionError={positionError:0.0}px centerError={centerError:0.0}px leftError={leftError:0.0}px");
+                    }
+                }
 
                 var shadowDelta = double.NaN;
                 if (surface is not null && at >= 460)
@@ -219,7 +247,7 @@ internal static class ComboBoxProbe
         }
 
         window.Close();
-        return 0;
+        return failures == 0 ? 0 : 1;
     }
 
     private static async Task DrainAsync(int ms)

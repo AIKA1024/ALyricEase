@@ -17,8 +17,8 @@ namespace ALyricEase.Controls;
 ///
 /// 两个行为，和 WinUI 3 Gallery 对齐：
 /// 1. **位置**：弹出层不再固定贴在控件下沿，而是整体上下平移，让**选中项**盖在控件位置
-///    （WinUI 的 ComboBox 下拉就是把当前项对到控件上）。平移量用屏幕坐标实测，
-///    因此阴影预留边距、DPI 缩放、Slide 约束都不需要手工换算。
+///    （WinUI 的 ComboBox 下拉就是把当前项对到控件上）。原生弹窗用屏幕坐标实测；
+///    Overlay 用相对布局坐标，避免在宿主尚未完成移动时读取旧的屏幕位置。
 /// 2. **动画**：内容以选中项中心为原点向两侧"揭开"（见 <see cref="RevealBorder"/>），
 ///    揭示结束之后阴影才淡入。弹出层在定位完成前是完全裁剪掉的，不会闪一下错误位置。
 ///
@@ -256,6 +256,18 @@ public static class PickerPopupReveal
             screenBottom = 0;
 
             var topLevel = TopLevel.GetTopLevel(_surface);
+            if (_popup.IsUsingOverlayLayer && topLevel is not null &&
+                _surface?.FindAncestorOfType<OverlayPopupHost>()?.GetVisualParent() is { } overlay)
+            {
+                // Overlay 的约束区域是窗口内的安全区域，不是整块显示器。
+                var safeArea = new Rect(overlay.Bounds.Size)
+                    .Deflate(topLevel.InsetsManager?.SafeAreaPadding ?? default);
+                var overlayScale = topLevel.RenderScaling > 0 ? topLevel.RenderScaling : 1.0;
+                screenTop = overlay.PointToScreen(safeArea.TopLeft).Y / overlayScale;
+                screenBottom = overlay.PointToScreen(safeArea.BottomRight).Y / overlayScale;
+                return true;
+            }
+
             var screens = topLevel?.Screens;
             if (screens is null)
             {
@@ -329,6 +341,21 @@ public static class PickerPopupReveal
             if (_surface is null)
             {
                 return double.NaN;
+            }
+
+            if (_popup.IsUsingOverlayLayer && _popup.PlacementTarget is { } target &&
+                _popup.Child is { } child &&
+                target.TranslatePoint(default, combo) is { } targetOrigin &&
+                _surface.TranslatePoint(default, child) is { } surfaceOriginInChild)
+            {
+                // 此模板固定使用 Bottom：锚点是 PlacementTarget 左下角。
+                // OverlayPopupHost 在渲染阶段才应用 Canvas.Left/Top，Opened/UpdateLayout
+                // 后测到的屏幕坐标仍可能是 (0,0) 处的旧位置，因此直接求目标偏移。
+                // Avalonia 12 定位时会排除 Popup.Child.Margin（模板的阴影留白）。
+                _popup.HorizontalOffset = -targetOrigin.X - surfaceOriginInChild.X;
+                _popup.VerticalOffset = combo.Bounds.Height / 2 - targetOrigin.Y - target.Bounds.Height
+                    - surfaceOriginInChild.Y - itemTop - container.Bounds.Height / 2;
+                return itemTop + container.Bounds.Height / 2;
             }
 
             var scale = TopLevel.GetTopLevel(_surface)?.RenderScaling ?? 1.0;

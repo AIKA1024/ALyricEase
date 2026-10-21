@@ -98,3 +98,56 @@
   tag 仍须是版本号(与桌面同一套约定);release body 为两端的更新说明来源。
 - **首次接入注意**:现有安装的 `versionName=1.0`;发布新版本时记得同步
   `ApplicationDisplayVersion`/清单 `versionName`/`versionCode`,否则本地版本比对永远判"无更新"。
+
+## 五、单实例(2026-10-21,与自启/更新重启共用一条闸)
+
+**为什么加**:开机自启、手动双击图标、更新后 `Update.exe` 拉起新版本,三条路径可能同时到达。
+此前全仓库没有任何 `Mutex`/IPC,来两次就起两个完整进程 —— 抢同一份 `state.json`、同一个
+`app-.log`、同一个托盘图标;而关闭窗口默认只是"最小化到托盘"(`MinimizeToTrayOnClose`),
+用户看不见窗口,会以为没启动,于是再点一次。**"开机后两个实例"的根因是缺这道闸,不是更新。**
+
+| 位置 | 职责 |
+|---|---|
+| `src/ALyricEase/Infrastructure/SingleInstanceGuard.cs` | 命名互斥量 + 命名事件;`TryAcquire` / `AttachActivator` / `Release` |
+| `src/ALyricEase.Windows/Program.cs` | `Main` → 探针分支之后、`StartWithClassicDesktopLifetime` 之前抢锁;失败直接 return;`finally` 里释放 |
+| `src/ALyricEase.Windows/App.axaml.cs` | `mainWindow.Show()` 后 `AttachActivator(...)` → `DesktopLifecycleController.RestoreWindow()`(与托盘点击同一条路径) |
+| `src/ALyricEase.Windows/Services/VelopackUpdateService.cs` | `ApplyUpdatesAndRestart` 前先 `Release()` |
+
+三条硬约束:
+
+1. **自更新重启前必须让锁**。`ApplyUpdatesAndRestart` → `Environment.Exit` → `Update.exe`
+   立刻拉新进程;锁没让出去,新进程会把自己当"第二个实例",发个激活信号就退出,**更新完应用起不来**。
+   代码里放在 `try/finally` 里的 `Apply` 之后那句 `TryAcquire` 只兜底"更新链没接管进程"的分支
+   (`Environment.Exit` 不展开 `finally`)。
+2. **所有 `--selftest-*` / `--sharetest` 必须在抢锁之前 return**。它们是独立诊断进程,
+   要允许并行跑;挡在闸后面会让探针静默变成"激活首实例然后退出"。
+3. **只在 Windows 启用**。`OperatingSystem.IsWindows()` 早退,Android 由系统保证单实例;
+   `EventWaitHandle.TryOpenExisting` 有 `CA1416` 平台标注,`RequestActivation` 里也补了判断。
+
+实现细节:
+
+- 命名对象用 `Local\`(当前登录会话)而非 `Global\`;名字与 exe 路径无关,所以安装版
+  (`current\`)、本地 AOT 输出(`artifacts\`)、更新前后新旧版本共用同一把锁。
+- 首次持有用 `WaitOne(0)` + `catch (AbandonedMutexException)`:上一个实例被强杀时所有权直接转过来,
+  否则会永远卡在"已有实例"。
+- 激活等待走 `ThreadPool.RegisterWaitForSingleObject`(不额外养阻塞线程);回调在线程池,
+  `App` 自己 post 回 UI 线程。
+- 启动期间收到激活(窗口未建好)记 `_activationPending`,`AttachActivator` 时补发。
+- 第二实例重试 20×50ms 等激活事件出现(首实例可能还在启动);等不到也静默退出,不多开。
+
+**验证方式**(无需探针,直接起两次即可):
+
+```bash
+EXE=bin/Debug/net10.0-windows10.0.19041.0/ALyricEase.Windows.exe
+"$EXE" & sleep 7; "$EXE" & sleep 5
+tasklist //FI "IMAGENAME eq ALyricEase.Windows.exe" //FO CSV   # 只应有 1 个
+```
+
+2026-10-21 实测日志(两个 PID,后者 55ms 内退出):
+
+```
+[PID:36072] Single instance acquired. Mutex=Local\ALyricEase.SingleInstance
+[PID:28292] Another instance is running; activation signal sent. Attempt=1
+[PID:36072] Activation requested by another instance; restoring main window
+[PID:28292] Another instance is active; exiting
+```

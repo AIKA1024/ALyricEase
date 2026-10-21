@@ -1,4 +1,5 @@
 using System.Reflection;
+using ALyricEase.Infrastructure;
 using ALyricEase.Services.Update;
 using Velopack;
 using Microsoft.Extensions.Logging;
@@ -109,6 +110,19 @@ public sealed class VelopackUpdateService : IAppUpdateService
         var mgr = _manager;
         if (mgr is null || !mgr.IsInstalled)
             throw new InvalidOperationException("当前应用不是 vpk 安装版,无法应用更新");
-        mgr.ApplyUpdatesAndRestart(null);
+
+        // Update.exe 会在本进程退出后立刻拉起新版本。锁必须提前让出去,否则新进程
+        // 会把自己当成"第二个实例"发个激活信号就退出,更新完应用再也起不来。
+        SingleInstanceGuard.Release();
+        try
+        {
+            mgr.ApplyUpdatesAndRestart(null);
+        }
+        finally
+        {
+            // 正常路径上走不到这里(Apply 内部 Environment.Exit,不展开 finally)。
+            // 万一更新链没接管进程,必须把锁收回来 —— 窗口还开着却允许再起第二个更糟。
+            SingleInstanceGuard.TryAcquire(_logger);
+        }
     }
 }

@@ -185,7 +185,26 @@ class Program
       return;
     }
 
-    BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    // 单实例闸:开机自启、手动双击、更新后重启三路都可能同时到达,而本应用没有第二个
+    // 进程该抢的东西(同一份 state.json/日志/托盘图标)。放在所有探针分支之后 ——
+    // --selftest-*/--sharetest 是独立的诊断进程,必须允许并行。
+    var instanceLogger = AppLogging.Factory.CreateLogger("SingleInstance");
+    if (!SingleInstanceGuard.TryAcquire(instanceLogger))
+    {
+      // 已有实例:激活信号已发出(窗口会被叫到前台),本进程立刻退出。
+      instanceLogger.LogInformation("Another instance is active; exiting");
+      return;
+    }
+
+    try
+    {
+      BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
+    finally
+    {
+      // 正常退窗口/托盘退出都走这里;自更新重启则由 VelopackUpdateService 提前让出。
+      SingleInstanceGuard.Release();
+    }
   }
 
   // Avalonia configuration, don't remove; also used by visual designer.

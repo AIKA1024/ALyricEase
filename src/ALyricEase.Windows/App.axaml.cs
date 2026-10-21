@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using ALyricEase.Services.Smtc;
@@ -52,6 +53,18 @@ public partial class App : Application
       InitTaskbarThumbButtons(mainWindow, hwnd);
 #endif
       mainWindow.Show();
+
+      // 第二个进程(双击图标 / 开机自启撞车 / 更新重启)经命名事件请求激活:
+      // 把它当成"再点一次图标"——托盘里就先还原窗口,已经可见就抬到前台。
+      // 回调来自线程池等待,这里自己 post 回 UI 线程;启动期间收到的请求在 Attach 时补发。
+      var instanceLogger = AppLogging.Factory.CreateLogger("SingleInstance");
+      SingleInstanceGuard.AttachActivator(
+          () =>
+          {
+              instanceLogger.LogInformation("Activation requested by another instance; restoring main window");
+              Dispatcher.UIThread.Post(() => _desktopLifecycle?.RestoreWindow());
+          },
+          instanceLogger);
 
 #if WINDOWS
       // SMTC 需要前台窗口 HWND,须在窗口创建后于 UI 线程初始化

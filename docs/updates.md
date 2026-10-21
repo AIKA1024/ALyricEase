@@ -35,6 +35,13 @@
 
 ## 二、发布流程(发布新版本时做)
 
+0. 版本号共 **5 处**，必须一起 +1(漏一处就是"更新永远说已最新"或 APK 装不上):
+   - `src/ALyricEase.Windows/ALyricEase.Windows.csproj` → `<Version>`
+   - `src/ALyricEase.Android/ALyricEase.Android.csproj` → `<ApplicationVersion>`(即 versionCode)
+     与 `<ApplicationDisplayVersion>`(即 versionName)
+   - `src/ALyricEase.Android/AndroidManifest.xml` → `android:versionCode` 与 `android:versionName`
+     (清单这份是**真正生效**的那份，构建后可用 `aapt2 dump badging` 核对)
+
 1. 正常发布 Windows 版(publish 目录,含 AOT 配置):
    ```powershell
    dotnet publish src/ALyricEase.Windows/ALyricEase.Windows.csproj -c Release -r win-x64 `
@@ -44,9 +51,11 @@
 2. 打 Velopack 包(**版本号 = release tag**,更新说明按 tag 匹配就是靠这个):
    ```powershell
    vpk pack -u ALyricEase -v 0.11.0 -p artifacts/vpk-publish `
-       --packTitle LyricEase `
+       --packTitle LyricEase --mainExe ALyricEase.Windows.exe `
        --icon src/ALyricEase/Assets/app.ico
    ```
+   ⚠ **`--mainExe` 不能省**:主程序 exe 名是 `ALyricEase.Windows.exe`，与 `-u ALyricEase` 不一致，
+   不传就报 `FTL Could not find main application executable`(vpk 只按 packId 猜 exe 名)。
    产出在 `Releases/`:`*-full.nupkg` + `*-delta.nupkg`(有上一版时)+ `Setup.exe`。
    **delta 只有在本地 `Releases/` 目录里留着上一版的 full 包时才会生成** —— 换机器发布
    先把历史 `*-full.nupkg` 拉回来放同一目录,否则用户每次都得下全量。
@@ -58,6 +67,37 @@
    ```
    或手动建 release:上传 `Releases/` 下的 `*.nupkg`(full + delta **都要传**,
    少了 delta 就退化成全量更新)与 `Setup.exe`,body 写更新说明。
+
+   ⚠ **上传失败时的兜底(2026-10-21 实测)**:本机走 Clash Verge TUN 时上行被压到 ~34KB/s,
+   且**每条连接 15~20 秒必断**——`vpk upload` 重试三次后报 SSL 失败,`gh` 全程
+   `TLS handshake timeout`,任何 >500KB 的文件都传不完(httpbin 对照同样断,不是 GitHub 的锅)。
+   临时关掉 TUN 后 DNS 仍指向 198.18.x(fake-ip 残留),`getaddrinfo` 直接失败。
+   可用做法是 **curl 直连真实 IP**(实测 ~1.2MB/s,40MB 的 Setup 35 秒):
+
+   ```bash
+   # 真实 IP 用别的 DNS 查(TUN 关掉后系统 DNS 可能还是坏的)
+   #   Resolve-DnsName uploads.github.com -Type A -Server 8.8.8.8
+   # api.github.com: 20.205.243.168 / uploads.github.com: 20.205.243.161
+
+   # 1) 建草稿(也可让 vpk 建,失败会留下空草稿,用 /releases 列表能看到 draft)
+   curl --resolve api.github.com:443:20.205.243.168 \
+     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
+     -d '{"tag_name":"0.0.12","name":"LyricEase 0.0.12","draft":true}' \
+     https://api.github.com/repos/AIKA1024/ALyricEase/releases
+
+   # 2) 逐个上传资产(**必须** -H "Expect:",否则大文件会被中间设备卡死)
+   curl --resolve uploads.github.com:443:20.205.243.161 -H "Expect:" \
+     -X POST -H "Authorization: Bearer $tok" -H "Content-Type: application/octet-stream" \
+     --data-binary @"$file" \
+     "https://uploads.github.com/repos/AIKA1024/ALyricEase/releases/$id/assets?name=$(basename "$file")"
+
+   # 3) 写 body + 转正
+   curl --resolve api.github.com:443:20.205.243.168 -X PATCH \
+     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
+     --data-binary @patch.json \
+     https://api.github.com/repos/AIKA1024/ALyricEase/releases/$id
+   ```
+
 4. 首次接入注意:现有用户(绿色版/手动安装)不经 `vpk` 安装的话 `IsInstalled=false`,
    检查更新按钮不出现;**从 vpk 打的 Setup.exe 装出来的才有自更新能力**。
 

@@ -25,6 +25,8 @@
     <PackageReference Include="ProjectCirrus.Copycat" Version="0.1.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.12" />
+    <!-- 网易云扫码登录:纯托管二维码编码(无 System.Drawing 依赖,Android/AOT 可用) -->
+    <PackageReference Include="Net.Codecrete.QrCodeGenerator" Version="3.2.1" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />

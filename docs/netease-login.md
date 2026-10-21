@@ -1,15 +1,38 @@
 # 网易云 / QQ 音乐登录细节
 
 > 从 `.workbuddy/memory/MEMORY.md` 下沉(该文件有注入上限,细节放这里)。
-> 相关回归线:代理登录 `--neproxy`;账号态/离线歌单导航 `--accountstates`;红心缓存 `--accountlike`。
+> 相关回归线:扫码/手机验证码 `--nelogin`;登录弹窗布局 `--logindlg`;代理登录 `--neproxy`;
+> 账号态/离线歌单导航 `--accountstates`;红心缓存 `--accountlike`。
 
-## 1. 两种登录方式
+## 1. 网易云登录方式
 
-1. **MUSIC_U 粘贴**:从浏览器/客户端 Cookie 里复制凭证,手动填。
-2. **官方客户端代理登录**(`NetEaseProxyLoginService`,NuGet `ProjectCirrus.Copycat`):
+1. **手机扫码登录（默认,推荐）**:`NetEaseApiClient.Login.cs` 走 eapi
+   `POST /eapi/login/qrcode/unikey` 取 key,本地用 `Net.Codecrete.QrCodeGenerator` 渲染
+   `https://music.163.com/login?codekey=<key>` 二维码;轮询 `client/login`
+   (800 过期 / 801 等待 / 802 已扫码 / 803 授权)。803 从响应 `Set-Cookie` 提取 `MUSIC_U`,
+   再经 `CompleteLoginAsync` 验证资料,失败回滚。
+2. **手机号验证码登录**:eapi `POST /eapi/sms/captcha/sent`(带 `secrete`)发送,
+   `POST /eapi/w/login/cellphone` 登录,同样以 `Set-Cookie` 的 `MUSIC_U` 为准。
+   实测本机网络 weapi 登录端点被风控成空 body,eapi(interface 网关)正常,故两条链路全走 eapi。
+3. **MUSIC_U 粘贴**:从浏览器/客户端 Cookie 里复制凭证,手动填(后备)。
+4. **官方客户端代理登录**(`NetEaseProxyLoginService`,NuGet `ProjectCirrus.Copycat`):
    起一个本地代理,让**官方 PC 客户端**把登录请求经它转发,从中截获凭证。
 
-⚠ **仅 Windows**:`ProjectCirrus.Copycat` 的 native 部分只有 `win-x64` / `win-arm64`。
+⚠ **代理登录仅 Windows**:`ProjectCirrus.Copycat` 的 native 部分只有 `win-x64` / `win-arm64`。
+二维码渲染包为纯托管实现,Android/AOT 均可用。
+
+### 登录风控码(2026-10)
+
+网易会按 IP/设备判定登录风险,扫码与手机验证码都可能拿到非 800/801/802/803 的返回:
+
+| code | message | 处理 |
+|---|---|---|
+| `-462` | 请完成验证操作 | `verifyUrl` 指向 `st.music.163.com/encrypt-pages`;换网络或稍后重试 |
+| `8821` | 请切换其他登录方式或升级新版本再试 | 旧版客户端常触发,`type=3` 新接口也会遇到;社区实测为 IP 级风控 |
+| `-460` / `8810` | 网络环境存在风险 | 换网络(手机热点)后重试 |
+
+这些码换接口版本绕不开,弹窗会显示「失败(码):服务端消息 + 换网络/MUSIC_U 粘贴」指引;
+日志(见 `logging.md`)同时记录 `Code` 便于排查。兜底始终是 `MUSIC_U` 粘贴登录。
 
 ### 为什么能 MITM
 

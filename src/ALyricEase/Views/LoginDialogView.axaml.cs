@@ -15,6 +15,8 @@ public partial class LoginDialogView : UserControl
     private PlaylistViewModel? _subscribedPlaylist;
     private QqCaptchaWindow? _captchaWindow;
     private QqCaptchaOverlay? _captchaOverlay;
+    private QqCaptchaWindow? _netEaseCaptchaWindow;
+    private QqCaptchaOverlay? _netEaseCaptchaOverlay;
 
     public LoginDialogView()
     {
@@ -46,6 +48,7 @@ public partial class LoginDialogView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         HideCaptchaOverlay();
+        HideNetEaseCaptchaOverlay();
         UnsubscribeQqCaptcha();
         base.OnDetachedFromVisualTree(e);
     }
@@ -59,6 +62,7 @@ public partial class LoginDialogView : UserControl
         if (playlist is null)
             return;
         playlist.QqCaptchaOpenRequested += OnQqCaptchaOpenRequested;
+        playlist.NetEaseCaptchaOpenRequested += OnNetEaseCaptchaOpenRequested;
         _subscribedPlaylist = playlist;
     }
 
@@ -67,6 +71,7 @@ public partial class LoginDialogView : UserControl
         if (_subscribedPlaylist is null)
             return;
         _subscribedPlaylist.QqCaptchaOpenRequested -= OnQqCaptchaOpenRequested;
+        _subscribedPlaylist.NetEaseCaptchaOpenRequested -= OnNetEaseCaptchaOpenRequested;
         _subscribedPlaylist = null;
     }
 
@@ -126,6 +131,61 @@ public partial class LoginDialogView : UserControl
         CaptchaHost.IsVisible = false;
     }
 
+    /// <summary>网易云风控(-462):WebView 打开 st.music.163.com/encrypt-pages 完成行为验证,
+    /// 验证成功后重新生成二维码(与 QQ 手机号验证共用窗口,仅文案不同)。</summary>
+    private async void OnNetEaseCaptchaOpenRequested(object? sender, EventArgs e)
+    {
+        if (sender is not PlaylistViewModel playlist || string.IsNullOrEmpty(playlist.NetEaseCaptchaUrl))
+            return;
+        var uri = new Uri(playlist.NetEaseCaptchaUrl, UriKind.Absolute);
+
+        if (!OperatingSystem.IsAndroid())
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel is Window owner)
+            {
+                if (_netEaseCaptchaWindow is { } existing)
+                {
+                    existing.UpdateCaptchaUrl(uri);
+                    return;
+                }
+                var window = new QqCaptchaWindow(uri, isNetEase: true,
+                    cookies: playlist.NetEaseCaptchaCookies);
+                window.Verified += (_, _) => playlist.RetryNetEaseQrAfterCaptchaCommand.Execute(null);
+                window.Closed += (_, _) => _netEaseCaptchaWindow = null;
+                _netEaseCaptchaWindow = window;
+                await window.ShowDialog(owner);
+                return;
+            }
+        }
+        ShowNetEaseCaptchaOverlay(uri, playlist);
+    }
+
+    private void ShowNetEaseCaptchaOverlay(Uri uri, PlaylistViewModel playlist)
+    {
+        if (_netEaseCaptchaOverlay is { } existing)
+        {
+            existing.UpdateCaptchaUrl(uri);
+            return;
+        }
+        var overlay = new QqCaptchaOverlay(uri, isNetEase: true,
+            cookies: playlist.NetEaseCaptchaCookies);
+        overlay.Verified += (_, _) => playlist.RetryNetEaseQrAfterCaptchaCommand.Execute(null);
+        overlay.CloseRequested += (_, _) => HideNetEaseCaptchaOverlay();
+        _netEaseCaptchaOverlay = overlay;
+        CaptchaHost.Children.Add(overlay);
+        CaptchaHost.IsVisible = true;
+    }
+
+    private void HideNetEaseCaptchaOverlay()
+    {
+        if (_netEaseCaptchaOverlay is null)
+            return;
+        _netEaseCaptchaOverlay = null;
+        CaptchaHost.Children.Clear();
+        CaptchaHost.IsVisible = false;
+    }
+
     private void FocusActiveInput()
     {
         if (!IsVisible || !IsEnabled || !ModalVisibilityTransition.GetIsOpen(this))
@@ -135,12 +195,15 @@ public partial class LoginDialogView : UserControl
         var playlist = vm?.Playlist;
         var target = playlist switch
         {
+            // 先按页签分流,避免网易云方式的分支截走 QQ 页签的焦点。
+            { IsQQLoginTab: true, IsQqPhoneLoginMethod: true } => QqPhoneBox,
+            { IsQQLoginTab: true, IsQqCookieLoginMethod: true } => QQBox,
+            { IsQQLoginTab: true } => QqQrButton,
+            { IsNetEaseQrMethod: true } => (Control)NetEaseQrButton,
+            { IsNetEasePhoneMethod: true } => NetEasePhoneBox,
             // 网易云代理方式的首要控件是启动按钮;Cookie 方式才是输入框(此时它可见)。
             { IsNetEaseProxyMethod: true } => (Control)NetEaseStartProxyButton,
-            { IsQQLoginTab: false } => MusicUBox,
-            { IsQqPhoneLoginMethod: true } => QqPhoneBox,
-            { IsQqCookieLoginMethod: true } => QQBox,
-            _ => QqQrButton,
+            _ => MusicUBox,
         };
         target.Focus();
     }

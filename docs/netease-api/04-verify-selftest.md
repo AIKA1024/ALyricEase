@@ -41,6 +41,17 @@
 
 ---
 
+## 4. Headless 登录探针（`--nelogin`）
+
+| 步骤 | 验证点 | 通过标准 |
+|---|---|---|
+| eapi 二维码 key | `CreateQrLoginAsync()` | 返回 unikey，PNG 可被 Avalonia 解码且 ≥150px |
+| 二维码轮询 | `CheckQrLoginAsync(key)` | 新 key 返回 `Waiting` |
+| 短信端点 | 国家码 `999` + 假号码调 `SendPhoneCodeAsync` | 服务端返回参数错误（不发送短信） |
+| 手机登录端点 | 同上调 `LoginWithPhoneCodeAsync` | 服务端返回验证码错误，证明 eapi 通道可达 |
+
+> 不扫码、不发真实短信；`803` 的 `MUSIC_U` 落库路径需人工扫码验证。
+
 ## 回归要点
 
 - **加密通道被 WAF 拦时**：`[anon] 匿名注册失败 → 走明文回落` 是预期输出，不代表功能坏。

@@ -2,10 +2,11 @@
 
 > 本文档是 ALyricEase 项目在逆向网易云音乐 Web API 过程中的**实测记录与汇总**，
 > 不是第三方资料翻译。所有结论均来自 `NetEaseApiClient` / `CryptoService` 的真实代码路径
-> 与本地抓包验证。适用日期：**2026-08**。
+> 与本地抓包验证。适用日期：**2026-08（2026-10 复核登录/eapi）**。
 >
 > 相关源文件（一切以代码为准）：
 > - `ALyricEase/Services/NetEase/NetEaseApiClient.cs` — 端点全集 + 双通道回落
+> - `ALyricEase/Services/NetEase/NetEaseApiClient.Login.cs` — 扫码 / 手机验证码登录（eapi）
 > - `ALyricEase/Services/Crypto/CryptoService.cs` — weapi/eapi 加密
 > - `ALyricEase/Services/Crypto/RsaPadding.cs` — 自定义 RSA
 > - `ALyricEase/Services/NetEase/CnIpPool.cs` — CN IP 池
@@ -19,7 +20,7 @@
 
 | 通道 | 形态 | 用途 | 本项目状态 |
 |---|---|---|---|
-| **weapi / eapi** | 加密 POST（表单 `params` [+`encSecKey`]） | 官方客户端主通道 | 本机被 WAF 拦截，已自动回落 |
+| **weapi / eapi** | 加密 POST（表单 `params` [+`encSecKey`]） | 官方客户端主通道 | weapi 被 WAF 拦截并回落；eapi(interface 网关)可用于播放与登录 |
 | **明文 GET `/api/...`** | 无加密、带 cookie 即可 | 网页版同源接口 | **本项目主通道**，全可用 |
 
 **双通道架构**（本项目核心设计）：每个功能先走加密 POST，收到空 body（风控特征码 `-3`）即置 `_wafBlocked` 位，后续请求全部改走明文 GET。同一功能的加密/明文两种路径字段名不同（详见端点文档），需要两套 DTO。
@@ -32,10 +33,13 @@
 
 ## 1. 为什么会有双通道（风控背景）
 
-2026-08 实测：从本机（广东珠海 IP，`music.163.com` 可达）发出**任意 weapi/eapi 加密 POST**
-——包括匿名注册、搜索、歌词、播放地址——都返回 **HTTP 200 + 空 body**，与加密是否字节级正确无关
+2026-08 实测：从本机（广东珠海 IP，`music.163.com` 可达）发出**任意 weapi 加密 POST**
+（匿名注册、搜索、歌词等）都返回 **HTTP 200 + 空 body**，与加密是否字节级正确无关
 （已验证加密正确，Python requests 同样被拦），也非 cookie 前提（暖场 GET 不产生 cookie）。
 疑似**地区级 WAF 针对加密通道**。
+
+2026-10 复测：weapi 仍返回空 body，但 **eapi(`interface.music.163.com`)恢复可用**——
+播放地址与扫码/手机验证码登录均走 eapi（登录见 [E0](02-endpoints.md#e0-扫码--手机验证码登录eapi-加密-post匿名)）。
 
 **明文 GET `/api/...` 在同一网络下可用**，且大多**不需要登录 cookie**。
 
@@ -50,7 +54,7 @@
 | Cookie | 含义 | 有效期 | 获得方式 |
 |---|---|---|---|
 | `MUSIC_A` | 匿名用户会话 | 约 14 天（本项目按 14 天缓存） | `POST /weapi/register/anonimous`（加密） |
-| `MUSIC_U` | 登录用户会话 | 长期（重新登录前一直有效） | 从浏览器 `music.163.com` 登录态拷贝 |
+| `MUSIC_U` | 登录用户会话 | 长期（重新登录前一直有效） | App 扫码 / 手机验证码 / 浏览器登录态拷贝（见 E0） |
 | `__csrf` | CSRF 令牌 | 与 `MUSIC_U` 绑定（Expires 约 15 天） | 带 `MUSIC_U` 请求**页面类** URL 时下发 |
 
 - 匿名 cookie `MUSIC_A` 用于：搜索、歌词、匿名播放地址、公开歌单、首页推荐。
@@ -78,10 +82,12 @@ HEAD https://music.163.com/my/     →  Set-Cookie: __csrf=a2cd...6b70; Path=/; 
 取值与 `MUSIC_U` 绑定（同一账号反复取都是同一个值），故按登录态持久化；
 换号时（`SetMusicUCookie`）清空重取。
 
-### 获取 MUSIC_U（浏览器）
+### 获取 MUSIC_U（App 扫码 / 手机号 / 浏览器）
 
-1. Chrome / Edge 打开 `https://music.163.com`，登录。
-2. F12 → Application → Cookies → `https://music.163.com` → 复制 `MUSIC_U` 的值（一串 hex）。
+1. **推荐**：在登录弹窗选择「手机扫码登录」用网易云音乐 App 扫码，或「手机号验证码」登录。
+   两条链路均走 eapi，成功后从 `Set-Cookie` 提取 `MUSIC_U`（端点与参数见 [E0](02-endpoints.md#e0-扫码--手机验证码登录eapi-加密-post匿名)）。
+2. 后备：Chrome / Edge 打开 `https://music.163.com` 登录，F12 → Application → Cookies
+   → `https://music.163.com` → 复制 `MUSIC_U` 的值（一串 hex）。
 3. 可容忍整段 `Cookie:` 字符串，本项目 `SetMusicUCookie` 会自动截取 `MUSIC_U=` 之后到 `;` 的部分。
 
 > ⚠️ `MUSIC_U` 等同于登录凭证，**不要提交到任何仓库/文档**。本项目存于

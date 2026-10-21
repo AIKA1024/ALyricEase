@@ -5,9 +5,13 @@ public sealed class ApiException : Exception
 {
     public int Code { get; }
 
-    public ApiException(string message, int code = -1)
+    /// <summary>风控行为验证页(-462 等)的地址;非空时 UI 应用 WebView 打开让用户完成验证。</summary>
+    public string? VerifyUrl { get; }
+
+    public ApiException(string message, int code = -1, string? verifyUrl = null)
         : base(message)
     {
         Code = code;
+        VerifyUrl = verifyUrl;
     }
 }

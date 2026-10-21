@@ -161,15 +161,34 @@
                         <DockPanel x:Name="NetEaseLayout" IsVisible="{Binding IsNetEaseLoginTab}" LastChildFill="True">
                             <ScrollViewer x:Name="NetEaseMethodHost" HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Disabled">
-                            <StackPanel x:Name="NetEaseMethodList" Spacing="6">                                <TextBlock x:Name="NetEaseMethodLabel" Text="登录方式" FontSize="12" FontWeight="SemiBold"
+                            <StackPanel x:Name="NetEaseMethodList" Spacing="6">
+                                <TextBlock x:Name="NetEaseMethodLabel" Text="登录方式" FontSize="12" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextSecondary}" Margin="4,0,0,4" />
+                                <Button Classes="login-method" Classes.active="{Binding IsNetEaseQrMethod}"
+                                        Command="{Binding SelectNetEaseQrMethodCommand}"
+                                        AutomationProperties.Name="使用网易云音乐扫码登录">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="手机扫码登录" FontWeight="SemiBold" />
+                                        <TextBlock Text="推荐，安全便捷" FontSize="11.5"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="login-method" Classes.active="{Binding IsNetEasePhoneMethod}"
+                                        Command="{Binding SelectNetEasePhoneMethodCommand}"
+                                        AutomationProperties.Name="选择手机号验证码登录">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="手机号验证码" FontWeight="SemiBold" />
+                                        <TextBlock Text="无需密码" FontSize="11.5"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                    </StackPanel>
+                                </Button>
                                 <Button Classes="login-method" Classes.active="{Binding IsNetEaseProxyMethod}"
                                         IsVisible="{Binding CanUseNetEaseProxyLogin}"
                                         Command="{Binding SelectNetEaseProxyMethodCommand}"
                                         AutomationProperties.Name="使用官方客户端代理登录">
                                     <StackPanel Spacing="2">
                                         <TextBlock Text="官方客户端登录" FontWeight="SemiBold" />
-                                        <TextBlock Text="推荐，自动获取凭证" FontSize="11.5"
+                                        <TextBlock Text="自动获取凭证" FontSize="11.5"
                                                    Foreground="{DynamicResource TextSecondary}" />
                                     </StackPanel>
                                 </Button>
@@ -186,6 +205,71 @@
                             </ScrollViewer>
 
                             <Grid x:Name="NetEaseMethodContent" MinHeight="370">
+                                <StackPanel IsVisible="{Binding IsNetEaseQrMethod}" Spacing="12">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="使用网易云音乐扫码" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Classes="supporting" Text="打开手机网易云音乐，扫描二维码并确认登录。" />
+                                    </StackPanel>
+                                    <Border Width="214" Height="214" Background="White" CornerRadius="10" Padding="10"
+                                            HorizontalAlignment="Left" BorderThickness="1" BorderBrush="#18000000">
+                                        <Grid>
+                                            <Image Source="{Binding NetEaseQrImage}" Stretch="Uniform"
+                                                   IsVisible="{Binding HasNetEaseQrImage}"
+                                                   AutomationProperties.Name="网易云音乐登录二维码" />
+                                            <StackPanel IsVisible="{Binding !HasNetEaseQrImage}" VerticalAlignment="Center"
+                                                        HorizontalAlignment="Center" Spacing="6">
+                                                <TextBlock Text="扫码登录" Foreground="#3A3A3A" FontSize="16"
+                                                           FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                                <TextBlock Text="点击下方按钮生成二维码" Foreground="#6B6B6B" FontSize="11.5" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="{Binding NetEaseQrStatus}" FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondary}" />
+                                        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsNetEaseQrLoginActive}"
+                                                     infra:IndeterminateAnimationGate.IsActive="True"
+                                                     Width="214" HorizontalAlignment="Left" Height="3" />
+                                    </StackPanel>
+                                    <Button x:Name="NetEaseQrButton" Classes="accent" Content="获取或刷新二维码"
+                                            Command="{Binding StartNetEaseQrLoginCommand}" HorizontalAlignment="Left"
+                                            MinWidth="160" Height="38" IsEnabled="{Binding !IsBusy}" />
+                                </StackPanel>
+
+                                <StackPanel IsVisible="{Binding IsNetEasePhoneMethod}" Spacing="16">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="使用手机号登录" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Classes="supporting" Text="验证码由网易云音乐发送，ALyricEase 不会保存手机号或短信验证码。" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Classes="section-label" Text="手机号" />
+                                        <Grid ColumnDefinitions="86,*" ColumnSpacing="8">
+                                            <TextBox Text="{Binding NetEasePhoneCountryCode}" PlaceholderText="86" MaxLength="4"
+                                                     HorizontalContentAlignment="Center"
+                                                     AutomationProperties.Name="网易云国家或地区代码" />
+                                            <TextBox x:Name="NetEasePhoneBox" Grid.Column="1" Text="{Binding NetEasePhoneNumber}"
+                                                     PlaceholderText="请输入手机号" MaxLength="20"
+                                                     AutomationProperties.Name="网易云登录手机号" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Classes="section-label" Text="短信验证码" />
+                                        <Grid ColumnDefinitions="*,132" ColumnSpacing="8">
+                                            <TextBox Text="{Binding NetEasePhoneCode}" PlaceholderText="短信验证码" MaxLength="8"
+                                                     AutomationProperties.Name="网易云短信验证码" />
+                                            <Button Grid.Column="1" Content="{Binding NetEasePhoneSendButtonText}"
+                                                    Command="{Binding SendNetEasePhoneCodeCommand}"
+                                                    IsEnabled="{Binding CanSendNetEasePhoneCode}"
+                                                    AutomationProperties.Name="发送网易云短信验证码" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding NetEasePhoneStatus}" Classes="supporting" />
+                                    <Button Classes="accent" Content="使用验证码登录"
+                                            Command="{Binding LoginNetEasePhoneCommand}" HorizontalAlignment="Left"
+                                            MinWidth="152" Height="38" IsEnabled="{Binding !IsBusy}"
+                                            AutomationProperties.Name="使用手机号验证码登录网易云音乐" />
+                                </StackPanel>
+
                                 <StackPanel IsVisible="{Binding IsNetEaseProxyMethod}" Spacing="14">
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="使用官方客户端登录" FontSize="18" FontWeight="SemiBold" />
@@ -229,7 +313,7 @@
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="使用 MUSIC_U 登录" FontSize="18" FontWeight="SemiBold" />
                                         <TextBlock Classes="supporting"
-                                                   Text="网易云音乐暂不提供适合桌面客户端的扫码接口，请粘贴浏览器登录凭证。" />
+                                                   Text="扫码或手机号登录不可用时，可粘贴浏览器登录凭证作为后备。" />
                                     </StackPanel>
                                     <DockPanel x:Name="NetEaseFields" LastChildFill="True">
                                         <StackPanel x:Name="MusicUField" Spacing="7">
@@ -345,7 +429,7 @@
                                     <StackPanel Spacing="7">
                                         <TextBlock Classes="section-label" Text="短信验证码" />
                                         <Grid ColumnDefinitions="*,132" ColumnSpacing="8">
-                                            <TextBox Text="{Binding QqPhoneCode}" PlaceholderText="6 位验证码" MaxLength="6"
+                                            <TextBox Text="{Binding QqPhoneCode}" PlaceholderText="短信验证码" MaxLength="8"
                                                      AutomationProperties.Name="短信验证码" />
                                             <Button Grid.Column="1" Content="{Binding QqPhoneSendButtonText}"
                                                     Command="{Binding SendQqPhoneCodeCommand}"

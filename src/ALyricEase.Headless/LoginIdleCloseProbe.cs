@@ -69,6 +69,7 @@ internal static class LoginIdleCloseProbe
 
             main.OpenLoginDialogCommand.Execute(null);
             await ModalVisibilityTransition.WaitForTransitionAsync(view);
+            main.Playlist.SelectNetEaseCookieMethodCommand.Execute(null);
             var cookieBox = view.FindControl<TextBox>("MusicUBox")!;
             cookieBox.Focus();
             var beforeText = cookieBox.Text;

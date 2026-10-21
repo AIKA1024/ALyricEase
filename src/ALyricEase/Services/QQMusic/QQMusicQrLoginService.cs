@@ -180,13 +180,13 @@ internal sealed class QQMusicQrLoginService : IDisposable
         };
     }
 
-    /// <summary>使用手机号与 6 位验证码换取原生 musicid/musickey，并立即验证凭证。</summary>
+    /// <summary>使用手机号与短信验证码(4~6 位)换取原生 musicid/musickey，并立即验证凭证。</summary>
     public async Task<QQMusicQrCredential> LoginWithPhoneCodeAsync(
         string phone, string countryCode, string authCode, CancellationToken ct)
     {
         ValidatePhone(phone, countryCode);
-        if (authCode.Length != 6 || !authCode.All(char.IsDigit))
-            throw new ApiException("验证码必须是 6 位数字", 20271);
+        if (authCode.Length is < 4 or > 8 || !authCode.All(char.IsDigit))
+            throw new ApiException("验证码格式不正确", 20271);
 
         await PrepareAndroidSessionAsync(ct).ConfigureAwait(false);
         var result = await CallMusicuResultAsync("music.login.LoginServer", "Login", w =>

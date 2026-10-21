@@ -218,6 +218,24 @@ public static class Program
             return;
         }
 
+        // 网易云 -462 验证页真窗口 DOM 自查(--necaptcha):确认伪装 UA 后到底渲染滑块还是提示装 App
+        if (args.Length > 0 && args[0] == "--necaptcha")
+        {
+            var captchaBuilder = AppBuilder.Configure<HeadlessApp>()
+                .UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var captchaExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { captchaExitCode = await NetEaseCaptchaProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[necap] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            captchaBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = captchaExitCode;
+            return;
+        }
+
         // 真窗口+真合成器版内存回归(--memloop-real):无头没有 GPU 纹理,封面内存必须真机验证
         if (args.Length > 0 && args[0] == "--memloop-real")
         {
@@ -1009,6 +1027,14 @@ public static class Program
         if (args.Length > 0 && args[0] == "--neproxy")
         {
             Environment.ExitCode = System.Threading.Tasks.Task.Run(NetEaseProxyLoginProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // 网易云扫码/手机验证码登录:真实 eapi 生成二维码、轮询一次并验证短信端点可达
+        if (args.Length > 0 && args[0] == "--nelogin")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(NetEaseLoginProbe.RunAsync)
                 .GetAwaiter().GetResult();
             return;
         }

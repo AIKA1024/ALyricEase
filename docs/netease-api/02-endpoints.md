@@ -191,6 +191,51 @@ GET /api/song/enhance/player/url?ids=[186016]&br=320000
 
 ## E. 登录用户
 
+### E0. 扫码 / 手机验证码登录（eapi 加密 POST，匿名）
+
+> 2026-10 实测：本机网络下 **weapi 登录端点返回 HTTP 200 空 body**（风控），
+> 同一路径改走 eapi(`https://interface.music.163.com/eapi/...`)正常。以下全为 eapi；
+> payload 内嵌 Android 身份 `header`（`os/appver/versioncode/deviceId/requestId/...`），
+> 由 `BuildEapiIdentityHeader()` 生成。
+
+#### 扫码登录
+
+```
+POST /eapi/login/qrcode/unikey
+Body: {"type":3,"header":{...}}
+→ {"code":200,"unikey":"eca609be-..."}
+```
+
+二维码内容：`https://music.163.com/login?codekey=<unikey>`（本项目用
+`Net.Codecrete.QrCodeGenerator` 本地渲染 PNG）。
+
+```
+POST /eapi/login/qrcode/client/login
+Body: {"key":"<unikey>","type":3,"header":{...}}
+→ code 800=已过期 801=等待扫码 802=已扫码待确认 803=授权成功
+```
+
+`803` 的 `Set-Cookie` 下发 `MUSIC_U`，本项目提取后走 `SetMusicUCookie` 并调用户资料接口二次验证。
+
+#### 手机验证码登录
+
+```
+POST /eapi/sms/captcha/sent
+Body: {"ctcode":"86","secrete":"music_middleuser_pclogin","cellphone":"138...","header":{...}}
+
+POST /eapi/w/login/cellphone
+Body: {"type":"1","https":"true","phone":"138...","countrycode":"86",
+       "captcha":"123456","remember":"true","secureCaptcha":"","header":{...}}
+```
+
+- 可选先调 `/eapi/sms/captcha/verify`（`{ctcode, cellphone, captcha}`）校验验证码。
+- 失败时优先展示服务端 `message`/`msg`（如 `400 手机号码不符合规范`、`503 验证码错误`）。
+- 登录成功同样以 `Set-Cookie` 的 `MUSIC_U` 为准，不依赖响应体 profile。
+- **风控码**（2026-10 实测/社区验证）：`-462` 请完成验证操作（`verifyUrl` 指向 `st.music.163.com`）、
+  `8821` 请切换其他登录方式或升级新版本再试（`redirectUrl` 指向 `qa-yyy.igame.163.com`）、
+  `-460`/`8810` 网络环境风险。属 IP/设备级判定，改接口版本也绕不开；应对是换网络（热点）或稍后重试，
+  兜底用 MUSIC_U 粘贴登录。本项目在弹窗里显示返回码并给上述指引（`DescribeNetEaseLoginError`）。
+
 ### E1. 用户资料（明文 GET，需登录）
 
 ```

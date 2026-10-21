@@ -25,9 +25,11 @@ public enum QqLoginMethod
     Cookie,
 }
 
-/// <summary>网易云登录方式:官方客户端代理登录(捕获客户端登录请求,Windows)与 MUSIC_U 粘贴并列。</summary>
+/// <summary>网易云登录方式:扫码、手机验证码、官方客户端代理(Windows)与 MUSIC_U 粘贴并列。</summary>
 public enum NetEaseLoginMethod
 {
+    Qr,
+    Phone,
     Cookie,
     Proxy,
 }
@@ -92,8 +94,37 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// <summary>登录弹窗当前选中的音源页签:false=网易云(默认),true=QQ音乐。</summary>
     [ObservableProperty] private bool _isQQLoginTab;
 
-    /// <summary>网易云登录方式:默认粘贴 MUSIC_U;官方客户端代理登录需 Windows。</summary>
-    [ObservableProperty] private NetEaseLoginMethod _netEaseLoginMethod = NetEaseLoginMethod.Cookie;
+    /// <summary>网易云登录方式:默认手机扫码;代理登录仅 Windows 可用。</summary>
+    [ObservableProperty] private NetEaseLoginMethod _netEaseLoginMethod = NetEaseLoginMethod.Qr;
+
+    /// <summary>网易云扫码登录:二维码图片、轮询状态与取消源。</summary>
+    [ObservableProperty] private IImage? _netEaseQrImage;
+    [ObservableProperty] private bool _isNetEaseQrLoginActive;
+    [ObservableProperty] private string _netEaseQrStatus = "使用网易云音乐扫描二维码";
+    private CancellationTokenSource? _netEaseQrLoginCancellation;
+
+    /// <summary>网易云风控(-462)返回的行为验证页(st.music.163.com/encrypt-pages);
+    /// UI 层订阅 <see cref="NetEaseCaptchaOpenRequested"/> 后用 WebView 打开,完成后重试扫码。</summary>
+    [ObservableProperty] private string? _netEaseCaptchaUrl;
+
+    /// <summary>打开验证页时要带给 WebView 的设备身份(deviceId/MUSIC_A),验证结果才会落在
+    /// 主客户端这台"设备"上;为空表示不种 cookie。</summary>
+    public IReadOnlyDictionary<string, string>? NetEaseCaptchaCookies { get; private set; }
+
+    public event EventHandler? NetEaseCaptchaOpenRequested;
+
+    private void RaiseNetEaseCaptchaOpenRequested()
+        => NetEaseCaptchaOpenRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>网易云手机验证码登录输入与倒计时状态。</summary>
+    [ObservableProperty] private string _netEasePhoneCountryCode = "86";
+    [ObservableProperty] private string _netEasePhoneNumber = "";
+    [ObservableProperty] private string _netEasePhoneCode = "";
+    [ObservableProperty] private string _netEasePhoneStatus = "验证码将发送到你的手机";
+    [ObservableProperty] private int _netEasePhoneCountdown;
+    [ObservableProperty] private bool _isNetEasePhoneCodeSent;
+    private CancellationTokenSource? _netEasePhoneOperationCancellation;
+    private CancellationTokenSource? _netEasePhoneCountdownCancellation;
 
     /// <summary>官方客户端代理登录:代理是否在监听、监听端口与状态文案。</summary>
     [ObservableProperty] private bool _isNetEaseProxyLoginActive;
@@ -103,8 +134,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private Task _netEaseProxyShutdown = Task.CompletedTask;
     private int _netEaseProxyGeneration;
 
+    public bool HasNetEaseQrImage => NetEaseQrImage is not null;
+    public bool IsNetEaseQrMethod => NetEaseLoginMethod == NetEaseLoginMethod.Qr;
+    public bool IsNetEasePhoneMethod => NetEaseLoginMethod == NetEaseLoginMethod.Phone;
     public bool IsNetEaseProxyMethod => NetEaseLoginMethod == NetEaseLoginMethod.Proxy;
     public bool IsNetEaseCookieMethod => NetEaseLoginMethod == NetEaseLoginMethod.Cookie;
+    public string NetEasePhoneSendButtonText => NetEasePhoneCountdown > 0 ? $"{NetEasePhoneCountdown} 秒后重试" : "发送验证码";
+    public bool CanSendNetEasePhoneCode => !IsBusy && NetEasePhoneCountdown == 0;
     public bool CanUseNetEaseProxyLogin => NetEaseProxyLoginService.IsSupported;
     /// <summary>代理端口框内容:IP 由相邻只读框固定显示 127.0.0.1,这里只出端口号,避免重复。</summary>
     public string NetEaseProxyAddress => NetEaseProxyPort > 0 ? NetEaseProxyPort.ToString() : "—";
@@ -148,6 +184,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     partial void OnQqQrImageChanged(IImage? value) => OnPropertyChanged(nameof(HasQqQrImage));
 
+    partial void OnNetEaseQrImageChanged(IImage? value) => OnPropertyChanged(nameof(HasNetEaseQrImage));
+
+    partial void OnNetEasePhoneCountdownChanged(int value)
+    {
+        OnPropertyChanged(nameof(NetEasePhoneSendButtonText));
+        OnPropertyChanged(nameof(CanSendNetEasePhoneCode));
+    }
+
     partial void OnQqLoginMethodChanged(QqLoginMethod value)
     {
         OnPropertyChanged(nameof(IsQqQrLoginMethod));
@@ -170,7 +214,11 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanSendQqPhoneCode));
     }
 
-    partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(CanSendQqPhoneCode));
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanSendQqPhoneCode));
+        OnPropertyChanged(nameof(CanSendNetEasePhoneCode));
+    }
 
     /// <summary>QQ音乐已登录(本地 cookie 有效;解锁 VIP/320k 播放)。</summary>
     [ObservableProperty] private bool _isQqLoggedIn;
@@ -219,8 +267,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     partial void OnIsQQLoginTabChanged(bool value)
     {
         OnPropertyChanged(nameof(IsNetEaseLoginTab));
-        if (!value) CancelLoginActivities();
-        else CancelNetEaseProxyLogin(); // 切到 QQ 页签时网易云代理一并停止
+        if (!value)
+        {
+            CancelLoginActivities();
+            return;
+        }
+        // 切到 QQ 页签时,网易云扫码/手机验证码/代理全部停止。
+        CancelNetEaseQrLogin();
+        CancelNetEasePhoneOperation();
+        CancelNetEaseProxyLogin();
     }
 
     [RelayCommand] private void SelectNetEaseLoginTab() => IsQQLoginTab = false;
@@ -233,15 +288,23 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
     [RelayCommand] private void SelectQqCookieLoginMethod() => QqLoginMethod = QqLoginMethod.Cookie;
 
+    [RelayCommand] private void SelectNetEaseQrMethod() => NetEaseLoginMethod = NetEaseLoginMethod.Qr;
+
+    [RelayCommand] private void SelectNetEasePhoneMethod() => NetEaseLoginMethod = NetEaseLoginMethod.Phone;
+
     [RelayCommand] private void SelectNetEaseProxyMethod() => NetEaseLoginMethod = NetEaseLoginMethod.Proxy;
 
     [RelayCommand] private void SelectNetEaseCookieMethod() => NetEaseLoginMethod = NetEaseLoginMethod.Cookie;
 
     partial void OnNetEaseLoginMethodChanged(NetEaseLoginMethod value)
     {
+        OnPropertyChanged(nameof(IsNetEaseQrMethod));
+        OnPropertyChanged(nameof(IsNetEasePhoneMethod));
         OnPropertyChanged(nameof(IsNetEaseProxyMethod));
         OnPropertyChanged(nameof(IsNetEaseCookieMethod));
         Message = null;
+        if (value != NetEaseLoginMethod.Qr) CancelNetEaseQrLogin();
+        if (value != NetEaseLoginMethod.Phone) CancelNetEasePhoneOperation();
         if (value != NetEaseLoginMethod.Proxy)
         {
             CancelNetEaseProxyLogin();
@@ -336,6 +399,309 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         NetEaseProxyPort = 0;
         OnPropertyChanged(nameof(NetEaseProxyAddress));
         NetEaseProxyStatus = "在网易云音乐客户端中设置下方代理并登录";
+    }
+
+    /// <summary>生成网易云登录二维码并轮询:803 授权后凭证已由 API 持久化并验证,
+    /// 这里补登录态并复用既有歌单加载链路(失败由该链路统一提示)。</summary>
+    [RelayCommand]
+    private async Task StartNetEaseQrLoginAsync()
+    {
+        CancelNetEaseQrLogin();
+        var cancellation = new CancellationTokenSource();
+        _netEaseQrLoginCancellation = cancellation;
+        IsNetEaseQrLoginActive = true;
+        IsBusy = true;
+        Message = null;
+        NetEaseQrStatus = "正在生成登录二维码…";
+        try
+        {
+            var session = await _api.CreateQrLoginAsync(cancellation.Token);
+            if (!ReferenceEquals(_netEaseQrLoginCancellation, cancellation)) return;
+            SetNetEaseQrImage(session.QrPng);
+            NetEaseQrStatus = "请使用网易云音乐扫码并确认";
+
+            while (true)
+            {
+                var status = await _api.CheckQrLoginAsync(session.Key, cancellation.Token);
+                if (!ReferenceEquals(_netEaseQrLoginCancellation, cancellation)) return;
+                switch (status.Stage)
+                {
+                    case NetEaseQrLoginStage.Waiting:
+                        NetEaseQrStatus = "请使用网易云音乐扫码并确认";
+                        break;
+                    case NetEaseQrLoginStage.Scanned:
+                        NetEaseQrStatus = "已扫码，请在手机上确认登录";
+                        break;
+                    case NetEaseQrLoginStage.Authorized:
+                        NetEaseQrStatus = "登录成功";
+                        ApplyNetEaseProfile(status.Profile);
+                        _ = LoadProfileAndPlaylistsAsync();
+                        return;
+                    case NetEaseQrLoginStage.Expired:
+                        NetEaseQrStatus = "二维码已过期，请点击重新获取";
+                        return;
+                }
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellation.Token);
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // 关闭弹窗/切换方式属于正常取消。
+        }
+        catch (ApiException ex) when (ex.VerifyUrl is { Length: > 0 })
+        {
+            if (!ReferenceEquals(_netEaseQrLoginCancellation, cancellation)) return;
+            NetEaseCaptchaUrl = ex.VerifyUrl;
+            NetEaseCaptchaCookies = _api.GetCaptchaCookies();
+            NetEaseQrStatus = "需要完成安全验证";
+            Message = null;
+            _logger.LogInformation("NetEase QR login requires captcha. Code={Code}", ex.Code);
+            RaiseNetEaseCaptchaOpenRequested();
+        }
+        catch (ApiException ex)
+        {
+            if (!ReferenceEquals(_netEaseQrLoginCancellation, cancellation)) return;
+            Message = DescribeNetEaseLoginError("扫码登录失败", ex);
+            _logger.LogWarning("NetEase QR login failed. Code={Code}", ex.Code);
+            NetEaseQrStatus = IsNetEaseRiskCode(ex.Code)
+                ? "网易风控拦截:换网络重试,或改用 MUSIC_U 粘贴登录"
+                : "二维码不可用，请点击重新获取";
+        }
+        catch (Exception ex)
+        {
+            if (!ReferenceEquals(_netEaseQrLoginCancellation, cancellation)) return;
+            Message = $"网络连接失败：{ex.Message}";
+            NetEaseQrStatus = "连接失败，请点击重新获取";
+            _logger.LogWarning(ex, "NetEase QR login connection failed");
+        }
+        finally
+        {
+            if (ReferenceEquals(_netEaseQrLoginCancellation, cancellation))
+            {
+                _netEaseQrLoginCancellation = null;
+                IsNetEaseQrLoginActive = false;
+                IsBusy = false;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    /// <summary>WebView 里完成行为验证后重新生成二维码(风控状态已解除)。</summary>
+    [RelayCommand]
+    private async Task RetryNetEaseQrAfterCaptchaAsync()
+    {
+        NetEaseCaptchaUrl = null;
+        NetEaseCaptchaCookies = null;
+        // 验证结果在服务端生效有几百毫秒延迟,立刻重试常常再吃一次 -462。
+        await Task.Delay(700);
+        await StartNetEaseQrLoginAsync();
+    }
+
+    private void SetNetEaseQrImage(byte[] png)
+    {
+        using var stream = new MemoryStream(png, writable: false);
+        var next = new Bitmap(stream);
+        var previous = NetEaseQrImage as IDisposable;
+        NetEaseQrImage = next;
+        previous?.Dispose();
+    }
+
+    /// <summary>关闭登录弹层/离开扫码方式时停止轮询并释放二维码。</summary>
+    public void CancelNetEaseQrLogin()
+    {
+        var cancellation = _netEaseQrLoginCancellation;
+        _netEaseQrLoginCancellation = null;
+        cancellation?.Cancel();
+        IsNetEaseQrLoginActive = false;
+        IsBusy = false;
+        (NetEaseQrImage as IDisposable)?.Dispose();
+        NetEaseQrImage = null;
+        NetEaseCaptchaUrl = null;
+        NetEaseQrStatus = "使用网易云音乐扫描二维码";
+    }
+
+    [RelayCommand]
+    private async Task SendNetEasePhoneCodeAsync()
+    {
+        if (!CanSendNetEasePhoneCode) return;
+        var countryCode = NormalizeCountryCode(NetEasePhoneCountryCode);
+        var phone = NormalizePhoneNumber(NetEasePhoneNumber);
+        NetEasePhoneCountryCode = countryCode;
+        NetEasePhoneNumber = phone;
+        if (phone.Length == 0)
+        {
+            Message = "请输入手机号";
+            return;
+        }
+
+        var cancellation = ReplaceNetEasePhoneOperation();
+        IsBusy = true;
+        Message = null;
+        NetEasePhoneStatus = "正在安全发送验证码…";
+        try
+        {
+            await _api.SendPhoneCodeAsync(phone, countryCode, cancellation.Token);
+            if (!ReferenceEquals(_netEasePhoneOperationCancellation, cancellation)) return;
+            IsNetEasePhoneCodeSent = true;
+            NetEasePhoneStatus = $"验证码已发送至 +{countryCode} {MaskPhone(phone)}";
+            StartNetEasePhoneCountdown();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (ApiException ex)
+        {
+            IsNetEasePhoneCodeSent = false;
+            NetEasePhoneStatus = IsNetEaseRiskCode(ex.Code) ? "网易风控拦截" : "验证码发送失败";
+            Message = DescribeNetEaseLoginError("验证码发送失败", ex);
+            _logger.LogWarning("NetEase phone code send failed. Code={Code}", ex.Code);
+        }
+        catch (Exception ex)
+        {
+            IsNetEasePhoneCodeSent = false;
+            NetEasePhoneStatus = "验证码发送失败";
+            Message = $"网络连接失败：{ex.Message}";
+            _logger.LogWarning(ex, "NetEase phone code send connection failed");
+        }
+        finally
+        {
+            if (ReferenceEquals(_netEasePhoneOperationCancellation, cancellation))
+            {
+                _netEasePhoneOperationCancellation = null;
+                IsBusy = false;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    [RelayCommand]
+    private async Task LoginNetEasePhoneAsync()
+    {
+        var countryCode = NormalizeCountryCode(NetEasePhoneCountryCode);
+        var phone = NormalizePhoneNumber(NetEasePhoneNumber);
+        var code = NetEasePhoneCode.Trim();
+        NetEasePhoneCountryCode = countryCode;
+        NetEasePhoneNumber = phone;
+        NetEasePhoneCode = code;
+        if (phone.Length == 0)
+        {
+            Message = "请输入手机号";
+            return;
+        }
+        if (code.Length is < 4 or > 8 || !code.All(char.IsDigit))
+        {
+            Message = "请输入短信中的验证码";
+            return;
+        }
+
+        var cancellation = ReplaceNetEasePhoneOperation();
+        IsBusy = true;
+        Message = null;
+        NetEasePhoneStatus = "正在验证并登录…";
+        try
+        {
+            var profile = await _api.LoginWithPhoneCodeAsync(phone, countryCode, code, cancellation.Token);
+            if (!ReferenceEquals(_netEasePhoneOperationCancellation, cancellation)) return;
+            ApplyNetEaseProfile(profile);
+            NetEasePhoneNumber = "";
+            NetEasePhoneCode = "";
+            IsNetEasePhoneCodeSent = false;
+            NetEasePhoneStatus = "登录成功";
+            _ = LoadProfileAndPlaylistsAsync();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (ApiException ex)
+        {
+            NetEasePhoneStatus = IsNetEaseRiskCode(ex.Code) ? "网易风控拦截" : "登录未完成";
+            Message = DescribeNetEaseLoginError("手机号登录失败", ex);
+            _logger.LogWarning("NetEase phone login failed. Code={Code}", ex.Code);
+        }
+        catch (Exception ex)
+        {
+            NetEasePhoneStatus = "登录未完成";
+            Message = $"网络连接失败：{ex.Message}";
+            _logger.LogWarning(ex, "NetEase phone login connection failed");
+        }
+        finally
+        {
+            if (ReferenceEquals(_netEasePhoneOperationCancellation, cancellation))
+            {
+                _netEasePhoneOperationCancellation = null;
+                IsBusy = false;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    /// <summary>扫码/手机验证码拿到资料后的公共收尾:立即翻登录态让弹窗自动关闭,歌单随后异步加载。</summary>
+    private void ApplyNetEaseProfile(Models.Dtos.UserProfile? profile)
+    {
+        IsLoggedIn = true;
+        _netEaseRestoredFromCache = false;
+        if (profile is null) return;
+        UserName = profile.Nickname;
+        AvatarUrl = profile.AvatarUrl;
+        _netEaseUserId = profile.UserId;
+        RefreshPlayability();
+        NotifyAccountChanged();
+    }
+
+    private CancellationTokenSource ReplaceNetEasePhoneOperation()
+    {
+        _netEasePhoneOperationCancellation?.Cancel();
+        var next = new CancellationTokenSource();
+        _netEasePhoneOperationCancellation = next;
+        return next;
+    }
+
+    private void CancelNetEasePhoneOperation()
+    {
+        var operation = _netEasePhoneOperationCancellation;
+        _netEasePhoneOperationCancellation = null;
+        operation?.Cancel();
+        _netEasePhoneCountdownCancellation?.Cancel();
+        IsBusy = false;
+    }
+
+    /// <summary>网易按 IP/设备判定风险的登录返回码:-462 请完成验证操作;8821 提示切换登录方式或升级版本;
+    /// -460/8810 网络环境风险。这类错误换代码解决不了,必须给用户可执行的兜底指引。</summary>
+    private static bool IsNetEaseRiskCode(int code) => code is 8821 or 8810 or -460 or -462;
+
+    private static string DescribeNetEaseLoginError(string prefix, ApiException ex)
+    {
+        var message = $"{prefix}({ex.Code}):{ex.Message}";
+        return IsNetEaseRiskCode(ex.Code)
+            ? $"{message}。网易风控拦截，可换网络（如手机热点）或稍后重试，也可改用 MUSIC_U 粘贴登录"
+            : message;
+    }
+
+    private void StartNetEasePhoneCountdown() => _ = RunNetEasePhoneCountdownAsync();
+
+    private async Task RunNetEasePhoneCountdownAsync()
+    {
+        _netEasePhoneCountdownCancellation?.Cancel();
+        _netEasePhoneCountdownCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        _netEasePhoneCountdownCancellation = cancellation;
+        try
+        {
+            for (NetEasePhoneCountdown = 60; NetEasePhoneCountdown > 0; NetEasePhoneCountdown--)
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_netEasePhoneCountdownCancellation, cancellation))
+            {
+                _netEasePhoneCountdownCancellation = null;
+                NetEasePhoneCountdown = 0;
+            }
+            cancellation.Dispose();
+        }
     }
 
     public bool ShowLogin => !IsLoggedIn;
@@ -787,9 +1153,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         QqPhoneCountryCode = countryCode;
         QqPhoneNumber = phone;
         QqPhoneCode = code;
-        if (code.Length != 6 || !code.All(char.IsDigit))
+        if (code.Length is < 4 or > 8 || !code.All(char.IsDigit))
         {
-            Message = "请输入短信中的 6 位验证码";
+            Message = "请输入短信中的验证码";
             return;
         }
 
@@ -970,7 +1336,13 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     public void CancelLoginActivities()
     {
         CancelQqQrLogin();
+        CancelNetEaseQrLogin();
         CancelNetEaseProxyLogin();
+        CancelNetEasePhoneOperation();
+        NetEasePhoneNumber = "";
+        NetEasePhoneCode = "";
+        IsNetEasePhoneCodeSent = false;
+        NetEasePhoneStatus = "验证码将发送到你的手机";
         var operation = _qqPhoneOperationCancellation;
         _qqPhoneOperationCancellation = null;
         operation?.Cancel();

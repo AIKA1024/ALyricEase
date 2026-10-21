@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using ALyricEase.Models;
@@ -12,7 +13,7 @@ namespace ALyricEase.Services.NetEase;
 /// <summary>网易云 API 客户端:weapi/eapi 加密请求、匿名 cookie 管理、CN IP 风控头、各端点方法。
 /// 所有端点集中在类内,接口字段变动只改这一处。实现 IMusicApi 抽象(搜索/播放地址/歌词/详情),
 /// 由 MusicApiProvider 注册路由;账号类功能(歌单/红心/FM/云盘)为网易云特有,留在具体类上。</summary>
-public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
+public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
 {
     private const string BaseUrl = "https://music.163.com";
 
@@ -30,6 +31,11 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+
+    /// <summary>匿名注册/扫码这类"设备级"请求用客户端 UA(NCM 的 chooseUserAgent('api','android') 同形),
+    /// 与 deviceId/os/appver 保持同一套身份;桌面 Chrome UA 是网页身份,混用会多一层风控特征。</summary>
+    private const string AnonymousUserAgent =
+        "NeteaseMusic/9.1.65.240927161425(9001065);Dalvik/2.1.0 (Linux; U; Android 16; iPhone 16)";
 
     private readonly HttpClient _http;
     private readonly CookieContainer _cookieContainer;
@@ -96,17 +102,37 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
                      ("appver", EapiAppVer),
                      ("versioncode", EapiVersionCode),
                      ("__remember_me", "true"),
+                     ("channel", "netease"),
+                     ("osver", "16"),
                  })
         {
             if (_cookieContainer.GetCookies(new Uri(BaseUrl))[name] is null)
                 _cookieContainer.Add(new Uri(BaseUrl), new Cookie(name, value) { Path = "/" });
         }
+
+        // deviceId 同时以 cookie 形式出现(NCM 的 processedCookie 就带):风控验证页按它归属设备,
+        // 只写在 payload header 里时网页侧看不到,滑完滑块主客户端仍可能是 -462。
+        _cookieContainer.Add(new Uri(BaseUrl), new Cookie("deviceId", _deviceId)
+        {
+            Path = "/",
+            Domain = ".music.163.com",
+        });
     }
 
     /// <summary>eapi 内嵌 header:放进 payload 的 "header" 键,与服务端识别客户端档位权益相关。
-    /// deviceId 每实例随机(无状态;真实客户端是设备绑定,这里随机即可通过)。</summary>
-    private readonly string _deviceId =
-        Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+    /// 52 位大写十六进制与 NCM 的 generateDeviceId 同形。匿名注册会换新值(见
+    /// <see cref="RegisterAnonymousOnceAsync"/>)—— 服务端会把 400 粘在某个 deviceId 上,
+    /// 重试必须换身份,否则三次全 400。</summary>
+    private string _deviceId = GenerateDeviceId();
+
+    private static string GenerateDeviceId()
+    {
+        const string hex = "0123456789ABCDEF";
+        var chars = new char[52];
+        for (var i = 0; i < chars.Length; i++)
+            chars[i] = hex[Random.Shared.Next(hex.Length)];
+        return new string(chars);
+    }
 
     public bool IsLoggedIn => _cookie.MusicU is { Length: > 0 };
 
@@ -250,29 +276,165 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (!string.IsNullOrEmpty(csrf)) _csrf = AddCsrfCookie(csrf);
     }
 
-    /// <summary>确保有未过期的匿名 cookie;无则调 /weapi/register/anonimous 注册。</summary>
+    /// <summary>匿名注册的尝试次数。/api/register/anonimous 有相当概率回 {"code":400},
+    /// 且失败会粘在当前 deviceId 上 —— 每次重试都要换身份,见 RegisterAnonymousOnceAsync。</summary>
+    private const int AnonymousRegisterAttempts = 3;
+
+    /// <summary>匿名注册全部失败后的冷却截止时间:搜索/取址都会顺带调它,
+    /// 不冷却的话每次都白等三轮(≈0.75s)。</summary>
+    private DateTime _anonymousRetryAfterUtc = DateTime.MinValue;
+
+    /// <summary>确保有未过期的匿名 cookie;无则调明文 /api/register/anonimous 注册。</summary>
     public async Task EnsureAnonymousAsync(CancellationToken ct = default)
     {
         if (_cookie.AnonymousMusicA is { Length: > 0 } && _cookie.AnonymousExpiresUtc > DateTime.UtcNow)
             return;
+        // 已登录(MUSIC_U)时服务端认账号身份,不需要匿名会话(NCM 也只给未登录请求补 MUSIC_A)。
+        if (IsLoggedIn) return;
+        if (DateTime.UtcNow < _anonymousRetryAfterUtc)
+            throw new ApiException("匿名注册冷却中,暂不重试", -2);
 
-        var payload = new Dictionary<string, object?> { ["csrf_token"] = "" };
-        using var req = CreateWeapiRequest("weapi/register/anonimous", payload, includeRealIp: true);
-        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        string? lastFailure = null;
+        for (var attempt = 1; attempt <= AnonymousRegisterAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                lastFailure = await RegisterAnonymousOnceAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested
+                && ex is HttpRequestException or TaskCanceledException)
+            {
+                lastFailure = $"网络异常: {ex.Message}";
+            }
+            if (lastFailure is null) return;
+            if (attempt < AnonymousRegisterAttempts)
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct).ConfigureAwait(false);
+        }
+        _anonymousRetryAfterUtc = DateTime.UtcNow.AddMinutes(3);
+        throw new ApiException(
+            $"匿名注册未返回 MUSIC_A cookie, body={Truncate(lastFailure ?? "", 200)}", -2);
+    }
+
+    /// <summary>风控验证页(WebView)要复用的设备身份。验证结果按 deviceId/MUSIC_A 归属,
+    /// WebView 里必须带同一份 cookie,否则滑完滑块主客户端仍然是 -462。</summary>
+    public IReadOnlyDictionary<string, string> GetCaptchaCookies()
+    {
+        var cookies = new Dictionary<string, string>
+        {
+            ["deviceId"] = _deviceId,
+            ["os"] = "android",
+            ["appver"] = "9.1.65",
+            ["osver"] = "16",
+            ["channel"] = "netease",
+        };
+        if (_cookie.AnonymousMusicA is { Length: > 0 } musicA) cookies["MUSIC_A"] = musicA;
+        return cookies;
+    }
+
+    /// <summary>尽力拿匿名令牌:MUSIC_A 只是扫码/取址的辅助会话,拿不到也要让主流程继续。</summary>
+    public async Task<bool> TryEnsureAnonymousAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await EnsureAnonymousAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested
+            && ex is ApiException or HttpRequestException or TaskCanceledException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>发一次匿名注册。成功(已写入 MUSIC_A)返回 null,失败返回用于诊断的响应内容。</summary>
+    private async Task<string?> RegisterAnonymousOnceAsync(CancellationToken ct)
+    {
+        // 明文 /api/register/anonimous(NCM 的 register_anonimous 同款 username):
+        // weapi 版本在本机网络会被 WAF 拦成空响应,明文端点稳定返回 MUSIC_A。
+        // 用全新 Cookie 容器:请求里不能混入主客户端的 os/appver/已登录 cookie,
+        // 否则服务端会以 username 与已有设备身份不一致回 400。
+        // NCM 每次注册都新生成 deviceId;这里的 400 会粘在同一个 deviceId 上(实测连试三次
+        // 同一个全 400),所以每次尝试都换身份,成功那次的值留给后续 eapi header 用。
+        _deviceId = GenerateDeviceId();
+        // cookie 版的 deviceId 也要跟着换,否则请求头与 cookie 指向两台"设备"。
+        _cookieContainer.Add(new Uri(BaseUrl), new Cookie("deviceId", _deviceId)
+        {
+            Path = "/",
+            Domain = ".music.163.com",
+        });
+        var username = EncodeAnonymousUsername(_deviceId);
+        var anonCookies = new CookieContainer();
+        var origin = new Uri(BaseUrl);
+        // NCM 会把 deviceId/os/appver 一起写进 Cookie;服务端按 deviceId 认这份设备身份。
+        foreach (var (name, value) in new[]
+                 {
+                     ("deviceId", _deviceId), ("os", "android"), ("appver", "9.1.65"),
+                     ("osver", "16"), ("channel", "netease"), ("__remember_me", "true"),
+                 })
+        {
+            anonCookies.Add(origin, new Cookie(name, value) { Path = "/", Domain = ".music.163.com" });
+        }
+
+        using var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.All,
+            CookieContainer = anonCookies,
+            UseCookies = true,
+        };
+        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
+        using var req = new HttpRequestMessage(HttpMethod.Post, BaseUrl + "/api/register/anonimous")
+        {
+            Content = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("username", username),
+            ]),
+        };
+        req.Headers.TryAddWithoutValidation("User-Agent", AnonymousUserAgent);
+        req.Headers.Referrer = origin;
+        using var resp = await client.SendAsync(req, ct).ConfigureAwait(false);
         var bodyText = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
-            throw new ApiException($"请求失败 HTTP {(int)resp.StatusCode}: {bodyText}", (int)resp.StatusCode);
+            return $"HTTP {(int)resp.StatusCode}: {Truncate(bodyText, 160)}";
         if (string.IsNullOrWhiteSpace(bodyText))
-            throw new ApiException("响应为空(加密通道被风控拦截)", BlockedCode);
+            return "empty(加密通道被风控拦截)";
 
-        var cookies = _cookieContainer.GetCookies(new Uri(BaseUrl));
-        var musicA = cookies["MUSIC_A"]?.Value;
-        if (string.IsNullOrEmpty(musicA))
-            throw new ApiException($"匿名注册未返回 MUSIC_A cookie, body={Truncate(bodyText, 200)}", -2);
+        var musicA = anonCookies.GetCookies(origin)["MUSIC_A"]?.Value;
+        if (string.IsNullOrEmpty(musicA)) return bodyText;
 
+        AdoptAnonymousMusicA(musicA);
+        return null;
+    }
+
+    /// <summary>把 MUSIC_A 写进主 Cookie 容器并落盘(后续 eapi header 与扫码轮询都用这一份)。</summary>
+    private void AdoptAnonymousMusicA(string musicA)
+    {
+        _cookieContainer.Add(new Uri(BaseUrl), new Cookie("MUSIC_A", musicA) { Path = "/" });
         _cookie.AnonymousMusicA = musicA;
-        _cookie.AnonymousExpiresUtc = DateTime.UtcNow.AddDays(14);
+        _cookie.AnonymousExpiresUtc = DateTime.UtcNow.AddDays(30);
         _cookie.Save();
+    }
+
+    /// <summary>登录通道的 Set-Cookie 也会下发 MUSIC_A(网页/接口两条路都可能有),
+    /// 有就顺便存档,下次不必再走匿名注册。</summary>
+    private void AdoptAnonymousMusicAFromContainer()
+    {
+        if (_cookie.AnonymousMusicA is { Length: > 0 } && _cookie.AnonymousExpiresUtc > DateTime.UtcNow)
+            return;
+        var value = _cookieContainer.GetCookies(new Uri(BaseUrl))["MUSIC_A"]?.Value;
+        if (!string.IsNullOrEmpty(value)) AdoptAnonymousMusicA(value);
+    }
+
+    /// <summary>NCM register_anonimous 的 username:deviceId 与固定 key 逐字符 XOR →
+    /// MD5(base64) → base64("deviceId digest")。二维码 key/check 依赖这份匿名会话。</summary>
+    private static string EncodeAnonymousUsername(string deviceId)
+    {
+        const string key = "3go8&$8*3*3h0k(2)2";
+        var xored = new byte[deviceId.Length];
+        for (var i = 0; i < deviceId.Length; i++)
+            xored[i] = (byte)(deviceId[i] ^ key[i % key.Length]);
+        var digest = Convert.ToBase64String(MD5.HashData(xored));
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes($"{deviceId} {digest}"));
     }
 
     // ---------- 端点方法 ----------
@@ -306,7 +468,9 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         {
             try
             {
-                await EnsureAnonymousAsync(ct).ConfigureAwait(false);
+                // 匿名会话只影响部分档位权益,拿不到也照常试 eapi —— 注册接口会随机 400,
+                // 不能让它把整首歌的取址打断。
+                await TryEnsureAnonymousAsync(ct).ConfigureAwait(false);
                 foreach (var candidate in candidates)
                 {
                     var item = await TryPlayUrlEapiAsync(id, candidate, ct).ConfigureAwait(false);
@@ -349,7 +513,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>歌曲详情(v3/song/detail),字段为 artists/album。</summary>
     public async Task<Song?> GetSongDetailAsync(long id, CancellationToken ct = default)
     {
-        await EnsureAnonymousAsync(ct).ConfigureAwait(false);
+        await TryEnsureAnonymousAsync(ct).ConfigureAwait(false);
         var payload = new Dictionary<string, object?>
         {
             ["c"] = $"[{{\"id\":{id}}}]",
@@ -383,7 +547,17 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         using var req = CreateEapiRequest(
             "/api/song/enhance/player/url/v1", payload, includeRealIp: true, useInterfaceHost: true);
         using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
-        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.PlayUrlResponse);
+        PlayUrlResponse? resp;
+        try
+        {
+            resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.PlayUrlResponse);
+        }
+        catch (JsonException)
+        {
+            // data 不是数组(风控对象,如 -462 的 verifyUrl)时按"本档不可用"处理,
+            // 交给明文端点回落 —— 否则取址会直接抛异常、整首歌播不出来。
+            return null;
+        }
         if (resp is null || resp.Code != 200 || resp.Data is null)
             return null;
         return resp.Data.FirstOrDefault(i => i.Id == id) ?? resp.Data.FirstOrDefault();
@@ -414,6 +588,8 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
             header["MUSIC_U"] = musicU;
         if (PickCookie("MUSIC_A") is { Length: > 0 } musicA)
             header["MUSIC_A"] = musicA;
+        if (PickCookie("NMTID") is { Length: > 0 } nmtid)
+            header["NMTID"] = nmtid;
         return header;
     }
 
@@ -421,7 +597,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private async Task<List<Song>> SearchWeapiAsync(string keyword, int limit, int offset, CancellationToken ct)
     {
-        await EnsureAnonymousAsync(ct).ConfigureAwait(false);
+        await TryEnsureAnonymousAsync(ct).ConfigureAwait(false);
         var payload = new Dictionary<string, object?>
         {
             ["s"] = keyword,
@@ -440,7 +616,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private async Task<LyricResult?> LyricWeapiAsync(long id, CancellationToken ct)
     {
-        await EnsureAnonymousAsync(ct).ConfigureAwait(false);
+        await TryEnsureAnonymousAsync(ct).ConfigureAwait(false);
         var payload = new Dictionary<string, object?>
         {
             ["id"] = id,
@@ -543,7 +719,7 @@ public sealed class NetEaseApiClient : IMusicApi, IUserMusicApi
         {
             try
             {
-                await EnsureAnonymousAsync(ct).ConfigureAwait(false);
+                await TryEnsureAnonymousAsync(ct).ConfigureAwait(false);
                 var payload = new Dictionary<string, object?>
                 {
                     ["s"] = keyword,

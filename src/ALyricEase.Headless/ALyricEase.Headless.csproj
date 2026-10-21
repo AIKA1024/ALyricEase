@@ -7,6 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks><!-- TEMP-DIAG:真窗口探针 BGRA 落盘 -->
     <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
+    <!-- WebView 探针:NativeControlHost 需要 supportedOS 声明,否则子窗口创建失败 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <!-- 直接验证桌面端的生命周期控制器，避免测试替身复制关闭逻辑。 -->

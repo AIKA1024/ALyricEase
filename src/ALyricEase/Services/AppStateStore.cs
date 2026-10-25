@@ -122,8 +122,16 @@ public sealed class AppStateStore
     /// <summary>兼容的视觉效果。</summary>
     public bool CompatibilityVisual { get; set; } = true;
 
-    /// <summary>统一音频质量选项(0-3;旧值 4 加载时自动归一)。默认 3 = 无损。</summary>
-    public int AudioQuality { get; set; } = 3;
+    /// <summary>网易云音质档位(0=标准 / 1=极高 / 2=无损 / 3=Hi-Res;见 AudioQualityMapper)。
+    /// 与 QQ 一致按从低到高排列,缺省 3 —— 没会员时由 NetEaseApiClient 的降级链自动回落。</summary>
+    public int NetEaseAudioQuality { get; set; } = 3;
+
+    /// <summary>QQ 音乐音质档位(0=标准 / 1=NAC / 2=极高 / 3=无损)。</summary>
+    public int QqAudioQuality { get; set; } = 3;
+
+    /// <summary>按音源取各自的档位;播放与下载都走这里,别再直接读字段。</summary>
+    public int AudioQualityFor(MusicSource source)
+        => source == MusicSource.QQ ? QqAudioQuality : NetEaseAudioQuality;
 
     /// <summary>传统播放控制。</summary>
     public bool LegacyPlaybackControl { get; set; }
@@ -217,7 +225,13 @@ public sealed class AppStateStore
                 : "Quality";
             DynamicBackground = dto.DynamicBackground ?? true;
             CompatibilityVisual = dto.CompatibilityVisual ?? true;
-            AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 3);
+            // 音质档位按音源各存一份。老配置只有一个全局 AudioQuality,按各自语义折算:
+            // QQ 沿用同一套索引;网易云旧索引的**实际请求档**与现在不同(见 MigrateLegacyNetEaseIndex)。
+            NetEaseAudioQuality = dto.NetEaseAudioQuality is { } neteaseQuality
+                ? AudioQualityMapper.NormalizeIndex(neteaseQuality)
+                : AudioQualityMapper.MigrateLegacyNetEaseIndex(dto.AudioQuality ?? 3);
+            QqAudioQuality = AudioQualityMapper.NormalizeIndex(
+                dto.QqAudioQuality ?? dto.AudioQuality ?? AudioQualityMapper.GetDefaultIndex(MusicSource.QQ));
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
             SwapPlayAndLikeOnRows = dto.SwapPlayAndLikeOnRows ?? false;
             PreferredCombinedLikeSource = dto.PreferredCombinedLikeSource is (int)MusicSource.NetEase
@@ -352,7 +366,8 @@ public sealed class AppStateStore
                 PerformanceMode = PerformanceMode,
                 DynamicBackground = DynamicBackground,
                 CompatibilityVisual = CompatibilityVisual,
-                AudioQuality = AudioQuality,
+                NetEaseAudioQuality = NetEaseAudioQuality,
+                QqAudioQuality = QqAudioQuality,
                 LegacyPlaybackControl = LegacyPlaybackControl,
                 SwapPlayAndLikeOnRows = SwapPlayAndLikeOnRows,
                 PreferredCombinedLikeSource = PreferredCombinedLikeSource is { } likeSource

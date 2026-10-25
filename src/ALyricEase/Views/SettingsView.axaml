@@ -301,14 +301,25 @@
         </Grid>
       </Border>
 
+      <!-- 音质档位按音源各存一份,顺序统一从低到高(网易云 标准/极高/无损/Hi-Res)。
+           2026-10-25 之前共用一个索引,而设置页写的"标准/较高/极高/无损"是 QQ 的叫法 ——
+           网易云那边同一个索引实际请求的是 exhigh/lossless/空间音频,标签与真实档位对不上。 -->
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <Grid ColumnDefinitions="Auto,*,Auto">
-          <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
+        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+          <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" Grid.RowSpan="3" />
           <TextBlock Grid.Column="1" Classes="setting-title" Text="音频质量" />
-          <ComboBox Grid.Column="2" MinWidth="190" Height="32" VerticalAlignment="Center"
-                    ToolTip.Tip="同一档位会按当前歌曲的音乐平台自动映射"
-                    ItemsSource="{CompiledBinding AudioQualityOptions}"
-                    SelectedIndex="{CompiledBinding AudioQualityIndex, Mode=TwoWay}" />
+          <TextBlock Grid.Row="1" Grid.Column="1" Text="网易云音乐" FontSize="13"
+                     VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+          <ComboBox Grid.Row="1" Grid.Column="2" MinWidth="200" Height="32" VerticalAlignment="Center"
+                    AutomationProperties.Name="网易云音乐音质"
+                    ItemsSource="{CompiledBinding NetEaseAudioQualityOptions}"
+                    SelectedIndex="{CompiledBinding NetEaseAudioQualityIndex, Mode=TwoWay}" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Text="QQ 音乐" FontSize="13"
+                     VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+          <ComboBox Grid.Row="2" Grid.Column="2" MinWidth="200" Height="32" VerticalAlignment="Center"
+                    AutomationProperties.Name="QQ 音乐音质"
+                    ItemsSource="{CompiledBinding QqAudioQualityOptions}"
+                    SelectedIndex="{CompiledBinding QqAudioQualityIndex, Mode=TwoWay}" />
         </Grid>
       </Border>
 

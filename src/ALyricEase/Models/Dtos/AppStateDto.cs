@@ -71,8 +71,16 @@ public sealed class AppStateFile
     /// <summary>兼容的视觉效果(低端设备关掉重动效)。</summary>
     public bool? CompatibilityVisual { get; set; }
 
-    /// <summary>统一音频质量选项(0-3；播放时按音源映射)。缺省视为 3 = 无损。</summary>
+    /// <summary>【旧字段,只读不写】曾经是网易云/QQ 共用的一个音质档位(0-3)。
+    /// 现在两边的档位各自独立(含义相反),加载时按 <see cref="NetEaseAudioQuality"/> /
+    /// <see cref="QqAudioQuality"/> 分别折算,见 AppStateStore 的加载段。</summary>
     public int? AudioQuality { get; set; }
+
+    /// <summary>网易云音质档位(0=标准 / 1=极高 / 2=无损 / 3=Hi-Res)。</summary>
+    public int? NetEaseAudioQuality { get; set; }
+
+    /// <summary>QQ 音乐音质档位(0=标准 / 1=NAC / 2=极高 / 3=无损)。</summary>
+    public int? QqAudioQuality { get; set; }
 
     /// <summary>传统播放控制(点击行直接播放/双击入队等老式行为,当前仅存储偏好)。</summary>
     public bool? LegacyPlaybackControl { get; set; }

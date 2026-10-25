@@ -8,8 +8,11 @@
 | 文件 | 字体家族 | 来源 | 码位范围 | 资源键 | 用途 |
 |---|---|---|---|---|---|
 | `FluentUISystemIcons.ttf` | `FluentUISystemIcons` | 原版 UWP LyricEase 内嵌字体 + 本项目扩展 | `E900–E95F`（94 个） | `LyricEaseIconsOriginal` | 侧边栏、歌曲行菜单、标题栏等须与原版像素级一致的部位 |
-| `FluentSystemIcons-Filled.ttf` | `FluentSystemIcons-Filled` | [microsoft/fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons) 官方完整版 | PUA 区离散分布 | `LyricEaseIcons`（主）、`LyricEaseIconsFilled`（别名） | 其余全部图标（播放控制、红心、设置页等）的默认字体 |
-| `FluentSystemIcons-Regular.ttf` | `FluentSystemIcons-Regular` | 同上 Regular 字重 | 同上 | `LyricEaseIconsOutline` | 少数细线字形：歌词、播放列表、图钉、空心红心 |
+| `FluentSystemIcons-Filled.ttf` | `FluentSystemIcons-Filled` | [microsoft/fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons) 官方完整版（**仓库内是子集，16KB**） | PUA 区离散分布 | `LyricEaseIcons`（主）、`LyricEaseIconsFilled`（别名） | 其余全部图标（播放控制、红心、设置页等）的默认字体 |
+| `FluentSystemIcons-Regular.ttf` | `FluentSystemIcons-Regular` | 同上 Regular 字重（**仓库内是子集，20KB**） | 同上 | `LyricEaseIconsOutline` | 少数细线字形：下载、关闭（✕）、空心红心、歌词 |
+
+**Filled/Regular 只提交子集**：全量原件在 `assets/font-sources/`（2.5MB + 2.8MB，不在 `Assets/**`，不打进 dll），
+由 `scripts/subset-icons.py` 按实际引用码位裁剪后写回 `Assets/Fonts/`。改图标后必须重跑，见第六节。
 
 **原版字体来历**：从原版 UWP 安装包解包产物的 `LyricEase.Shell/UIAssets/FontIcons/FluentUISystemIcons.ttf` 取得（原版映射表为其 `shell_xaml/FontIcons.xaml`，80 项，`E900–E94F`）。本项目在此基础上扩展了 `E950–E959`（标题栏 5 键 + 播放模式 4 键，轮廓取自 Segoe MDL2 以对齐原版观感），形成现在的 94 码位版本——它同时是 dump 字体的严格超集，替换时务必用扩展版。
 
@@ -53,7 +56,7 @@
 ## 三、Icons.axaml 键的字体归属
 
 - **`LyricEaseIconsOriginal`（原版字体）**：`IconPerson` `IconSettings` `IconCode` `IconChevronDown`（侧边栏与折叠箭头）、`IconSingleArtist` `IconMultiArtists` `IconAlbum`（歌曲行菜单）、`IconBack` `IconWindowMinimize` `IconWindowMaximize` `IconWindowRestore` `IconClose`（标题栏）。导航项图标不经键，直接是 `MainViewModel` 里的字面量（见下）。
-- **`LyricEaseIconsOutline`（Regular 细线）**：`IconLyrics`（slide_text_24_regular `F6EC`）、`IconPlaylist`（text_bullet_list_square_24_regular `F7A9`）、`IconPin`（dismiss_28_regular `F36B`，旧版"pin"本就是 X 形）、`IconHeartOutline`（空心红心 `F47A`，PlayerBar 未红心态）。
+- **`LyricEaseIconsOutline`（Regular 细线）**：`IconLyrics`（slide_text_24_regular `F6EC`）、`IconPlaylist`（text_bullet_list_square_24_regular `F7A9`）、`IconDismiss`（dismiss_28_regular `F36B`，旧版"pin"本就是 X 形，用于播放队列移除；真正的图钉是 `F602`）、`IconHeartOutline`（空心红心 `F47A`，PlayerBar 未红心态）。
 - **`LyricEaseIcons`（Filled，默认）**：其余全部键。播放控制用 `LyricEaseIconsFilled` 别名引用的 TextBlock 与之等价。
 
 ## 四、Icons.axaml 之外的码位字面量（改码位必须同步）
@@ -74,19 +77,31 @@
 4. **字面量与 Icons.axaml 保持同值**。批量替换时替换映射要按"当前值"写，静默 no-op 会留下旧码位（发生过一次导航字面量漏改）。
 5. **`LyricEaseIconsFilled` 与 `LyricEaseIcons` 目前指向同一字体**，保留两个键是为了语义清晰；若将来分化需重查全部消费方。
 
-## 六、发布期子集化（TODO）
+## 六、字体子集化（已落地，2026-10）
 
-三套字体按码位裁剪以缩小体积（官方两套完整字体各 ~2.5MB）：
+官方两套完整字体各 ~2.5MB，而应用实际只用几十个码位；`Assets\**` 会全量打进 dll，
+所以仓库里只放子集，**全量原件放在 `assets/font-sources/`（不在 `Assets/**`，不参与打包）**。
 
-- 码位清单 = Icons.axaml 全部键 + 第四节字面量（当前同值），按字体分组：
-  - Filled：除 Outline/Original 归属外的全部键值；
-  - Regular：`F6EC` `F7A9` `F36B` `F47A`；
-  - 原版字体：建议整包保留（仅 19KB，无需子集化）。
-- 用 `pyftsubset`：`--unicodes` 显式传入清单，**保留 name 表**（家族名 `FluentSystemIcons-Filled/Regular` 不能变，否则 `#` 引用断链全线回退）与 hinting（小字号栅格化不变）。
-- 子集化后必须重跑验证：解析子集字体 cmap，断言清单内码位全部在场。
+- 改过 `Icons.axaml` / 代码里的字形后跑一次：
+
+  ```
+  python scripts/subset-icons.py            # 重新生成子集（2.5MB+2.8MB → 16KB+20KB）
+  python scripts/subset-icons.py --check    # 只校验子集是否覆盖所有引用码位（CI 用）
+  ```
+
+- 脚本的码位来源：`Icons.axaml` 的 `&#xXXXX;` + `.cs` 的 `\uXXXX` 转义 + `.cs` 里直接写的
+  私用区字符（如 `PlayerViewModel.PlaybackModeGlyph`），取并集后与每个字体的 cmap 求交集。
+  不按"哪个 View 用哪个字体"分组——多留几个字形也就几百字节，换来不会切少。
+- **必须保留 name 表**（脚本里 `name_IDs=["*"]`）：家族名 `FluentSystemIcons-Filled/Regular`
+  不能变，否则 XAML 的 `#家族名` 断链、整片图标回退。hinting 默认保留。
+- 产物文件名不变（`Assets/Fonts/FluentSystemIcons-*.ttf`），所以 `Icons.axaml` 一行都不用改。
+- 构建/发布不依赖 Python：字体就是普通 AvaloniaResource，脚本只服务于"改图标的人"。
+- 原版字体 `FluentUISystemIcons.ttf` 本身就是 19KB 子集，不参与这一步。
 
 ## 七、验证方法
 
+- 子集产物：`--iconsubset` 探针（`dotnet run --project src/ALyricEase.Headless -- --iconsubset out.png`）
+  用三套字体各画一行图标，肉眼确认家族名能解析、字形没缺（缺了是空白/方块）。
 图标码位的正确性可用 Python 直接解析 TTF 验证（本仓库多次使用）：
 
 - `cmap`（format 4/12）拿 码位→glyphID；`post`（format 2.0）拿 glyphID→glyph 名（如 `ic_fluent_search_24_regular`）。

@@ -1109,6 +1109,13 @@ public static class Program
             return;
         }
 
+        // 图标字体子集自查:三套字体各画一行,确认子集化后家族名/码位仍可解析
+        if (args.Length > 0 && args[0] == "--iconsubset")
+        {
+            IconSubsetProbe.Run(args.Length > 1 ? args[1] : System.IO.Path.Combine("work", "iconsubset.png"));
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--search-continuation")
         {
             Environment.ExitCode = SearchContinuationProbe.Run();

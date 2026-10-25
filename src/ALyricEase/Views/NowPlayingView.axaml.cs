@@ -23,10 +23,6 @@ namespace ALyricEase.Views;
 /// 布局规则(截图+用户确认):大/小屏无面板信息在封面下方;中屏信息在窗口顶部;开面板时封面缩为 60px 迷你头。</summary>
 public partial class NowPlayingView : UserControl
 {
-  // 全屏按钮图标:进入全屏(E690)/退出全屏(E693),码位见 Icons.axaml
-  private const string EnterFullScreenGlyph = "\uE690";
-  private const string ExitFullScreenGlyph = "\uE693";
-
   // 大屏封面下方的控件栈高度:信息54+进度52+控制60+次级50+切换32 + 间距 22+18+14+16+24 = 342
   private const double BelowCoverStack = 342;
   private const double SmallSideMargin = 40;
@@ -893,7 +889,7 @@ public partial class NowPlayingView : UserControl
   {
     var fullScreen = state == WindowState.FullScreen;
     FullScreenToggle.IsChecked = fullScreen;
-    FullScreenGlyph.Text = fullScreen ? ExitFullScreenGlyph : EnterFullScreenGlyph;
+    FullScreenGlyph.Text = fullScreen ? IconGlyphs.ExitFullScreen : IconGlyphs.EnterFullScreen;
   }
 
   private void OnFullScreenClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

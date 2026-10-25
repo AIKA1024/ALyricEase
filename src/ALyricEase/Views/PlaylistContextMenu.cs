@@ -33,7 +33,7 @@ internal static class PlaylistContextMenu
             Focusable = false,
         });
 
-        var play = MenuItemWithIcon("播放", "\uE912");
+        var play = MenuItemWithIcon("播放", IconGlyphs.Play);
         play.Click += (_, _) =>
         {
             try
@@ -44,11 +44,11 @@ internal static class PlaylistContextMenu
         };
         menu.Items.Add(play);
 
-        var subscribe = MenuItemWithIcon("收藏", "\uE92B");
+        var subscribe = MenuItemWithIcon("收藏", IconGlyphs.Add);
         subscribe.Click += async (_, _) => await SubscribeAsync(playlist);
         menu.Items.Add(subscribe);
 
-        var creator = MenuItemWithIcon($"创建者： {playlist.CreatorName ?? "未知"}", "\uE910");
+        var creator = MenuItemWithIcon($"创建者： {playlist.CreatorName ?? "未知"}", IconGlyphs.Person);
         creator.IsEnabled = playlist.CreatorId > 0;
         if (creator.IsEnabled)
         {
@@ -67,11 +67,11 @@ internal static class PlaylistContextMenu
         menu.Items.Add(new Separator());
 
         var link = PlaylistLink(playlist);
-        var share = MenuItemWithIcon("分享", "\uE918");
+        var share = MenuItemWithIcon("分享", IconGlyphs.Share);
         share.Click += async (_, _) => await ShareAsync(anchor, playlist, link);
         menu.Items.Add(share);
 
-        var copy = MenuItemWithIcon("复制链接", "\uE902");
+        var copy = MenuItemWithIcon("复制链接", IconGlyphs.CopyLink);
         copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
         menu.Items.Add(copy);
 

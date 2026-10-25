@@ -28,8 +28,13 @@
     <x:String x:Key="IconShare">&#xE918;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconCopyLink">&#xE902;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconOpenInBrowser">&#xE94F;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconPlay">&#xE912;</x:String> <!-- 播放(空心),须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconPlayNext">&#xE913;</x:String> <!-- 下一首播放,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconRemove">&#xE932;</x:String> <!-- 移除/删除条目,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconShowInFolder">&#xF4DD;</x:String> <!-- 打开文件位置,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconDownload">&#xF151;</x:String> <!-- arrow_download_24_regular,原版子集字体里没有,须配 LyricEaseIconsOutline -->
     <x:String x:Key="IconCode">&#xE940;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
-    <x:String x:Key="IconPin">&#xF36B;</x:String> <!-- 实为细线字形,须配 LyricEaseIconsOutline -->
+    <x:String x:Key="IconDismiss">&#xF36B;</x:String> <!-- dismiss_28_regular ✕,须配 LyricEaseIconsOutline;用于播放队列的"移除" -->
     <x:String x:Key="IconChevronDown">&#xE901;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconChevronUp">&#xF2B7;</x:String>
     <x:String x:Key="IconViewList">&#xE905;</x:String> <!-- ListRegular,须配 LyricEaseIconsOriginal -->

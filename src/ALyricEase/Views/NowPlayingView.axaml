@@ -346,7 +346,7 @@
                                             <Button Grid.Column="2" Classes="queue-remove" Width="40" Height="40"
                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
                                                     Command="{Binding RemoveCommand}" ToolTip.Tip="从播放列表移除">
-                                                <TextBlock Text="{DynamicResource IconPin}" FontFamily="{DynamicResource LyricEaseIconsOutline}" FontSize="12" Foreground="#73FFFFFF" />
+                                                <TextBlock Text="{DynamicResource IconDismiss}" FontFamily="{DynamicResource LyricEaseIconsOutline}" FontSize="12" Foreground="#73FFFFFF" />
                                             </Button>
                                         </Grid>
                                     </DataTemplate>

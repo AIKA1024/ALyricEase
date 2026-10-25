@@ -21,6 +21,11 @@ internal static class SongContextMenu
     private static readonly FontFamily MenuIconFont =
         new("avares://ALyricEase/Assets/Fonts/FluentUISystemIcons.ttf#FluentUISystemIcons");
 
+    // 原版子集字体只有 E900~E94A,下载等少数码位在全量 Fluent 字体里(Icons.axaml 的
+    // LyricEaseIconsOutline),菜单里按项切换字体。
+    private static readonly FontFamily OutlineIconFont =
+        new("avares://ALyricEase/Assets/Fonts/FluentSystemIcons-Regular.ttf#FluentSystemIcons-Regular");
+
     // "从歌单中移除"红(与封面红心同色,仿原版红色危险项)
     private static readonly SolidColorBrush RemoveBrush = new(Color.FromRgb(0xE7, 0x4C, 0x3C));
 
@@ -47,12 +52,12 @@ internal static class SongContextMenu
 
         if (row is not null)
         {
-            var play = MenuItemWithIcon("播放", "\uE912");
+            var play = MenuItemWithIcon("播放", IconGlyphs.Play);
             play.IsEnabled = !localFileMissing;
             play.Click += (_, _) => row.PlayCommand.Execute(null);
             menu.Items.Add(play);
 
-            var playNext = MenuItemWithIcon("下一首播放", "\uE913");
+            var playNext = MenuItemWithIcon("下一首播放", IconGlyphs.PlayNext);
             playNext.IsEnabled = !localFileMissing;
             playNext.Click += (_, _) =>
             {
@@ -73,7 +78,7 @@ internal static class SongContextMenu
         if (isLocal && OperatingSystem.IsWindows()
             && !string.IsNullOrEmpty(song.LocalFilePath) && File.Exists(song.LocalFilePath))
         {
-            var reveal = MenuItemWithIcon("打开文件位置", "\uF4DD");
+            var reveal = MenuItemWithIcon("打开文件位置", IconGlyphs.ShowInFolder);
             reveal.Click += (_, _) =>
             {
                 try
@@ -92,7 +97,7 @@ internal static class SongContextMenu
 
         if (!isLocal)
         {
-            var addToPlaylist = MenuItemWithIcon("添加到歌单", "\uE92B");
+            var addToPlaylist = MenuItemWithIcon("添加到歌单", IconGlyphs.Add);
             addToPlaylist.Click += (_, _) =>
             {
                 try
@@ -103,15 +108,7 @@ internal static class SongContextMenu
             };
             menu.Items.Add(addToPlaylist);
 
-            var download = new MenuItem
-            {
-                Header = "下载",
-                Icon = new PathIcon
-                {
-                    Width = 14, Height = 14,
-                    Data = Geometry.Parse("M7,1 L9,1 L9,8 L11,6 L12.4,7.4 L8,11.8 L3.6,7.4 L5,6 L7,8 Z M2,12 L4,12 L4,14 L12,14 L12,12 L14,12 L14,16 L2,16 Z"),
-                },
-            };
+            var download = MenuItemWithIcon("下载", IconGlyphs.Download, OutlineIconFont);
             download.Click += (_, _) =>
             {
                 menu.Hide();
@@ -131,7 +128,7 @@ internal static class SongContextMenu
         }
         else
         {
-            var album = MenuItemWithIcon($"专辑： {song.Album}", "\uE922");
+            var album = MenuItemWithIcon($"专辑： {song.Album}", IconGlyphs.Album);
             album.IsEnabled = HasAlbumTarget(song);
             if (album.IsEnabled)
                 album.Click += async (_, _) => await OpenAlbumAsync(song);
@@ -140,19 +137,19 @@ internal static class SongContextMenu
             menu.Items.Add(new Separator());
 
             var link = SongShareLinks.For(song);
-            var share = MenuItemWithIcon("分享", "\uE918");
+            var share = MenuItemWithIcon("分享", IconGlyphs.Share);
             share.IsEnabled = link is not null;
             if (link is not null)
                 share.Click += async (_, _) => await ShareSongAsync(anchor, song, link);
             menu.Items.Add(share);
 
-            var openBrowser = MenuItemWithIcon("在浏览器中打开", "\uE94F");
+            var openBrowser = MenuItemWithIcon("在浏览器中打开", IconGlyphs.OpenInBrowser);
             openBrowser.IsEnabled = link is not null;
             if (link is not null)
                 openBrowser.Click += async (_, _) => await OpenBrowserAsync(anchor, link);
             menu.Items.Add(openBrowser);
 
-            var copy = MenuItemWithIcon("复制链接", "\uE902");
+            var copy = MenuItemWithIcon("复制链接", IconGlyphs.CopyLink);
             copy.IsEnabled = link is not null;
             if (link is not null)
                 copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
@@ -170,7 +167,7 @@ internal static class SongContextMenu
             var badge = Infrastructure.SourceBadges.For(sourcePlaylist.Source);
             var gotoItem = badge is not null
                 ? MenuItemWithImageIcon($"歌单： {sourcePlaylist.Name}", badge)
-                : MenuItemWithIcon($"歌单： {sourcePlaylist.Name}", "\uE922");
+                : MenuItemWithIcon($"歌单： {sourcePlaylist.Name}", IconGlyphs.Album);
             gotoItem.Click += (_, _) =>
             {
                 try
@@ -191,7 +188,7 @@ internal static class SongContextMenu
         {
             menu.Items.Add(new Separator());
             // 聚合歌单的本地成员行:跳回本地歌单页。
-            var gotoItem = MenuItemWithIcon($"歌单： {sourceLocal.Name}", "\uE922");
+            var gotoItem = MenuItemWithIcon($"歌单： {sourceLocal.Name}", IconGlyphs.Album);
             gotoItem.Click += (_, _) =>
             {
                 try
@@ -215,7 +212,7 @@ internal static class SongContextMenu
                 Foreground = RemoveBrush,
                 Icon = new TextBlock
                 {
-                    Text = "\uE932",
+                    Text = IconGlyphs.Remove,
                     FontFamily = MenuIconFont,
                     FontSize = 14,
                     Foreground = RemoveBrush,
@@ -243,13 +240,13 @@ internal static class SongContextMenu
         },
     };
 
-    private static MenuItem MenuItemWithIcon(string header, string glyph) => new()
+    private static MenuItem MenuItemWithIcon(string header, string glyph, FontFamily? font = null) => new()
     {
         Header = header,
         Icon = new TextBlock
         {
             Text = glyph,
-            FontFamily = MenuIconFont,
+            FontFamily = font ?? MenuIconFont,
             FontSize = 14,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         },
@@ -260,14 +257,14 @@ internal static class SongContextMenu
         var artists = ArtistTargets(song);
         if (artists.Count <= 1)
         {
-            var artist = MenuItemWithIcon($"表演者： {song.Artist}", "\uE921");
+            var artist = MenuItemWithIcon($"表演者： {song.Artist}", IconGlyphs.SingleArtist);
             artist.IsEnabled = artists.Count == 1;
             if (artists.Count == 1) artist.Command = artists[0].OpenCommand;
             menu.Items.Add(artist);
             return;
         }
 
-        var parent = MenuItemWithIcon("表演者", "\uE920");
+        var parent = MenuItemWithIcon("表演者", IconGlyphs.MultiArtists);
         foreach (var artist in artists)
             parent.Items.Add(new MenuItem { Header = artist.Name, Command = artist.OpenCommand });
         menu.Items.Add(parent);

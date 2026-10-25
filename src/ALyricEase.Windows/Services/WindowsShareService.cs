@@ -10,7 +10,10 @@ namespace ALyricEase.Services.Sharing;
 /// <summary>Windows 桌面 Share Sheet。DataTransferManager 的普通静态入口仅适用于 UWP；
 /// Win32/Avalonia 窗口必须通过 IDataTransferManagerInterop 传入 HWND。
 /// ⚠ ShowShareUIForWindow 要求目标窗口处于前台,否则静默无效 —— 调用前必须 SetForegroundWindow
-/// (--sharetest 探针实测,2026-10-02)。</summary>
+/// (--sharetest 探针实测,2026-10-02)。
+/// ⚠ interop 对象必须走 <see cref="ShareInterop"/>(RoGetActivationFactory + vtable),
+/// **不能**写成 `DataTransferManager.As&lt;IDataTransferManagerInterop&gt;()`:后者依赖内置 COM,
+/// NativeAOT 发布版里在字段初始化即抛,表现正是"点分享没反应"(--sharetest 跑发布版可复现,2026-10-25)。</summary>
 public sealed class WindowsShareService : IPlatformShareService, IDisposable
 {
     private static readonly Guid DataTransferManagerIid =
@@ -23,8 +26,7 @@ public sealed class WindowsShareService : IPlatformShareService, IDisposable
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
 
-    private readonly IDataTransferManagerInterop _interop =
-        DataTransferManager.As<IDataTransferManagerInterop>();
+    // interop 不再缓存托管包装类:每个方法走 ShareInterop 的 ABI 调用(见其文档注释)。
     private DataTransferManager? _manager;
     private nint _ownerHandle;
     private SharePayload? _pending;
@@ -49,7 +51,7 @@ public sealed class WindowsShareService : IPlatformShareService, IDisposable
             var setOk = SetForegroundWindow(ownerHandle);
             ShareDiag($"owner=0x{ownerHandle:X} 前台(调前)=0x{fgBefore:X} SetForegroundWindow={setOk} " +
                 $"前台(调后)=0x{GetForegroundWindow():X}");
-            _interop.ShowShareUIForWindow(ownerHandle);
+            ShareInterop.ShowShareUIForWindow(ownerHandle);
             ShareDiag("ShowShareUIForWindow 已调(未抛异常;是否真弹看 DataRequested)");
             return Task.FromResult(true);
         }
@@ -107,7 +109,7 @@ public sealed class WindowsShareService : IPlatformShareService, IDisposable
             _manager.DataRequested -= OnDataRequested;
 
         var iid = DataTransferManagerIid;
-        var abi = _interop.GetForWindow(ownerHandle, ref iid);
+        var abi = ShareInterop.GetForWindow(ownerHandle, ref iid);
         _manager = MarshalInterface<DataTransferManager>.FromAbi(abi);
         _manager.DataRequested += OnDataRequested;
         _ownerHandle = ownerHandle;
@@ -138,13 +140,4 @@ public sealed class WindowsShareService : IPlatformShareService, IDisposable
     }
 
     private sealed record SharePayload(string Title, string Description, Uri Uri);
-
-    [ComImport]
-    [Guid("3A3DCD6C-3EAB-43DC-BCDE-45671CE800C8")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IDataTransferManagerInterop
-    {
-        nint GetForWindow([In] nint appWindow, [In] ref Guid riid);
-        void ShowShareUIForWindow([In] nint appWindow);
-    }
 }

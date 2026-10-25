@@ -23,12 +23,15 @@ namespace ALyricEase;
 ///   click     = SendInput **真实鼠标点击**菜单项,处理器走生产 ShareUriAsync(含 SetForegroundWindow 修复)
 ///   clickraw  = 同 click 但处理器直接调 ShowShareUIForWindow(无 SetForegroundWindow,复现旧代码行为)
 /// click/clickraw 的意义:真实点击会让 Avalonia Popup 获得激活 ⇒ 主窗口可能不再是前台,
-/// 这才是"早期版本(12.1.1)能分享、现在(12.1.3)不行"最可能的回归点。</summary>
+/// 这才是"早期版本(12.1.1)能分享、现在(12.1.3)不行"最可能的回归点。
+/// ⚠ 探针必须在**发布版(AOT)**上也跑一次:2026-10-25 的"又没反应"就是 JIT 全通、AOT 在
+/// 取 interop 那步就死(内置 COM 缺失),只跑 Debug 永远复现不出来。</summary>
 internal static class ShareProbe
 {
     private static readonly Guid DataTransferManagerIid =
         new(0xa5caee9b, 0x8708, 0x49d1, 0x8d, 0x36, 0x67, 0xd2, 0x5a, 0x8d, 0xa0, 0x0c);
 
+    /// <summary>旧路径(依赖内置 COM)的接口声明,只用于诊断它在本宿主能否用。</summary>
     [ComImport]
     [Guid("3A3DCD6C-3EAB-43DC-BCDE-45671CE800C8")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -36,6 +39,36 @@ internal static class ShareProbe
     {
         nint GetForWindow([In] nint appWindow, [In] ref Guid riid);
         void ShowShareUIForWindow([In] nint appWindow);
+    }
+
+    /// <summary>打印两条取用 interop 的路径在本宿主的成败:定位 JIT(可用)/ AOT(旧路径抛)的差异。</summary>
+    private static void DiagnoseInterop()
+    {
+        // 内置 COM 是否可用:任意托管对象取 CCW,PNSE 即 AOT 下没有内置 COM。
+        try
+        {
+            var unknown = Marshal.GetIUnknownForObject(new object());
+            Marshal.Release(unknown);
+            Console.WriteLine("[share] 内置 COM 可用(GetIUnknownForObject OK)");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[share] 内置 COM 不可用: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        try
+        {
+            var legacy = DataTransferManager.As<IDataTransferManagerInterop>();
+            Console.WriteLine($"[share] 旧路径 As<T>() 可用: {legacy.GetType().FullName}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[share] 旧路径 As<T>() 不可用: {ex.GetType().Name}: {ex.Message} (0x{ex.HResult:X8})");
+        }
+
+        Console.WriteLine(ShareInterop.TryProbe(out var detail)
+            ? $"[share] 生产路径 ShareInterop 可用 ({detail})"
+            : $"[share] 生产路径 ShareInterop 不可用: {detail}");
     }
 
     [DllImport("user32.dll")]
@@ -96,11 +129,11 @@ internal static class ShareProbe
             return;
         }
 
-        var interop = DataTransferManager.As<IDataTransferManagerInterop>();
+        DiagnoseInterop();
         var iid = DataTransferManagerIid;
-        var abi = interop.GetForWindow(hwnd, ref iid);
+        var abi = ShareInterop.GetForWindow(hwnd, ref iid);
         var manager = MarshalInterface<DataTransferManager>.FromAbi(abi);
-        Console.WriteLine("[share] interop 三步 OK");
+        Console.WriteLine("[share] interop 三步 OK(生产路径 ShareInterop)");
 
         var dataRequested = false;
         manager.DataRequested += (_, e) =>
@@ -180,7 +213,7 @@ internal static class ShareProbe
                         {
                             if (mode == "clickraw")
                             {
-                                interop.ShowShareUIForWindow(hwnd);
+                                ShareInterop.ShowShareUIForWindow(hwnd);
                                 Console.WriteLine("[share] clickraw: ShowShareUIForWindow 已调(无 SetForegroundWindow)");
                             }
                             else
@@ -222,7 +255,7 @@ internal static class ShareProbe
 
                 default:
                     Console.WriteLine("[share] 直接调用 ShowShareUIForWindow(主窗口)...");
-                    interop.ShowShareUIForWindow(hwnd);
+                    ShareInterop.ShowShareUIForWindow(hwnd);
                     break;
             }
 

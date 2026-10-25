@@ -135,27 +135,6 @@
         <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackgroundPressed}" />
     </Style>
 
-    <!-- 歌手页关注按钮:teal #5EA9A2 轮廓,悬停填充 teal,按下加深(原版 FluentFollowButton 无自定义样式,按此实现) -->
-    <Style Selector="Button.follow-button">
-        <Setter Property="Foreground" Value="#FF5EA9A2" />
-        <Setter Property="BorderBrush" Value="#FF5EA9A2" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="CornerRadius" Value="4" />
-        <Setter Property="Height" Value="36" />
-        <Setter Property="Padding" Value="16,0" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.follow-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="#FF5EA9A2" />
-        <Setter Property="Foreground" Value="White" />
-    </Style>
-    <Style Selector="Button.follow-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="#FF4E8B85" />
-        <Setter Property="Foreground" Value="White" />
-    </Style>
-
     <!-- 通用"更多/展开"圆按钮(歌手页/专辑页/播放条等处复用):悬停 SystemBaseLow、按下 SystemBaseMediumLow。
          圆角用 1000 而非 18:按钮实例可能本地改尺寸(播放条为 40×40),写死 18 在非 36px 尺寸上不是正圆 -->
     <Style Selector="Button.more-button">

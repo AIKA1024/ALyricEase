@@ -49,6 +49,14 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
     [ObservableProperty] private bool _hasSingles;
     [ObservableProperty] private string _avatarUrl = "";
 
+    /// <summary>歌手公开网页链接(头部"更多"菜单的分享 / 在浏览器中打开 / 复制链接共用):
+    /// 网易云按数字 id,QQ 按 singer mid;未加载任何歌手时为 null。</summary>
+    public string? ShareUrl => _singerMid.Length > 0
+        ? $"https://y.qq.com/n/ryqq/singer/{_singerMid}"
+        : _artistId != 0
+            ? $"https://music.163.com/#/artist?id={_artistId}"
+            : null;
+
     /// <summary>热门歌曲首次拉取中(视图据此保留网格满列高度并显示加载动画,避免容器塌陷后跳高)。</summary>
     [ObservableProperty] private bool _isLoadingSongs;
 

@@ -74,7 +74,7 @@
   <ScrollViewer x:Name="PageScroller" Classes="page-scroll"
                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="48,20,32,120" Spacing="28">
-      <!-- 头部(仿原版 ArtistDetailView):圆形头像水平居中在顶,名字在其下方靠左;右侧 teal 关注 + 更多 -->
+      <!-- 头部(仿原版 ArtistDetailView):圆形头像水平居中在顶,名字在其下方靠左;右侧仅保留"更多" -->
       <Grid RowDefinitions="240,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="10">
         <Border Grid.ColumnSpan="2" Width="200" Height="200" CornerRadius="100" ClipToBounds="True"
                 Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -87,11 +87,27 @@
         </StackPanel>
         <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="5"
                     HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0">
-          <Button Classes="follow-button" Content="+关注" ToolTip.Tip="关注歌手(后续接入)">
-            <!-- 关注 API 后续接入,暂为无操作 -->
-          </Button>
-          <Button Classes="more-button" ToolTip.Tip="更多操作(后续接入)">
+          <Button Classes="more-button" ToolTip.Tip="更多操作" AutomationProperties.Name="更多歌手操作">
             <TextBlock Text="•••" LetterSpacing="1" />
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
+                <MenuItem Header="分享" Click="OnShareArtistClick">
+                  <MenuItem.Icon>
+                    <TextBlock Text="{DynamicResource IconShare}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="在浏览器中打开" Click="OnOpenArtistInBrowserClick">
+                  <MenuItem.Icon>
+                    <TextBlock Text="{DynamicResource IconOpenInBrowser}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                  </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="复制链接" Click="OnCopyArtistLinkClick">
+                  <MenuItem.Icon>
+                    <TextBlock Text="{DynamicResource IconCopyLink}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                  </MenuItem.Icon>
+                </MenuItem>
+              </MenuFlyout>
+            </Button.Flyout>
           </Button>
         </StackPanel>
       </Grid>

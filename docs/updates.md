@@ -68,31 +68,41 @@
    或手动建 release:上传 `Releases/` 下的 `*.nupkg`(full + delta **都要传**,
    少了 delta 就退化成全量更新)与 `Setup.exe`,body 写更新说明。
 
-   ⚠ **上传失败时的兜底(2026-10-21 实测)**:本机走 Clash Verge TUN 时上行被压到 ~34KB/s,
-   且**每条连接 15~20 秒必断**——`vpk upload` 重试三次后报 SSL 失败,`gh` 全程
-   `TLS handshake timeout`,任何 >500KB 的文件都传不完(httpbin 对照同样断,不是 GitHub 的锅)。
-   临时关掉 TUN 后 DNS 仍指向 198.18.x(fake-ip 残留),`getaddrinfo` 直接失败。
-   可用做法是 **curl 直连真实 IP**(实测 ~1.2MB/s,40MB 的 Setup 35 秒):
+   ⚠ **上传通道按 TUN 状态选(两次实测,别混用)**:
+
+   - **TUN 开着**(`Get-NetIPConfiguration` 有 `Mihomo` 网卡 / DNS 解析到 `198.18.x`):
+     走 HTTP 代理 `-x http://127.0.0.1:7890`(mihomo mixed-port,按域名 CONNECT)。
+     2026-10-25 实测 204KB/s~1MB/s,8 个资产全部 201。
+     **此时不要 `--resolve` 打真实 IP** —— TUN 会把它当普通 IP 直连,反而 TLS handshake 失败。
+   - **TUN 关着**:DNS 可能还剩 fake-ip 残留(`getaddrinfo` 直接失败),先用 DoH 查真实 IP
+     (TUN 下也能用):`curl "https://dns.alidns.com/resolve?name=uploads.github.com&type=A"`
+     → api `20.205.243.168` / uploads `20.205.243.161` / github `20.205.243.166`,
+     再 `--resolve` 直连。2026-10-21 实测 ~1.2MB/s。
+
+   两种情况都**必须** `-H "Expect:"`(不禁用会被中间设备卡死在 100-continue)。
+   `vpk upload` 与 `gh` 在本机都不可靠(vpk 只重试三次就 SSL 失败;gh 的 Go TLS 直接
+   handshake timeout),失败后草稿可能已经建好 —— 用
+   `GET /repos/AIKA1024/ALyricEase/releases?per_page=5` 找到 draft id 续传,别重复建。
 
    ```bash
-   # 真实 IP 用别的 DNS 查(TUN 关掉后系统 DNS 可能还是坏的)
-   #   Resolve-DnsName uploads.github.com -Type A -Server 8.8.8.8
-   # api.github.com: 20.205.243.168 / uploads.github.com: 20.205.243.161
+   # ---- TUN 开着:走 mixed-port 代理 ----
+   curl -x http://127.0.0.1:7890 -H "Expect:" \
+     -X POST -H "Authorization: Bearer $tok" -H "Content-Type: application/octet-stream" \
+     --data-binary @"$file" \
+     "https://uploads.github.com/repos/AIKA1024/ALyricEase/releases/$id/assets?name=$(basename "$file")"
 
-   # 1) 建草稿(也可让 vpk 建,失败会留下空草稿,用 /releases 列表能看到 draft)
-   curl --resolve api.github.com:443:20.205.243.168 \
-     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
-     -d '{"tag_name":"0.0.12","name":"LyricEase 0.0.12","draft":true}' \
-     https://api.github.com/repos/AIKA1024/ALyricEase/releases
-
-   # 2) 逐个上传资产(**必须** -H "Expect:",否则大文件会被中间设备卡死)
+   # ---- TUN 关着:--resolve 真实 IP ----
    curl --resolve uploads.github.com:443:20.205.243.161 -H "Expect:" \
      -X POST -H "Authorization: Bearer $tok" -H "Content-Type: application/octet-stream" \
      --data-binary @"$file" \
      "https://uploads.github.com/repos/AIKA1024/ALyricEase/releases/$id/assets?name=$(basename "$file")"
 
-   # 3) 写 body + 转正
-   curl --resolve api.github.com:443:20.205.243.168 -X PATCH \
+   # 建草稿 / 写 body 转正(两套通道同理,API 走 api.github.com)
+   curl -x http://127.0.0.1:7890 \
+     -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
+     -d '{"tag_name":"0.0.13","name":"LyricEase 0.0.13","draft":true}' \
+     https://api.github.com/repos/AIKA1024/ALyricEase/releases
+   curl -x http://127.0.0.1:7890 -X PATCH \
      -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
      --data-binary @patch.json \
      https://api.github.com/repos/AIKA1024/ALyricEase/releases/$id
@@ -103,6 +113,8 @@
 
 ## 三、验证清单(下次发布时过一遍)
 
+- [ ] `python scripts/subset-icons.py --check` 通过(75/75);改过 `Icons.axaml` 或图标字面量时
+      必须先跑不带参数的生成版,产物 `Assets/Fonts/*.ttf` 一起提交(见 docs/icon-fonts.md 第六节)。
 - [ ] `vpk pack` 后安装 Setup.exe → 设置页出现「检查更新」按钮,版本/安装日期正确。
 - [ ] 发一个更高版本 → 点检查 → 弹窗显示版本与说明 → 更新 → 下载进度 → 立即重启 → 版本变新。
 - [ ] 确认 delta 生效:上一版在本地 `Releases/` 里时,新发布的资产里有 `*-delta.nupkg`,

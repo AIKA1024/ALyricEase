@@ -8,8 +8,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.aika1024.alyricease</ApplicationId>
-    <ApplicationVersion>12</ApplicationVersion>
-    <ApplicationDisplayVersion>0.0.12</ApplicationDisplayVersion>
+    <ApplicationVersion>13</ApplicationVersion>
+    <ApplicationDisplayVersion>0.0.13</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <!-- Some Android Automotive images run a 32-bit userspace on 64-bit ARM

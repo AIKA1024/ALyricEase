@@ -821,7 +821,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
         try
         {
-            var qualityLevel = AudioQualityMapper.GetRequestLevel(song.Source, _appState.AudioQualityFor(song.Source));
+            var qualityLevel = AudioQualityMapper.GetRequestLevel(song.Source, _appState.AudioQuality);
             if (_musicCache.TryAcquire(song, qualityLevel) is { } cached)
             {
                 song.IsPlaybackUnavailable = false;

@@ -36,13 +36,21 @@ public sealed class SongDownloadService
         // 档位名称与顺序都取自 AudioQualityMapper(设置页和下载窗口共用同一份),这里只补一句描述。
         string[] descriptions = source == MusicSource.NetEase
             ? ["128 kbps · MP3", "320 kbps · MP3", "FLAC 16bit/44.1kHz · 需黑胶 VIP", "24bit FLAC · 需黑胶 VIP"]
-            : ["128 kbps · MP3", "腾讯 AICodec", "320 kbps · MP3", "FLAC 格式"];
-        var names = AudioQualityMapper.GetOptionNames(source);
+            : ["128 kbps · MP3", "320 kbps · MP3", "FLAC 格式", "24bit FLAC 格式"];
+        var names = AudioQualityMapper.OptionNames;
         return Enumerable.Range(0, AudioQualityMapper.OptionCount)
             .Select(index => new SongDownloadQuality(
                 AudioQualityMapper.GetRequestLevel(source, index),
                 names[index], descriptions[index]))
             .ToArray();
+    }
+
+    public async Task<IReadOnlyList<SongDownloadQuality>?> GetAvailableQualitiesAsync(
+        Song song, CancellationToken cancellationToken)
+    {
+        var levels = song.AvailableQualityLevels
+            ?? await _apis.Resolve(song).GetAvailableQualitiesAsync(song, cancellationToken).ConfigureAwait(false);
+        return levels is null ? null : GetQualities(song.Source).Where(q => levels.Contains(q.Level)).ToArray();
     }
 
     public async Task<SongDownloadResult> DownloadAsync(Song song, SongDownloadQuality quality,

@@ -829,6 +829,21 @@ public static class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--ne-quality")
+        {
+            var id = args.Length > 1 && long.TryParse(args[1], out var parsed) ? parsed : 1372314553;
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(() =>
+                NetEaseQualityProbe.RunAsync(id, args.Contains("--cloud"))).GetAwaiter().GetResult();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--qq-quality")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QqApiProbe.RunQualityProbeAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 音乐 API 冒烟:匿名打真实接口验证歌单修复(不依赖登录 Cookie)
         if (args.Length > 0 && args[0] == "--qqapi")
         {

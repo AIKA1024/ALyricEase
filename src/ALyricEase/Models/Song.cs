@@ -35,6 +35,9 @@ public sealed class Song
     /// <summary>时长,毫秒。</summary>
     public int DurationMs { get; init; }
 
+    /// <summary>元数据确认存在的四档协议音质；null 表示未知，空集合表示四档均不存在。与账号权益无关。</summary>
+    public IReadOnlyList<string>? AvailableQualityLevels { get; init; }
+
     /// <summary>收费类型。网易云:0=免费,1=VIP,4=单独购买,8=普通音质免费；QQ 当前归一为 0/1。</summary>
     public int Fee { get; init; }
 

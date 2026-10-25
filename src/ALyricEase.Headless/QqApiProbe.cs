@@ -13,6 +13,29 @@ namespace ALyricEase.Headless;
 /// 匿名态覆盖:公开歌单曲目(uniform_get_Dissinfo + 分页终止)、未登录用户歌单/资料的错误语义。</summary>
 public static class QqApiProbe
 {
+    /// <summary>匿名只读验证《融雪铭春》的详情及下载音质查询，不获取音频。</summary>
+    public static async Task<int> RunQualityProbeAsync()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"aly-qq-quality-{Guid.NewGuid():N}");
+        var api = new QQMusicApiClient(new CookieStore(System.IO.Path.Combine(root, "cookie.json")));
+        using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var song = await api.GetSongDetailAsync(660493677, timeout.Token)
+            ?? throw new InvalidOperationException("歌曲详情为空");
+        using var http = new System.Net.Http.HttpClient();
+        var service = new SongDownloadService(new MusicApiProvider([api]),
+            new MusicCacheService(128, System.IO.Path.Combine(root, "cache"), http),
+            new DirectorySongDownloadStorage(() => System.IO.Path.Combine(root, "downloads")));
+        foreach (var candidate in new[] { song, new Song { Source = MusicSource.QQ, Id = song.Id, Mid = song.Mid } })
+        {
+            var qualities = await service.GetAvailableQualitiesAsync(candidate, timeout.Token);
+            if (qualities is null || !qualities.Select(q => q.Level)
+                    .SequenceEqual(["standard", "higher", "lossless", "hires"]))
+                throw new InvalidOperationException("详情或缺失元数据补查未返回完整四档");
+        }
+        Console.WriteLine($"PASS: {song.Name} - {song.Artist} ({song.Id}/{song.Mid}): standard, higher, lossless, hires; detail and download fallback.");
+        return 0;
+    }
+
     public static async Task<int> RunAsync()
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;

@@ -123,7 +123,7 @@ public sealed partial class MainViewModel : ViewModelBase
         if (song is null || song.Source == MusicSource.Local || IsDownloadSongDialogOpen) return;
         DownloadSongDialog ??= new DownloadSongDialogViewModel(
             ServiceLocator.Get<SongDownloadService>(), () => IsDownloadSongDialogOpen = false);
-        DownloadSongDialog.Refresh(song, AppState.AudioQualityFor(song.Source));
+        DownloadSongDialog.Refresh(song, AppState.AudioQuality);
         IsDownloadSongDialogOpen = true;
     }
 

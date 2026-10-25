@@ -1,30 +1,17 @@
 namespace ALyricEase.Services;
 
 /// <summary>
-/// 把设置页的音质选项映射为各音源的协议档位。
-/// 两个音源的档位**各自独立**(名称不同,所以各存一份索引),顺序统一为**从低到高**。
-/// (2026-10-25 之前共用一个索引,设置页写的"标准/较高/极高/无损"是 QQ 的叫法,
-/// 网易云实际请求的却是 exhigh/lossless/空间音频——标签与真实档位完全对不上。)
+/// 把设置页统一的音质选项映射为各音源的协议档位。
+/// 只有一个索引、一份名称,**从低到高**;两个音源按同一档位的真实含义各自映射
+/// (2026-10-25 修正:旧映射里网易云从 exhigh 起跳,设置页写着"标准"实际发的是 320k)。
 /// </summary>
 internal static class AudioQualityMapper
 {
     public const int OptionCount = 4;
 
-    private static readonly string[] NetEaseNames =
+    /// <summary>设置页显示的统一档位名(不区分音源,按质量从低到高)。</summary>
+    public static IReadOnlyList<string> OptionNames { get; } =
         ["标准", "极高（HQ）", "无损（SQ）", "高解析度无损（Hi-Res）"];
-
-    private static readonly string[] QqNames =
-        ["标准", "较高", "极高", "无损(仅VIP可用)"];
-
-    public static IReadOnlyList<string> GetOptionNames(MusicSource source) => source switch
-    {
-        MusicSource.NetEase => NetEaseNames,
-        MusicSource.QQ => QqNames,
-        _ => [],
-    };
-
-    /// <summary>缺省档位:两边都取最高档(非会员/无该曲目源时由各音源的降级链自动回落)。</summary>
-    public static int GetDefaultIndex(MusicSource source) => OptionCount - 1;
 
     public static int NormalizeIndex(int index) => Math.Clamp(index, 0, OptionCount - 1);
 
@@ -35,29 +22,19 @@ internal static class AudioQualityMapper
         {
             MusicSource.NetEase => index switch
             {
-                0 => "standard", // 标准(128k)
-                1 => "exhigh",   // 极高(HQ,320k)
-                2 => "lossless", // 无损(SQ)
-                _ => "hires",    // 高解析度无损(Hi-Res,24bit)
+                0 => "standard", // 标准 128k MP3
+                1 => "exhigh",   // 极高(HQ) 320k MP3
+                2 => "lossless", // 无损(SQ) FLAC
+                _ => "hires",    // 高解析度无损(Hi-Res) 24bit FLAC
             },
             MusicSource.QQ => index switch
             {
-                0 => "standard", // M500 / 128k MP3
-                1 => "nac",      // TL01 / 腾讯自研 AICodec
-                2 => "higher",   // M800 / 320k MP3
-                _ => "lossless", // F000 / FLAC
+                0 => "standard", // 标准品质 128k MP3(M500)
+                1 => "higher",   // HQ高品质 320k MP3(M800)
+                2 => "lossless", // SQ无损品质 FLAC(F000)
+                _ => "hires",    // Hi-Res无损品质 FLAC(RS01)
             },
             _ => throw new ArgumentOutOfRangeException(nameof(source), source, "未知音乐源"),
         };
     }
-
-    /// <summary>旧配置只有一个全局档位,网易云那边按**实际请求过的档位**折算到新列表
-    /// (旧 0=exhigh、1=lossless、2=空间音频、3=臻音全景声)。</summary>
-    public static int MigrateLegacyNetEaseIndex(int legacyIndex) => NormalizeIndex(legacyIndex) switch
-    {
-        0 => 1, // 旧"标准"实际请求的是 exhigh ⇒ 极高
-        1 => 2, // lossless ⇒ 无损
-        2 => 2, // jyeffect(空间音频)无对应档 ⇒ 无损
-        _ => 3, // sky(臻音全景声) ⇒ 最高档 Hi-Res
-    };
 }

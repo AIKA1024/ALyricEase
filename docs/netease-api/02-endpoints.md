@@ -499,6 +499,32 @@ Body: {"c":"[{\"id\":186016}]","csrf_token":""}
 
 ---
 
+### G3. 下载可用音质（客户端 eapi）
+
+2026-10-25 实测：下载弹窗原先通过 G2 补查音质，在当前网络收到 HTTP 200 空响应，
+因没有回落路径而持续报错。同一歌曲通过以下专用接口能正常返回音质元数据。
+
+```text
+POST https://interface.music.163.com/eapi/song/music/detail/get
+加密签名路径：/api/song/music/detail/get
+Body: {"songId":1372314553,"header":<当前客户端身份>}
+```
+
+响应的 `data.l / h / sq / hr` 分别对应标准 / HQ / SQ / Hi-Res；只显示存在音频大小或码率的档位。
+字段全部缺失表示未知，明确为 null 表示该档不存在，不依据最高码率推导其他档位。
+接口无音质数据、空响应或非 JSON 时，最多再请求一次同网关的 `/eapi/v3/song/detail`，
+从对应歌曲读取相同字段。限速、登录错误、取消和超时不触发补查。
+已有歌曲音质元数据时直接复用；本步骤不获取播放地址，也不代表账号一定具有下载权限。
+
+协议参考：Node API 维护分支的
+[`song_music_detail.js`](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced/blob/main/module/song_music_detail.js)
+提供 `/api/song/music/detail/get` 与 `songId` 参数；本项目沿用已有客户端 eapi 通道。
+本机 Cirrus 参考实现 `Cirrus.Network/Api/Track/Details.cs` 使用 weapi v3 详情，
+`TrackDetail.cs` 从 `l/m/h` 构建码率集合，不能直接作为本项目四档（含 SQ/Hi-Res）列表。
+
+实现：`NetEaseApiClient.Quality.cs`。离线回归随 `--song-download` 运行；只读真实接口探针：
+`--ne-quality [songId]`，或 `--ne-quality --cloud`（取云盘首曲并强制补查音质，不下载音频）。
+
 ## H. 歌手 / 专辑
 
 ### H1. 歌手资料（明文 GET）

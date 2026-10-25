@@ -670,7 +670,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         var list = body.Song?.List;
         if (list is null)
             throw new ApiException("搜索失败(响应缺少歌曲列表)", -1);
-        return list.Select(MapTrack).ToList();
+        return list.Select(t => MapTrack(t, hasFullQualityMetadata: true)).ToList();
     }
 
     /// <summary>多类型搜索:SearchCgiService 的 search_type 0 歌曲 / 1 歌手 / 2 专辑 / 3 歌单 / 8 用户。
@@ -856,7 +856,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>播放地址:vkey.GetVkeyServer/CgiGetVkey。按档位取文件名前缀
-    /// (TL01=NAC、M500=128k MP3、M800=320k MP3、F000=FLAC)，目标档不可用时自动降级。</summary>
+    /// (M500=128k MP3、M800=320k MP3、F000=FLAC、RS01=Hi-Res FLAC)，目标档不可用时自动降级。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
     {
         var mid = await EnsureMidAsync(song, ct).ConfigureAwait(false);
@@ -920,21 +920,28 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>按数字 id 取歌曲详情:music.pf_song_detail_svr/get_song_detail_yqq(顺带填 mid 缓存)。</summary>
-    public async Task<Song?> GetSongDetailAsync(long id, CancellationToken ct = default)
+    public Task<Song?> GetSongDetailAsync(long id, CancellationToken ct = default)
+        => GetSongDetailCoreAsync(id, "", ct);
+
+    public async Task<IReadOnlyList<string>?> GetAvailableQualitiesAsync(Song song, CancellationToken ct = default)
+        => song.AvailableQualityLevels
+            ?? (await GetSongDetailCoreAsync(song.Id, song.Mid, ct).ConfigureAwait(false))?.AvailableQualityLevels;
+
+    private async Task<Song?> GetSongDetailCoreAsync(long id, string mid, CancellationToken ct)
     {
         using var doc = await PostMusicuAsync(w =>
         {
             WriteModuleReq(w, "music.pf_song_detail_svr", "get_song_detail_yqq", p =>
             {
                 p.WriteNumber("song_type", 0);
-                p.WriteString("song_mid", "");
+                p.WriteString("song_mid", mid);
                 p.WriteNumber("song_id", id);
             });
-        }, ct).ConfigureAwait(false);
+        }, ct, desktopMetadata: true).ConfigureAwait(false);
         var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQDetailResponse);
         if (resp is null || resp.Code != 0 || resp.Req0?.Data?.TrackInfo is null)
             throw new ApiException("获取歌曲详情失败", resp?.Code ?? -1);
-        return MapTrack(resp.Req0.Data.TrackInfo);
+        return MapTrack(resp.Req0.Data.TrackInfo, hasFullQualityMetadata: true);
     }
 
     // ---------- 红心/喜欢(音乐资产目录 dirId=201,即"我喜欢") ----------
@@ -2420,9 +2427,12 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     // ---------- 内部 ----------
 
-    /// <summary>level → 文件名前缀链:目标档在前,不可播逐级降级,末档恒为 M500(128k MP3)。</summary>
+    /// <summary>level → 文件名前缀链:目标档在前,不可播逐级降级,末档恒为 M500(128k MP3)。
+    /// RS01 是 QQ 的 Hi-Res 无损(24bit FLAC)。⚠ 已知坑:个别曲目 RS01 会返回非空 purl 但流地址
+    /// 实际不可播(Hi-Res CDN 权限/文件缺失),vkey 阶段分辨不出来 ⇒ 用户报"Hi-Res 播不动"时先降档定位。</summary>
     private static IEnumerable<(string Prefix, string Ext, int Br)> Qualities(string level) => level.ToLowerInvariant() switch
     {
+        "hires" => [("RS01", ".flac", 999000), ("F000", ".flac", 999000), ("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
         "lossless" => [("F000", ".flac", 999000), ("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
         "nac" => [("TL01", ".nac", 0), ("M500", ".mp3", 128000)],
         "higher" => [("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
@@ -2542,17 +2552,19 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>musicu.fcg JSON POST(单模块):{ 手写请求体(NativeAOT 安全),"loginUin","comm" };登录态带 Cookie。</summary>
-    private Task<JsonDocument> PostMusicuAsync(Action<Utf8JsonWriter> writeReqs, CancellationToken ct)
-        => PostMusicuMultiAsync(new List<Action<Utf8JsonWriter>> { writeReqs }, ct);
+    private Task<JsonDocument> PostMusicuAsync(Action<Utf8JsonWriter> writeReqs, CancellationToken ct,
+        bool desktopMetadata = false)
+        => PostMusicuMultiAsync(new List<Action<Utf8JsonWriter>> { writeReqs }, ct, desktopMetadata);
 
     /// <summary>musicu.fcg JSON POST(多模块复合):reqs[i] 各自写入一个 "req_{i}" 子对象;
     /// 服务端在同一响应里按相同键回包。</summary>
-    private async Task<JsonDocument> PostMusicuMultiAsync(IReadOnlyList<Action<Utf8JsonWriter>> reqs, CancellationToken ct)
+    private async Task<JsonDocument> PostMusicuMultiAsync(IReadOnlyList<Action<Utf8JsonWriter>> reqs, CancellationToken ct,
+        bool desktopMetadata = false)
     {
         if (IsLoggedIn)
             await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
 
-        var doc = await SendMusicuMultiAsync(reqs, ct).ConfigureAwait(false);
+        var doc = await SendMusicuMultiAsync(reqs, ct, desktopMetadata).ConfigureAwait(false);
         if (!IsLoggedIn || !IsCredentialExpiredResponse(doc.RootElement)) return doc;
 
         // 长会话中 key 失效：丢弃这次响应，服务端复检后至多刷新一次并只重发一次业务请求。
@@ -2560,11 +2572,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _logger.LogWarning("QQ business request reported rejected credentials; revalidating");
         _credentialValidated = false;
         await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
-        return await SendMusicuMultiAsync(reqs, ct).ConfigureAwait(false);
+        return await SendMusicuMultiAsync(reqs, ct, desktopMetadata).ConfigureAwait(false);
     }
 
     private async Task<JsonDocument> SendMusicuMultiAsync(
-        IReadOnlyList<Action<Utf8JsonWriter>> reqs, CancellationToken ct)
+        IReadOnlyList<Action<Utf8JsonWriter>> reqs, CancellationToken ct, bool desktopMetadata = false)
     {
         string json;
         using (var ms = new MemoryStream())
@@ -2578,8 +2590,10 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 w.WriteStartObject("comm");
                 w.WriteString("uin", _uin);
                 w.WriteString("format", "json");
-                w.WriteNumber("ct", 24);
-                w.WriteNumber("cv", 4747474);
+                // get_song_detail_yqq 在 ct=24 下会把 Hi-Res 三个字段清零；
+                // 与桌面搜索相同的 ct=19/cv=1859 才返回完整曲库音质。
+                w.WriteNumber("ct", desktopMetadata ? 19 : 24);
+                w.WriteNumber("cv", desktopMetadata ? 1859 : 4747474);
                 w.WriteNumber("g_tk", ComputeGtk());
                 w.WriteNumber("g_tk_new_20200303", ComputeGtk());
                 if (IsLoggedIn)
@@ -2766,7 +2780,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>统一映射到领域 Song。兼容两种形态:搜索(songname/songmid + 平铺 albumid/albummid/albumname)
     /// 与 track_info(name/mid + 嵌套 album:{id,mid,name})。歌手/专辑 id 不填充:与网易云 id 空间
     /// 不互通,填了会导致歌手/专辑页误跳网易云条目。</summary>
-    private Song MapTrack(QQTrackDto t)
+    private Song MapTrack(QQTrackDto t, bool hasFullQualityMetadata = false)
     {
         var id = t.SongId != 0 ? t.SongId : t.Id;
         var mid = FirstNonEmpty(t.SongMid, t.Mid);
@@ -2780,6 +2794,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
         return new Song
         {
+            AvailableQualityLevels = SongQualityMetadata.QQ(t.File, hasFullQualityMetadata),
             Id = id,
             Mid = mid,
             Name = name,

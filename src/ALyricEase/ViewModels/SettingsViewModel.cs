@@ -134,12 +134,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>性能与体验:0=最佳性能(歌词不模糊),1=最佳质量(歌词模糊)。</summary>
     public IReadOnlyList<string> PerformanceOptions { get; } = ["最佳性能", "最佳质量"];
 
-    /// <summary>音质档位按音源各一份(顺序统一从低到高):网易云 标准/极高/无损/Hi-Res,QQ 标准/较高/极高/无损。</summary>
-    public IReadOnlyList<string> NetEaseAudioQualityOptions { get; } =
-        AudioQualityMapper.GetOptionNames(MusicSource.NetEase);
-
-    public IReadOnlyList<string> QqAudioQualityOptions { get; } =
-        AudioQualityMapper.GetOptionNames(MusicSource.QQ);
+    public IReadOnlyList<string> AudioQualityOptions => AudioQualityMapper.OptionNames;
 
     // ---- 外观 ----
 
@@ -233,31 +228,17 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // ---- 播放 ----
 
-    /// <summary>网易云音质档位(0=标准 / 1=极高 / 2=无损 / 3=高解析度无损 Hi-Res)。</summary>
-    public int NetEaseAudioQualityIndex
+    /// <summary>统一音质档位(0=标准 / 1=极高 / 2=无损 / 3=Hi-Res);播放时按歌曲来源映射到平台档位。</summary>
+    public int AudioQualityIndex
     {
-        get => _state.NetEaseAudioQuality;
+        get => _state.AudioQuality;
         set
         {
             var index = AudioQualityMapper.NormalizeIndex(value);
-            if (_state.NetEaseAudioQuality == index) return;
-            _state.NetEaseAudioQuality = index;
+            if (_state.AudioQuality == index) return;
+            _state.AudioQuality = index;
             _state.Save();
-            OnPropertyChanged(nameof(NetEaseAudioQualityIndex));
-        }
-    }
-
-    /// <summary>QQ 音乐音质档位(0=标准 / 1=较高 / 2=极高 / 3=无损)。</summary>
-    public int QqAudioQualityIndex
-    {
-        get => _state.QqAudioQuality;
-        set
-        {
-            var index = AudioQualityMapper.NormalizeIndex(value);
-            if (_state.QqAudioQuality == index) return;
-            _state.QqAudioQuality = index;
-            _state.Save();
-            OnPropertyChanged(nameof(QqAudioQualityIndex));
+            OnPropertyChanged(nameof(AudioQualityIndex));
         }
     }
 

@@ -78,13 +78,17 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
     public bool IsVipLoaded => _vipLoaded || !IsLoggedIn;
 
     public NetEaseApiClient(CryptoService crypto, CnIpPool ipPool, CookieStore cookie)
+        : this(crypto, ipPool, cookie, null) { }
+
+    internal NetEaseApiClient(CryptoService crypto, CnIpPool ipPool, CookieStore cookie,
+        HttpMessageHandler? handler)
     {
         _crypto = crypto;
         _ipPool = ipPool;
         _cookie = cookie;
 
         _cookieContainer = new CookieContainer();
-        _http = new HttpClient(new HttpClientHandler
+        _http = new HttpClient(handler ?? new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
             CookieContainer = _cookieContainer,
@@ -1939,6 +1943,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private static Song MapSearchSong(SearchSong s) => new()
     {
+        AvailableQualityLevels = SongQualityMetadata.NetEase(s.StandardQuality, s.HighQuality, s.LosslessQuality, s.HiResQuality),
         Id = s.Id,
         Name = s.Name,
         Artist = s.Artists is { Count: > 0 } ? string.Join("/", s.Artists.Select(a => a.Name)) : "",
@@ -1959,6 +1964,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     private static Song MapDetailSong(SongDetailItem s) => new()
     {
+        AvailableQualityLevels = SongQualityMetadata.NetEase(s.StandardQuality, s.HighQuality, s.LosslessQuality, s.HiResQuality),
         Id = s.Id,
         Name = s.Name,
         Artist = s.Artists is { Count: > 0 } ? string.Join("/", s.Artists.Select(a => a.Name)) : "",

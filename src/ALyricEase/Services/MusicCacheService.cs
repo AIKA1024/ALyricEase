@@ -427,6 +427,7 @@ public sealed class MusicCacheService
                 "TL01" or "NAC" => 2,
                 "M800" or "HIGHER" or "EXHIGH" => 3,
                 "F000" or "LOSSLESS" or "FLAC" or "AUTO" => 4,
+                "RS01" or "HIRES" => 5, // Hi-Res 无损(24bit FLAC)
                 _ => 1,
             };
         }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ALyricEase.Models.Dtos;
@@ -114,6 +115,11 @@ public sealed record SongPrivilegeDto
 /// <summary>搜索接口返回的单曲(ar/al 为搜索接口字段名)。</summary>
 public sealed record SearchSong
 {
+    [JsonPropertyName("l")] public JsonElement StandardQuality { get; init; }
+    [JsonPropertyName("h")] public JsonElement HighQuality { get; init; }
+    [JsonPropertyName("sq")] public JsonElement LosslessQuality { get; init; }
+    [JsonPropertyName("hr")] public JsonElement HiResQuality { get; init; }
+
     public long Id { get; init; }
 
     public string Name { get; init; } = "";
@@ -320,6 +326,11 @@ public sealed record SongDetailResponse
 /// <summary>v3/song/detail 的曲目(字段是 artists/album)。</summary>
 public sealed record SongDetailItem
 {
+    [JsonPropertyName("l")] public JsonElement StandardQuality { get; init; }
+    [JsonPropertyName("h")] public JsonElement HighQuality { get; init; }
+    [JsonPropertyName("sq")] public JsonElement LosslessQuality { get; init; }
+    [JsonPropertyName("hr")] public JsonElement HiResQuality { get; init; }
+
     public long Id { get; init; }
 
     public string Name { get; init; } = "";

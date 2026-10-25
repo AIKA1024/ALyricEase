@@ -67,6 +67,8 @@ public sealed record QQPayDto
 
 public sealed record QQTrackDto
 {
+    public JsonElement File { get; init; }
+
     // client_search_cp 形态
     [JsonPropertyName("songid")] public long SongId { get; init; }
 

@@ -46,4 +46,11 @@ public interface IMusicApi
 
     /// <summary>按数字 id 取歌曲详情(用于只有 id 的入口补全元数据/mid)。</summary>
     Task<Song?> GetSongDetailAsync(long id, CancellationToken ct = default);
+
+    /// <summary>歌曲**曲库侧**真实拥有的音质档(与账号权益无关):返回若干 level 字符串
+    /// (与 <see cref="AudioQualityMapper.GetRequestLevel"/> 同口径),按从低到高排列。
+    /// null = 元数据未知(接口不支持/未返回)，空集合 = 四档均不存在；请求失败可抛异常。
+    /// 下载窗口用它把"这首歌根本没有"的档位剔掉。</summary>
+    Task<IReadOnlyList<string>?> GetAvailableQualitiesAsync(Song song, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<string>?>(null);
 }

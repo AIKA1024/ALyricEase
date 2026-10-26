@@ -14,7 +14,7 @@ namespace ALyricEase.Services.Smtc;
 
 /// <summary>Android 端 ISmtcService 实现:把播放器状态/曲目信息转发给前台
 /// MediaPlaybackService(媒体会话 + 原生媒体横幅),并把横幅按钮事件回传给
-/// PlayerViewModel。播放引擎仍是 AndroidMediaPlayer,未改动。</summary>
+/// PlayerViewModel。播放引擎为 ExoPlayerMediaPlayer(Media3)。</summary>
 public sealed class SmtcService : ISmtcService, IDisposable
 {
     private readonly IAudioPlayer _player;

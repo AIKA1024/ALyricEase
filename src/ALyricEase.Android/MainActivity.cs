@@ -112,7 +112,7 @@ public class MainActivity : AvaloniaMainActivity
         if (ServiceLocator.Get<MainViewModel>().TryHandleBack())
             return; // 已消费(关弹窗 / 收覆盖层 / 关抽屉 / 页面返回)
 
-        // 已在根页面:不结束 Activity —— 音频由本进程内的 AndroidMediaPlayer 播放,
+        // 已在根页面:不结束 Activity —— 音频由本进程内的 ExoPlayerMediaPlayer 播放,
         // finish 会直接中断播放。退到后台(等价按 Home),前台媒体通知与播放继续。
         MoveTaskToBack(true);
     }

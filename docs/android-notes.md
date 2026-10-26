@@ -103,3 +103,24 @@ Debug 构建与桌面探针都查不出。
   验包看 `lib/libaot-*.so` = **0 条**（程序集仍在 `lib/<abi>/libassembly-store.so`；
   裁剪照常执行 ⇒ IL2072 照样暴露）。
 - 要出 full Mono AOT 发布包，**在 Rider / 普通终端做**（`scripts/publish-aot.ps1`）。
+
+## 8. 播放后端:Media3/ExoPlayer(2026-10-26 替换 android.media.MediaPlayer)
+
+- 动机:MediaPlayer 流播对 VBR 源的 `Duration` 按平均码率估算、明显偏低,交叉淡化
+  (`PlayerViewModel.MaybeCrossfadeAdvance`)据此提前触发,表现为"歌的后半段直接切歌"
+  (真机日志实证:多首在真实时长 71%~95% 处被切);且断流直接 `Completion` 被当"播完"。
+- 落地:`ExoPlayerMediaPlayer`(实现 `IAudioPlayer`,与平台无关的上层零改动)。
+  只引 `Xamarin.AndroidX.Media3.ExoPlayer` + `Media3.DataSource`(1.11.1),其余 Media3
+  包走传递依赖;依赖只落在 Annotation/Media3 家族,与手工对齐的 Core/Lifecycle 版本无交集。
+- 线程契约:ExoPlayer 单线程访问,轮询用主线程 Handler(旧后端是线程池 Timer)。
+- 绑定 API 注意:
+  - `Player` 绑定为 `IPlayer` 接口,`Listener` 扁平化为 `IPlayerListener`(非嵌套);
+    `STATE_*` 常量各绑定版本命名有差,代码里直接用数值 1..4。
+  - 自实现的 Java 侦听器(含 VisualizerListener)必须有 `(IntPtr, JniHandleOwnership)`
+    构造器,否则 GC 回收托管 peer 后 Java 回调反激活直接杀进程(10 月真机崩溃实证)。
+  - `DefaultHttpDataSource.Factory` 必须开 `SetAllowCrossProtocolRedirects(true)`
+    (网易云 CDN http<->https 重定向),UA/Referer 在工厂统一设置。
+- 兜底保留:ExoPlayer 起播失败仍走"下载到缓存文件再播"(与旧后端一致)。
+- 时长修正兜底:`MaybeCrossfadeAdvance` 同时取播放器上报时长与 API 元数据时长的较大值,
+  双保险防时长低估;两条自动切歌路径均有文件日志(`Natural completion advance` /
+  `Crossfade advance triggered`)可事后区分。

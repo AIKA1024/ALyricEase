@@ -231,10 +231,10 @@ class Program
     // 应用自更新(Velopack + GitHub Releases;开发目录直跑 IsSupported=false)
     services.AddSingleton<IAppUpdateService, VelopackUpdateService>();
 #if ANDROID
-    services.AddSingleton<AndroidMediaPlayer>();
+    services.AddSingleton<ExoPlayerMediaPlayer>();
     services.AddSingleton<IAudioPlayer>(sp => new CrossfadeAudioPlayer(
-        sp.GetRequiredService<AndroidMediaPlayer>(),
-        () => ActivatorUtilities.CreateInstance<AndroidMediaPlayer>(sp)));
+        sp.GetRequiredService<ExoPlayerMediaPlayer>(),
+        () => ActivatorUtilities.CreateInstance<ExoPlayerMediaPlayer>(sp)));
     services.AddSingleton<ISmtcService, SmtcServiceStub>();
 #else
     services.AddSingleton<WindowsMediaPlayer>();

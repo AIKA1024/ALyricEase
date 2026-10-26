@@ -90,10 +90,10 @@ public partial class App : Avalonia.Application
         // Android 自更新:GitHub releases/latest 检查 → 下载 APK → 调系统安装器(不走 Velopack)
         services.AddSingleton<ALyricEase.Services.Update.IAppUpdateService,
             ALyricEase.Services.AndroidUpdateService>();
-        services.AddSingleton<AndroidMediaPlayer>();
+        services.AddSingleton<ExoPlayerMediaPlayer>();
         services.AddSingleton<IAudioPlayer>(sp => new CrossfadeAudioPlayer(
-            sp.GetRequiredService<AndroidMediaPlayer>(),
-            () => ActivatorUtilities.CreateInstance<AndroidMediaPlayer>(sp)));
+            sp.GetRequiredService<ExoPlayerMediaPlayer>(),
+            () => ActivatorUtilities.CreateInstance<ExoPlayerMediaPlayer>(sp)));
         services.AddSingleton<ISmtcService, SmtcService>();
         services.AddSingleton<LyricViewModel>();
         services.AddSingleton<PlayerViewModel>();

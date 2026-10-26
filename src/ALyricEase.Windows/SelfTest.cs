@@ -37,7 +37,7 @@ internal static class SelfTest
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
 #if ANDROID
-        services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
+        services.AddSingleton<IAudioPlayer, ExoPlayerMediaPlayer>();
         services.AddSingleton<ISmtcService, SmtcServiceStub>();
 #else
         services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();
@@ -186,7 +186,7 @@ internal static class SelfTest
         services.AddSingleton<IMusicApi>(sp => sp.GetRequiredService<QQMusicApiClient>());
         services.AddSingleton<MusicApiProvider>();
 #if ANDROID
-        services.AddSingleton<IAudioPlayer, AndroidMediaPlayer>();
+        services.AddSingleton<IAudioPlayer, ExoPlayerMediaPlayer>();
         services.AddSingleton<ISmtcService, SmtcServiceStub>();
 #else
         services.AddSingleton<IAudioPlayer, WindowsMediaPlayer>();

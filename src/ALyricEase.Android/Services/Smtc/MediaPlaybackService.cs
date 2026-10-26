@@ -5,7 +5,7 @@
 //
 // 这些 API 在 Android 上依旧完整可用,且是不引入 Media3 + ExoPlayer 的前提下唯一能拿到
 // 系统媒体横幅 / 锁屏控制 / 蓝牙媒体键的路径。迁到 Media3 需要为这里的自定义播放器
-// (实际由 AndroidMediaPlayer 出声)实现 SimpleBasePlayer,是一次独立改造,不混在本次做。
+// (实际由 ExoPlayerMediaPlayer 出声)实现 SimpleBasePlayer,是一次独立改造,不混在本次做。
 // 因此整文件关闭 CS0618 —— 若哪天真的迁到 Media3,请连同本 pragma 一起删掉。
 #pragma warning disable CS0618 // 类型或成员已过时
 
@@ -32,7 +32,7 @@ namespace ALyricEase.Services.Smtc;
 /// <summary>Android 前台媒体服务:持有 MediaSessionCompat 并发布 MediaStyle 原生媒体通知,
 /// 让状态栏下拉/锁屏出现系统媒体横幅(播放/暂停、上一曲/下一曲 + 进度条,可拖动 Seek)。
 ///
-/// 实际音频仍在应用进程内由 AndroidMediaPlayer 播放,本服务只负责"媒体会话 + 横幅";
+/// 实际音频仍在应用进程内由 ExoPlayerMediaPlayer 播放,本服务只负责"媒体会话 + 横幅";
 /// 横幅/系统媒体键事件经静态回调字段回传给最新的 SmtcService(Android) 实例,
 /// 由它转发给 PlayerViewModel(避免应用重建后事件重复订阅)。</summary>
 [Service(Name = "com.aika1024.alyricease.MediaPlaybackService",

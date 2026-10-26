@@ -77,6 +77,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private PlaybackState _prevState;
     private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
 
+    // 本曲起播后播放器报过错(地址 404/解码失败等)。置位期间不做"播完自动切歌":
+    // 失败也会落成 Idle,放任自动切歌会把整队列刷成"播放出错",单曲循环下更是无限重试风暴
+    // (2026-10-26 线上日志实测:同一首歌 40 秒内被自动重播十余次)。
+    private bool _playbackFailed;
+
     // 私人FM:激活后"下一曲/播完自动切"持续从 FM 接口取歌(无限流);播放其他列表自动退出。
     // 队列保持"当前曲后至少预补 2 首",并只保留少量已播放历史,避免长时间收听时线性增长。
     private const int MaxFmHistoryCount = 5;
@@ -1239,6 +1244,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         _playbackCache.Cancel();
         _crossfadeAdvancing = false; // 新歌起播:允许在它的末段再触发交叉切歌
+        _playbackFailed = false;     // 新的起播尝试:清掉上一首的错误标记
         CurrentSong = song;
         Title = song.Name;
         Artist = song.Artist;
@@ -1724,11 +1730,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         else _playbackCache.UpdatePlaying(IsPlaying);
         // 歌曲自然播完(Playing/Paused → Idle)按当前模式自动切下一首;
         // PlayUrl 内部 Stop() 的瞬时 Idle 用 _advancing 抑制(启动新歌不是播完)。
+        // 播放器报过错时不自动切歌:失败同样会落成 Idle,继续切歌只会把整队列刷成错误提示。
         if (_advancing == 0
+            && !_playbackFailed
             && _prevState is PlaybackState.Playing or PlaybackState.Paused
             && newState == PlaybackState.Idle
             && CurrentSong is not null)
         {
+            // 时点证据:自然播完时位置应≈时长;若 PositionMs 远小于 DurationMs 却走到这里,
+            // 说明播放器提前报了播完(如安卓流播被 CDN 断流),凭这行就能和交叉淡化切歌区分开。
+            _logger.LogInformation(
+                "Natural completion advance. SongId={SongId} PositionMs={PositionMs} PlayerDurationMs={PlayerDurationMs} MetadataDurationMs={MetadataDurationMs}",
+                CurrentSong.Id, PositionMs, DurationMs, CurrentSong.DurationMs);
             _ = PlayNextAsync();
         }
         _prevState = newState;
@@ -1736,6 +1749,9 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     private void OnPositionChanged(object? sender, long value)
     {
+        // 有真实进度 = 这一首确实出声了:解除"失败不自动切歌"抑制,
+        // 也顺手抹掉上一首迟到的错误回调留下的标记。
+        if (value > 0) _playbackFailed = false;
         _playbackCache.Tick();
         PositionMs = value;
 
@@ -1770,12 +1786,23 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         if (!_appState.Crossfade || !_player.SupportsCrossfade) return;
         if (CurrentSong is null || !IsPlaying || _scrubbing) return;
         var fadeMs = CrossfadeMs();
-        if (fadeMs <= 0 || DurationMs <= 0) return;
-        var remaining = DurationMs - PositionMs;
+        if (fadeMs <= 0) return;
+        // 播放器上报时长可能低估:Android MediaPlayer 流播 VBR 源时按平均码率估算 Duration,
+        // 进度没到真实末尾就满足 remaining<=fadeMs,表现为"歌的后半段直接切歌"(仅安卓,
+        // 2026-10-26 真机日志实证:多首在真实时长的 71%~95% 处被切)。以 API 元数据时长兜底,
+        // 取两者较大值;元数据偏大时最多退化成自然播完的普通切歌,不会提前。
+        var reported = DurationMs;
+        var metadata = CurrentSong.DurationMs;
+        var durationMs = metadata > reported ? metadata : reported;
+        if (durationMs <= 0) return;
+        var remaining = durationMs - PositionMs;
         if (remaining > fadeMs || remaining <= 0) return;
         if (PlaybackMode == PlaybackMode.SingleLoop) return;
         if (!IsFmActive && _lazyQueue is null && _queue.Count <= 1) return;
 
+        _logger.LogInformation(
+            "Crossfade advance triggered. SongId={SongId} PositionMs={PositionMs} PlayerDurationMs={PlayerDurationMs} MetadataDurationMs={MetadataDurationMs} FadeMs={FadeMs}",
+            CurrentSong.Id, PositionMs, reported, metadata, fadeMs);
         _crossfadeAdvancing = true;
         _ = AdvanceWithCrossfadeAsync();
     }
@@ -1793,6 +1820,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         _logger.LogError("Audio player error. Source={Source} SongId={SongId} Error={Error}",
             CurrentSong?.Source, CurrentSong?.Id, message);
+        _playbackFailed = true; // 见字段说明:本曲失败后不再"自动切歌"
         _playbackCache.Cancel();
         Message = message;
     }

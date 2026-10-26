@@ -140,10 +140,20 @@ public sealed record QQMidUrlInfo
 {
     [JsonPropertyName("songmid")] public string? SongMid { get; init; }
 
-    /// <summary>相对播放路径;空表示不可播(VIP 需登录,匿名 result=104003)。</summary>
+    /// <summary>相对播放路径;空表示这一档拿不到地址 —— 具体原因看 <see cref="Result"/>。
+    /// ⚠ 反过来不成立:purl 非空只说明"签名成功",不代表 CDN 上真有这个文件
+    /// (曲目没有 Hi-Res 文件时 QQ 照样签名,取流才 404)。</summary>
     public string? Purl { get; init; }
 
+    /// <summary>单文件业务结果码:0 成功 / 104003 无权限(未登录、非会员、该档无版权)/
+    /// 104004 VKey 获取失败 / 104013 播放设备受限。没有任何"文件不存在"的码。</summary>
     public int Result { get; init; }
+
+    /// <summary>服务端细分错误类型(通常为空串,偶见档位/参数不被接受时的分类)。</summary>
+    [JsonPropertyName("errtype")] public string? ErrType { get; init; }
+
+    /// <summary>服务端给客户端的提示文案(通常为空)。</summary>
+    [JsonPropertyName("tips")] public string? Tips { get; init; }
 }
 
 public sealed record QQLyricFcgResponse

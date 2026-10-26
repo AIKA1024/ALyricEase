@@ -57,6 +57,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private readonly Dictionary<long, (string Mid, LinkedListNode<long> Node)> _midById = new();
     private readonly LinkedList<long> _midLru = new();
 
+    /// <summary>数字 id → 曲目真实存在的四档音质(详情接口查回来的结果)。播放取地址前要先知道
+    /// 某一档的文件在不在(否则会把幽灵 purl 交给播放器),而详情请求比 vkey 贵,所以按曲目缓存;
+    /// 满额直接清空,丢掉只是多查一次,不影响正确性。</summary>
+    private const int MaxQualityLevelCacheEntries = 1024;
+    private readonly object _qualityGate = new();
+    private readonly Dictionary<long, IReadOnlyList<string>> _qualityLevels = new();
+
     /// <summary>QQ 登录凭证验证/刷新单飞锁。刷新会占用登录设备名额，同一份 Cookie
     /// 网页凭据在一个进程生命周期内最多执行一次；原生凭据按有效期提前刷新并合并并发请求。</summary>
     private readonly SemaphoreSlim _credentialGate = new(1, 1);
@@ -856,19 +863,42 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>播放地址:vkey.GetVkeyServer/CgiGetVkey。按档位取文件名前缀
-    /// (M500=128k MP3、M800=320k MP3、F000=FLAC、RS01=Hi-Res FLAC)，目标档不可用时自动降级。</summary>
+    /// (M500=128k MP3、M800=320k MP3、F000=FLAC、RS01=Hi-Res FLAC)，目标档不可用时自动降级。
+    /// ⚠ purl 非空 ≠ 可播:曲目没有该档文件时 QQ 仍然返回一个签好名的地址,CDN 上却没有这个文件,
+    /// MediaPlayer 起播约 0.5s 后抛 MediaFailed,用户只看到"播放出错"。所以必须先用歌曲元数据
+    /// (<see cref="Song.AvailableQualityLevels"/>)排除不存在的档位,不能靠 purl 判可用。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
     {
         var mid = await EnsureMidAsync(song, ct).ConfigureAwait(false);
         if (mid.Length == 0) return null;
 
-        foreach (var (prefix, ext, br) in Qualities(level))
+        var chain = Qualities(level);
+        var available = await ResolveAvailableLevelsAsync(song, ct).ConfigureAwait(false);
+        // 元数据确认存在的档位才请求。元数据缺失(null/空)时不筛,保持原降级链;
+        // 元数据说有则一定在链内,所以只会少请求不会漏高档位。
+        var candidates = chain;
+        if (available is { Count: > 0 })
+        {
+            var present = available; // 已确认非 null,供下面的 lambda 捕获
+            candidates = chain.Where(q => present.Contains(q.Level)).ToList();
+        }
+
+        var requestedLevel = chain[0].Level;
+        foreach (var (levelName, prefix, ext, br) in candidates)
         {
             var url = await TryVkeyAsync(mid, prefix, ext, ct).ConfigureAwait(false);
-            if (!string.IsNullOrEmpty(url))
-                return new PlayUrlItem { Id = song.Id, Url = url, Br = br, Level = prefix };
+            if (string.IsNullOrEmpty(url)) continue;
+            // 实际给的档位低于请求档位:正常降级(该档无版权/无文件/未开会员),但要留下痕迹,
+            // 否则线上只能看到"在放歌",分不清用户要的 Hi-Res 到底有没有拿到。
+            if (!string.Equals(levelName, requestedLevel, StringComparison.Ordinal))
+            {
+                _logger.LogInformation(
+                    "QQ quality downgraded. SongMid={SongMid} Requested={Requested} Served={Served} Prefix={Prefix}",
+                    mid, requestedLevel, levelName, prefix);
+            }
+            return new PlayUrlItem { Id = song.Id, Url = url, Br = br, Level = prefix };
         }
-        return null; // 全部档位不可播(VIP/版权),由调用方提示
+        return null; // 全部档位不可播(VIP/版权/曲目无该档文件),由调用方提示
     }
 
     /// <summary>歌词:主路径 fcg_query_lyric_new.fcg(base64);负业务码或空时回落
@@ -925,7 +955,46 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     public async Task<IReadOnlyList<string>?> GetAvailableQualitiesAsync(Song song, CancellationToken ct = default)
         => song.AvailableQualityLevels
-            ?? (await GetSongDetailCoreAsync(song.Id, song.Mid, ct).ConfigureAwait(false))?.AvailableQualityLevels;
+            ?? await QueryAvailableLevelsAsync(song.Id, song.Mid, ct).ConfigureAwait(false);
+
+    /// <summary>播放路径专用:拿曲目真实存在的档位,拿不到就返回 null(= 未知)。
+    /// 播放不能因为"元数据查询失败"整首不播,所以这里吞掉 ApiException;
+    /// 下载窗口仍然走 <see cref="GetAvailableQualitiesAsync"/> 保留异常语义。</summary>
+    private async Task<IReadOnlyList<string>?> ResolveAvailableLevelsAsync(Song song, CancellationToken ct)
+    {
+        if (song.AvailableQualityLevels is { } known) return known;
+        try
+        {
+            return await QueryAvailableLevelsAsync(song.Id, song.Mid, ct).ConfigureAwait(false);
+        }
+        catch (ApiException)
+        {
+            return null; // 当作未知:不筛档位,交给原降级链与提示文案
+        }
+    }
+
+    /// <summary>详情接口查曲目音质并按曲目缓存(缓存命中不产生请求)。失败抛 ApiException。</summary>
+    private async Task<IReadOnlyList<string>?> QueryAvailableLevelsAsync(long songId, string mid, CancellationToken ct)
+    {
+        lock (_qualityGate)
+        {
+            if (_qualityLevels.TryGetValue(songId, out var cached)) return cached;
+        }
+
+        var detail = await GetSongDetailCoreAsync(songId, mid, ct).ConfigureAwait(false);
+        var levels = detail?.AvailableQualityLevels;
+        if (levels is not null) RememberQualityLevels(songId, levels);
+        return levels;
+    }
+
+    private void RememberQualityLevels(long songId, IReadOnlyList<string> levels)
+    {
+        lock (_qualityGate)
+        {
+            if (_qualityLevels.Count >= MaxQualityLevelCacheEntries) _qualityLevels.Clear();
+            _qualityLevels[songId] = levels;
+        }
+    }
 
     private async Task<Song?> GetSongDetailCoreAsync(long id, string mid, CancellationToken ct)
     {
@@ -2428,16 +2497,27 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     // ---------- 内部 ----------
 
     /// <summary>level → 文件名前缀链:目标档在前,不可播逐级降级,末档恒为 M500(128k MP3)。
-    /// RS01 是 QQ 的 Hi-Res 无损(24bit FLAC)。⚠ 已知坑:个别曲目 RS01 会返回非空 purl 但流地址
-    /// 实际不可播(Hi-Res CDN 权限/文件缺失),vkey 阶段分辨不出来 ⇒ 用户报"Hi-Res 播不动"时先降档定位。</summary>
-    private static IEnumerable<(string Prefix, string Ext, int Br)> Qualities(string level) => level.ToLowerInvariant() switch
-    {
-        "hires" => [("RS01", ".flac", 999000), ("F000", ".flac", 999000), ("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
-        "lossless" => [("F000", ".flac", 999000), ("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
-        "nac" => [("TL01", ".nac", 0), ("M500", ".mp3", 128000)],
-        "higher" => [("M800", ".mp3", 320000), ("M500", ".mp3", 128000)],
-        _ => [("M500", ".mp3", 128000)],
-    };
+    /// 元组里的 Level 是协议档位名(与 <see cref="SongQualityMetadata.QQ"/> 的取值同一套),
+    /// 用来跟歌曲元数据比对"这一档的文件在不在";Prefix 才是 vkey 要的文件名前缀。
+    /// RS01 是 QQ 的 Hi-Res 无损(24bit FLAC)。⚠ 已知坑:曲目没有 Hi-Res 文件时,RS01 仍返回
+    /// 非空 purl 但流地址实际不可播(CDN 上无此文件),vkey 阶段分辨不出来 ⇒ 靠元数据筛档位。</summary>
+    private static List<(string Level, string Prefix, string Ext, int Br)> Qualities(string level) =>
+        level.ToLowerInvariant() switch
+        {
+            "hires" =>
+            [
+                ("hires", "RS01", ".flac", 999000), ("lossless", "F000", ".flac", 999000),
+                ("higher", "M800", ".mp3", 320000), ("standard", "M500", ".mp3", 128000)
+            ],
+            "lossless" =>
+            [
+                ("lossless", "F000", ".flac", 999000),
+                ("higher", "M800", ".mp3", 320000), ("standard", "M500", ".mp3", 128000)
+            ],
+            "nac" => [("nac", "TL01", ".nac", 0), ("standard", "M500", ".mp3", 128000)],
+            "higher" => [("higher", "M800", ".mp3", 320000), ("standard", "M500", ".mp3", 128000)],
+            _ => [("standard", "M500", ".mp3", 128000)],
+        };
 
     private async Task<string> TryVkeyAsync(string mid, string prefix, string ext, CancellationToken ct)
     {
@@ -2466,13 +2546,60 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         var data = resp?.Req0?.Data;
         var info = data?.MidUrlInfo?.FirstOrDefault(i => i.SongMid == mid) ?? data?.MidUrlInfo?.FirstOrDefault();
         var purl = info?.Purl;
-        if (data?.Sip is null || string.IsNullOrEmpty(purl)) return "";
+        if (string.IsNullOrEmpty(purl))
+        {
+            LogVkeyMiss(mid, prefix, info);
+            return "";
+        }
+
+        if (data?.Sip is null || data.Sip.Count == 0)
+        {
+            _logger.LogWarning("QQ vkey response has no CDN domain. SongMid={SongMid} Tier={Tier} Purl={Purl}",
+                mid, prefix, purl);
+            return "";
+        }
 
         var domain = data.Sip.FirstOrDefault(s => s.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                      ?? data.Sip.FirstOrDefault(s => !string.IsNullOrEmpty(s) && !s.StartsWith("http://ws"))
                      ?? "";
-        if (domain.Length == 0) return "";
+        if (domain.Length == 0)
+        {
+            _logger.LogWarning("QQ vkey response has no usable CDN domain. SongMid={SongMid} Tier={Tier} Sip={Sip}",
+                mid, prefix, string.Join(",", data.Sip));
+            return "";
+        }
         return domain.TrimEnd('/') + "/" + purl.TrimStart('/');
+    }
+
+    /// <summary>purl 为空时记下"这一档为什么拿不到地址"。<c>result</c> 是唯一能区分原因的信号,
+    /// 而它只讲权益不讲存在性:104003 = 无权限(未登录 / 账号非会员 / 该档无版权)、
+    /// 104004 = VKey 获取失败(档位或参数不被接受)、104013 = 播放设备受限。
+    /// 前者是正常的逐档降级,后者说明请求本身被拒 —— 后者必须当异常看,所以分级别记:
+    /// 线上日志级别是 Information(Debug 会被丢弃),因此正常降级记 INF、其余记 WRN。</summary>
+    private void LogVkeyMiss(string mid, string prefix, QQMidUrlInfo? info)
+    {
+        var result = info?.Result ?? 0;
+        var reason = result switch
+        {
+            0 => "purl-empty-with-success-code",
+            104003 => !IsLoggedIn ? "not-logged-in" : !IsVip ? "account-not-vip" : "no-copyright-for-tier",
+            104004 => "vkey-request-rejected",
+            104013 => "device-restricted",
+            _ => "unknown-result",
+        };
+
+        if (result == 104003)
+        {
+            _logger.LogInformation(
+                "QQ vkey unavailable. SongMid={SongMid} Tier={Tier} Result={Result} Reason={Reason} LoggedIn={LoggedIn} Vip={Vip}",
+                mid, prefix, result, reason, IsLoggedIn, IsVip);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "QQ vkey unavailable. SongMid={SongMid} Tier={Tier} Result={Result} Reason={Reason} LoggedIn={LoggedIn} Vip={Vip} ErrType={ErrType} Tips={Tips}",
+                mid, prefix, result, reason, IsLoggedIn, IsVip, info?.ErrType, info?.Tips);
+        }
     }
 
     private async Task<LyricResult?> TryLyricByMusicuAsync(Song song, string mid, CancellationToken ct)

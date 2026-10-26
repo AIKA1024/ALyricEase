@@ -5,6 +5,8 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Windows.Devices.Enumeration;
 using Windows.Media.Core;
 using Windows.Media.Devices;
@@ -22,8 +24,11 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
   private const int PollIntervalMs = 200;
 
   private readonly DispatcherService _dispatcher;
+  private readonly ILogger<WindowsMediaPlayer> _logger;
   private readonly MediaPlayer _mp;
   private MediaSource? _mediaSource;
+  private string _sourceHost = "";  // 仅用于失败日志,见 StoreSourceLabel
+  private string _sourceFile = "";
   private Timer? _timer;
   private volatile PlaybackState _state = PlaybackState.Idle;
   private bool _hadContent;
@@ -43,9 +48,10 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
   private DeviceInformation? _outputDevice;
   private string? _outputDeviceId;
 
-  public WindowsMediaPlayer(DispatcherService dispatcher)
+  public WindowsMediaPlayer(DispatcherService dispatcher, ILogger<WindowsMediaPlayer>? logger = null)
   {
     _dispatcher = dispatcher;
+    _logger = logger ?? NullLogger<WindowsMediaPlayer>.Instance;
     _mp = new MediaPlayer { AutoPlay = false, AudioCategory = MediaPlayerAudioCategory.Media };
     // 关掉 CommandManager 自动 SMTC 集成:SMTC 会话由 SmtcService 手动驱动。
     // 不关的话每个 MediaPlayer 实例都会抢同一个系统会话 —— 交叉淡化下新旧两实例并存,
@@ -265,6 +271,9 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
       var sourceUri = Path.IsPathRooted(url)
           ? new Uri(Path.GetFullPath(url))
           : new Uri(url);
+      // 起播前就把诊断用的"主机 + 文件名"抄成纯字符串:失败回调可能在源已被 Dispose 之后才到,
+      // 那时再读 MediaSource.Uri 会抛 RO_E_CLOSED,把诊断日志变成二次崩溃。
+      StoreSourceLabel(sourceUri);
       _mediaSource = MediaSource.CreateFromUri(sourceUri);
       _mp.Source = _mediaSource;
       ReapplyOutputDevice();
@@ -274,8 +283,11 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
       StartPolling();
       _mp.Play();
     }
-    catch (Exception)
+    catch (Exception ex)
     {
+      // 地址里带 vkey(有时效的签名),不写进日志;主机 + 文件名足够定位是哪一档地址
+      _logger.LogError(ex, "Setting MediaPlayer source failed. Host={Host} Source={Source}",
+          _sourceHost, _sourceFile);
       _dispatcher.Post(() => ErrorOccurred?.Invoke(this, "播放出错"));
     }
   }
@@ -479,11 +491,38 @@ public sealed class WindowsMediaPlayer : IAudioPlayer
 
   private void OnMediaFailed(MediaPlayer sender, MediaPlayerFailedEventArgs args)
   {
+    // MediaFailed 只往上层抛"播放出错"四个字,真因全在 Error/ExtendedErrorCode 里:
+    // 不记这两个值,线上只能看到"播不动",分不清是 404(曲目没这一档文件)、403(版权/CDN)
+    // 还是解码失败 —— 2026-10-26 排查 QQ Hi-Res 连片失败时就是因为缺这条日志只能靠猜。
+    _logger.LogError(
+        "Windows MediaPlayer failed. Error={Error} ExtendedErrorCode=0x{ExtendedErrorCode:X8} State={State} Host={Host} Source={Source}",
+        args.Error,
+        args.ExtendedErrorCode?.HResult ?? 0,
+        _state,
+        _sourceHost,
+        _sourceFile);
+
     _dispatcher.Post(() =>
     {
       ErrorOccurred?.Invoke(this, "播放出错"); // 契约固定文案
       RaiseState(PlaybackState.Idle);
     });
+  }
+
+  /// <summary>把当前音源抄成"主机 + 文件名"存成纯字符串,供失败日志定位是哪一档地址
+  /// (QQ 的文件名前缀就是音质档位:M500/M800/F000/RS01)。</summary>
+  private void StoreSourceLabel(Uri uri)
+  {
+    try
+    {
+      _sourceHost = uri.IsAbsoluteUri ? uri.Host : "";
+      _sourceFile = uri.IsAbsoluteUri ? uri.AbsolutePath.TrimStart('/') : Path.GetFileName(uri.OriginalString);
+    }
+    catch
+    {
+      _sourceHost = "";
+      _sourceFile = "";
+    }
   }
 
   private void RaiseState(PlaybackState state)

@@ -112,15 +112,25 @@ Debug 构建与桌面探针都查不出。
 - 落地:`ExoPlayerMediaPlayer`(实现 `IAudioPlayer`,与平台无关的上层零改动)。
   只引 `Xamarin.AndroidX.Media3.ExoPlayer` + `Media3.DataSource`(1.11.1),其余 Media3
   包走传递依赖;依赖只落在 Annotation/Media3 家族,与手工对齐的 Core/Lifecycle 版本无交集。
-- 线程契约:ExoPlayer 单线程访问,轮询用主线程 Handler(旧后端是线程池 Timer)。
+- 线程契约:ExoPlayer 单线程访问。状态/时长/Seek/音频会话由 `OnEvents` 驱动,
+  合并排队后读取最新状态,避免旧状态回写和在 native listener 内重入切歌。
+  200ms UI 定时器仅在实际播放时采样进度,暂停/缓冲/停止/释放均停止计时。
+  `CrossfadeAudioPlayer` 的每步音量调整和结束时 Stop 同样显式调度回 UI 线程;
+  执行时检查取消,避免硬切/Stop/Dispose 后排队的旧步骤继续访问实例。
 - 绑定 API 注意:
   - `Player` 绑定为 `IPlayer` 接口,`Listener` 扁平化为 `IPlayerListener`(非嵌套);
-    `STATE_*` 常量各绑定版本命名有差,代码里直接用数值 1..4。
+    当前绑定的状态/事件常量位于 `BasePlayer.InterfaceConsts`,不要另写数值副本。
   - 自实现的 Java 侦听器(含 VisualizerListener)必须有 `(IntPtr, JniHandleOwnership)`
     构造器,否则 GC 回收托管 peer 后 Java 回调反激活直接杀进程(10 月真机崩溃实证)。
   - `DefaultHttpDataSource.Factory` 必须开 `SetAllowCrossProtocolRedirects(true)`
     (网易云 CDN http<->https 重定向),UA/Referer 在工厂统一设置。
-- 兜底保留:ExoPlayer 起播失败仍走"下载到缓存文件再播"(与旧后端一致)。
+    外层用 `DefaultDataSource.Factory(context, httpFactory)` 分流本地文件与 HTTP(S),
+    再传给 `DefaultMediaSourceFactory(dataSourceFactory)`;不能直接用 HTTP 工厂播放
+    `file://` 缓存/本地歌曲,也不能使用不存在的无参 `DefaultMediaSourceFactory` 构造器。
+- 下载兜底仅限尚未起播的 HTTP(S) 连接失败/超时,每个播放会话最多一次;
+  本地文件、解码错误、HTTP 鉴权/不存在与播放中断流直接上报错误。
+  下载采用流式写入和全程 30 秒超时,换歌/Stop/Dispose 取消任务并清理未接管的临时文件。
+  URL 保留服务端原协议,不再强制把 HTTP 改为 HTTPS(Manifest 已允许明文流量)。
 - 时长修正兜底:`MaybeCrossfadeAdvance` 同时取播放器上报时长与 API 元数据时长的较大值,
   双保险防时长低估;两条自动切歌路径均有文件日志(`Natural completion advance` /
   `Crossfade advance triggered`)可事后区分。

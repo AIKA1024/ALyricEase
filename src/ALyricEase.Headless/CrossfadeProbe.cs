@@ -8,7 +8,8 @@ namespace ALyricEase.Headless;
 /// 验证包装层的切换语义,不碰真实音频。覆盖:
 /// ① 未在播时请求交叉 → 拒绝(回落硬切);② 播放中交叉 → active 换到新实例、音量斜坡方向正确;
 /// ③ 渐变结束后旧实例被 Stop 且音量复位;④ 渐变中用户改音量,斜坡按新值走;
-/// ⑤ factory 为空 → SupportsCrossfade=false 且请求被拒;⑥ 输出设备调用转发到当前 active 实例。</summary>
+/// ⑤ factory 为空 → SupportsCrossfade=false 且请求被拒;⑥ 输出设备调用转发到当前 active 实例;
+/// ⑦ 所有淡化写入/停止均在 UI 线程;⑧ 取消或释放后已排队的步骤不得操作播放器。</summary>
 internal static class CrossfadeProbe
 {
     public static async Task<int> RunAsync()
@@ -21,14 +22,14 @@ internal static class CrossfadeProbe
         }
 
         // ---- ⑤ factory 为空:不支持交叉 ----
-        var noFade = new CrossfadeAudioPlayer(new HeadlessApp.StubAudioPlayer(), null);
+        using var noFade = new CrossfadeAudioPlayer(new HeadlessApp.StubAudioPlayer(), null);
         Check(!noFade.SupportsCrossfade, "无工厂时 SupportsCrossfade=false");
         Check(!await noFade.TryCrossfadePlayAsync("u", 300), "无工厂时拒绝交叉请求");
 
         // ---- 主场景 ----
-        var primary = new HeadlessApp.StubAudioPlayer();
-        var secondary = new HeadlessApp.StubAudioPlayer();
-        var wrapper = new CrossfadeAudioPlayer(primary, () => secondary);
+        var primary = new HeadlessApp.StubAudioPlayer { RequireUiThread = true };
+        var secondary = new HeadlessApp.StubAudioPlayer { RequireUiThread = true };
+        using var wrapper = new CrossfadeAudioPlayer(primary, () => secondary);
 
         // ⑦ 构造即转发:任何交叉发生前,primary 的事件就必须经包装层冒出。
         // 漏接线时 VM 收不到进度/时长/播完状态 —— 首曲自然播完的交叉与自动切歌全哑。
@@ -95,6 +96,49 @@ internal static class CrossfadeProbe
         wrapper.Stop();
         Check(primary.StopCallCount == 2 && secondary.StopCallCount == 1,
             "Stop 作用于两个实例");
+        Check(primary.WrongThreadCalls == 0 && secondary.WrongThreadCalls == 0,
+            "淡化音量、收尾停止均在 UI 线程调用");
+
+        // 不让出 UI 线程就取消:第一步已排队但尚未执行,验证执行时的取消检查。
+        foreach (var action in new[] { "Stop", "PlayUrl", "Dispose" })
+        {
+            var a = new HeadlessApp.StubAudioPlayer { RequireUiThread = true };
+            var b = new HeadlessApp.StubAudioPlayer { RequireUiThread = true };
+            var cancelled = new CrossfadeAudioPlayer(a, () => b) { Volume = 70 };
+            a.SetState(PlaybackState.Playing);
+            await cancelled.TryCrossfadePlayAsync("next", 200);
+            if (action == "Stop") cancelled.Stop();
+            else if (action == "PlayUrl") cancelled.PlayUrl("replacement");
+            else cancelled.Dispose();
+            var writes = a.VolumeWriteCount + b.VolumeWriteCount;
+            var stops = a.StopCallCount + b.StopCallCount;
+            await Task.Delay(350);
+            Check(writes == a.VolumeWriteCount + b.VolumeWriteCount
+                  && stops == a.StopCallCount + b.StopCallCount,
+                $"{action} 后旧淡化没有迟到的音量/停止操作");
+            Check(a.CallsAfterDispose == 0 && b.CallsAfterDispose == 0
+                  && a.WrongThreadCalls == 0 && b.WrongThreadCalls == 0,
+                $"{action} 没有跨线程或释放后访问");
+            if (action != "Dispose") cancelled.Dispose();
+        }
+
+        // 新渐变紧接旧渐变启动:旧会话的 finally 不得清掉新会话。
+        var first = new HeadlessApp.StubAudioPlayer { RequireUiThread = true };
+        var second = new HeadlessApp.StubAudioPlayer { RequireUiThread = true };
+        using var replacement = new CrossfadeAudioPlayer(first, () => second) { Volume = 60 };
+        first.SetState(PlaybackState.Playing);
+        await replacement.TryCrossfadePlayAsync("second", 200);
+        second.SetState(PlaybackState.Playing);
+        await replacement.TryCrossfadePlayAsync("third", 500);
+        await Task.Delay(120);
+        var before = first.VolumeWriteCount;
+        replacement.Volume = 45;
+        Check(first.VolumeWriteCount == before, "旧会话收尾没有清除新渐变标记");
+        await Task.Delay(700);
+        Check(first.StopCallCount == 0 && second.StopCallCount == 1 && first.Volume == 45,
+            "快速连续交叉只停止最新渐变的旧实例");
+        Check(first.WrongThreadCalls == 0 && second.WrongThreadCalls == 0,
+            "快速连续交叉遵守 UI 线程契约");
 
         Console.WriteLine(failures == 0
             ? "[crossfade] 全部通过"

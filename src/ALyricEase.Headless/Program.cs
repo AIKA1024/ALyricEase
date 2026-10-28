@@ -775,8 +775,13 @@ public static class Program
         // 交叉淡化包装层语义探针:双 Stub 驱动 CrossfadeAudioPlayer,验证切换/斜坡/停旧/转发
         if (args.Length > 0 && args[0] == "--crossfade")
         {
-            Environment.ExitCode = System.Threading.Tasks.Task.Run(CrossfadeProbe.RunAsync)
-                .GetAwaiter().GetResult();
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { Environment.ExitCode = await CrossfadeProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
             return;
         }
 

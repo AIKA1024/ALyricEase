@@ -27,7 +27,29 @@ public partial class HeadlessApp : Application
     public PlaybackState State => _state;
     public long PositionMs { get; set; }
     public long DurationMs { get; set; }
-    public int Volume { get; set; }
+    private int _volume;
+    public int Volume
+    {
+      get => _volume;
+      set { VerifyPlaybackAccess(); VolumeWriteCount++; _volume = value; }
+    }
+    public bool RequireUiThread { get; init; }
+    private int _wrongThreadCalls;
+    public int WrongThreadCalls => Volatile.Read(ref _wrongThreadCalls);
+    public int VolumeWriteCount { get; private set; }
+    public int CallsAfterDispose { get; private set; }
+    private bool _disposed;
+
+    private void VerifyPlaybackAccess()
+    {
+      if (!RequireUiThread) return;
+      if (_disposed) CallsAfterDispose++;
+      if (!Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+      {
+        Interlocked.Increment(ref _wrongThreadCalls);
+        throw new InvalidOperationException("播放器必须在 UI 线程访问");
+      }
+    }
     public bool AudioAnalysisEnabled { get; private set; }
     public void SetAudioAnalysisEnabled(bool enabled) => AudioAnalysisEnabled = enabled;
     public event EventHandler? StateChanged;
@@ -37,8 +59,8 @@ public partial class HeadlessApp : Application
     public void PlayUrl(string url) { }
     public void Pause() { }
     public void Resume() { }
-    public void Stop() => StopCallCount++;
-    public void Dispose() { }
+    public void Stop() { VerifyPlaybackAccess(); StopCallCount++; }
+    public void Dispose() { VerifyPlaybackAccess(); _disposed = true; }
 
     /// <summary>Stop 被调用次数(交叉淡化探针用:验证渐变结束后旧实例会被停掉)。</summary>
     public int StopCallCount { get; private set; }

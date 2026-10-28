@@ -3,10 +3,9 @@
 // MediaButtonReceiver / NotificationCompat.MediaStyle 全部标了 @Deprecated(上游指向
 // androidx.media3),绑定生成器据此打上 [Obsolete],于是本文件满屏 CS0618。
 //
-// 这些 API 在 Android 上依旧完整可用,且是不引入 Media3 + ExoPlayer 的前提下唯一能拿到
-// 系统媒体横幅 / 锁屏控制 / 蓝牙媒体键的路径。迁到 Media3 需要为这里的自定义播放器
-// (实际由 ExoPlayerMediaPlayer 出声)实现 SimpleBasePlayer,是一次独立改造,不混在本次做。
-// 因此整文件关闭 CS0618 —— 若哪天真的迁到 Media3,请连同本 pragma 一起删掉。
+// 音频引擎已迁入 Media3,系统媒体会话仍由本服务通过 Compat API 提供。
+// 后续迁移会话时需要适配上层队列与双实例交叉淡化,不能直接删除此服务或 AndroidX.Media 依赖。
+// 本文件关闭 CS0618;迁移媒体会话后再移除此 pragma。
 #pragma warning disable CS0618 // 类型或成员已过时
 
 using System;

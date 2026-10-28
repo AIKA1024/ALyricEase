@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 
 namespace ALyricEase.Services.Audio;
 
@@ -9,7 +10,7 @@ namespace ALyricEase.Services.Audio;
 /// 平台后端只负责"播"和"音量",渐变节奏统一在这里,Windows/Android 共用一份实现。
 ///
 /// 线程契约:PlayUrl/TryCrossfadePlayAsync/Pause 等控制方法由 UI 线程调用(与 IAudioPlayer 一致);
-/// 音量斜坡跑在线程池,只碰各后端的 Volume/Stop(均为线程安全的属性赋值/内部自锁调用)。
+/// 音量斜坡的每一步及收尾显式调度回 UI 线程,满足 ExoPlayer 的单线程访问要求。
 /// 事件/状态/进度一律转发当前 active 实例;旧实例在切换瞬间就解除事件订阅,
 /// 它渐变结束转 Idle 不会漏给上层(否则会被 PlayerViewModel 当成"播完自动切歌")。</summary>
 public sealed class CrossfadeAudioPlayer : IAudioPlayer
@@ -23,8 +24,8 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
     private bool _audioAnalysisEnabled;
 
     // 渐变会话:同一时刻最多一个;硬切/Stop 时取消,旧实例音量停在半路由 Stop 兜底。
-    // volatile:自然结束由线程池清空,Volume setter(UI 线程)读它决定"立即应用还是交给斜坡"。
-    private volatile CancellationTokenSource? _fadeCts;
+    // 会话状态只在 UI 线程读写;异步等待期间由 token 传递取消。
+    private CancellationTokenSource? _fadeCts;
 
     // active 实例的事件转发(handler 存字段以便交换后退订旧实例)
     private EventHandler? _onStateChanged;
@@ -110,30 +111,34 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
     private void StartFade(IAudioPlayer oldPlayer, IAudioPlayer newPlayer, int fadeMs)
     {
         var cts = _fadeCts = new CancellationTokenSource();
-        var token = cts.Token;
-        _ = Task.Run(async () =>
-        {
-            var steps = Math.Clamp(fadeMs / 50, 4, 80);
-            var delay = Math.Max(10, fadeMs / steps);
-            try
-            {
-                try
-                {
-                    for (var i = 1; i <= steps; i++)
-                    {
-                        token.ThrowIfCancellationRequested();
-                        var p = i / (double)steps;
-                        var u = Volatile.Read(ref _userVolume) / 100.0;
-                        SetVolumeSafe(oldPlayer, (int)Math.Round(u * (1 - p) * 100));
-                        SetVolumeSafe(newPlayer, (int)Math.Round(u * p * 100));
-                        await Task.Delay(delay, token);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    return; // 硬切/Stop 接管了两个实例,这里什么都别再碰
-                }
+        _ = RunFadeAsync(oldPlayer, newPlayer, fadeMs, cts);
+    }
 
+    private async Task RunFadeAsync(IAudioPlayer oldPlayer, IAudioPlayer newPlayer, int fadeMs,
+        CancellationTokenSource cts)
+    {
+        var token = cts.Token;
+        var steps = Math.Clamp(fadeMs / 50, 4, 80);
+        var delay = Math.Max(10, fadeMs / steps);
+        try
+        {
+            for (var i = 1; i <= steps; i++)
+            {
+                var p = i / (double)steps;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    // 必须在执行时检查:排队期间可能已硬切、Stop 或 Dispose。
+                    token.ThrowIfCancellationRequested();
+                    var u = _userVolume / 100.0;
+                    SetVolumeSafe(oldPlayer, (int)Math.Round(u * (1 - p) * 100));
+                    SetVolumeSafe(newPlayer, (int)Math.Round(u * p * 100));
+                }).GetTask().ConfigureAwait(false);
+                await Task.Delay(delay, token).ConfigureAwait(false);
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                token.ThrowIfCancellationRequested();
                 SetVolumeSafe(oldPlayer, 0);
                 try
                 {
@@ -144,16 +149,22 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
                     // 旧实例已出问题也没关系:它不再被监听
                 }
 
-                SetVolumeSafe(oldPlayer, Volatile.Read(ref _userVolume)); // 复位留复用;起播前还会再压 0
-            }
-            finally
+                SetVolumeSafe(oldPlayer, _userVolume); // 复位留复用;起播前还会再压 0
+            }).GetTask().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // 硬切/Stop/Dispose 已接管两个实例,不再触碰播放器。
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                // 渐变自然结束后清掉会话标记:漏掉这条时 Volume setter 会一直认为
-                // "渐变进行中",拖音量条只改 _userVolume、永不落到播放实例(回归 2026-09-21)。
-                // CAS 只清自己的会话:期间若已换上新 CTS(硬切/新交叉),不动它。
-                Interlocked.CompareExchange(ref _fadeCts, null, cts);
-            }
-        });
+                // 只清理自己的会话,不能覆盖随后启动的新渐变。
+                if (ReferenceEquals(_fadeCts, cts)) _fadeCts = null;
+                cts.Dispose();
+            }).GetTask().ConfigureAwait(false);
+        }
     }
 
     private void CancelFade()
@@ -162,7 +173,7 @@ public sealed class CrossfadeAudioPlayer : IAudioPlayer
         _fadeCts = null;
         if (cts is null) return;
         cts.Cancel();
-        cts.Dispose();
+        // RunFadeAsync 收尾释放,避免与尚未完成的 Delay/取消注册竞争。
     }
 
     private async Task ApplyDeviceAsync(IAudioPlayer player)

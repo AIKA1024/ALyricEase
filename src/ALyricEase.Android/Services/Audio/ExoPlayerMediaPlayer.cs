@@ -6,20 +6,18 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
+using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using global::Android.Runtime;
 using ExoPlayerType = AndroidX.Media3.ExoPlayer.IExoPlayer;
+using PlayerConstants = AndroidX.Media3.Common.BasePlayer.InterfaceConsts;
 
 namespace ALyricEase.Services.Audio;
 
-/// <summary>Android 音频播放(Media3/ExoPlayer),替代 android.media.MediaPlayer 黑盒。
-/// 动机(2026-10-26 真机日志排查):MediaPlayer 流播对 VBR 源的 Duration 按码率估算、
-/// 明显偏低,交叉淡化据此提前触发,表现为"歌的后半段直接切歌";且断流直接 Completion
-/// 被当成"播完"。ExoPlayer 取容器真实元数据,自带缓冲重试,HTTP 头/重定向可控。
-///
-/// 线程模型:ExoPlayer 实例必须在创建线程(UI)访问,轮询改用主线程 Handler
-/// (旧 MediaPlayer 后端是线程池 Timer,只读属性虽无害,这里一并收敛到 UI 线程)。
-/// 流播仍保留"下载到缓存文件"兜底:ExoPlayer 的错误恢复覆盖绝大多数场景,但个别
-/// CDN/明文组合仍可能起播失败,兜底保证"能响"优先(与旧后端行为一致)。</summary>
+/// <summary>Android 音频播放(Media3/ExoPlayer)。控制和事件处理均在 UI 线程;
+/// 状态/时长/Seek/音频会话由 Media3 事件驱动,仅在实际播放时定时采样进度。
+/// 起播网络连接失败或超时允许一次可取消的下载兜底。</summary>
 public sealed class ExoPlayerMediaPlayer : IAudioPlayer
 {
   private const string Tag = "ALyricEasePlayer";
@@ -27,12 +25,6 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   private const string UserAgent =
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
-  // androidx.media3.common.Player 的 STATE_* 稳定常量(API 文档承诺不变)。
-  // 绑定侧是接口静态成员,不同绑定版本命名有差异,直接用数值规避。
-  private const int NativeStateIdle = 1;
-  private const int NativeStateBuffering = 2;
-  private const int NativeStateReady = 3;
-  private const int NativeStateEnded = 4;
   // C.TIME_UNSET:ExoPlayer 时长未知的哨兵值。
   private const long TimeUnset = long.MinValue + 1;
 
@@ -40,9 +32,9 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   private readonly ILogger<ExoPlayerMediaPlayer> _fileLog;
   private readonly ExoPlayerType _player;
   private readonly PlayerListener _listener;
-  private readonly Android.OS.Handler _pollHandler;
+  private readonly DispatcherTimer _progressTimer;
   private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
-  private readonly object _lock = new();
+  private CancellationTokenSource? _downloadCancellation;
 
   private PlaybackState _state = PlaybackState.Idle;
   private bool _released;
@@ -59,10 +51,11 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   private float _bassEnergy;
   private float _waveEnergy;
 
-  // 代数号:每次 PlayUrl/Stop 自增,迟到的错误/下载完成回调据此丢弃,防竞态。
+  // UI 线程拥有会话状态;代数号阻止迟到的事件/下载结果影响新歌。
   private int _generation;
-  // 当前处于哪种播放模式:ExoPlayer 起播失败时降级为下载,下载模式再失败才报错。
-  private bool _downloading;
+  private bool _fallbackAttempted;
+  private bool _hasStarted;
+  private bool _syncPending;
 
   public ExoPlayerMediaPlayer(DispatcherService dispatcher, ILogger<ExoPlayerMediaPlayer>? fileLog = null)
   {
@@ -77,84 +70,120 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
         {
             ["Referer"] = "https://music.163.com",
         });
+    // DefaultHttpDataSource 仅支持网络;通用工厂按 URI 分流 file:// 缓存/本地文件,
+    // HTTP(S) 仍交给上面配置了请求头与重定向的工厂。
+    var dataSourceFactory = new AndroidX.Media3.DataSource.DefaultDataSource.Factory(
+        global::Android.App.Application.Context, httpFactory);
 
-    // media3 1.11:ExoPlayer 接口化后 Builder 扁平化为 ExoPlayerBuilder 类,
-    // DefaultMediaSourceFactory 移除了带 DataSource.Factory 的构造器,改无参 + 流式设置
+    // media3 1.11:ExoPlayer 接口化后 Builder 扁平化为 ExoPlayerBuilder 类。
     _player = new AndroidX.Media3.ExoPlayer.ExoPlayerBuilder(global::Android.App.Application.Context)
-        .SetMediaSourceFactory(new AndroidX.Media3.ExoPlayer.Source.DefaultMediaSourceFactory()
-            .SetDataSourceFactory(httpFactory))
+        .SetMediaSourceFactory(new AndroidX.Media3.ExoPlayer.Source.DefaultMediaSourceFactory(dataSourceFactory))
         .Build();
+    _progressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(PollIntervalMs) };
+    _progressTimer.Tick += OnProgressTick;
     _listener = new PlayerListener(this);
     _player.AddListener(_listener);
-
-    // ExoPlayer 单线程契约:所有访问(含轮询读)都在创建线程,即主线程
-    _pollHandler = new Android.OS.Handler(Android.OS.Looper.MainLooper!);
-    _pollHandler.PostDelayed(Poll, PollIntervalMs);
   }
 
   // ---- 生命周期与原生事件(UI 线程) ----
 
-  private void OnPlaybackStateChanged(int playbackState)
+  // 将同一批 native 事件合并为一次 UI 更新。保留这一层排队以避免上层自动切歌
+  // 在 Media3 listener 调用栈内重入;执行时读取最新状态,不捕获易过期的 Playing/Idle。
+  private void QueuePlayerUpdate()
   {
-    if (playbackState == NativeStateEnded)
+    if (_released || _syncPending) return;
+    _syncPending = true;
+    var generation = _generation;
+    _dispatcher.Post(() =>
     {
-      // 时点证据:自然播完应满足 PositionMs≈DurationMs;若远小于,即流被提前终止
-      // (CDN 断流等),上层会当作播完自动切歌——靠这行区分两种切歌原因。
-      long pos = 0, dur = 0;
-      try { pos = _player.CurrentPosition; dur = _player.Duration; } catch { }
-      _fileLog.LogInformation("Native playback completed. PositionMs={PositionMs} DurationMs={DurationMs} Mode={Mode}",
-          pos, dur, _downloading ? "download" : "stream");
-      _dispatcher.Post(() => RaiseState(PlaybackState.Idle));
-    }
+      if (!IsCurrent(generation)) return;
+      _syncPending = false;
+      SynchronizePlayer();
+    });
   }
 
-  private void OnIsPlayingChanged(bool isPlaying)
+  private bool IsCurrent(int generation) => !_released && generation == _generation;
+
+  private void SynchronizePlayer()
   {
-    if (isPlaying)
+    var generation = _generation;
+    var native = _player.PlaybackState;
+    var isPlaying = _player.IsPlaying;
+    if (isPlaying) _progressTimer.Start();
+    else _progressTimer.Stop();
+
+    if (isPlaying) EnsureAudioVisualizer();
+    else ReleaseAudioVisualizer();
+
+    // IDLE 可能来自 Stop、换源或错误恢复,由相应控制路径显式上报,不能当成播完。
+    if (native == PlayerConstants.StateEnded)
     {
-      EnsureAudioVisualizer();
-      _dispatcher.Post(() => RaiseState(PlaybackState.Playing));
+      if (_state != PlaybackState.Idle)
+        _fileLog.LogInformation("Native playback completed. PositionMs={PositionMs} DurationMs={DurationMs} Fallback={Fallback}",
+            PositionMs, DurationMs, _fallbackAttempted);
+      RaiseState(PlaybackState.Idle);
     }
+    else if (native == PlayerConstants.StateBuffering)
+      RaiseState(_player.PlayWhenReady ? PlaybackState.Loading : PlaybackState.Paused);
+    else if (native == PlayerConstants.StateReady)
+      RaiseState(isPlaying ? PlaybackState.Playing : PlaybackState.Paused);
+
+    // StateChanged / DurationChanged / PositionChanged 都可能同步触发换歌。
+    if (!IsCurrent(generation) || native is not (PlayerConstants.StateBuffering or PlayerConstants.StateReady)) return;
+    var duration = DurationMs;
+    if (duration != _lastDurMs)
+    {
+      _lastDurMs = duration;
+      DurationChanged?.Invoke(this, duration);
+    }
+    if (IsCurrent(generation)) PublishPosition();
   }
 
   private void OnPlayerError(global::AndroidX.Media3.Common.PlaybackException? error)
   {
-    Log($"ExoPlayer error: {error?.Message}");
-    // UI 文案只给概要;完整错误(错误码/堆栈)进文件日志,便于事后排查
+    if (_released) return;
+    var generation = _generation;
+    var url = _currentUrl;
+    var code = error?.ErrorCode;
     var message = $"播放出错({error?.Message ?? "unknown"})";
-    _fileLog.LogError("ExoPlayer error. Detail={Detail} Mode={Mode} PositionMs={PositionMs}",
-        error?.ToString(), _downloading ? "download" : "stream", PositionMs);
+    _fileLog.LogError("ExoPlayer error. Detail={Detail} Fallback={Fallback} PositionMs={PositionMs}",
+        error?.ToString(), _fallbackAttempted, PositionMs);
+    _progressTimer.Stop();
 
-    int gen;
-    string? url;
-    lock (_lock)
-    {
-      gen = _generation;
-      url = _currentUrl;
-    }
-    if (!_downloading && url is { Length: > 0 })
-    {
-      // 流播失败,降级为下载后播本地文件
-      Log("Falling back to download mode");
-      _fileLog.LogInformation("Falling back to download mode");
-      _dispatcher.Post(() =>
-      {
-        if (gen != Volatile.Read(ref _generation)) return;
-        _player.Stop();
-        _player.ClearMediaItems();
-        RaiseState(PlaybackState.Loading);
-        _ = DownloadAndPlayAsync(url, gen);
-      });
-      return;
-    }
+    // 只对尚未起播的 HTTP(S) 连接失败/超时换网络栈重试一次。
+    // 解码、鉴权、资源不存在、本地文件和播放中断流都不重新整曲下载。
+    var canDownload = !_fallbackAttempted && !_hasStarted
+        && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && uri.Scheme is "http" or "https"
+        && code is AndroidX.Media3.Common.PlaybackException.ErrorCodeIoNetworkConnectionFailed
+            or AndroidX.Media3.Common.PlaybackException.ErrorCodeIoNetworkConnectionTimeout;
+    if (canDownload) _fallbackAttempted = true;
     _dispatcher.Post(() =>
     {
-      if (gen != Volatile.Read(ref _generation)) return;
-      ErrorOccurred?.Invoke(this, message);
+      if (!IsCurrent(generation)) return;
+      if (!canDownload)
+      {
+        FailPlayback(message);
+        return;
+      }
+
+      _fileLog.LogInformation("Falling back to download mode. ErrorCode={ErrorCode}", code);
       _player.Stop();
       _player.ClearMediaItems();
-      RaiseState(PlaybackState.Idle);
+      RaiseState(PlaybackState.Loading);
+      if (!IsCurrent(generation)) return;
+      var cancellation = _downloadCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+      _ = DownloadAndPlayAsync(url!, generation, cancellation);
     });
+  }
+
+  private void FailPlayback(string message)
+  {
+    StopInternal(releaseState: false);
+    var generation = _generation;
+    // 错误先于 Idle 上报,上层据此抑制“播完自动下一首”。
+    ErrorOccurred?.Invoke(this, message);
+    if (IsCurrent(generation)) RaiseState(PlaybackState.Idle);
   }
 
   // ---- IAudioPlayer 基本控制 ----
@@ -212,139 +241,79 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
 
   public void PlayUrl(string url)
   {
-    Log($"PlayUrl: {url}");
+    if (_released) return;
     StopInternal(releaseState: false);
-
-    if (Path.IsPathRooted(url) && File.Exists(url))
-    {
-      lock (_lock)
-      {
-        _generation++;
-        _currentUrl = url;
-        _downloading = false;
-      }
-
-      RaiseState(PlaybackState.Loading);
-      try
-      {
-        _player.SetMediaItem(new AndroidX.Media3.Common.MediaItem.Builder()
-            .SetUri(global::Android.Net.Uri.FromFile(new Java.IO.File(url))).Build());
-        _player.Prepare();
-        _player.Play();
-        Log("SetMediaItem(cached local) OK");
-      }
-      catch (Exception ex)
-      {
-        Log($"Cached local play exception: {ex.Message}");
-        _fileLog.LogWarning("Local play exception. Detail={Detail}", ex.Message);
-        ErrorOccurred?.Invoke(this, $"播放出错({ex.Message})");
-        RaiseState(PlaybackState.Idle);
-      }
-      return;
-    }
-
-    // http 明文 URL 换 https,规避 native 网络栈明文限制(与旧后端一致)
-    var streamUrl = url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-        ? "https://" + url["http://".Length..]
-        : url;
-
-    lock (_lock)
-    {
-      _generation++;
-      _currentUrl = streamUrl;
-      _downloading = false;
-    }
-
+    var generation = _generation;
+    _currentUrl = url;
     RaiseState(PlaybackState.Loading);
-    try
-    {
-      _player.SetMediaItem(new AndroidX.Media3.Common.MediaItem.Builder()
-          .SetUri(global::Android.Net.Uri.Parse(streamUrl)!).Build());
-      _player.Prepare();
-      _player.Play();
-      Log("SetMediaItem(stream) OK");
-    }
+    if (!IsCurrent(generation)) return;
+    try { StartMedia(url); }
     catch (Exception ex)
     {
-      Log($"Stream SetMediaItem exception: {ex.Message}");
-      _fileLog.LogWarning("Stream set exception, falling back to download. Detail={Detail}", ex.Message);
-      // native 层直接拒绝,走下载兜底
-      _ = DownloadAndPlayAsync(streamUrl, Volatile.Read(ref _generation));
+      _fileLog.LogWarning(ex, "Unable to set playback source");
+      FailPlayback($"播放出错({ex.Message})");
     }
   }
 
-  /// <summary>兜底路径:把音频下载到缓存文件再播本地文件。</summary>
-  private async Task DownloadAndPlayAsync(string url, int gen)
+  private void StartMedia(string source)
   {
+    // 保留服务端 URL 的协议;本地路径统一转 file://,交给 DefaultDataSource 分流。
+    var uri = Path.IsPathRooted(source)
+        ? global::Android.Net.Uri.FromFile(new Java.IO.File(source))
+        : global::Android.Net.Uri.Parse(source);
+    using var builder = new AndroidX.Media3.Common.MediaItem.Builder();
+    builder.SetUri(uri);
+    _player.SetMediaItem(builder.Build());
+    _player.Prepare();
+    _player.Play();
+  }
+
+  private async Task DownloadAndPlayAsync(string url, int generation, CancellationTokenSource cancellation)
+  {
+    var token = cancellation.Token;
+    string? target = null;
     try
     {
-      Log("Downloading...");
-      lock (_lock) _downloading = true;
       var dir = global::Android.App.Application.Context.CacheDir!.AbsolutePath;
-      var target = Path.Combine(dir, $"playback_{Guid.NewGuid():N}.mp3");
-      using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+      target = Path.Combine(dir, $"playback_{Guid.NewGuid():N}.mp3");
+      using var request = new HttpRequestMessage(HttpMethod.Get, url);
+      request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+      request.Headers.TryAddWithoutValidation("Referer", "https://music.163.com");
+      using (var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token)
+                 .ConfigureAwait(false))
       {
-        req.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
-        req.Headers.TryAddWithoutValidation("Referer", "https://music.163.com");
-        using var resp = await _http.SendAsync(req).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode)
-        {
-          Log($"Download failed status={(int)resp.StatusCode}");
-          _fileLog.LogWarning("Download fallback failed. StatusCode={StatusCode}", (int)resp.StatusCode);
-          _dispatcher.Post(() =>
-          {
-            if (gen != Volatile.Read(ref _generation)) return;
-            ErrorOccurred?.Invoke(this, $"播放出错(HTTP {(int)resp.StatusCode})");
-            RaiseState(PlaybackState.Idle);
-          });
-          return;
-        }
-
-        await using (var fs = File.Create(target))
-          await resp.Content.CopyToAsync(fs).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        await using var file = File.Create(target);
+        await response.Content.CopyToAsync(file, token).ConfigureAwait(false);
       }
 
-      Log($"Downloaded to {target}");
-      if (gen != Volatile.Read(ref _generation))
+      await _dispatcher.InvokeAsync(() =>
       {
-        TryDelete(target);
-        return;
-      }
-
-      _dispatcher.Post(() =>
-      {
-        if (gen != Volatile.Read(ref _generation))
-        {
-          TryDelete(target);
-          return;
-        }
-        try
-        {
-          _cachePath = target;
-          _player.SetMediaItem(new AndroidX.Media3.Common.MediaItem.Builder()
-              .SetUri(global::Android.Net.Uri.FromFile(new Java.IO.File(target))).Build());
-          _player.Prepare();
-          _player.Play();
-          Log("SetMediaItem(local) OK");
-        }
-        catch (Exception ex)
-        {
-          Log($"Local play exception: {ex.Message}");
-          ErrorOccurred?.Invoke(this, $"播放出错({ex.Message})");
-          RaiseState(PlaybackState.Idle);
-        }
-      });
+        if (!IsCurrent(generation)) return;
+        token.ThrowIfCancellationRequested();
+        _cachePath = target;
+        target = null; // 文件所有权交给 StopInternal;失败/过期下载仍由 finally 清理。
+        try { StartMedia(_cachePath!); }
+        catch (Exception ex) { FailPlayback($"播放出错({ex.Message})"); }
+      }).ConfigureAwait(false);
     }
     catch (Exception ex)
     {
-      Log($"Download exception: {ex.Message}");
-      _fileLog.LogWarning("Download fallback exception. Detail={Detail}", ex.Message);
-      _dispatcher.Post(() =>
+      await _dispatcher.InvokeAsync(() =>
       {
-        if (gen != Volatile.Read(ref _generation)) return;
-        ErrorOccurred?.Invoke(this, $"播放出错({ex.Message})");
-        RaiseState(PlaybackState.Idle);
-      });
+        if (!IsCurrent(generation)) return; // 切歌/停止/释放引起的取消不打扰新会话。
+        _fileLog.LogWarning(ex, "Download fallback failed");
+        FailPlayback(ex is OperationCanceledException ? "播放出错(下载超时)" : $"播放出错({ex.Message})");
+      }).ConfigureAwait(false);
+    }
+    finally
+    {
+      if (target is not null) TryDelete(target);
+      await _dispatcher.InvokeAsync(() =>
+      {
+        if (ReferenceEquals(_downloadCancellation, cancellation)) _downloadCancellation = null;
+        cancellation.Dispose();
+      }).ConfigureAwait(false);
     }
   }
 
@@ -366,12 +335,15 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   /// <summary>清空音源与缓存文件。releaseState=false 供 PlayUrl 复用(随后自会报 Loading)。</summary>
   private void StopInternal(bool releaseState)
   {
-    lock (_lock)
-    {
-      _generation++;
-      _currentUrl = null;
-      _downloading = false;
-    }
+    _generation++;
+    _syncPending = false;
+    _currentUrl = null;
+    _fallbackAttempted = false;
+    _hasStarted = false;
+    _progressTimer.Stop();
+    var cancellation = _downloadCancellation;
+    _downloadCancellation = null;
+    cancellation?.Cancel(); // 下载任务的 finally 负责 Dispose。
     ReleaseAudioVisualizer();
     try { if (!_released) _player.Stop(); } catch { }
     try { if (!_released) _player.ClearMediaItems(); } catch { }
@@ -384,14 +356,14 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   public void Dispose()
   {
     if (_released) return;
+    StopInternal(releaseState: false);
     _released = true;
     _audioAnalysisRequested = false;
-    ReleaseAudioVisualizer();
-    _pollHandler.RemoveCallbacks(Poll);
+    _progressTimer.Tick -= OnProgressTick;
     try { _player.RemoveListener(_listener); } catch { }
     try { _player.Release(); } catch { }
+    _listener.Dispose();
     _http.Dispose();
-    DeleteCacheFile();
   }
 
   private void DeleteCacheFile()
@@ -411,50 +383,18 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     }
   }
 
-  /// <summary>200ms 轮询:进度/时长上报与状态收敛(自然播完/暂停判定)。
-  /// 在主线程执行,满足 ExoPlayer 单线程契约。</summary>
-  private void Poll()
+  private void OnProgressTick(object? sender, EventArgs e)
   {
     if (_released) return;
-    try
-    {
-      var pos = PositionMs;
-      var dur = DurationMs;
-      if (pos != _lastPosMs)
-      {
-        _lastPosMs = pos;
-        var p = pos;
-        _dispatcher.Post(() => PositionChanged?.Invoke(this, p));
-      }
+    PublishPosition();
+  }
 
-      if (dur != _lastDurMs)
-      {
-        _lastDurMs = dur;
-        var d = dur;
-        _dispatcher.Post(() => DurationChanged?.Invoke(this, d));
-      }
-
-      // ExoPlayer 状态映射:ENDED=播完(→Idle 自动切歌)、BUFFERING=Loading、READY 看是否出声
-      var native = _player.PlaybackState;
-      if (native == NativeStateEnded)
-        RaiseState(PlaybackState.Idle);
-      else if (native == NativeStateBuffering)
-        RaiseState(PlaybackState.Loading);
-      else if (native == NativeStateReady)
-      {
-        if (_player.IsPlaying)
-          RaiseState(PlaybackState.Playing);
-        else if (_state == PlaybackState.Playing)
-          RaiseState(PlaybackState.Paused);
-      }
-      // NativeStateIdle:Stop 后的正常静止或错误兜底,不经 Poll 改状态
-
-      EnsureAudioVisualizer();
-    }
-    catch
-    {
-    }
-    _pollHandler.PostDelayed(Poll, PollIntervalMs);
+  private void PublishPosition()
+  {
+    var position = PositionMs;
+    if (position == _lastPosMs) return;
+    _lastPosMs = position;
+    PositionChanged?.Invoke(this, position);
   }
 
   // ---- 音频输出设备(AudioManager.GetDevices + ExoPlayer.SetPreferredDevice,均需 API 23) ----
@@ -465,9 +405,8 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   private global::Android.Media.AudioDeviceInfo? _outputDevice;
   private string? _outputDeviceId;
 
-  /// <summary>API 23 才有 GetDevices;更老的系统沿用系统默认输出。</summary>
-  public bool SupportsOutputDeviceSelection =>
-      OperatingSystem.IsAndroidVersionAtLeast(23) && TryGetAudioManager() is not null;
+  /// <summary>项目最低支持 API 23,可直接枚举输出设备。</summary>
+  public bool SupportsOutputDeviceSelection => TryGetAudioManager() is not null;
 
   public IReadOnlyList<AudioOutputDevice> OutputDevices => _outputDevices;
 
@@ -477,7 +416,7 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   public Task<IReadOnlyList<AudioOutputDevice>> RefreshOutputDevicesAsync()
   {
     var manager = TryGetAudioManager();
-    if (manager is null || !OperatingSystem.IsAndroidVersionAtLeast(23))
+    if (manager is null)
       return Task.FromResult<IReadOnlyList<AudioOutputDevice>>(Array.Empty<AudioOutputDevice>());
 
     try
@@ -542,7 +481,7 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     }
   }
 
-  private static Android.Media.AudioManager? TryGetAudioManager()
+  private static global::Android.Media.AudioManager? TryGetAudioManager()
   {
     try
     {
@@ -605,7 +544,7 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
 
   private void EnsureAudioVisualizer()
   {
-    if (!_audioAnalysisRequested || _released) return;
+    if (!_audioAnalysisRequested || _released || !_player.IsPlaying) return;
     var context = global::Android.App.Application.Context;
     if (context.CheckSelfPermission(global::Android.Manifest.Permission.RecordAudio)
         != global::Android.Content.PM.Permission.Granted) return;
@@ -703,7 +642,7 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     Volatile.Write(ref _audioEnergy, Math.Clamp(wave * 0.72f + bass * 0.28f, 0f, 1f));
   }
 
-  /// <summary>ExoPlayer 事件监听:错误与起播。事件在应用线程回调,经 _dispatcher 转发。
+  /// <summary>ExoPlayer 事件监听:整批事件合并更新,起播标记用于限制下载兜底。
   /// 持有方字段是 strong ref,防监听器本体被 GC 后监听失效。</summary>
   private sealed class PlayerListener : Java.Lang.Object, AndroidX.Media3.Common.IPlayerListener
   {
@@ -715,9 +654,22 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     // 反激活路径拿不到旧 owner,回调在下方用 _owner?. 安全跳过。
     public PlayerListener(IntPtr handle, JniHandleOwnership transfer) : base(handle, transfer) { }
 
-    public void OnPlaybackStateChanged(int playbackState) => _owner?.OnPlaybackStateChanged(playbackState);
+    public void OnEvents(AndroidX.Media3.Common.IPlayer? player, AndroidX.Media3.Common.PlayerEvents? events)
+    {
+      // 交叉淡化会高频修改音量;这类事件不应额外驱动进度和可视化检查。
+      if (events is not null && (events.Contains(PlayerConstants.EventPlaybackStateChanged)
+          || events.Contains(PlayerConstants.EventIsPlayingChanged)
+          || events.Contains(PlayerConstants.EventPlayWhenReadyChanged)
+          || events.Contains(PlayerConstants.EventTimelineChanged)
+          || events.Contains(PlayerConstants.EventPositionDiscontinuity)
+          || events.Contains(PlayerConstants.EventAudioSessionId)))
+        _owner?.QueuePlayerUpdate();
+    }
 
-    public void OnIsPlayingChanged(bool isPlaying) => _owner?.OnIsPlayingChanged(isPlaying);
+    public void OnIsPlayingChanged(bool isPlaying)
+    {
+      if (isPlaying && _owner is { } owner) owner._hasStarted = true;
+    }
 
     public void OnPlayerError(global::AndroidX.Media3.Common.PlaybackException? error) =>
         _owner?.OnPlayerError(error);

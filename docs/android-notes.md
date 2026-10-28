@@ -199,3 +199,30 @@ aapt2 dump xmltree --file AndroidManifest.xml <apk> | grep -i icon
 ```
 桌面图标与 Android 12+ 启动页用的都是这套资源(启动页取应用图标,不需要另配
 `windowSplashScreenAnimatedIcon`)。
+
+## 十、构建卡死/失败的恢复（2026-10-28 实测）
+
+`publish-aot.ps1` 跑双 ABI 时，第二个 ABI（armeabi-v7a）可能在
+`[112/113] System.Private.CoreLib.dll` 卡死：java 进程 CPU 零增长、`obj` 目录几分钟没有新文件。
+判断"死"而不是"慢"就看这两条，别凭时长猜。
+
+杀进程后**必须先整目录清**再重试，只删子目录会让增量状态更不一致（只清这两个目录即可，
+不用清整个 obj，还原很慢）：
+
+```
+src\ALyricEase.Android\obj\Release\net10.0-android
+src\ALyricEase.Android\bin\Release\net10.0-android
+```
+
+不清理会依次撞上这些误导性错误：
+
+| 症状 | 真实原因 |
+|---|---|
+| `XAGNM7009 missing native code generation state for architecture 'Arm'` | 上一次中断留下的半套 AOT 状态 |
+| D8: `JavaProxyThrowable is defined multiple times`（`classes.zip` vs `mono.android.jar`） | 同上，`classes.zip` 是脏的 |
+| `XA3006 typemaps.armeabi-v7a.ll: Could not open input file` | 只删了 `obj/.../android` 子目录，生成该文件的那一步被增量跳过 |
+
+清完重跑约 3.5 分钟一次过。
+
+**另外**：直接 `dotnet publish` 不走脚本时，产物 APK 名是 `com.aika1024.alyricease-Signed.apk`，
+脚本里的 ABI 校验与改名不会执行，需要手工改名成 `ALyricEase-<abi>-Signed.apk` 再上传。

@@ -1089,6 +1089,13 @@ public static class Program
             return;
         }
 
+        // 回归:正在播放覆盖层"关闭位"是否跟随自身高度(宿主不发 SizeChanged 的那一路)
+        if (args.Length > 0 && args[0] == "--npoverlay")
+        {
+            Environment.ExitCode = NpOverlayPinProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:搜索页导航行为验证(返回/重进/下钻三场景)
         if (args.Length > 0 && args[0] == "--searchnav")
         {

@@ -17,8 +17,12 @@ namespace ALyricEase.Views;
 /// UI 线程过渡必然掉帧;合成动画独立推进,全程平滑(与壳层上滑同案,见 MainWindow.AttachShell)。
 /// 用 CompositionVisual.Translation 而非 Offset:布局拥有 Offset,会与我们的摆位互相覆盖;
 /// Translation 是 Avalonia 的附加偏移,布局不碰,摆位/动画/尺寸修正互不干扰。
-/// 关闭态"屏幕外"位移按覆盖层自身 Bounds.Height 计算,宿主在尺寸变化时调 UpdateClosedPosition
-/// —— 所以覆盖范围改了(加一行/减一行)不用动这里,位移自动跟上。</summary>
+/// 关闭态"屏幕外"位移按覆盖层自身 Bounds.Height 计算,宿主在尺寸变化时调 UpdateClosedPosition,
+/// 控制器自己也订阅覆盖层的 SizeChanged —— 所以覆盖范围改了(加一行/减一行)不用动这里,位移自动跟上。
+/// ⚠ 为什么要自己订阅:宿主的 SizeChanged 早于其子树 arrange 时,此刻读 _overlay.Bounds 拿到的是
+/// **上一次**的高度;若宿主的尺寸之后不再变化(Android 上首次 insets/测量修正后就常这样),就再没有
+/// 人来纠正,关闭位永久少算那一段 ⇒ 屏幕底部露出一条详情页顶栏(收起/展开一次按新高度重算才自愈,
+/// 模拟器比真机容易撞上)。覆盖层自己的 Bounds 改变必然发生在真实 arrange 之后,读到的就是新值。</summary>
 public sealed class NowPlayingOverlayController : IDisposable
 {
     private const double s_offScreenGuard = 100000;
@@ -40,6 +44,8 @@ public sealed class NowPlayingOverlayController : IDisposable
         _overlay = overlay;
         _vm = vm;
         _vm.PropertyChanged += OnViewModelPropertyChanged;
+        // 自身尺寸变化(含首次 arrange 0→真实高度)都要重算关闭位:见类注释里"为什么不能只靠宿主"
+        _overlay.SizeChanged += OnOverlaySizeChanged;
 
         // ⚠ 控制器在 ShellHost.Content 刚赋值、首次布局之前创建 —— 覆盖层此刻还没进合成树,
         // GetElementVisual 可能拿不到视觉(或挂载时视觉被重建):直接 PinClosed 会空转,
@@ -74,10 +80,15 @@ public sealed class NowPlayingOverlayController : IDisposable
         PinClosed();
     }
 
+    /// <summary>覆盖层自身尺寸变化:宿主不会再发事件的那一路(见类注释),关闭态直接补位。
+    /// 关闭动画进行中同理不需要——ShowNowPlaying 为真时 PinClosed 被跳过。</summary>
+    private void OnOverlaySizeChanged(object? sender, SizeChangedEventArgs e) => UpdateClosedPosition();
+
     public void Dispose()
     {
         _vm.PropertyChanged -= OnViewModelPropertyChanged;
         _overlay.AttachedToVisualTree -= OnOverlayAttachedForInit;
+        _overlay.SizeChanged -= OnOverlaySizeChanged;
         _visual?.StopAnimation("Translation");
     }
 
@@ -86,6 +97,9 @@ public sealed class NowPlayingOverlayController : IDisposable
         get
         {
             var h = _overlay.Bounds.Height;
+            // 覆盖层自己还没排(高度 0)但宿主已排:先用宿主高度顶一下,别落进十万像素的兜底
+            if (h <= 0 && _overlay.Parent is Visual parent)
+                h = parent.Bounds.Height;
             return (h > 0 ? h : s_offScreenGuard) + s_slideMargin;
         }
     }

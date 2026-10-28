@@ -60,6 +60,12 @@ public class MainActivity : AvaloniaMainActivity
         global::Android.Util.Log.Info(
             "ALyricEaseProbe", $"收到自检请求: {probe}(Activity={intent?.Component?.ShortClassName})");
 
+        if (probe == Diagnostics.DevicePlaybackStateProbe.IntentExtraValue)
+        {
+            Diagnostics.DevicePlaybackStateProbe.Run();
+            return;
+        }
+
         if (probe != Diagnostics.DeviceImageBudgetProbe.IntentExtraValue) return;
         _ = System.Threading.Tasks.Task.Run(Diagnostics.DeviceImageBudgetProbe.Run);
     }

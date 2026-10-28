@@ -65,9 +65,21 @@ adb logcat -d -s ALyricEaseProbe:I
 ```
 
 - 冷启动触发会隔 20 秒二次采样（首次采样时租约缓存必然为空）。
+- 另一个入口 `--es aly_probe playback-state`（`Diagnostics/DevicePlaybackStateProbe`）：
+  用生产 `IAudioPlayer` 播一段公开样音（不需要登录/歌单），把状态常量、上层收到的事件
+  和每秒快照打到 `ALyricEaseProbe`。期望 `Loading → DurationChanged → Playing` 之后每 200ms
+  一条 `PositionChanged`；后端“在播但界面停在 0:00”时这里会一直停在 `Loading`。
+  ```
+  adb shell am start -n com.aika1024.alyricease/crc64ea7453dff8e094fe.MainActivity --es aly_probe playback-state
+  adb logcat -s ALyricEaseProbe:I
+  ```
 - `MainActivity` 的 `OnCreate` / `OnNewIntent` **两条路都接**（SingleTop，已在前台时只走后者）。
 - 真机是 MuMu 模拟器（`127.0.0.1:5555`，Android 12 / x86_64 宿主 + arm64 翻译，伪装 HUAWEI HBN-AL00）。
-- Debug 与 Release **同一 debug.keystore 签名** ⇒ `adb install -r` 直接覆盖，不必卸载、不丢登录态。
+- 签名：**Release 自 2026-10-01 起用自有密钥**（`~/.android/alyricease-release.keystore`，见 csproj），
+  与 debug.keystore 不同 ⇒ 覆盖安装本机构建的 Release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
+  遇到旧包装的是别人签的包时：`adb root` → `tar` 备份整个 `/data/data/<pkg>` → 卸载 → 安装 →
+  解回数据、`chown` 成新 uid、`restorecon`。（实测 2026-10-28：`config/state.json` 只有界面状态，
+  不含账号凭据；该机当时本来就没登录。）
 
 ## 6. 只有 Release 包才暴露的两个问题
 
@@ -112,9 +124,20 @@ Debug 构建与桌面探针都查不出。
 - 落地:`ExoPlayerMediaPlayer`(实现 `IAudioPlayer`,与平台无关的上层零改动)。
   只引 `Xamarin.AndroidX.Media3.ExoPlayer` + `Media3.DataSource`(1.11.1),其余 Media3
   包走传递依赖;依赖只落在 Annotation/Media3 家族,与手工对齐的 Core/Lifecycle 版本无交集。
-- 线程契约:ExoPlayer 单线程访问。状态/时长/Seek/音频会话由 `OnEvents` 驱动,
-  合并排队后读取最新状态,避免旧状态回写和在 native listener 内重入切歌。
-  200ms UI 定时器仅在实际播放时采样进度,暂停/缓冲/停止/释放均停止计时。
+- 线程契约:ExoPlayer 单线程访问。状态/时长/Seek/音频会话由 listener 通知驱动,
+  合并排队到 UI 线程后读取最新状态,避免旧状态回写和在 native listener 内重入切歌。
+  200ms UI 定时器仅在实际播放时采样进度(Media3 不推送位置,这一项只能采样),
+  暂停/缓冲/停止/释放均停止计时。
+- ⚠ **`Player.Listener` 必须实现全部成员(2026-10-28)**:Java 8 的 default 方法在 .NET
+  绑定里是**抽象成员**,java-interop 只给缺失实现补一个"抛 `AbstractMethodError`"的桩
+  —— 少实现一个、Media3 通知到它就是进程级 FATAL(实测删掉 `onEvents` 启动即崩)。
+  同理**不能**用 `onEvents` 的 `events.Contains(...)` 做过滤:该调用在 Release 绑定里恒为
+  false(实测 `Player$Events@35` 上 state/playing/timeline 全 false),于是所有通知被丢掉,
+  现象是"音频真的在播,界面停在 0:00 / 未播放、播放键仍是 ▶"。正确做法:成员全实现,
+  把"任何一条通知"当成"该同步一次"的信号,由 `SynchronizePlayer()` 读真值后比对上报。
+  相关外部资料:dotnet/android#7663(默认方法 + desugaring)、CommunityToolkit.Maui#2824
+  (同款 `AbstractMethodError`)。另注:`SupportedOSPlatformVersion=23`(<24)会启用 desugaring,
+  哪天真遇到"默认方法体调用失败"再考虑抬到 24,本次故障与 desugaring 无关。
   `CrossfadeAudioPlayer` 的每步音量调整和结束时 Stop 同样显式调度回 UI 线程;
   执行时检查取消,避免硬切/Stop/Dispose 后排队的旧步骤继续访问实例。
 - 绑定 API 注意:

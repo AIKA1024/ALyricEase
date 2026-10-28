@@ -55,7 +55,10 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   private int _generation;
   private bool _fallbackAttempted;
   private bool _hasStarted;
+  // 已排队的事件同步(同批事件只排一次)
   private bool _syncPending;
+  // 已处理过的原生错误实例(onPlayerError 与 onPlayerErrorChanged 会重复通知同一次失败)
+  private global::AndroidX.Media3.Common.PlaybackException? _lastError;
 
   public ExoPlayerMediaPlayer(DispatcherService dispatcher, ILogger<ExoPlayerMediaPlayer>? fileLog = null)
   {
@@ -87,8 +90,10 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
 
   // ---- 生命周期与原生事件(UI 线程) ----
 
-  // 将同一批 native 事件合并为一次 UI 更新。保留这一层排队以避免上层自动切歌
-  // 在 Media3 listener 调用栈内重入;执行时读取最新状态,不捕获易过期的 Playing/Idle。
+  private bool IsCurrent(int generation) => !_released && generation == _generation;
+
+  /// <summary>把原生通知合并成一次 UI 线程同步:Media3 在自己的回调栈里通知,
+  /// 在那里直接换歌/Stop 会重入播放器,所以统一排队到 UI 线程再读真值。</summary>
   private void QueuePlayerUpdate()
   {
     if (_released || _syncPending) return;
@@ -96,24 +101,34 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     var generation = _generation;
     _dispatcher.Post(() =>
     {
-      if (!IsCurrent(generation)) return;
+      // ⚠ 闩要在判代数**之前**清:那次被丢弃的排队同样持有闩,漏清会让后续事件全部被吞。
       _syncPending = false;
+      if (!IsCurrent(generation)) return;
       SynchronizePlayer();
     });
   }
 
-  private bool IsCurrent(int generation) => !_released && generation == _generation;
-
+  /// <summary>事件落地:读播放器真值,把状态/时长/进度差异上报给上层。</summary>
   private void SynchronizePlayer()
   {
+    if (_released) return;
     var generation = _generation;
     var native = _player.PlaybackState;
     var isPlaying = _player.IsPlaying;
-    if (isPlaying) _progressTimer.Start();
+
+    // 只有真的在播才开进度采样(Media3 不推送位置,这一项只能采样)
+    if (isPlaying) StartProgressWatch();
     else _progressTimer.Stop();
 
-    if (isPlaying) EnsureAudioVisualizer();
-    else ReleaseAudioVisualizer();
+    if (isPlaying)
+    {
+      _hasStarted = true; // 限制下载兜底只看"尚未起播"
+      EnsureAudioVisualizer();
+    }
+    else
+    {
+      ReleaseAudioVisualizer();
+    }
 
     // IDLE 可能来自 Stop、换源或错误恢复,由相应控制路径显式上报,不能当成播完。
     if (native == PlayerConstants.StateEnded)
@@ -127,21 +142,35 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
       RaiseState(_player.PlayWhenReady ? PlaybackState.Loading : PlaybackState.Paused);
     else if (native == PlayerConstants.StateReady)
       RaiseState(isPlaying ? PlaybackState.Playing : PlaybackState.Paused);
+    else
+      return; // STATE_IDLE:没有音源,不报时长/进度
 
     // StateChanged / DurationChanged / PositionChanged 都可能同步触发换歌。
     if (!IsCurrent(generation) || native is not (PlayerConstants.StateBuffering or PlayerConstants.StateReady)) return;
-    var duration = DurationMs;
-    if (duration != _lastDurMs)
-    {
-      _lastDurMs = duration;
-      DurationChanged?.Invoke(this, duration);
-    }
+    PublishDuration();
     if (IsCurrent(generation)) PublishPosition();
+  }
+
+  private void StartProgressWatch()
+  {
+    if (!_progressTimer.IsEnabled) _progressTimer.Start();
+  }
+
+  /// <summary>时长变化才上报(容器元数据解析完成后才会从 0 变成真实值)。</summary>
+  private void PublishDuration()
+  {
+    var duration = DurationMs;
+    if (duration == _lastDurMs) return;
+    _lastDurMs = duration;
+    DurationChanged?.Invoke(this, duration);
   }
 
   private void OnPlayerError(global::AndroidX.Media3.Common.PlaybackException? error)
   {
     if (_released) return;
+    // onPlayerError 与 onPlayerErrorChanged 会就同一次失败各通知一次,按实例去重
+    if (error is not null && ReferenceEquals(error, _lastError)) return;
+    _lastError = error;
     var generation = _generation;
     var url = _currentUrl;
     var code = error?.ErrorCode;
@@ -336,10 +365,10 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   private void StopInternal(bool releaseState)
   {
     _generation++;
-    _syncPending = false;
     _currentUrl = null;
     _fallbackAttempted = false;
     _hasStarted = false;
+    _lastError = null;
     _progressTimer.Stop();
     var cancellation = _downloadCancellation;
     _downloadCancellation = null;
@@ -383,9 +412,12 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     }
   }
 
+  /// <summary>播放期间的进度采样拍(Media3 不推送位置)。时长也顺带核一次:
+  /// 流播元数据偶尔晚于首次 READY 才解析出来,只靠事件会把"0:00"定格。</summary>
   private void OnProgressTick(object? sender, EventArgs e)
   {
     if (_released) return;
+    PublishDuration();
     PublishPosition();
   }
 
@@ -642,7 +674,14 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     Volatile.Write(ref _audioEnergy, Math.Clamp(wave * 0.72f + bass * 0.28f, 0f, 1f));
   }
 
-  /// <summary>ExoPlayer 事件监听:整批事件合并更新,起播标记用于限制下载兜底。
+  /// <summary>Media3 的 <c>Player.Listener</c>。
+  ///
+  /// ⚠ **接口里的每个成员都必须实现**:Java 8 的 default 方法在 .NET 绑定里是抽象成员
+  /// (java-interop 只给缺失的实现补一个"抛 AbstractMethodError"的桩)。少实现一个,
+  /// Media3 一通知到它就是进程级 FATAL —— 实测删掉 <c>onEvents</c> 后启动即崩溃。
+  /// 上一版只实现 <c>onEvents</c> 并用 <c>events.Contains(...)</c> 过滤,而 contains 在
+  /// Release 绑定里恒为 false ⇒ 所有通知都被丢掉,表现就是"音频在播、界面 0:00 / 未播放"。
+  /// 现在改成:任何通知都触发一次排队同步,过滤交给 <see cref="SynchronizePlayer"/> 读真值。
   /// 持有方字段是 strong ref,防监听器本体被 GC 后监听失效。</summary>
   private sealed class PlayerListener : Java.Lang.Object, AndroidX.Media3.Common.IPlayerListener
   {
@@ -654,25 +693,91 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
     // 反激活路径拿不到旧 owner,回调在下方用 _owner?. 安全跳过。
     public PlayerListener(IntPtr handle, JniHandleOwnership transfer) : base(handle, transfer) { }
 
-    public void OnEvents(AndroidX.Media3.Common.IPlayer? player, AndroidX.Media3.Common.PlayerEvents? events)
-    {
-      // 交叉淡化会高频修改音量;这类事件不应额外驱动进度和可视化检查。
-      if (events is not null && (events.Contains(PlayerConstants.EventPlaybackStateChanged)
-          || events.Contains(PlayerConstants.EventIsPlayingChanged)
-          || events.Contains(PlayerConstants.EventPlayWhenReadyChanged)
-          || events.Contains(PlayerConstants.EventTimelineChanged)
-          || events.Contains(PlayerConstants.EventPositionDiscontinuity)
-          || events.Contains(PlayerConstants.EventAudioSessionId)))
+    // ---- 驱动上层刷新的通知 ----
+
+    public void OnEvents(AndroidX.Media3.Common.IPlayer? player, AndroidX.Media3.Common.PlayerEvents? events) =>
         _owner?.QueuePlayerUpdate();
-    }
+
+    public void OnPlaybackStateChanged(int playbackState) => _owner?.QueuePlayerUpdate();
 
     public void OnIsPlayingChanged(bool isPlaying)
     {
       if (isPlaying && _owner is { } owner) owner._hasStarted = true;
+      _owner?.QueuePlayerUpdate();
     }
 
-    public void OnPlayerError(global::AndroidX.Media3.Common.PlaybackException? error) =>
-        _owner?.OnPlayerError(error);
+    public void OnIsLoadingChanged(bool isLoading) => _owner?.QueuePlayerUpdate();
+
+    public void OnPlayWhenReadyChanged(bool playWhenReady, int reason) => _owner?.QueuePlayerUpdate();
+
+    public void OnTimelineChanged(AndroidX.Media3.Common.Timeline? timeline, int reason) =>
+        _owner?.QueuePlayerUpdate();
+
+    public void OnPlayerError(AndroidX.Media3.Common.PlaybackException? error) => _owner?.OnPlayerError(error);
+
+    public void OnPlayerErrorChanged(AndroidX.Media3.Common.PlaybackException? error)
+    {
+      if (error is not null) _owner?.OnPlayerError(error);
+    }
+
+    // ---- 接口要求实现、本层不关心的成员(留空即可) ----
+
+    public void OnAudioAttributesChanged(AndroidX.Media3.Common.AudioAttributes? audioAttributes) { }
+
+    public void OnAudioSessionIdChanged(int audioSessionId) { }
+
+    public void OnAvailableCommandsChanged(AndroidX.Media3.Common.PlayerCommands? availableCommands) { }
+
+    public void OnCues(AndroidX.Media3.Common.Text.CueGroup? cueGroup) { }
+
+    public void OnCuesDeprecated(Java.Util.IList? cues) { }
+
+    public void OnDeviceInfoChanged(AndroidX.Media3.Common.DeviceInfo? deviceInfo) { }
+
+    public void OnDeviceVolumeChanged(int volume, bool muted) { }
+
+    public void OnLoadingChanged(bool isLoading) { }
+
+    public void OnMaxSeekToPreviousPositionChanged(long maxSeekToPreviousPositionMs) { }
+
+    public void OnMediaItemTransition(AndroidX.Media3.Common.MediaItem? mediaItem, int reason) { }
+
+    public void OnMediaMetadataChanged(AndroidX.Media3.Common.MediaMetadata? mediaMetadata) { }
+
+    public void OnMetadata(AndroidX.Media3.Common.Metadata? metadata) { }
+
+    public void OnPlaybackParametersChanged(AndroidX.Media3.Common.PlaybackParameters? playbackParameters) { }
+
+    public void OnPlaybackSuppressionReasonChanged(int playbackSuppressionReason) { }
+
+    public void OnPlayerStateChanged(bool playWhenReady, int playbackState) { }
+
+    public void OnPlaylistMetadataChanged(AndroidX.Media3.Common.MediaMetadata? playlistMetadata) { }
+
+    public void OnPositionDiscontinuity(AndroidX.Media3.Common.PlayerPositionInfo? oldPosition,
+        AndroidX.Media3.Common.PlayerPositionInfo? newPosition, int reason) { }
+
+    public void OnRenderedFirstFrame() { }
+
+    public void OnRepeatModeChanged(int repeatMode) { }
+
+    public void OnSeekBackIncrementChanged(long seekBackIncrementMs) { }
+
+    public void OnSeekForwardIncrementChanged(long seekForwardIncrementMs) { }
+
+    public void OnShuffleModeEnabledChanged(bool shuffleModeEnabled) { }
+
+    public void OnSkipSilenceEnabledChanged(bool skipSilenceEnabled) { }
+
+    public void OnSurfaceSizeChanged(int width, int height) { }
+
+    public void OnTrackSelectionParametersChanged(AndroidX.Media3.Common.TrackSelectionParameters? parameters) { }
+
+    public void OnTracksChanged(AndroidX.Media3.Common.Tracks? tracks) { }
+
+    public void OnVideoSizeChanged(AndroidX.Media3.Common.VideoSize? videoSize) { }
+
+    public void OnVolumeChanged(float volume) { }
   }
 
   private sealed class VisualizerListener : Java.Lang.Object,

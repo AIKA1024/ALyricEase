@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自适应图标的背景层。图标本身是透明底的圆盘(见 src/ALyricEase/Assets/icon_256.png),
+         衬白底和桌面端观感一致;透明背景在部分启动器上会被渲染成黑色。 -->
+    <color name="ic_launcher_background">#FFFFFFFF</color>
+</resources>

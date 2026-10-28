@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标(API 26+):108dp 画布,启动器只显示中心 72dp 并套自己的掩码。
+     前景 mipmap 里圆盘按 66dp 摆放,留 3dp 安全边;背景用 values/colors.xml 的白。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

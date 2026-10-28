@@ -33,12 +33,9 @@
     <AndroidSigningKeyPass>$([System.IO.File]::ReadAllText('$(USERPROFILE)\.android\alyricease-release.pwd').Trim())</AndroidSigningKeyPass>
   </PropertyGroup>
 
-  <ItemGroup>
-    <AndroidResource Include="Icon.png">
-      <Link>Resources\drawable\Icon.png</Link>
-    </AndroidResource>
-  </ItemGroup>
-
+  <!-- 应用图标:Resources/mipmap-*/ic_launcher(.png/_round.png)+ mipmap-anydpi-v26 的自适应图标,
+       由 src/ALyricEase/Assets/icon_256.png 生成(scripts 见 docs/android-notes.md §图标)。
+       模板自带的 Avalonia 徽标(drawable/Icon.png)已删,别再引回来。 -->
   <ItemGroup Condition="'$(PublishAot)' == 'true'">
     <TrimmerRootDescriptor Include="NativeAotRoots.xml" />
   </ItemGroup>

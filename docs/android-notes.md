@@ -157,3 +157,45 @@ Debug 构建与桌面探针都查不出。
 - 时长修正兜底:`MaybeCrossfadeAdvance` 同时取播放器上报时长与 API 元数据时长的较大值,
   双保险防时长低估;两条自动切歌路径均有文件日志(`Natural completion advance` /
   `Crossfade advance triggered`)可事后区分。
+
+## 9. 应用图标(mipmap + 自适应图标,2026-10-28)
+
+**症状**:桌面上是 Avalonia 模板自带的徽标(蓝"A"白底),不是项目图标。
+
+**缘由**:模板只在项目根放了一张 `Icon.png`,清单写 `android:icon="@drawable/Icon"` ——
+单张 drawable 会被系统按 48dp 缩放,既糊又躲不开启动器掩码;API 26+ 更不会走自适应图标,
+边框/圆角全靠启动器自己猜。
+
+**现在的组成**(全部由 `src/ALyricEase/Assets/icon_256.png` 生成):
+
+| 资源 | 用途 |
+|---|---|
+| `Resources/mipmap-<bucket>/ic_launcher.png` | 传统图标,5 个密度(48/72/96/144/192),内容占 ~92% |
+| `Resources/mipmap-<bucket>/ic_launcher_round.png` | 圆形变体(图标本身是圆盘,同一张) |
+| `Resources/mipmap-<bucket>/ic_launcher_foreground.png` | 自适应图标前景:108dp 画布,内容 **66dp** |
+| `Resources/mipmap-anydpi-v26/ic_launcher{,_round}.xml` | 自适应图标(API 26+),背景取 `@color/ic_launcher_background` |
+| `Resources/values/colors.xml` | `ic_launcher_background` = 白;透明底在部分启动器上会变黑 |
+
+清单:`android:icon="@mipmap/ic_launcher"` + `android:roundIcon="@mipmap/ic_launcher_round"`。
+模板的 `Icon.png`(`drawable/Icon`,Avalonia 徽标)已删除,csproj 里那条 `AndroidResource` 也一并去掉 ——
+否则它还会被当成"应用图标"的旧引用留在包里。
+
+**换图标时**:替换 `src/ALyricEase/Assets/icon_256.png` 后跑
+```
+python scripts/make-android-icons.py
+```
+纯标准库实现(自己解/写 PNG,不依赖 Pillow),尺寸表写在脚本里。不用手改密度。
+
+**为什么前景只占 66dp**:自适应图标的 108dp 画布只有中心 **72dp** 会显示,且启动器还要套
+自己的圆形/水滴形掩码。内容铺满 108dp 会被裁掉一圈;66dp 留 3dp 安全边,圆盘完整可见。
+背景层负责填满被裁掉的区域,所以留白由 `ic_launcher_background` 决定,不是"图标变小了"。
+
+**验证**:
+```
+aapt2 dump badging <apk> | grep application-icon
+# application-icon-*: 'res/mipmap-anydpi-v26/ic_launcher.xml'  ← API 26+ 走自适应
+aapt2 dump xmltree --file AndroidManifest.xml <apk> | grep -i icon
+# android:icon=@0x7f0c0000  android:roundIcon=@0x7f0c0002
+```
+桌面图标与 Android 12+ 启动页用的都是这套资源(启动页取应用图标,不需要另配
+`windowSplashScreenAnimatedIcon`)。

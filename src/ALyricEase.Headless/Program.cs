@@ -1110,6 +1110,13 @@ public static class Program
             return;
         }
 
+        // 顶部横幅标题:非侧栏入口打开歌单时必须显示歌单名（不触网）。
+        if (args.Length > 0 && args[0] == "--shelltitle")
+        {
+            Environment.ExitCode = ShellTitleProbe.Run();
+            return;
+        }
+
         // 搜索来源持久化与 Fluent 下拉选择器渲染回归（不触网）。
         if (args.Length > 0 && args[0] == "--searchsource")
         {

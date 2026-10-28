@@ -63,6 +63,8 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist.Playlists.CollectionChanged += OnPlaylistsChanged;
         Playlist.QqPlaylists.CollectionChanged += OnPlaylistsChanged;
         Playlist.PropertyChanged += OnPlaylistLoginChanged;
+        // 歌单页标题跟着"当前打开的歌单"走(顶部横幅),不走导航项文案
+        Playlist.PropertyChanged += OnPlaylistTitleChanged;
         // 设置里的渲染开关改了要立刻反映到正在显示的详情页背景上(见 NowPlayingMotionEnabled)
         appState.VisualEffectsChanged += () =>
         {
@@ -185,6 +187,15 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         get
         {
+            // 歌单详情页(网易云/QQ/聚合/本地/云盘)的标题以**页面自己正在展示的歌单名**为准。
+            // 侧栏点歌单子项时 SelectedNav 就是那个子项,下面第二条也能得出同样的名字;
+            // 但非侧栏入口(个性推荐卡片、搜索结果、用户主页、歌手页…)打开歌单时,
+            // OnActivePageChanged 会把 SelectedNav 自动切到"我喜欢的音乐"导航项
+            // (ActivePage 对这些详情页统一是 "Favorites"),拿它的 Label 当标题就会
+            // 在歌单页上显示成"我喜欢的音乐"。
+            if (ActivePage is "Favorites" or "CloudDrive" && Playlist.PlaylistTitle is { Length: > 0 } playlistTitle)
+                return playlistTitle;
+
             if (SelectedNav is { IsItem: true } nav)
                 return nav.Label;
 
@@ -406,6 +417,14 @@ public sealed partial class MainViewModel : ViewModelBase
             _shellNavigationRebuildPending = false;
             RebuildShellNavigation();
         }, Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    /// <summary>歌单名变化(打开/切换/退出歌单)同步顶部横幅。加载是异步的:
+    /// ActivePage 先切到 "Favorites",歌单名晚一拍才就位,所以不能只在导航变化时算标题。</summary>
+    private void OnPlaylistTitleChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlaylistViewModel.PlaylistTitle))
+            OnPropertyChanged(nameof(CurrentPageTitle));
     }
 
     /// <summary>网易云/QQ 登录态变化 → 重建导航；认证失败时已有离线快照仍保持可见。</summary>

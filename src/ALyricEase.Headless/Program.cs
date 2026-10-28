@@ -939,6 +939,15 @@ public static class Program
             return;
         }
 
+        // QQRefreshKey 真机探针:用本机有效凭据验证移动端 refresh_key 是否被接受、expired_in 的单位
+        if (args.Length > 0 && args[0] == "--qqrefreshkey")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(
+                    () => QqRefreshKeyProbe.RunAsync(args.Length > 1 ? args[1] : null))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 凭证过期诊断:同一份 Cookie 打 校验/账号摘要/红心写入 三条链路,打印真实错误码
         if (args.Length > 0 && args[0] == "--qqdiag")
         {

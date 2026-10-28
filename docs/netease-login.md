@@ -116,18 +116,38 @@ musickey 寿命使用项目元数据键 `alyric_qq_key_expires_in`（秒），�
 
 ### 原生续签
 
+- **通道（2026-10-28 真机定论）**：`music.login.LoginServer/QQRefreshKey` 对手机号/扫码签发的
+  `refresh_key` **不可用**——固定返回 `40000`。对照实验推翻"参数不对"的假设：把 PC 客户端构造器
+  （`QQMusic_Protocol!FUN_100c8865`，字段为 openid/musickey/expired_in/musicid/onlyNeedAccessToken/
+  forceRefreshToken/appid/deviceName/deviceType="Widnows"/refresh_key/access_token/refresh_token）
+  的 `appid`+`deviceName`+`deviceType` 补齐、`expired_in` 换毫秒、`comm.ct` 换 24/19、去掉 refresh_key、
+  **甚至换一个不存在的 method**，全都回 `40000` ⇒ 这是"服务端没给这套客户端身份路由这个方法"，
+  与参数、凭据新旧、密钥寿命都无关。
+- **`Login` 续签只要 key 还活着就能用**：10-28 用刚签发的手机号凭据实测 `loginMode=2` → 291ms 成功换新 key。
+  10-27 那次 `1000` 的真实原因是**key 已经先死了**（19:47 校验已 `IsExpired=true`），不是"登录链用尽"。
+- **节奏**：例行续签从 `psrf_musickey_createtime` 起算。QQRefreshKey 可用时 4 小时（对齐 PC 客户端
+  `SetTimer(hwnd,1,14400000)`）；对本账号不可用时退回 `Login`，间隔 24 小时——Login 每次新建会话，
+  不能按 4 小时跑。实测 key 名义 72 小时、有一次 55 小时就被拒收，24 小时把 key 年龄压在失效点之下。
+  已过点则下次请求立刻续签；由 `EnsureCredentialValidAsync` 按需触发，不建后台定时器。
+- **例行续签不消耗登录链**：`approaching-expiry` 路径只有"已知 QQRefreshKey 不可用"时才允许 Login 兜底；
+  通道还有效时按 4 小时跑，绝不能每 4 小时烧一次登录会话。`40000` 会写进
+  Cookie 元数据 `alyric_qq_refreshkey_unsupported=1`（换新登录时清除），重启后不再白试。
+  其他码（`1000`/`104604`/`104401`…）只当次失败，不打标记。
+- 通道拒绝按 **musickey** 记忆：只有 `40000` 才把该 key 标成"不再试这条通道"，`Login` 换出新 key 后重试。
+  网络异常不换通道，交给上层退避。
+- **`1000` 不判死**：`QQRefreshKey` 遇 `1000` 先隔 2 秒重试一次；已失效路径的"只刷一次"改为
+  30 分钟冷却后允许再试（`_credentialRefreshRetryAt`）。`RequiresFreshLogin` 仍把 `104400/104401/20279`
+  视为丢弃凭据，`1000` 只提示重登、保留 refresh_key（`ShouldDiscardCredential`）。
 - 验证码凭据实测有 `openid` / `access_token` / `refresh_key`，没有 `refresh_token`。
   原生通道以 `refresh_key` 为刷新前提；其余可选字段缺失时发送空值，不能沿用网页 OAuth 的强制门槛。
 - 扫码与验证码通过 `alyric_native_login=qr/phone` 标记来源；兼容旧扫码 `tmeLoginType=6`。
-  两者都经 `QQMusicQrLoginService.RefreshStoredCredentialAsync`，复用持久设备、QIMEI 与 Android 会话，
-  调用 `music.login.LoginServer/Login`（`loginMode=2`，保留各自 `tmeLoginType`）。
-  网页 Cookie 保持原 Web comm/OAuth 路径，不能只凭 `loginType=2` 就认为是原生登录。
-- 原生凭据在到期前最多 6 小时进入提前刷新窗口（短寿命最多提前四分之一），
-  由启动恢复或正常 QQ 业务请求的 `EnsureCredentialValidAsync` 按需触发；不创建后台定时器，应用关闭时不运行。
-  刷新后保存新 key、刷新字段、创建时间和寿命，并验证新 key；新 key 缺少时间字段时不借用旧 key 的有效期。
-- 并发刷新共用 `_credentialGate`。提前刷新失败时，刚通过服务端校验的旧 key 继续使用，至少等 5 分钟再试。
-  已失效凭据的失败重试仍限制为一次；原生成功换得新 key 后可开始新的续签周期。
+  两者都复用持久设备、QIMEI 与 Android 会话；网页 Cookie 保持原 Web comm/OAuth 路径，
+  不能只凭 `loginType=2` 就认为是原生登录。
+- 刷新后保存新 key、刷新字段、创建时间和寿命，并验证新 key；新 key 缺少时间字段时不借用旧 key 的有效期。
+  并发刷新共用 `_credentialGate`。续签失败时，刚通过服务端校验的旧 key 继续使用；
   续签期间登出/换号的响应不能写回当前账号。
+- `expired_in` 用**绝对 Unix 秒**（`psrf_access_token_expiresAt`）：PC 客户端构造器里它是 64 位值，
+  开源实现 `L-1124/QQMusicApi` 传的也是 `target.expired_at`；真机两种单位都因 `40000` 测不出差别。
 
 协议参考（只参考行为，C# 实现）：
 [L-1124 刷新参数](https://github.com/L-1124/QQMusicApi/blob/HEAD/qqmusic_api/modules/login.py#L121)、
@@ -135,5 +155,9 @@ musickey 寿命使用项目元数据键 `alyric_qq_key_expires_in`（秒），�
 [提前刷新及重试](https://github.com/yakult-green-tea/qq-music-api/blob/HEAD/src/services/auth/sessionState.ts#L243)。
 
 回归线 `--qq-native-credential`（模拟响应、保存、重启恢复、刷新轮换、缺字段及旧格式兼容），不触网、不打印凭据值。
-续签回归线 `--qq-native-refresh`（无 refresh_token、Android/Web 通道区分、提前刷新、失败退避、轮换、并发、换号和取消）。
+续签回归线 `--qq-native-refresh`（QQRefreshKey 优先/40000 判定与持久化/24 小时节奏/1000 重试/失败退避/轮换/并发/换号和取消）。
+真机探针 `--qqrefreshkey`（需本机有效凭据）：只读校验 → 打一次 `QQRefreshKey`（绝对 `expired_in`）→
+失败再打相对秒数对照 → 成功按生产路径落盘。`--qqrefreshkey variants` 逐个改请求形状定位 `40000`；
+`--qqrefreshkey login` 走生产路径（QQRefreshKey 被拒后回落 Login）验证 Login 通道——**会真实消耗一次登录会话**，
+只在明确要求时跑。凭据已失效时前两种直接收手。
 续签的触发、结果和重试计划通过现有 Serilog 文件日志记录，字段与排查入口见 [logging.md](logging.md)。

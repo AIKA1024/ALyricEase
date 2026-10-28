@@ -14,6 +14,21 @@ key 创建时间/寿命、验证结果、提前续签计划、续签触发原因
 这些日志只传显式标量，不包含账号 ID、Cookie、token、refresh_key 值、请求/响应正文，也不传可能包含敏感 URL 的网络异常文本。
 回归 `--qq-native-refresh` 使用临时目录的真实 Serilog File sink 验证事件覆盖与敏感信息缺席，不连接用户账号。
 
+原生接口细分记录 `QQ native protocol`：`Module`/`Method` 标出 `GetQimei`、`GetSession`、
+`QQRefreshKey`、`Login`、`GetLoginUserInfo` 等调用，区分 HTTP 状态、`GlobalCode` 顶层码、`ItemCode` 子请求码，
+网络/解析异常只记类型及接口名。排查 `1000` 时先确认具体接口，不能仅凭外层的“续签失败”认定刷新票据已过期。
+
+续签通道本身另有三条记录：`QQ native refresh key channel accepted`（QQRefreshKey 成功，带第几次尝试）、
+`... returned 1000; retrying once`（通用失败码先隔一次重试）、`... unavailable; falling back to Login`
+（该通道被拒，本次改走 Login 并记录 `Code`）。排查“第 4 次续签就断”时按这个顺序看：
+先确认有没有 `accepted`，再看是不是每轮都在 `falling back`。
+
+每次续签还记录 `authorization snapshot`（请求前授权到期时间）、`field changes`（响应字段状态：
+`changed`、`unchanged`、`missing`、`empty`）和 `expiry changes`（原值、响应值、合并后值及是否过期）。
+时间戳字段使用 Unix 秒；响应缺少 `expired_at` 时 `ReturnedAccessExpiresAt=null`，
+`EffectiveAccessExpiresAt` 显示保留/合并后的实际值，用于判断是否只延长了 musickey 而没更新授权。
+字段变化只作布尔/枚举判断，不记录值、长度、指纹、设备 ID 或会话票据；不会修改原有续签或清理策略。
+
 更新诊断包括：本地/远端版本、检查/下载/应用结果；Windows 将 Velopack 的 Information 及以上日志接入同一文件（包括版本比较、增量回退），并记录 GitHub 发布列表数量、更新通道、完整包数量、最高版本、缺失索引和请求耗时/异常。Android 记录版本比较、无版本信息/无 APK 的返回原因及安装授权/安装器启动。共用 GitHub 元数据请求记录 HTTP 状态码、解析失败和超时，不记录响应正文或更新说明。不逐次记录下载进度。
 
 排查“明明有更新却提示最新”时，从 `Checking for application updates` 开始查看同一 PID 的记录。`Velopack returned no update` 只说明库返回了空结果；结合 `Update feed received` 的 `FullCount`、`LatestVersion` 和 Velopack 的版本比较日志判断原因。`GitHub release asset unavailable` 表示发布缺少所需索引或资产；请求异常需查看异常类型和堆栈。本次仅补诊断，不改变原有检查结果和界面文案。

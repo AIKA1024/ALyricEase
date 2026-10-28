@@ -23,8 +23,26 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
     private const int MaxCookieHeaderLength = 32 * 1024;
-    private static readonly TimeSpan NativeCredentialRefreshWindow = TimeSpan.FromHours(6);
-    private static readonly TimeSpan NativeCredentialRefreshRetry = TimeSpan.FromMinutes(5);
+    /// <summary>原生凭据续签间隔，对齐 PC 客户端登录成功后起的定时器
+    /// （QQMusic 22.52X：<c>SetTimer(hwnd, 1, 14400000, NULL)</c>，即 4 小时）。
+    /// 实测 musickey 名义寿命 72 小时，但服务端约 55 小时就拒收，"到期前 6 小时"的窗口
+    /// 永远赶不上；客户端不看剩余寿命，无脑每 4 小时在同一会话内滚一次 key。</summary>
+    private static readonly TimeSpan NativeCredentialRefreshInterval = TimeSpan.FromHours(4);
+
+    /// <summary>QQRefreshKey 不可用时退回 <c>Login</c> 续签的间隔。每次 Login 都新建登录会话，
+    /// 不能按 4 小时跑（一天 6 次）；24 小时能把 key 年龄压在实测失效点（约 55 小时）之下，
+    /// 又只占一天一次的设备/会话额度。</summary>
+    private static readonly TimeSpan NativeCredentialRefreshIntervalLogin = TimeSpan.FromHours(24);
+    /// <summary>续签失败后的重试间隔（同时用于已失效凭据的冷却）。</summary>
+    private static readonly TimeSpan NativeCredentialRefreshRetry = TimeSpan.FromMinutes(30);
+
+    /// <summary>QQRefreshKey 的"通道级拒绝"码：换相对/绝对 <c>expired_in</c>、换新 key 都回它，
+    /// 与凭据是否新鲜无关（2026-10-28 用刚签发的手机号凭据实测得到）。
+    /// 见到它就把"该通道对本账号不可用"记进 Cookie，别再拿 Login 兜底按 4 小时节奏烧登录链。</summary>
+    internal const int RefreshKeyChannelRejectedCode = 40000;
+
+    /// <summary>Cookie 元数据键：QQRefreshKey 通道已被判定不可用（换新登录时清除）。</summary>
+    private const string RefreshKeyUnsupportedCookieKey = "alyric_qq_refreshkey_unsupported";
 
     /// <summary>专辑封面模板(albummid 填充;尺寸段 R300x300 由 CoverLoader 按需改写)。</summary>
     private const string CoverTemplate = "https://y.gtimg.cn/music/photo_new/T002R300x300M000{0}.jpg";
@@ -68,15 +86,32 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// 网页凭据在一个进程生命周期内最多执行一次；原生凭据按有效期提前刷新并合并并发请求。</summary>
     private readonly SemaphoreSlim _credentialGate = new(1, 1);
     private bool _credentialValidated;
-    private bool _credentialRefreshAttempted;
+
+    /// <summary>失败后的冷却截止时间：冷却期内不再重试，冷却过后允许再试一次
+    /// （<c>1000</c> 这类通用失败码不该把整条登录链永久判死）。</summary>
+    private DateTimeOffset? _credentialRefreshRetryAt;
     private DateTimeOffset _nativeCredentialRefreshAt = DateTimeOffset.MaxValue;
 
+    /// <summary>被 QQRefreshKey 通道拒收过的 musickey。同一把 key 只试一次该通道；
+    /// Login 兜底换出新 key 后自动重新尝试（通道本身可能恢复，也可能是这把 key 的问题）。</summary>
+    private string _nativeRefreshKeyRejectedFor = "";
+
+    /// <summary>QQRefreshKey 返回 1000 后的重试间隔（通用失败码先隔一次再试）。</summary>
+    private TimeSpan _nativeRefreshKeyRetryDelay = TimeSpan.FromSeconds(2);
+
+    /// <summary>该账号已确认不接受 QQRefreshKey（持久化在 Cookie 里，重启后不再白试）。</summary>
+    private bool _nativeRefreshKeyUnsupported;
+
     public QQMusicApiClient(Auth.CookieStore cookie, ILogger<QQMusicApiClient>? logger = null)
+        : this(cookie, logger, null) { }
+
+    internal QQMusicApiClient(Auth.CookieStore cookie, ILogger<QQMusicApiClient>? logger,
+        HttpMessageHandler? handler)
     {
         _logger = logger ?? NullLogger<QQMusicApiClient>.Instance;
         _cookie = cookie;
-        _qrLogin = new QQMusicQrLoginService(cookie);
-        _http = new HttpClient(new HttpClientHandler
+        _qrLogin = new QQMusicQrLoginService(cookie, _logger);
+        _http = new HttpClient(handler ?? new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
             UseCookies = false, // 手动管理 Cookie 头(跨域域不匹配,自动容器不可靠)
@@ -143,7 +178,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         SetCookie(UpdateCookieHeader("", values));
         // 登录服务刚验证过同一把 key，无需立刻用 Web comm 再验一次。
         _credentialValidated = true;
-        _credentialRefreshAttempted = false;
+        _credentialRefreshRetryAt = null;
+        _nativeRefreshKeyRejectedFor = "";
         _logger.LogInformation(
             "QQ native credentials applied. LoginMethod={LoginMethod} LoginType={LoginType} HasRefreshKey={HasRefreshKey} HasRefreshToken={HasRefreshToken} HasAccessToken={HasAccessToken} HasOpenId={HasOpenId} KeyCreatedAt={KeyCreatedAt} KeyExpiresInSeconds={KeyExpiresInSeconds}",
             isPhoneLogin ? "phone" : "qr", credential.LoginType, credential.RefreshKey.Length > 0,
@@ -182,7 +218,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         IsVip = false;
         ResetVipDetails();
         _credentialValidated = false;
-        _credentialRefreshAttempted = false;
+        _credentialRefreshRetryAt = null;
+        _nativeRefreshKeyUnsupported = false;
+        _nativeRefreshKeyRejectedFor = "";
         ScheduleNativeCredentialRefresh();
         _cookie.QQCookieRaw = rawCookie;
         _cookie.Save();
@@ -205,7 +243,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         IsVip = false;
         ResetVipDetails();
         _credentialValidated = false;
-        _credentialRefreshAttempted = false;
+        _credentialRefreshRetryAt = null;
         _nativeCredentialRefreshAt = DateTimeOffset.MaxValue;
         if (_cookie.QQCookieRaw is not null)
         {
@@ -236,7 +274,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             _authst = key!;
             _cookieHeader = raw;
             _credentialValidated = false;
-            _credentialRefreshAttempted = false;
+            _credentialRefreshRetryAt = null;
+            _nativeRefreshKeyUnsupported =
+                string.Equals(ExtractCookieValue(raw, RefreshKeyUnsupportedCookieKey), "1", StringComparison.Ordinal);
             ScheduleNativeCredentialRefresh();
         }
         catch
@@ -283,28 +323,41 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 return;
             }
 
-            if (_credentialRefreshAttempted)
+            if (_credentialRefreshRetryAt is { } retryAt && DateTimeOffset.UtcNow < retryAt)
             {
-                _logger.LogWarning("QQ credential refresh skipped after previous failed attempt");
+                _logger.LogWarning("QQ credential refresh skipped after previous failed attempt. RetryAt={RetryAt}", retryAt);
                 throw new ApiException("QQ 音乐登录凭证已失效，请重新登录", 104401);
             }
 
-            // 在发请求前就置位：网络中断时无法确认服务端是否已占用设备名额，不能盲目重发。
-            _credentialRefreshAttempted = true;
-            var previousKey = _authst;
-            var isNative = ReadCredentialSnapshot().IsNativeLogin;
+            // 在发请求前就置位：网络中断时无法确认服务端是否已占用设备名额，不能盲目重发；
+            // 但只冷却到 NativeCredentialRefreshRetry，通用失败码过后还有自愈机会。
+            _credentialRefreshRetryAt = DateTimeOffset.UtcNow + NativeCredentialRefreshRetry;
             await RefreshCredentialCoreAsync(ct, "expired").ConfigureAwait(false);
 
             if (await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false))
                 throw new ApiException("QQ 音乐凭证刷新后仍无效，请重新登录", 104401);
             _credentialValidated = true;
+            _credentialRefreshRetryAt = null;
             _logger.LogInformation("QQ credential refresh confirmed. Reason={Reason}", "expired");
-            if (isNative && _authst != previousKey) _credentialRefreshAttempted = false;
         }
         finally
         {
             _credentialGate.Release();
         }
+    }
+
+    /// <summary>把"该账号不接受 QQRefreshKey"写进 Cookie 元数据并落盘，重启后不再重复尝试。</summary>
+    private void SetNativeRefreshKeyUnsupported(bool unsupported)
+    {
+        _nativeRefreshKeyUnsupported = unsupported;
+        if (_cookieHeader.Length == 0) return;
+        _cookieHeader = UpdateCookieHeader(_cookieHeader,
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [RefreshKeyUnsupportedCookieKey] = unsupported ? "1" : "0",
+            });
+        _cookie.QQCookieRaw = _cookieHeader;
+        _cookie.Save();
     }
 
     private void ScheduleNativeCredentialRefresh()
@@ -323,11 +376,17 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 credential.RefreshKey.Length > 0, credential.MusicKeyCreateTime, credential.KeyExpiresIn);
             return;
         }
-        // 短寿命凭据最多提前其寿命的四分之一，避免每次请求都进入刷新窗口。
-        var window = TimeSpan.FromSeconds(Math.Min(NativeCredentialRefreshWindow.TotalSeconds,
-            credential.KeyExpiresIn / 4d));
-        _nativeCredentialRefreshAt = DateTimeOffset.FromUnixTimeSeconds(
-            credential.MusicKeyCreateTime + credential.KeyExpiresIn) - window;
+        // 与 PC 客户端一致：不看剩余寿命，从 key 创建时间起按固定间隔滚一次 key。
+        // QQRefreshKey 可用时 4 小时（对齐客户端定时器）；该通道对本账号不可用时退回 Login，
+        // 间隔拉到 24 小时——Login 每次都新建会话，不能按 4 小时跑。
+        // 寿命比间隔还短的凭据取半程，避免一开始就落在"已过点"。
+        var interval = TimeSpan.FromSeconds(Math.Min(
+            (_nativeRefreshKeyUnsupported ? NativeCredentialRefreshIntervalLogin : NativeCredentialRefreshInterval)
+            .TotalSeconds, credential.KeyExpiresIn / 2d));
+        var refreshAt = DateTimeOffset.FromUnixTimeSeconds(credential.MusicKeyCreateTime) + interval;
+        // 已经过了时点（应用关了几天/上次续签失败）：下次请求立刻续签，别再等。
+        if (refreshAt < DateTimeOffset.UtcNow) refreshAt = DateTimeOffset.UtcNow;
+        _nativeCredentialRefreshAt = refreshAt;
         _logger.LogInformation(
             "QQ native credential refresh scheduled. RefreshAt={RefreshAt} ExpiresAt={ExpiresAt} LoginType={LoginType}",
             _nativeCredentialRefreshAt, DateTimeOffset.FromUnixTimeSeconds(
@@ -341,12 +400,14 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _nativeCredentialRefreshAt = DateTimeOffset.UtcNow + NativeCredentialRefreshRetry;
         try
         {
-            await RefreshCredentialCoreAsync(ct, "approaching-expiry").ConfigureAwait(false);
+            // 例行续签只有在"已知 QQRefreshKey 不可用"时才允许用 Login 兜底（那时节奏是 24 小时）；
+            // 通道还有效时按 4 小时跑，绝不能每 4 小时消耗一次登录链。
+            await RefreshCredentialCoreAsync(ct, "approaching-expiry",
+                allowLoginFallback: _nativeRefreshKeyUnsupported).ConfigureAwait(false);
             if (await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false))
                 throw new ApiException("QQ 音乐凭证刷新后仍无效，请重新登录", 104401);
             _credentialValidated = true;
             _logger.LogInformation("QQ credential refresh confirmed. Reason={Reason}", "approaching-expiry");
-            if (_authst != previousKey) _credentialRefreshAttempted = false;
             // 服务端有时返回相同 key/有效期，避免立刻对同一份凭据再次发起刷新。
             if (_nativeCredentialRefreshAt <= DateTimeOffset.UtcNow)
                 _nativeCredentialRefreshAt = DateTimeOffset.UtcNow + NativeCredentialRefreshRetry;
@@ -364,6 +425,11 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>这些错误无法靠重试恢复；启动恢复登录时可清除旧凭证并引导重新登录。</summary>
     public static bool RequiresFreshLogin(int code)
         => code is 1000 or 104400 or 104401 or 20279;
+
+    /// <summary>是否该丢弃本地凭据。<c>1000</c> 是通用失败码（频率限制、网络抖动、参数不匹配都返它），
+    /// 凭据里唯一能自愈的是 refresh_key，清掉就再没有续签机会 ⇒ 只保留提示，不删存档。</summary>
+    public static bool ShouldDiscardCredential(int code)
+        => code is 104400 or 104401 or 20279;
 
     /// <summary>红心等 asset 写操作失败时是否应引导重登:除常规失效码外,写通道(ag-1)把
     /// "凭证不被写接口接受"一律归并为 80105 —— 2026-09 实测:校验/读接口全部通过、key 为
@@ -416,10 +482,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>用 Cookie 中的刷新信息强制续期一次凭证并落盘(internal:诊断探针需要
-    /// 绕过"校验通过才续期"的门槛,验证续期后的 key 是否恢复写权限)。失败抛 ApiException。</summary>
-    internal Task RefreshCredentialForProbeAsync(CancellationToken ct) => RefreshCredentialCoreAsync(ct);
+    /// 绕过"校验通过才续期"的门槛,验证续期后的 key 是否恢复写权限)。失败抛 ApiException。
+    /// <paramref name="expiredInOverride"/> 供 <c>--qqrefreshkey</c> 对照 <c>expired_in</c> 的单位。</summary>
+    internal Task RefreshCredentialForProbeAsync(CancellationToken ct, long expiredInOverride = 0)
+        => RefreshCredentialCoreAsync(ct, "manual", expiredInOverride);
 
-    private async Task RefreshCredentialCoreAsync(CancellationToken ct, string reason = "manual")
+    private async Task RefreshCredentialCoreAsync(CancellationToken ct, string reason = "manual",
+        long expiredInOverride = 0, bool allowLoginFallback = true)
     {
         var credential = ReadCredentialSnapshot();
         var generation = _accountGeneration;
@@ -428,9 +497,14 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             "QQ credential refresh started. Reason={Reason} IsNative={IsNative} LoginType={LoginType} HasRefreshKey={HasRefreshKey} HasRefreshToken={HasRefreshToken}",
             reason, credential.IsNativeLogin, credential.LoginType, credential.RefreshKey.Length > 0,
             credential.RefreshToken.Length > 0);
+        _logger.LogInformation(
+            "QQ credential refresh authorization snapshot. AccessExpiresAt={AccessExpiresAt} AccessExpired={AccessExpired} MusicKeyCreatedAt={MusicKeyCreatedAt} KeyExpiresInSeconds={KeyExpiresInSeconds}",
+            credential.ExpiredAt, credential.ExpiredAt > 0 && credential.ExpiredAt <= DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            credential.MusicKeyCreateTime, credential.KeyExpiresIn);
         try
         {
-            await RefreshCredentialRequestCoreAsync(credential, generation, ct).ConfigureAwait(false);
+            await RefreshCredentialRequestCoreAsync(credential, generation, ct, expiredInOverride, allowLoginFallback)
+                .ConfigureAwait(false);
             _logger.LogInformation("QQ credential refresh response applied. Reason={Reason} ElapsedMs={ElapsedMs}",
                 reason, watch.ElapsedMilliseconds);
         }
@@ -450,7 +524,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
     }
 
-    private async Task RefreshCredentialRequestCoreAsync(CredentialSnapshot credential, int generation, CancellationToken ct)
+    private async Task RefreshCredentialRequestCoreAsync(CredentialSnapshot credential, int generation,
+        CancellationToken ct, long expiredInOverride = 0, bool allowLoginFallback = true)
     {
         if (credential.IsNativeLogin)
         {
@@ -464,6 +539,39 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 UnionId = credential.UnionId,
                 ExpiredAt = credential.ExpiredAt,
             };
+            // 先走 QQRefreshKey（同一登录会话内换 key，不动登录链）；它被拒或不可用才用
+            // Login 重建会话。登录链走满后 Login 一律回 1000，是 2026-10 那次"第 4 次就断"的成因。
+            if (credential.RefreshKey.Length > 0 && _nativeRefreshKeyRejectedFor != credential.MusicKey)
+            {
+                var attempt = await TryRefreshWithRefreshKeyAsync(nativeCredential, ct, expiredInOverride)
+                    .ConfigureAwait(false);
+                if (attempt.Data is { } refreshedData)
+                {
+                    ApplyRefreshedCredentialIfCurrent(refreshedData, credential, generation);
+                    if (_nativeRefreshKeyUnsupported) SetNativeRefreshKeyUnsupported(false);
+                    return;
+                }
+                // 40000 = 通道级拒绝：换相对/绝对 expired_in、换 appid/comm.ct、甚至换个不存在的
+                // method 都回同一个码（2026-10-28 真机对照），说明服务端没给这套客户端身份路由这个方法。
+                // 记住它并持久化，例行续签改走 Login + 24 小时节奏。
+                // 其他码（1000/104604/104401…）当次失败但下次照试，不打标记。
+                if (attempt.Code == RefreshKeyChannelRejectedCode)
+                {
+                    _nativeRefreshKeyRejectedFor = credential.MusicKey;
+                    if (!_nativeRefreshKeyUnsupported)
+                    {
+                        _logger.LogWarning("QQ native refresh key channel unsupported for this account. Code={Code}",
+                            attempt.Code);
+                        SetNativeRefreshKeyUnsupported(true);
+                        ScheduleNativeCredentialRefresh();
+                    }
+                }
+            }
+            if (!allowLoginFallback)
+            {
+                // 例行续签（key 还活着）不消耗登录链：Login 兜底只留给"已经失效"的路径。
+                throw new ApiException("QQRefreshKey 通道不可用，跳过本次例行续签", RefreshKeyChannelRejectedCode);
+            }
             var nativeData = await _qrLogin.RefreshStoredCredentialAsync(nativeCredential, ct).ConfigureAwait(false);
             ApplyRefreshedCredentialIfCurrent(nativeData, credential, generation);
             return;
@@ -516,6 +624,42 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             throw new ApiException("QQ 音乐刷新凭证响应缺少数据", -2);
         ApplyRefreshedCredentialIfCurrent(data.Value, credential, generation);
     }
+
+    /// <summary>QQRefreshKey 通道：成功返回响应数据；通道本身不可用时返回 null，由调用方回落到
+    /// <c>Login</c>。<c>1000</c> 是通用失败码（频率限制/参数不匹配/会话抖动都会返它），先隔一次再试，
+    /// 因为这条通道不像 Login 那样每次都消耗登录链，重试成本只是一次请求。</summary>
+    private async Task<(JsonElement? Data, int Code)> TryRefreshWithRefreshKeyAsync(
+        QQMusicQrCredential credential, CancellationToken ct, long expiredInOverride = 0)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var data = await _qrLogin.RefreshStoredCredentialWithRefreshKeyAsync(credential, ct, expiredInOverride)
+                    .ConfigureAwait(false);
+                _logger.LogInformation("QQ native refresh key channel accepted. Attempt={Attempt}", attempt);
+                return (data, 0);
+            }
+            catch (ApiException ex) when (ex.Code == 1000 && attempt == 1)
+            {
+                _logger.LogWarning(
+                    "QQ native refresh key channel returned 1000; retrying once. DelayMs={DelayMs}",
+                    (int)_nativeRefreshKeyRetryDelay.TotalMilliseconds);
+                await Task.Delay(_nativeRefreshKeyRetryDelay, ct).ConfigureAwait(false);
+            }
+            catch (ApiException ex)
+            {
+                // 这里不决定是否回落 Login：4 小时的例行续签不允许消耗登录链，由调用方决定。
+                _logger.LogWarning("QQ native refresh key channel unavailable. Code={Code}", ex.Code);
+                return (null, ex.Code);
+            }
+        }
+    }
+
+    /// <summary>诊断探针用：把 QQRefreshKey 的响应按生产路径（字段合并 + 落盘 + 重排期）写回，
+    /// 避免探针换出新 key 后应用还拿着旧 refresh_key。</summary>
+    internal void ApplyRefreshedCredentialForProbe(JsonElement data)
+        => ApplyRefreshedCredentialIfCurrent(data, ReadCredentialSnapshot(), _accountGeneration);
 
     private void ApplyRefreshedCredentialIfCurrent(JsonElement data, CredentialSnapshot previous, int generation)
     {
@@ -598,6 +742,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _uin = strMusicId.TrimStart('o');
         _authst = musicKey;
         _cookieHeader = UpdateCookieHeader(_cookieHeader, updates);
+        LogCredentialRefreshChanges(data, previous, ReadCredentialSnapshot());
         _cookie.QQCookieRaw = _cookieHeader;
         _cookie.Save(); // 刷新成功后必须先落盘，后续请求才可继续。
         _credentialValidated = false;
@@ -611,6 +756,33 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         _vipLoaded = false;
         _vipLoading = false;
         IsVip = false;
+    }
+
+    private void LogCredentialRefreshChanges(JsonElement data, CredentialSnapshot previous, CredentialSnapshot current)
+    {
+        _logger.LogInformation(
+            "QQ credential refresh field changes. MusicKeyState={MusicKeyState} AccessTokenState={AccessTokenState} RefreshTokenState={RefreshTokenState} RefreshKeyState={RefreshKeyState} OpenIdState={OpenIdState} UnionIdState={UnionIdState}",
+            RefreshFieldState(data, "musickey", previous.MusicKey),
+            RefreshFieldState(data, "access_token", previous.AccessToken),
+            RefreshFieldState(data, "refresh_token", previous.RefreshToken),
+            RefreshFieldState(data, "refresh_key", previous.RefreshKey),
+            RefreshFieldState(data, "openid", previous.OpenId),
+            RefreshFieldState(data, "unionid", previous.UnionId));
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        _logger.LogInformation(
+            "QQ credential refresh expiry changes. PreviousAccessExpiresAt={PreviousAccessExpiresAt} ReturnedAccessExpiresAt={ReturnedAccessExpiresAt} EffectiveAccessExpiresAt={EffectiveAccessExpiresAt} AccessExpiryChanged={AccessExpiryChanged} AccessExpiredBefore={AccessExpiredBefore} AccessExpiredAfter={AccessExpiredAfter} PreviousKeyCreatedAt={PreviousKeyCreatedAt} EffectiveKeyCreatedAt={EffectiveKeyCreatedAt} PreviousKeyExpiresInSeconds={PreviousKeyExpiresInSeconds} EffectiveKeyExpiresInSeconds={EffectiveKeyExpiresInSeconds}",
+            previous.ExpiredAt, data.TryGetProperty("expired_at", out _) ? PickLongFlexible(data, "expired_at") : (long?)null,
+            current.ExpiredAt, current.ExpiredAt != previous.ExpiredAt,
+            previous.ExpiredAt > 0 && previous.ExpiredAt <= now, current.ExpiredAt > 0 && current.ExpiredAt <= now,
+            previous.MusicKeyCreateTime, current.MusicKeyCreateTime, previous.KeyExpiresIn, current.KeyExpiresIn);
+    }
+
+    private static string RefreshFieldState(JsonElement data, string name, string previous)
+    {
+        if (!data.TryGetProperty(name, out _)) return "missing";
+        var value = PickString(data, name);
+        if (value.Length == 0 || value == "0") return "empty";
+        return string.Equals(value, previous, StringComparison.Ordinal) ? "unchanged" : "changed";
     }
 
     private static void AddCredentialUpdate(IDictionary<string, string> updates, string name, string value)
@@ -869,19 +1041,19 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// (<see cref="Song.AvailableQualityLevels"/>)排除不存在的档位,不能靠 purl 判可用。</summary>
     public async Task<PlayUrlItem?> GetPlayUrlAsync(Song song, string level = "higher", CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        if (song.AvailableQualityLevels is { Count: 0 }) return null;
         var mid = await EnsureMidAsync(song, ct).ConfigureAwait(false);
         if (mid.Length == 0) return null;
 
         var chain = Qualities(level);
         var available = await ResolveAvailableLevelsAsync(song, ct).ConfigureAwait(false);
-        // 元数据确认存在的档位才请求。元数据缺失(null/空)时不筛,保持原降级链;
-        // 元数据说有则一定在链内,所以只会少请求不会漏高档位。
-        var candidates = chain;
-        if (available is { Count: > 0 })
-        {
-            var present = available; // 已确认非 null,供下面的 lambda 捕获
-            candidates = chain.Where(q => present.Contains(q.Level)).ToList();
-        }
+        ct.ThrowIfCancellationRequested();
+        // 空列表是明确无可用档位，不能恢复整条链。未知时保留普通档位降级，
+        // Hi-Res 必须有元数据确认，避免 RS01 的非空幽灵 purl 阻断降级。
+        var candidates = available is null
+            ? chain.Where(q => q.Level != "hires")
+            : chain.Where(q => available.Contains(q.Level));
 
         var requestedLevel = chain[0].Level;
         foreach (var (levelName, prefix, ext, br) in candidates)
@@ -969,7 +1141,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
         catch (ApiException)
         {
-            return null; // 当作未知:不筛档位,交给原降级链与提示文案
+            return null; // 当作未知:跳过未经确认的 Hi-Res，保留普通档位降级。
         }
     }
 

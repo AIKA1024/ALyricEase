@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.WebSockets;
@@ -7,6 +8,8 @@ using System.Text;
 using System.Text.Json;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.NetEase;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ALyricEase.Services.QQMusic;
 
@@ -73,10 +76,11 @@ internal sealed class QQMusicQrLoginService : IDisposable
         """;
 
     private readonly HttpClient _http;
+    private readonly ILogger _logger;
     private readonly string _devicePath;
     private AndroidDevice _device;
 
-    public QQMusicQrLoginService(CookieStore cookie)
+    public QQMusicQrLoginService(CookieStore cookie, ILogger? logger = null)
         : this(cookie, new HttpClient(new HttpClientHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
@@ -84,12 +88,13 @@ internal sealed class QQMusicQrLoginService : IDisposable
         })
         {
             Timeout = TimeSpan.FromSeconds(25),
-        })
+        }, logger)
     {
     }
 
-    internal QQMusicQrLoginService(CookieStore cookie, HttpClient http)
+    internal QQMusicQrLoginService(CookieStore cookie, HttpClient http, ILogger? logger = null)
     {
+        _logger = logger ?? NullLogger.Instance;
         _devicePath = Path.Combine(cookie.ConfigDirectory, "qq-device.json");
         _device = LoadDevice() ?? CreateDevice();
         _http = http;
@@ -282,12 +287,55 @@ internal sealed class QQMusicQrLoginService : IDisposable
             null, ct).ConfigureAwait(false);
     }
 
+    /// <summary>用 refresh_key 在当前登录会话内换一把新 key，对齐 PC 客户端的
+    /// <c>music.login.LoginServer.QQRefreshKey</c>。
+    /// 与 <see cref="RefreshStoredCredentialAsync"/> 的唯一区别是**不发 loginMode**：
+    /// 客户端登录成功后起 4 小时定时器反复走这条，从不重建登录会话；而 Login 每次都会
+    /// 新建会话，登录链走满后服务端返回 1000。参数集合取自 PC 客户端 22.52X 的请求构造器
+    /// （QQMusic_Protocol.dll 0x100c8865）：openid / musickey / expired_in / musicid /
+    /// onlyNeedAccessToken=0 / forceRefreshToken=0 / refresh_key / access_token / refresh_token。
+    /// <para>是 <see cref="QQMusicApiClient"/> 的默认续签通道：失败才回落到
+    /// <see cref="RefreshStoredCredentialAsync"/>（Login）。真机是否接受移动端签发的 refresh_key
+    /// 由 <c>--qqrefreshkey</c> 探针判定。</para>
+    /// <param name="expiredInOverride">诊断用：覆盖 <c>expired_in</c>，用于对照"相对秒数/绝对时间戳"
+    /// 两种单位（真机探针 <c>--qqrefreshkey</c>）；0 表示沿用凭据里的绝对时间戳。</param></summary>
+    public async Task<JsonElement> RefreshStoredCredentialWithRefreshKeyAsync(
+        QQMusicQrCredential credential, CancellationToken ct, long expiredInOverride = 0)
+    {
+        if (credential.RefreshKey.Length == 0)
+            throw new ApiException("QQ 音乐原生登录凭证缺少 refresh_key，无法走 QQRefreshKey 续签", 104401);
+        await PrepareAndroidSessionAsync(ct).ConfigureAwait(false);
+        return await CallMusicuAsync("music.login.LoginServer", "QQRefreshKey", w =>
+        {
+            w.WriteString("openid", credential.OpenId);
+            w.WriteString("musickey", credential.MusicKey);
+            w.WriteString("refresh_key", credential.RefreshKey);
+            if (long.TryParse(credential.MusicId, out var id)) w.WriteNumber("musicid", id);
+            else w.WriteString("musicid", credential.MusicId);
+            if (credential.LoginType != 2) w.WriteString("str_musicid", credential.MusicId);
+            if (credential.AccessToken.Length > 0) w.WriteString("access_token", credential.AccessToken);
+            if (credential.RefreshToken.Length > 0) w.WriteString("refresh_token", credential.RefreshToken);
+            w.WriteNumber("onlyNeedAccessToken", 0);
+            w.WriteNumber("forceRefreshToken", 0);
+            // 单位仍是未确认项（字段名像"相对秒数"，但 Login 通道三次用绝对时间戳都成功，
+            // 服务端显然不严格校验）。保持与 Login 一致，真机用 --qqrefreshkey 两种都打一次再定。
+            w.WriteNumber("expired_in", expiredInOverride > 0 ? expiredInOverride : credential.ExpiredAt);
+        }, new Credential(credential.MusicId, credential.MusicKey, credential.LoginType, default),
+            null, ct).ConfigureAwait(false);
+    }
+
     private async Task EnsureQimeiAsync(CancellationToken ct)
     {
         if (_device.Qimei is { Length: > 0 } && _device.Qimei36 is { Length: > 0 } &&
             DateTimeOffset.UtcNow - _device.QimeiSavedAt < QimeiLifetime)
             return;
 
+        await TraceProtocolAsync("trpc.tme_datasvr.qimeiproxy.QimeiProxy", "GetQimei",
+            () => FetchQimeiAsync(ct), ct).ConfigureAwait(false);
+    }
+
+    private async Task<bool> FetchQimeiAsync(CancellationToken ct)
+    {
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var cryptKey = RandomHex(16);
         var nonce = RandomHex(16);
@@ -342,6 +390,8 @@ internal sealed class QQMusicQrLoginService : IDisposable
         request.Headers.TryAddWithoutValidation("user-agent", "QQMusic");
         request.Headers.TryAddWithoutValidation("timestamp", timestamp.ToString(CultureInfo.InvariantCulture));
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        _logger.LogInformation("QQ native protocol HTTP response. Module={Module} Method={Method} HttpStatusCode={HttpStatusCode}",
+            "trpc.tme_datasvr.qimeiproxy.QimeiProxy", "GetQimei", (int)response.StatusCode);
         var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             throw new ApiException($"QQ 设备初始化失败 HTTP {(int)response.StatusCode}", (int)response.StatusCode);
@@ -349,12 +399,15 @@ internal sealed class QQMusicQrLoginService : IDisposable
         var outer = outerDoc.RootElement;
         var inner = ParseObjectValue(GetProperty(outer, "data"));
         var data = ParseObjectValue(GetProperty(inner, "data"));
+        _logger.LogInformation("QQ native QIMEI response codes. OuterCode={OuterCode} InnerCode={InnerCode}",
+            GetInt(outer, "code"), GetInt(inner, "code"));
         _device.Qimei = GetString(data, "q16");
         _device.Qimei36 = GetString(data, "q36");
         if (_device.Qimei.Length == 0 || _device.Qimei36.Length == 0)
             throw new ApiException("QQ 设备初始化未返回 QIMEI", GetInt(inner, "code") ?? -1);
         _device.QimeiSavedAt = DateTimeOffset.UtcNow;
         SaveDevice();
+        return true;
     }
 
     private byte[] BuildQimeiPayload()
@@ -481,19 +534,58 @@ internal sealed class QQMusicQrLoginService : IDisposable
         var result = await CallMusicuResultAsync(module, method, writeParam, credential, overrides, ct)
             .ConfigureAwait(false);
         if (result.Code != 0)
-            throw new ApiException($"QQ 登录协议失败({method}, {result.GlobalCode}/{result.ItemCode})", result.Code);
+            throw new ApiException(
+                $"QQ 登录协议失败({method}, {result.GlobalCode}/{result.ItemCode}" +
+                $"{(result.Message.Length > 0 ? ", " + result.Message : "")})", result.Code);
         if (result.Data.ValueKind != JsonValueKind.Object)
             throw new ApiException($"QQ 登录响应缺少有效数据({method})", -2);
         return result.Data;
     }
 
-    private async Task<ApiCallResult> CallMusicuResultAsync(
+    private Task<ApiCallResult> CallMusicuResultAsync(
         string module,
         string method,
         Action<Utf8JsonWriter> writeParam,
         Credential? credential,
         CommOverrides? overrides,
         CancellationToken ct)
+        => TraceProtocolAsync(module, method,
+            () => SendMusicuResultAsync(module, method, writeParam, credential, overrides, ct), ct);
+
+    private async Task<T> TraceProtocolAsync<T>(string module, string method, Func<Task<T>> operation, CancellationToken ct)
+    {
+        var watch = Stopwatch.StartNew();
+        _logger.LogInformation("QQ native protocol request started. Module={Module} Method={Method}", module, method);
+        try
+        {
+            var result = await operation().ConfigureAwait(false);
+            if (result is ApiCallResult api)
+                _logger.Log(api.Code == 0 ? LogLevel.Information : LogLevel.Warning,
+                    "QQ native protocol response completed. Module={Module} Method={Method} Code={Code} GlobalCode={GlobalCode} ItemCode={ItemCode} ElapsedMs={ElapsedMs}",
+                    module, method, api.Code, api.GlobalCode, api.ItemCode, watch.ElapsedMilliseconds);
+            else
+                _logger.LogInformation("QQ native protocol request completed. Module={Module} Method={Method} ElapsedMs={ElapsedMs}",
+                    module, method, watch.ElapsedMilliseconds);
+            return result;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _logger.LogInformation("QQ native protocol request cancelled. Module={Module} Method={Method} ElapsedMs={ElapsedMs}",
+                module, method, watch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // 只传接口名称和错误码，不传可能含敏感内容的异常文本。
+            _logger.LogWarning("QQ native protocol request failed. Module={Module} Method={Method} ErrorType={ErrorType} Code={Code} ElapsedMs={ElapsedMs}",
+                module, method, ex.GetType().Name, (ex as ApiException)?.Code, watch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+
+    private async Task<ApiCallResult> SendMusicuResultAsync(
+        string module, string method, Action<Utf8JsonWriter> writeParam, Credential? credential,
+        CommOverrides? overrides, CancellationToken ct)
     {
         var body = BuildJson(w =>
         {
@@ -515,6 +607,8 @@ internal sealed class QQMusicQrLoginService : IDisposable
         if (credential is not null)
             request.Headers.TryAddWithoutValidation("Cookie", CredentialCookie(credential));
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        _logger.LogInformation("QQ native protocol HTTP response. Module={Module} Method={Method} HttpStatusCode={HttpStatusCode}",
+            module, method, (int)response.StatusCode);
         var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             throw new ApiException($"QQ 登录请求失败 HTTP {(int)response.StatusCode}", (int)response.StatusCode);
@@ -534,7 +628,10 @@ internal sealed class QQMusicQrLoginService : IDisposable
         // 失败响应可能只有 code，没有 data；先保留业务码，让调用方处理凭证失效。
         var data = GetProperty(item, "data");
         if (data.ValueKind != JsonValueKind.Undefined) data = data.Clone();
-        return new ApiCallResult(code != 0 ? code : globalCode, globalCode, code, data);
+        // 服务端 msg 用于区分"参数不对/通道不认/凭据失效"这类同为 1000 的形态，不含凭据值。
+        var message = FirstNonEmpty(GetString(item, "msg"), GetString(root, "msg"),
+            GetString(item, "errMsg"), GetString(root, "errMsg"));
+        return new ApiCallResult(code != 0 ? code : globalCode, globalCode, code, data, message);
     }
 
     private void WriteAndroidComm(Utf8JsonWriter w, Credential? credential,
@@ -574,6 +671,20 @@ internal sealed class QQMusicQrLoginService : IDisposable
     private static string CredentialCookie(Credential credential) =>
         $"uin={credential.MusicId}; qqmusic_uin={credential.MusicId}; qm_keyst={credential.MusicKey}; qqmusic_key={credential.MusicKey}";
 
+    /// <summary>诊断探针：直接打任意 musicu 方法并返回原始业务码/消息/数据（不落盘、不改状态）。
+    /// 用于 <c>--qqrefreshkey variants</c> 对照请求形状，不参与生产流程。</summary>
+    internal async Task<(int Code, string Message, JsonElement Data)> ProbeMusicuCodeAsync(
+        string module, string method, Action<Utf8JsonWriter> writeParam,
+        QQMusicQrCredential? credential, int? ct, int? cv, CancellationToken token)
+    {
+        var result = await CallMusicuResultAsync(module, method, writeParam,
+            credential is null
+                ? null
+                : new Credential(credential.MusicId, credential.MusicKey, credential.LoginType, default),
+            new CommOverrides(ct, cv), token).ConfigureAwait(false);
+        return (result.Code, result.Message, result.Data);
+    }
+
     public void Dispose() => _http.Dispose();
 
     private sealed record Credential(string MusicId, string MusicKey, int LoginType, JsonElement Raw);
@@ -581,7 +692,8 @@ internal sealed class QQMusicQrLoginService : IDisposable
     private sealed record CommOverrides(
         int? Ct = null, int? Cv = null, int? LoginType = null, int? LoginMethod = null);
 
-    private sealed record ApiCallResult(int Code, int GlobalCode, int ItemCode, JsonElement Data);
+    private sealed record ApiCallResult(int Code, int GlobalCode, int ItemCode, JsonElement Data,
+        string Message = "");
 
     private sealed record MqttMessage(string? Type, string Payload);
 

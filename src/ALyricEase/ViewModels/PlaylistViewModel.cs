@@ -949,7 +949,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             catch (ApiException ex) when (QQMusicApiClient.RequiresFreshLogin(ex.Code))
             {
                 _logger.LogWarning("QQ login expired. Code={Code}", ex.Code);
-                _qqApi.ClearCookie();
+                // 1000 这类通用失败码只提示不删档：凭据里的 refresh_key 是唯一能自愈的东西。
+                if (QQMusicApiClient.ShouldDiscardCredential(ex.Code)) _qqApi.ClearCookie();
                 IsQqLoggedIn = false;
                 QqLibraryError = "QQ 音乐登录已失效，请重新登录。";
                 return;

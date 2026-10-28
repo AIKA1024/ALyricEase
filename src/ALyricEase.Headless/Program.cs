@@ -646,6 +646,13 @@ public static class Program
             return;
         }
 
+        // 进度时间轴:喂实测的安卓量化台阶样本,画出来的位置必须单调不减（不触 UI/网络）。
+        if (args.Length > 0 && args[0] == "--progressclock")
+        {
+            Environment.ExitCode = ProgressClockProbe.Run();
+            return;
+        }
+
         // 封面 single-flight/LRU 回归：32 个同 URL 请求应只下载一次并共享同一解码实例。
         if (args.Length > 0 && args[0] == "--cover-cache")
         {

@@ -51,10 +51,12 @@ internal sealed class ProgressRenderAnimator
     private bool _frameRequested;
     private bool _pacerHeld;
     private int _frameGeneration;
-    private long _sampleTimestamp = Stopwatch.GetTimestamp();
     private long _nextRenderTimestamp;
-    private double _samplePositionMs;
     private double _durationMs;
+
+    // 样本 → 视觉时间轴。别把样本直接当位置用:安卓的位置是 ~250ms 一级的量化台阶,
+    // 直接赋值等于每 800ms 把球往回拽一次(见 PlaybackProgressClock 类注释)。
+    private readonly PlaybackProgressClock _clock = new();
 
     // 承载本控件的 TopLevel(桌面即 Window):用来判断进度条所在窗口此刻是否真的在呈现。
     // 不呈现时必须停摆,详见 IsHostPresentable()。
@@ -95,6 +97,7 @@ internal sealed class ProgressRenderAnimator
         _attached = false;
         StopFrameLoop();
         ObserveTopLevel(null);
+        _clock.Reset(); // 离树期间位置可能早跑了;下一次样本重新立基线
     }
 
     public void SetActive(bool active)
@@ -108,35 +111,43 @@ internal sealed class ProgressRenderAnimator
     }
 
     /// <summary>接收播放器的权威进度样本，并从该位置开始预测正常播放进度。</summary>
+    /// <remarks>样本只当观测值:与预测差得不多时不回跳,改速度追平(见 <see cref="PlaybackProgressClock"/>)。
+    /// 直接把它渲染成新位置会让安卓端每 0.8 秒回退一段(位置是 250ms 一级的台阶)。</remarks>
     public void SetPlaybackState(double positionMs, double durationMs, bool isPlaying)
     {
-        _samplePositionMs = ClampPosition(positionMs, durationMs);
         _durationMs = Math.Max(0, durationMs);
         _isPlaying = isPlaying;
-        _sampleTimestamp = Stopwatch.GetTimestamp();
-        RenderPosition(_samplePositionMs);
-        _nextRenderTimestamp = _sampleTimestamp + FrameIntervalTicks;
+        var timestamp = Stopwatch.GetTimestamp();
+        var sample = ClampPosition(positionMs, _durationMs);
+        var position = _clock.Sample(sample, isPlaying && !_isScrubbing, timestamp);
+        RenderPosition(ClampPosition(position, _durationMs));
+        _nextRenderTimestamp = timestamp + FrameIntervalTicks;
         EnsureFrameRequested();
     }
 
     /// <summary>拖动期间立即更新视觉，不经过 60 FPS 插值或节流。</summary>
     public void SetScrubPosition(double positionMs, double durationMs)
     {
-        _samplePositionMs = ClampPosition(positionMs, durationMs);
         _durationMs = Math.Max(0, durationMs);
-        _sampleTimestamp = Stopwatch.GetTimestamp();
-        RenderPosition(_samplePositionMs);
+        var position = ClampPosition(positionMs, _durationMs);
+        _clock.SetPosition(position, Stopwatch.GetTimestamp());
+        RenderPosition(position);
     }
 
     public void SetScrubbing(bool scrubbing)
     {
         if (_isScrubbing == scrubbing) return;
         _isScrubbing = scrubbing;
-        _sampleTimestamp = Stopwatch.GetTimestamp();
         if (scrubbing)
+        {
+            // 停在当前画面这一帧:拖动期间时间轴不再推进,松手后再按拖动值重新立基线。
+            _clock.SetPosition(GetPredictedPosition(), Stopwatch.GetTimestamp());
             StopFrameLoop();
+        }
         else
+        {
             RestartFrameLoop();
+        }
     }
 
     /// <summary>布局或气泡可见性改变时，按当前预测值重新提交视觉坐标。</summary>
@@ -157,21 +168,17 @@ internal sealed class ProgressRenderAnimator
         double durationMs,
         bool isPlaying,
         bool isScrubbing,
-        TimeSpan elapsed)
+        TimeSpan elapsed,
+        double rate = 1)
     {
         var position = isPlaying && !isScrubbing
-            ? samplePositionMs + Math.Max(0, elapsed.TotalMilliseconds)
+            ? samplePositionMs + Math.Max(0, elapsed.TotalMilliseconds) * rate
             : samplePositionMs;
         return ClampPosition(position, durationMs);
     }
 
     private double GetPredictedPosition()
-        => PredictPosition(
-            _samplePositionMs,
-            _durationMs,
-            _isPlaying,
-            _isScrubbing,
-            Stopwatch.GetElapsedTime(_sampleTimestamp));
+        => ClampPosition(_clock.PositionAt(Stopwatch.GetTimestamp()), _durationMs);
 
     private void RenderPosition(double positionMs)
     {
@@ -198,9 +205,10 @@ internal sealed class ProgressRenderAnimator
     private void RestartFrameLoop()
     {
         StopFrameLoop();
-        _samplePositionMs = GetPredictedPosition();
-        _sampleTimestamp = Stopwatch.GetTimestamp();
-        _nextRenderTimestamp = _sampleTimestamp + FrameIntervalTicks;
+        // 只把锚点挪到"当前预测值",别退回上一个样本(那样球会往回跳一下)。
+        var timestamp = Stopwatch.GetTimestamp();
+        _clock.Rebase(timestamp);
+        _nextRenderTimestamp = timestamp + FrameIntervalTicks;
         EnsureFrameRequested();
     }
 
@@ -280,7 +288,7 @@ internal sealed class ProgressRenderAnimator
 
     private bool ShouldAnimate()
         => _attached && _active && _isPlaying && !_isScrubbing
-           && _durationMs > 0 && _samplePositionMs < _durationMs
+           && _durationMs > 0 && GetPredictedPosition() < _durationMs
            && IsHostPresentable();
 
     /// <summary>承载窗口此刻是否真的在呈现内容。

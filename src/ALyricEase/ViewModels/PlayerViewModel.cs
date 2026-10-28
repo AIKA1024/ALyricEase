@@ -77,6 +77,11 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     private PlaybackState _prevState;
     private int _advancing; // 正在 PlayAsync:抑制 PlayUrl 内部 Stop() 的瞬时 Idle 误判为歌曲播完
 
+    // 播放中允许忽略的进度回退幅度。安卓 ExoPlayer 的位置是 ~250ms 一级的量化台阶,
+    // 采样时偶尔会拿到比上一拍更小的值;这点回退只该影响秒数文本(来回跳),
+    // 真正的回退(seek/循环重播)幅度远大于此,照常放行。
+    private const long BackwardNoiseMs = 1500;
+
     // 本曲起播后播放器报过错(地址 404/解码失败等)。置位期间不做"播完自动切歌":
     // 失败也会落成 Idle,放任自动切歌会把整队列刷成"播放出错",单曲循环下更是无限重试风暴
     // (2026-10-26 线上日志实测:同一首歌 40 秒内被自动重播十余次)。
@@ -1766,8 +1771,10 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         }
         else if (!_scrubbing)
         {
-            // 正常播放:真实进度同步给 Slider。
-            ScrubPositionMs = value;
+            // 正常播放:真实进度同步给 Slider。小幅回退当采样噪声忽略(见 BackwardNoiseMs):
+            // 否则时间文本会在两个秒数之间来回抖,进度条也会跟着往回拽。
+            if (value >= ScrubPositionMs || ScrubPositionMs - value >= BackwardNoiseMs)
+                ScrubPositionMs = value;
         }
 
         _lyric.UpdatePosition(value); // 驱动歌词高亮(UI 线程)

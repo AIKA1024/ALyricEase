@@ -12,6 +12,7 @@ internal static class SongDownloadProbe
     public static async Task RunAsync()
     {
         await NetEaseQualityProbe.RunOfflineAsync();
+        await QqPlaybackQualityProbe.RunAsync();
         var root = Path.Combine(Path.GetTempPath(), $"aly-download-{Guid.NewGuid():N}");
         var handler = new AudioHandler();
         using var http = new HttpClient(handler);

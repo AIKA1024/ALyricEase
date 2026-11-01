@@ -13,6 +13,11 @@ public sealed class Playlist
     /// <summary>来源音源(侧边栏分组与打开路由用)。默认网易云。</summary>
     public Services.MusicSource Source { get; init; } = Services.MusicSource.NetEase;
 
+    /// <summary>QQ 官方榜单编号(热歌 26 / 新歌 27 / 飙升 62…),非榜单歌单为 0。
+    /// 榜单不是歌单:曲目要走 musicToplist.ToplistInfoServer/GetDetail,不能拿 Id 当 disstid 用。
+    /// 这类"临时歌单"只用于把榜单接进共享的歌单页(Id 填同一编号当缓存键)。</summary>
+    public int TopId { get; init; }
+
     public string Name { get; init; } = "";
 
     public string Description { get; init; } = "";

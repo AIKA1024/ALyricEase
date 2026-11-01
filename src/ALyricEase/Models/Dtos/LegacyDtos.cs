@@ -194,3 +194,33 @@ public sealed record RecommendResourceResponse
 
     public List<RecommendItemDto>? Recommend { get; init; }
 }
+
+// ---------- 官方榜单(明文 GET /api/toplist/detail) ----------
+
+/// <summary>榜单项。榜单本质是官方歌单(id 可直接进歌单页),比 RecommendItemDto 多出
+/// 更新频率与简介;playCount 实测已达 142 亿,必须用 long。</summary>
+public sealed record ToplistDto
+{
+    public long Id { get; init; }
+
+    public string Name { get; init; } = "";
+
+    public string CoverImgUrl { get; init; } = "";
+
+    public long PlayCount { get; init; }
+
+    public int TrackCount { get; init; }
+
+    /// <summary>更新频率文案(「刚刚更新」「每周五更新」「更新21首」),空则回落到播放量。</summary>
+    public string UpdateFrequency { get; init; } = "";
+
+    public string Description { get; init; } = "";
+}
+
+/// <summary>/api/toplist/detail 响应:list 为全部官方榜(实测 65 个,前四项是飙升/新歌/原创/热歌)。</summary>
+public sealed record ToplistDetailResponse
+{
+    public int Code { get; init; }
+
+    public List<ToplistDto>? List { get; init; }
+}

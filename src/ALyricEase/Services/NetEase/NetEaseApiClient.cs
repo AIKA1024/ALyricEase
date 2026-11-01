@@ -1744,6 +1744,35 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         return resp.Result.Select(MapSongCard).ToList();
     }
 
+    /// <summary>常用官方榜的前置顺序(飙升/新歌/热歌/原创/说唱/电音/ACG)。接口按自家顺序下发 65 个榜,
+    /// 直接取前 N 会夹带车友榜/联名榜;这里先按偏好取,不足再用接口顺序补齐。</summary>
+    private static readonly long[] PreferredToplistIds =
+        [19723756, 3779629, 3778678, 2884035, 991319590, 1978921795, 71385702];
+
+    /// <summary>官方榜单(明文 GET /api/toplist/detail,匿名可用)。榜单本质是官方歌单,
+    /// Id 可直接交给歌单页打开;返回顺序:偏好榜在前,其余按接口顺序。</summary>
+    public async Task<List<ToplistItem>> GetToplistsAsync(int limit = 6, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync($"{BaseUrl}/api/toplist/detail", NetEaseJsonContext.Default.ToplistDetailResponse, ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.List is null)
+            throw new ApiException("获取榜单失败", resp?.Code ?? -1);
+
+        var byId = resp.List.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First());
+        var picked = new List<ToplistDto>(limit);
+        foreach (var id in PreferredToplistIds)
+            if (picked.Count < limit && byId.TryGetValue(id, out var preferred))
+                picked.Add(preferred);
+        foreach (var item in resp.List)
+        {
+            if (picked.Count >= limit) break;
+            if (!picked.Contains(item)) picked.Add(item);
+        }
+        return picked
+            .Select(t => new ToplistItem(t.Id, t.Name, t.CoverImgUrl, t.UpdateFrequency,
+                t.TrackCount, t.PlayCount, MusicSource.NetEase) { Description = t.Description })
+            .ToList();
+    }
+
     /// <summary>每日推荐(需登录;未登录接口返回 code 301 → 空列表,由调用方隐藏该区块)。</summary>
     public async Task<List<RecommendItem>> GetDailyRecommendAsync(CancellationToken ct = default)
     {

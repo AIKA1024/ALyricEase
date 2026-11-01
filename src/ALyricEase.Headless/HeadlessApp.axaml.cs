@@ -148,6 +148,7 @@ public partial class HeadlessApp : Application
         services.AddSingleton<SearchViewModel>();
         services.AddSingleton<PlaylistViewModel>();
         services.AddSingleton<RecommendViewModel>();
+        services.AddSingleton<BrowseViewModel>();
         services.AddSingleton<ArtistViewModel>();
         services.AddSingleton<AlbumViewModel>();
         // 二级页 VM:MainViewModel 构造注入,单独探针(专辑卡片几何等)也会直接取用

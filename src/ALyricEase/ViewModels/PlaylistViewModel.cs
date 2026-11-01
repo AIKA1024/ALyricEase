@@ -1960,7 +1960,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     }
 
     /// <summary>点开 QQ 歌单:一次拉全量曲目(QQ 无 trackIds 增量协议,fcg 按歌单 id 整页返回)。
-    /// 复用网易云歌单页 UI:hero/曲目列表/共享队列;_trackIds 留空即无增量补充,播放全部直接用已物化列表。</summary>
+    /// 复用网易云歌单页 UI:hero/曲目列表/共享队列;_trackIds 留空即无增量补充,播放全部直接用已物化列表。
+    /// 浏览页的官方榜单也走这里(<see cref="Models.Playlist.TopId"/> &gt; 0):榜单不是歌单,
+    /// 曲目改由 ToplistInfoServer/GetDetail 分页取 id 再补详情。</summary>
     [RelayCommand]
     private async Task OpenQqPlaylistAsync(PlaylistItemViewModel? playlist)
     {
@@ -1991,7 +1993,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             hasCachedTracks = await RestoreCachedTracksAsync(playlist, generation, ct);
             if (!IsCurrentLoad(generation, ct)) return;
             Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
-            var songs = await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
+            var songs = playlist.Playlist.TopId > 0
+                ? await _qqApi.GetToplistSongsAsync(playlist.Playlist.TopId, ct: ct)
+                : await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
             if (!IsCurrentLoad(generation, ct)) return;
             _queueSongs.Clear();
             foreach (var song in songs) _queueSongs.Add(song);

@@ -384,6 +384,11 @@ public sealed record QQRecommendFeedData
 
 public sealed record QQFeedShelfDto
 {
+    /// <summary>货架编号:<b>201</b>=为你打造(每日30首 / 听歌排行)、<b>202</b>=最近常听
+    /// (用户自己最近听过的歌单)、<b>203</b>=为你推荐歌单、<b>204</b>=更多入口。
+    /// 取推荐歌单只能认 203 —— 201/202 里的 type=500 卡不是"推荐"。</summary>
+    public int Id { get; init; }
+
     [JsonPropertyName("v_niche")] public List<QQFeedNicheDto>? VNiche { get; init; }
 }
 
@@ -401,7 +406,70 @@ public sealed record QQFeedCardDto
     /// 字段类型随版本漂移(实测 2026-09 同一响应里数字与字符串混发),必须双形态兼容。</summary>
     [JsonConverter(typeof(FlexibleLongJsonConverter))]
     public long Id { get; init; }
+
+    /// <summary>卡片类型:500=歌单,300=视频/单曲。私荐歌单就藏在 type=500 这批卡里。</summary>
+    public int Type { get; init; }
+
+    public string? Cover { get; init; }
+
+    public string? Subtitle { get; init; }
+
+    /// <summary>歌单卡的播放次数(视频卡的 cnt 是播放量,含义一致)。</summary>
+    [JsonConverter(typeof(FlexibleLongJsonConverter))]
+    public long Cnt { get; init; }
+
+    [JsonPropertyName("miscellany")] public QQFeedCardMiscDto? Miscellany { get; init; }
 }
+
+/// <summary>卡片附加信息:推荐理由(「达人精选 · 暗恋心事集」)与播放/收藏文案。</summary>
+public sealed record QQFeedCardMiscDto
+{
+    [JsonPropertyName("rcmdtemplate")] public string? RcmdTemplate { get; init; }
+
+    [JsonPropertyName("cnt_content")] public string? CntContent { get; init; }
+
+    [JsonPropertyName("fav_cnt_content")] public string? FavCntContent { get; init; }
+}
+
+// ---------- 歌单广场(c.y.qq.com fcg_get_diss_by_tag)----------
+// 私荐歌单在推荐流里只有 3 张(匿名),不够铺一行,用广场按播放量补位。
+
+/// <summary>歌单广场分类列表。<b>必须带 outCharset=utf-8</b>:不带时整份响应是 GB2312,
+/// 解码出来是乱码(项目没注册 CodePages 编码提供程序,拿到手也没法转)。</summary>
+public sealed record QQPlaylistSquareResponse
+{
+    public int Code { get; init; }
+
+    public QQPlaylistSquareData? Data { get; init; }
+}
+
+public sealed record QQPlaylistSquareData
+{
+    /// <summary>该分类下歌单总数(用来判断还能不能翻页)。</summary>
+    public int Sum { get; init; }
+
+    public List<QQPlaylistSquareItemDto>? List { get; init; }
+}
+
+/// <summary>广场歌单条目。<b>没有曲目数</b>(只有播放量),所以卡片副标题用创建者名。</summary>
+public sealed record QQPlaylistSquareItemDto
+{
+    [JsonPropertyName("dissid")] public string? DissId { get; init; }
+
+    [JsonPropertyName("dissname")] public string? DissName { get; init; }
+
+    [JsonPropertyName("imgurl")] public string? ImgUrl { get; init; }
+
+    [JsonPropertyName("listennum")] public long ListenNum { get; init; }
+
+    public QQPlaylistSquareCreatorDto? Creator { get; init; }
+}
+
+public sealed record QQPlaylistSquareCreatorDto
+{
+    public string? Name { get; init; }
+}
+
 
 /// <summary>long 字段双形态兼容:QQ 服务端部分 id 字段在数字与字符串间漂移,
 /// 严格按 long 解析会让整个响应反序列化崩溃(JsonException)。</summary>
@@ -848,4 +916,96 @@ public sealed record QQMusicuUserDto
     [JsonPropertyName("diss_num")] public int DissNum { get; init; }
 
     [JsonPropertyName("encrypt_uin")] public string? EncryptUin { get; init; }
+}
+
+// ---------- 官方榜单(musicToplist.ToplistInfoServer)----------
+
+/// <summary>GetAll:四个分组(巅峰榜/地区榜/特色榜/全球榜)各带若干榜;每个榜另附前 3 首预览。</summary>
+public sealed record QQToplistAllResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQToplistAllReq? Req0 { get; init; }
+}
+
+public sealed record QQToplistAllReq
+{
+    public int Code { get; init; }
+
+    public QQToplistAllData? Data { get; init; }
+}
+
+public sealed record QQToplistAllData
+{
+    [JsonPropertyName("group")] public List<QQToplistGroupDto>? Group { get; init; }
+}
+
+public sealed record QQToplistGroupDto
+{
+    [JsonPropertyName("groupName")] public string? GroupName { get; init; }
+
+    [JsonPropertyName("toplist")] public List<QQToplistDto>? Toplist { get; init; }
+}
+
+/// <summary>单个榜单元数据(GetAll 条目与 GetDetail 的 data.data 同构)。topId 是榜单编号
+/// (热歌 26/新歌 27/飙升 62…),<b>不是</b>歌单 disstid,取曲目必须走 GetDetail。</summary>
+public sealed record QQToplistDto
+{
+    [JsonPropertyName("topId")] public int TopId { get; init; }
+
+    [JsonPropertyName("title")] public string? Title { get; init; }
+
+    /// <summary>方形榜单海报(T003R500x500);frontPicUrl 是 300 方图,卡片优先用它。</summary>
+    [JsonPropertyName("headPicUrl")] public string? HeadPicUrl { get; init; }
+
+    [JsonPropertyName("frontPicUrl")] public string? FrontPicUrl { get; init; }
+
+    [JsonPropertyName("mbFrontPicUrl")] public string? MbFrontPicUrl { get; init; }
+
+    [JsonPropertyName("listenNum")] public long ListenNum { get; init; }
+
+    [JsonPropertyName("totalNum")] public int TotalNum { get; init; }
+
+    /// <summary>榜首歌曲更新日(「2026-11-01」),不是更新时间戳。</summary>
+    [JsonPropertyName("updateTime")] public string? UpdateTime { get; init; }
+
+    [JsonPropertyName("intro")] public string? Intro { get; init; }
+
+    [JsonPropertyName("song")] public List<QQToplistSongDto>? Song { get; init; }
+}
+
+public sealed record QQToplistSongDto
+{
+    [JsonPropertyName("rank")] public int Rank { get; init; }
+
+    [JsonPropertyName("songId")] public long SongId { get; init; }
+
+    [JsonPropertyName("title")] public string? Title { get; init; }
+
+    [JsonPropertyName("singerName")] public string? SingerName { get; init; }
+
+    [JsonPropertyName("albumMid")] public string? AlbumMid { get; init; }
+
+    [JsonPropertyName("cover")] public string? Cover { get; init; }
+}
+
+/// <summary>GetDetail:data.data 为榜单元数据 + 当前分页的 song 预览(只有 id/标题/歌手,
+/// 播放所需的 songmid 必须再走 pf_song_detail_svr 解析)。</summary>
+public sealed record QQToplistDetailResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQToplistDetailReq? Req0 { get; init; }
+}
+
+public sealed record QQToplistDetailReq
+{
+    public int Code { get; init; }
+
+    public QQToplistDetailData? Data { get; init; }
+}
+
+public sealed record QQToplistDetailData
+{
+    [JsonPropertyName("data")] public QQToplistDto? Data { get; init; }
 }

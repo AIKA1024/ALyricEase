@@ -29,6 +29,7 @@
 | Release 包冷启动就崩 / 构建期 IL2072 | [avalonia-tips.md](avalonia-tips.md)「Release 包的裁剪会删掉…」;[android-notes.md](android-notes.md) §6 |
 | Android 返回键 / 清单改了不生效 / 图片内存预算 | [android-notes.md](android-notes.md) |
 | 要改曲目行的样式 | [original-track-row-styles.md](original-track-row-styles.md)(改完对照 [TrackRow.axaml](../src/ALyricEase/Views/TrackRow.axaml)) |
+| 要改浏览页(双平台混排 / 平台筛选 / 点 QQ 榜单进歌单页) | [avalonia-tips.md](avalonia-tips.md)「浏览页:两个音源装进同一页」(`--browse`) |
 | 要加或改图标码位 | [icon-fonts.md](icon-fonts.md) |
 | 登录相关(代理登录 / MUSIC_U / eapi 两种格式) | [netease-login.md](netease-login.md) |
 | 菜单点"分享"没反应(Windows;JIT 正常、装了包就不行) | [windows-share.md](windows-share.md)(两个静默失败:AOT 无内置 COM、owner 非前台;判据 `--sharetest`) |

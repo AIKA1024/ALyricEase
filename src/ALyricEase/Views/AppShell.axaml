@@ -26,6 +26,9 @@
     <DataTemplate DataType="vm:SearchViewModel">
       <views:SearchView />
     </DataTemplate>
+    <DataTemplate DataType="vm:BrowseViewModel">
+      <views:BrowseView />
+    </DataTemplate>
     <DataTemplate DataType="vm:PlaylistViewModel">
       <views:PlaylistView />
     </DataTemplate>

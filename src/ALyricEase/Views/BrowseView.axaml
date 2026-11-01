@@ -1,0 +1,736 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:BrowseViewModel"
+             x:CompileBindings="True"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="640"
+             x:Class="ALyricEase.Views.BrowseView">
+
+  <UserControl.Resources>
+    <!-- 右侧三宫格里的推荐位:封面铺满 + 底部 scrim + 左下标题。和货架卡片同一份数据
+         (BrowseCardViewModel),但外观是"宣传位"而不是"货架卡",所以单独一份模板。 -->
+    <DataTemplate x:Key="PromoTemplate" x:DataType="vm:BrowseCardViewModel">
+      <Button Classes="promo" Theme="{StaticResource RowButtonTheme}" Command="{Binding OpenCommand}"
+              AutomationProperties.Name="{Binding Title}">
+        <Border Classes="promo-art" Background="{DynamicResource ArtFallback}">
+          <Grid>
+            <Image infra:ManagedCoverImage.DecodeSize="360"
+                   infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                   Stretch="UniformToFill" />
+            <Border IsHitTestVisible="False">
+              <Border.Background>
+                <LinearGradientBrush StartPoint="0%,50%" EndPoint="0%,100%">
+                  <GradientStop Offset="0" Color="#00000000" />
+                  <GradientStop Offset="1" Color="#B3000000" />
+                </LinearGradientBrush>
+              </Border.Background>
+            </Border>
+            <Border Classes="source-chip" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <Image Source="{Binding SourceBadge}" Width="12" Height="12" Stretch="Uniform" />
+                <TextBlock Text="{Binding SourceLabel}" FontSize="10" Foreground="White" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+            <StackPanel VerticalAlignment="Bottom" Margin="10,0,10,9" Spacing="1">
+              <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" Foreground="White"
+                         TextTrimming="CharacterEllipsis" MaxLines="1" />
+              <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="#B3FFFFFF"
+                         TextTrimming="CharacterEllipsis" MaxLines="1" />
+            </StackPanel>
+            <Border Classes="card-mask" Background="#FF000000" IsHitTestVisible="False" />
+          </Grid>
+        </Border>
+      </Button>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <!-- 货架卡片:榜单 / 歌单 / 新歌共用(168 方形封面 + 标题 + 副标题)。
+       整卡是按钮(无状态模板),悬停/按下靠 BlackMask 的透明度反馈;
+       封面左下角是带平台名的音源角标 —— 这一页两个源交错混排,光靠小图标分不出来。 -->
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="vm:BrowseCardViewModel">
+      <Button Classes="browse-card" Theme="{StaticResource RowButtonTheme}" Command="{Binding OpenCommand}"
+              AutomationProperties.Name="{Binding Title}">
+        <Grid RowDefinitions="Auto,Auto">
+          <Border Classes="browse-art" Grid.Row="0" CornerRadius="8"
+                  Background="{DynamicResource ArtFallback}" ClipToBounds="True">
+            <Grid>
+              <!-- 封面没到之前先给一个音符占位(和我的音乐页同款),免得一屏灰块 -->
+              <TextBlock Classes="browse-art-glyph" FontFamily="{DynamicResource LyricEaseIcons}"
+                         FontSize="32" Foreground="{DynamicResource TextTertiary}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <!-- 过渡结束才提交 URL:可见 Image 自己持有位图租约,离树即释放 -->
+              <Image infra:ManagedCoverImage.DecodeSize="240"
+                     infra:ManagedCoverImage.Source="{Binding DisplayCoverUrl}"
+                     Stretch="UniformToFill" />
+              <!-- 播放量角标(榜单/歌单才有):右上,深色半透明 chip -->
+              <Border Classes="play-count-badge" IsVisible="{Binding HasPlayCount}"
+                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Padding="5,1" CornerRadius="4">
+                <StackPanel Orientation="Horizontal" Spacing="3">
+                  <TextBlock Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                             FontSize="11" Foreground="White" />
+                  <TextBlock Text="{Binding PlayCountText}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                </StackPanel>
+              </Border>
+              <Border Classes="source-chip" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <Image Source="{Binding SourceBadge}" Width="12" Height="12" Stretch="Uniform" />
+                  <TextBlock Text="{Binding SourceLabel}" FontSize="10" Foreground="White" VerticalAlignment="Center" />
+                </StackPanel>
+              </Border>
+            </Grid>
+          </Border>
+          <StackPanel Grid.Row="1" Margin="2,8,2,0" Spacing="2">
+            <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis" MaxLines="1" />
+            <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                       TextTrimming="CharacterEllipsis" MaxLines="1" />
+          </StackPanel>
+          <Border Classes="card-mask" Grid.RowSpan="2" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+        </Grid>
+      </Button>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <UserControl.Styles>
+    <!-- ⚠ 底边必须是 PlayerBarReserve(120):内容根的 Margin 是页面唯一的底部留白来源,
+         小屏少一档会让最后一行压到播放条下面。 -->
+    <Style Selector="StackPanel#PageContent">
+      <Setter Property="Margin" Value="48,0,32,120" />
+    </Style>
+    <Style Selector="StackPanel#PageHeader">
+      <Setter Property="Margin" Value="48,28,32,16" />
+    </Style>
+
+    <!-- ===== 海报位:左边真 Carousel(2/3)+ 右边三宫格(1/3),圆点在卡片外面 =====
+         这是 WinUI 商店首页的构图:大图轮播旁边挂三张宣传位,导航点落在卡片下方而不是压在图上。 -->
+    <Style Selector="Border.hero-frame">
+      <Setter Property="Height" Value="340" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="Background" Value="#14151A" />
+    </Style>
+    <Style Selector="TextBlock.hero-title">
+      <!-- 32 = Fluent2 的 Title 档(28/32/40),再大就和页面标题抢戏 -->
+      <Setter Property="FontSize" Value="32" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="LetterSpacing" Value="-0.4" />
+      <Setter Property="Foreground" Value="#FFFFFFFF" />
+      <Setter Property="MaxLines" Value="1" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.hero-desc">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Foreground" Value="#CCFFFFFF" />
+      <Setter Property="MaxLines" Value="2" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="MaxWidth" Value="440" />
+      <!-- ⚠ MaxWidth 小于列宽时,Stretch 会让文字在列里居中 —— 必须左对齐 -->
+      <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+    <Style Selector="TextBlock.hero-meta">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="#A6FFFFFF" />
+      <!-- 小屏这一行会被右侧翻页钮挤掉,不给省略号会直接裁半个字 -->
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="MaxLines" Value="1" />
+    </Style>
+    <Style Selector="Border.hero-kicker">
+      <Setter Property="Background" Value="#33FFFFFF" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="7,3" />
+    </Style>
+    <Style Selector="Button.hero-cta">
+      <Setter Property="Padding" Value="22,8" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="MinHeight" Value="38" />
+    </Style>
+
+    <!-- 翻页圆钮:压在轮播两侧中间,悬停加深 -->
+    <Style Selector="Button.hero-nav">
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="17" />
+      <Setter Property="Background" Value="#59000000" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.hero-nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#8C000000" />
+    </Style>
+    <Style Selector="Button.hero-nav:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#BF000000" />
+    </Style>
+
+    <!-- 圆点(在卡片外面):照 WinUI PipsPager 的尺寸 —— 8×8 圆点,选中拉成 20×8 胶囊。
+         ⚠ 点间距必须写在 ListBoxItem 的 Margin 上,不能写 Padding:模板里 ContentPresenter 的
+         Padding 已被复用(下面那条要设 0 才能让圆点贴满 item),再给 item 写 Padding 会被它一起
+         吃掉 —— 上一版就是这么变成 6px 间距、点几乎连成一条线的。 -->
+    <Style Selector="ListBox.hero-dots">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.hero-dots > ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="4,4" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.hero-dots > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <!-- 圆点自己不做选中底色:选中态只让圆点变长变深,不要额外冒出一块高亮方块 -->
+    <Style Selector="ListBox.hero-dots > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.hero-dots > ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.hero-dots > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.hero-dot">
+      <Setter Property="Width" Value="8" />
+      <Setter Property="Height" Value="8" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="{DynamicResource TextTertiary}" />
+      <Setter Property="Opacity" Value="0.85" />
+      <!-- 选中时宽度 8→20 走补间,和 PipsPager 一样是"伸出来"而不是跳出来 -->
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Width" Duration="0:0:0.18" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="ListBox.hero-dots > ListBoxItem:pointerover Border.hero-dot">
+      <Setter Property="Background" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="ListBox.hero-dots > ListBoxItem:selected Border.hero-dot">
+      <Setter Property="Width" Value="20" />
+      <Setter Property="Background" Value="{DynamicResource TextPrimary}" />
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
+    <!-- ===== 右侧宣传位 ===== -->
+    <Style Selector="Button.promo">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Border.promo-art">
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <!-- ===== 平台筛选:胶囊 chip 居中(商店分类入口的观感) ===== -->
+    <Style Selector="ListBox.source-chips">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.source-chips > ListBoxItem">
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="14,6" />
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <!-- 未选中透明、选中才铺一层 AppSurface:一排放三个白胶囊时选中态根本看不出来 -->
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.source-chips > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+    </Style>
+    <!-- 图标跟着文字一起变色(自定义模板里的 TextBlock 不继承 ListBoxItem.Foreground) -->
+    <Style Selector="ListBox.source-chips TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="ListBox.source-chips > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="ListBox.source-chips > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="ListBox.source-chips > ListBoxItem:selected">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ListBox.source-chips > ListBoxItem:selected TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+
+    <!-- 头部动作(刷新/重试):Fluent2 次级按钮,填充+描边,不抢标题 -->
+    <Style Selector="Button.browse-action">
+      <Setter Property="Background" Value="{DynamicResource AppControlFill}" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="14,6" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="Button.browse-action:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+    </Style>
+    <Style Selector="Button.browse-action:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillPressed}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStrokePressed}" />
+    </Style>
+
+    <!-- 区块滚动箭头(商店货架右上角那种):默认半透明,悬停才实心 -->
+    <Style Selector="Button.shelf-nav">
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Opacity" Value="0.55" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.shelf-nav Path">
+      <Setter Property="Stroke" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="Button.shelf-nav:pointerover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.shelf-nav:pointerover Path">
+      <Setter Property="Stroke" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="Button.shelf-nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="Button.shelf-nav:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+    </Style>
+
+    <!-- 卡片固定尺寸,断点缩放由 compact/narrow 覆盖 -->
+    <Style Selector="Button.browse-card">
+      <Setter Property="Width" Value="168" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Border.browse-art">
+      <Setter Property="Width" Value="168" />
+      <Setter Property="Height" Value="168" />
+      <!-- 1px 卡片描边:浅色主题下纯照片封面贴在同色底上会"飘",描边把方块收住 -->
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBlock.browse-art-glyph">
+      <Setter Property="Text" Value="{DynamicResource IconMusicNote}" />
+    </Style>
+    <!-- 悬停/按下遮罩:黑遮罩 0 → 0.2(悬停) → 0.4(按下),200ms -->
+    <Style Selector="Border.card-mask">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.browse-card:pointerover Border.card-mask">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+    <Style Selector="Button.browse-card:pressed Border.card-mask">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector="Button.promo:pointerover Border.card-mask">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+    <Style Selector="Button.promo:pressed Border.card-mask">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <!-- 封面上的两枚 chip:深色半透明(照片面 scrim,明暗主题同值) -->
+    <Style Selector="Border.play-count-badge">
+      <Setter Property="Background" Value="#59000000" />
+    </Style>
+    <Style Selector="Border.source-chip">
+      <Setter Property="Background" Value="#73000000" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="4,2" />
+    </Style>
+
+    <!-- 区块标题用全局 section-title(24 Bold):和个性推荐同一档,两页来回不用重新适应字号 -->
+    <Style Selector="TextBlock.browse-section-source">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.browse-subtitle">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- 空态/错误提示卡 -->
+    <Style Selector="Border.browse-empty">
+      <Setter Property="Padding" Value="24" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Background" Value="{DynamicResource AppSurface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ListCardBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <!-- 横向虚拟化面板无 Spacing:卡片间距由容器右边距提供 -->
+    <Style Selector="ItemsControl.hcards > ContentPresenter">
+      <Setter Property="Margin" Value="0,0,16,0" />
+    </Style>
+
+    <!-- ===== 断点 ===== -->
+    <Style Selector=".compact StackPanel#PageContent">
+      <Setter Property="Margin" Value="28,0,24,120" />
+    </Style>
+    <Style Selector=".compact StackPanel#PageHeader">
+      <Setter Property="Margin" Value="28,24,24,12" />
+    </Style>
+    <Style Selector=".narrow StackPanel#PageContent">
+      <Setter Property="Margin" Value="16,0,12,120" />
+    </Style>
+    <Style Selector=".narrow StackPanel#PageHeader">
+      <Setter Property="Margin" Value="16,16,12,8" />
+    </Style>
+
+    <Style Selector=".compact Border.hero-frame">
+      <Setter Property="Height" Value="300" />
+    </Style>
+    <Style Selector=".compact TextBlock.hero-title">
+      <Setter Property="FontSize" Value="28" />
+    </Style>
+    <Style Selector=".compact TextBlock.hero-desc">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="MaxWidth" Value="360" />
+    </Style>
+    <Style Selector=".compact Grid#HeroBody">
+      <Setter Property="Margin" Value="52,26,18,26" />
+    </Style>
+    <!-- 中/小屏:三宫格整块收起(再挤下去轮播只剩半屏宽),轮播吃掉整行 -->
+    <Style Selector=".compact Grid#HeroSide">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow Grid#HeroSide">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+    <!-- 小屏:轮播再收一档高,封面方图也不放 -->
+    <Style Selector=".narrow Border.hero-frame">
+      <Setter Property="Height" Value="230" />
+    </Style>
+    <Style Selector=".narrow Grid#HeroArt">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow TextBlock.hero-desc">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=".narrow TextBlock.hero-title">
+      <Setter Property="FontSize" Value="24" />
+    </Style>
+    <Style Selector=".narrow Grid#HeroBody">
+      <Setter Property="Margin" Value="52,20,16,20" />
+    </Style>
+
+    <Style Selector=".compact Button.browse-card">
+      <Setter Property="Width" Value="156" />
+    </Style>
+    <Style Selector=".compact Border.browse-art">
+      <Setter Property="Width" Value="156" />
+      <Setter Property="Height" Value="156" />
+    </Style>
+    <Style Selector=".narrow Button.browse-card">
+      <Setter Property="Width" Value="148" />
+    </Style>
+    <Style Selector=".narrow Border.browse-art">
+      <Setter Property="Width" Value="148" />
+      <Setter Property="Height" Value="148" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+    <!-- 页头固定:标题 + 一句说明;筛选挪到海报位下面(商店的"大图 → 分类 → 货架"顺序) -->
+    <StackPanel Grid.Row="0" x:Name="PageHeader">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="page-title" Text="浏览" />
+          <TextBlock Classes="browse-subtitle" Text="网易云音乐 × QQ音乐，官方榜单、推荐歌单与新歌，一页逛完" />
+        </StackPanel>
+        <Button Grid.Column="1" Classes="browse-action" Content="刷新"
+                Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsLoading}"
+                VerticalAlignment="Center" AutomationProperties.Name="重新加载浏览内容" />
+      </Grid>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1" Classes="page-scroll"
+                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel x:Name="PageContent">
+        <!-- ⚠ 这里的子项用各自 Margin 排间距,不要给 PageContent 加 Spacing:
+             StackPanel 的 Spacing 对**折叠**的子项也照样计数,加载条/提示条一隐藏就先空出三段间距
+             (空态实测多出 ~120px 白缝)。 -->
+        <ProgressBar Height="3" IsIndeterminate="True" IsVisible="{Binding IsLoading}"
+                     Margin="0,0,0,14"
+                     infra:IndeterminateAnimationGate.IsActive="True" />
+
+        <!-- ===== 海报位 =====
+             DockPanel 而不是两列 Grid:右侧三宫格收起时(小屏/没数据),轮播自然吃满整行,
+             不会留下列间距那道缝。 -->
+        <DockPanel IsVisible="{Binding HasHero}">
+          <!-- 右:三宫格宣传位(商店右侧那组小卡)。DockPanel 要求停靠项排在填充项之前;
+               小屏/没数据时整块收起,轮播自然吃满整行。 -->
+          <Grid x:Name="HeroSide" DockPanel.Dock="Right" VerticalAlignment="Top" Margin="12,0,0,0">
+            <!-- 336 宽(原 300):底下一对格子到了 162×140 才不像"缩略图";总高仍对齐轮播的 340 -->
+            <Grid x:Name="HeroSideInner" Width="336" Height="340" RowDefinitions="*,Auto" RowSpacing="12"
+                  IsVisible="{Binding HasPromos}">
+              <ContentControl Content="{Binding TopPromo}" ContentTemplate="{StaticResource PromoTemplate}"
+                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+              <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12" Height="140">
+                <ContentControl Content="{Binding BottomLeft}" ContentTemplate="{StaticResource PromoTemplate}"
+                                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                <ContentControl Grid.Column="1" Content="{Binding BottomRight}"
+                                ContentTemplate="{StaticResource PromoTemplate}"
+                                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+              </Grid>
+            </Grid>
+          </Grid>
+
+          <!-- 左:轮播 + 圆点(圆点在卡片外,和商店一致),填满剩余宽度 -->
+          <Grid RowDefinitions="Auto,Auto">
+            <Border Classes="hero-frame">
+              <Grid>
+                <!-- 真 Carousel:翻页走合成线程的横移(CompositionPageTransition),
+                     不依赖 UI 帧时钟;滑动留给触屏。 -->
+                <Carousel ItemsSource="{Binding HeroItems}"
+                          SelectedIndex="{Binding HeroIndex, Mode=TwoWay}"
+                          IsSwipeEnabled="True">
+                  <Carousel.PageTransition>
+                    <infra:CompositionPageTransition Duration="0:0:0.26" />
+                  </Carousel.PageTransition>
+                  <Carousel.ItemTemplate>
+                    <DataTemplate x:DataType="vm:BrowseHeroViewModel">
+                      <Grid>
+                        <!-- 环境色:同一张封面按 20px 解码后铺满 —— 放大插值天然就是一层柔和模糊,
+                             不用挂 Effect(每帧重算,滚动时最贵),封面上的大字也糊成色块而不是水印。
+                             实测 40px 还认得出字(封面字形本来就大),20px 才是纯色晕。 -->
+                        <Image infra:ManagedCoverImage.DecodeSize="20"
+                               infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                               Stretch="UniformToFill" Opacity="0.9" />
+
+                        <!-- 封面出血:右半张铺满、左侧融进深色区(比"浮一张方图"更像宣传图)。
+                             1.46:1 —— 右侧三宫格加到 336 后,再按原比例会把导语挤成两行、末行只剩一个字。 -->
+                        <Grid ColumnDefinitions="1.46*,*">
+                          <Grid Grid.Column="1" x:Name="HeroArt">
+                            <!-- 用 OpacityMask 把方图左缘化开:alpha 从 0 渐到 1,像素直接透出下面的
+                                 环境图(同一张封面),所以接缝处只有"清晰←→虚化"的过渡,没有明暗台阶。
+                                 之前用一条渐变 Border 压,边界会从紫色环境一步跨到近黑,反而更明显。 -->
+                            <Image infra:ManagedCoverImage.DecodeSize="520"
+                                   infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                                   Stretch="UniformToFill">
+                              <Image.OpacityMask>
+                                <LinearGradientBrush StartPoint="0%,50%" EndPoint="62%,50%">
+                                  <GradientStop Offset="0" Color="#00000000" />
+                                  <GradientStop Offset="0.45" Color="#80000000" />
+                                  <GradientStop Offset="1" Color="#FF000000" />
+                                </LinearGradientBrush>
+                              </Image.OpacityMask>
+                            </Image>
+                          </Grid>
+                          <Border Grid.ColumnSpan="2" IsHitTestVisible="False">
+                            <Border.Background>
+                              <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                                <GradientStop Offset="0" Color="#B80B0C10" />
+                                <GradientStop Offset="0.35" Color="#AD0B0C10" />
+                                <!-- 封面出血那块拼图的左边界在 58.7%:这里保持 ~60% 压暗才看不出接缝 -->
+                                <GradientStop Offset="0.60" Color="#99101115" />
+                                <GradientStop Offset="0.72" Color="#59101115" />
+                                <GradientStop Offset="0.88" Color="#26101115" />
+                                <GradientStop Offset="1" Color="#0D000000" />
+                              </LinearGradientBrush>
+                            </Border.Background>
+                          </Border>
+
+                          <!-- 左边距 64 是给翻页圆钮让位(钮在 10..44,压着文字就废了) -->
+                          <Grid x:Name="HeroBody" Grid.Column="0" ColumnDefinitions="*" Margin="64,28,10,28">
+                            <StackPanel VerticalAlignment="Center">
+                              <Border Classes="hero-kicker" HorizontalAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                  <Image Source="{Binding SourceBadge}" Width="13" Height="13" Stretch="Uniform"
+                                         VerticalAlignment="Center" />
+                                  <TextBlock Text="{Binding Kicker}" FontSize="12" Foreground="#F2FFFFFF"
+                                             VerticalAlignment="Center" />
+                                </StackPanel>
+                              </Border>
+                              <TextBlock Classes="hero-title" Text="{Binding Title}" Margin="0,14,0,0" />
+                              <TextBlock Classes="hero-desc" Text="{Binding Description}" TextWrapping="Wrap"
+                                         Margin="0,8,0,0" />
+                              <TextBlock Classes="hero-meta" Text="{Binding MetaLine}" Margin="0,12,0,0" />
+                              <Button Classes="accent hero-cta" Content="查看榜单" Command="{Binding OpenCommand}"
+                                      HorizontalAlignment="Left" Margin="0,20,0,0"
+                                      AutomationProperties.Name="{Binding Title}" />
+                            </StackPanel>
+                          </Grid>
+                        </Grid>
+                      </Grid>
+                    </DataTemplate>
+                  </Carousel.ItemTemplate>
+                </Carousel>
+
+                <!-- 左右翻页:压在轮播两侧中间 -->
+                <!-- ⚠ 箭头必须是"16×16 盒子 + 居中几何":Shape 拿几何的 Right/Bottom 当期望尺寸,
+                     几何不从 (0,0) 起画就会被整体推向右下(实测偏 3px)。 -->
+                <Button Classes="hero-nav" HorizontalAlignment="Left" Margin="10,0,0,0"
+                        Command="{Binding PrevHeroCommand}" AutomationProperties.Name="上一个榜单"
+                        IsVisible="{Binding HasMultipleHeroes}">
+                  <Path Width="16" Height="16" Stretch="None" Data="M11,3 L5,8 L11,13"
+                        Stroke="#FFFFFFFF" StrokeThickness="1.7"
+                        StrokeLineCap="Round" StrokeJoin="Round"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Button>
+                <Button Classes="hero-nav" HorizontalAlignment="Right" Margin="0,0,10,0"
+                        Command="{Binding NextHeroCommand}" AutomationProperties.Name="下一个榜单"
+                        IsVisible="{Binding HasMultipleHeroes}">
+                  <Path Width="16" Height="16" Stretch="None" Data="M5,3 L11,8 L5,13"
+                        Stroke="#FFFFFFFF" StrokeThickness="1.7"
+                        StrokeLineCap="Round" StrokeJoin="Round"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Button>
+              </Grid>
+            </Border>
+
+            <ListBox Grid.Row="1" Classes="hero-dots" ItemsSource="{Binding HeroItems}"
+                     SelectedIndex="{Binding HeroIndex, Mode=TwoWay}"
+                     HorizontalAlignment="Center" Margin="0,10,0,0"
+                     AutomationProperties.Name="切换推荐榜单">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:BrowseHeroViewModel">
+                  <Border Classes="hero-dot" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </DockPanel>
+
+        <!-- ===== 平台筛选:居中胶囊,筛的是下面所有内容(海报位跟着换) ===== -->
+        <ListBox Classes="source-chips" ItemsSource="{Binding SourceFilters}"
+                 SelectedIndex="{Binding SourceIndex, Mode=TwoWay}"
+                 HorizontalAlignment="Center" Margin="0,22,0,30" IsVisible="{Binding !IsEmpty}"
+                 AutomationProperties.Name="筛选音乐平台">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="8" />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:BrowseSourceFilterViewModel">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="{Binding Glyph}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="13"
+                           VerticalAlignment="Center" IsVisible="{Binding HasGlyph}" />
+                <Image Source="{Binding Badge}" Width="13" Height="13" Stretch="Uniform"
+                       VerticalAlignment="Center" IsVisible="{Binding HasBadge}" />
+                <TextBlock Text="{Binding Label}" FontSize="13" VerticalAlignment="Center" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- 单源不可用时的软提示(两个源都挂掉时这里显示"无法加载") -->
+        <TextBlock Classes="browse-subtitle" Text="{Binding StatusMessage}" IsVisible="{Binding HasStatus}"
+                   Margin="0,0,0,20" />
+
+        <ItemsControl ItemsSource="{Binding Sections}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <!-- ⚠ 区块间距不能写成面板的 Spacing:StackPanel 的 Spacing 对折叠的子项也计数,
+                   空态(三个区块全隐藏)会先空出两段 40px。改用区块自己的下边距。 -->
+              <StackPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:BrowseSectionViewModel">
+              <!-- 区块常驻:Sections 从不增删,筛选只换 Items 的内容,所以切回"全部"不重新解码封面 -->
+              <StackPanel Margin="0,0,0,44" IsVisible="{Binding HasItems}">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="0,0,0,16">
+                  <TextBlock Classes="section-title" Text="{Binding Title}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="browse-section-source" Text="{Binding SourceSummary}"
+                             Margin="2,0,0,0" />
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <!-- 和海报位翻页钮同一份几何:16×16 盒子 + 居中,见上面的 ⚠ -->
+                    <Button Classes="shelf-nav" Tag="prev" Click="OnShelfScroll" AutomationProperties.Name="向左滚动">
+                      <Path Width="16" Height="16" Stretch="None" Data="M11,3 L5,8 L11,13" StrokeThickness="1.6"
+                            StrokeLineCap="Round" StrokeJoin="Round"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Button>
+                    <Button Classes="shelf-nav" Tag="next" Click="OnShelfScroll" AutomationProperties.Name="向右滚动">
+                      <Path Width="16" Height="16" Stretch="None" Data="M5,3 L11,8 L5,13" StrokeThickness="1.6"
+                            StrokeLineCap="Round" StrokeJoin="Round"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Button>
+                  </StackPanel>
+                </Grid>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Padding="0,0,0,14">
+                  <i:Interaction.Behaviors>
+                    <b:CtrlHorizontalWheelBehavior />
+                  </i:Interaction.Behaviors>
+                  <ItemsControl Classes="hcards" ItemsSource="{Binding Items}"
+                                ContainerPrepared="OnCardContainerPrepared">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <!-- 横向虚拟化:只实化视口及 CacheLength 缓冲内的卡片,封面经 ContainerPrepared 按需加载 -->
+                        <VirtualizingStackPanel Orientation="Horizontal" CacheLength="0.5" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                  </ItemsControl>
+                </ScrollViewer>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- 空态:一条内容都没有时给可操作的落点,不留一页空白 -->
+        <Border Classes="browse-empty" IsVisible="{Binding IsEmpty}">
+          <StackPanel Spacing="10" Margin="0,8">
+            <TextBlock Text="暂时没有可浏览的内容" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Classes="browse-subtitle" Text="{Binding StatusMessage}" IsVisible="{Binding HasStatus}" />
+            <TextBlock Classes="browse-subtitle" Text="检查网络连接后重试，或者先登录任一平台的帐号。"
+                       IsVisible="{Binding !HasStatus}" />
+            <Button Classes="browse-action" Content="重新加载" Command="{Binding RefreshCommand}"
+                    HorizontalAlignment="Left" Margin="0,6,0,0" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

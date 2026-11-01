@@ -12,6 +12,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
 using ALyricEase.Models;
+using ALyricEase.Services;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
 
@@ -53,6 +54,7 @@ public static class PageBottomReserveProbe
             new PageCase("个性推荐", BuildRecommend),
             new PageCase("最近播放", BuildRecentPlayback),
             new PageCase("搜索结果", BuildSearch),
+            new PageCase("浏览", BuildBrowse),
         };
         var breakpoints = new[] { ("宽屏", 1160.0, "wide"), ("中屏", 800.0, "compact"), ("小屏", 600.0, "narrow") };
 
@@ -62,7 +64,7 @@ public static class PageBottomReserveProbe
                 failed += Check(page, bpTag, width, cls, want);
 
         Console.WriteLine(failed == 0
-            ? "[pagereserve] [PASS] 三个页面 × 三个断点滚到底都留满播放条预留"
+            ? $"[pagereserve] [PASS] {cases.Length} 个页面 × 三个断点滚到底都留满播放条预留"
             : $"[pagereserve] [FAIL] {failed} 处底部预留缺失");
         return failed == 0 ? 0 : 1;
     }
@@ -200,6 +202,27 @@ public static class PageBottomReserveProbe
 
         return (new SearchView { DataContext = vm },
             view => view.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(p => p.Classes.Contains("results-body")));
+    }
+
+    /// <summary>浏览页:三个区块各排一组卡片(预留承载元素是 StackPanel#PageContent)。
+    /// 卡片列表横向滚动、不撑高,纵向高度靠堆区块;每块 10 张够把三个断点都撑出滚动条。</summary>
+    private static (Control, Func<Control, Control?>) BuildBrowse()
+    {
+        var vm = new BrowseViewModel(
+            ServiceLocator.Get<ALyricEase.Services.NetEase.NetEaseApiClient>(),
+            ServiceLocator.Get<ALyricEase.Services.QQMusic.QQMusicApiClient>(),
+            ServiceLocator.Get<DispatcherService>(),
+            ServiceLocator.Get<PlayerViewModel>());
+        vm.SourceIndex = 0;
+        foreach (var section in vm.Sections)
+        {
+            for (var i = 1; i <= 10; i++)
+                section.Items.Add(new BrowseCardViewModel($"榜单 {i}", "每日更新 · 100 首", "",
+                    i % 2 == 0 ? MusicSource.QQ : MusicSource.NetEase, 123_456));
+        }
+
+        return (new BrowseView { DataContext = vm },
+            view => view.GetVisualDescendants().OfType<StackPanel>().FirstOrDefault(p => p.Name == "PageContent"));
     }
 
     private static IEnumerable<SongItemViewModel> MakeRows(int count, string titlePrefix)

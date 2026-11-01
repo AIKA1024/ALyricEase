@@ -24,13 +24,14 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, PersonalHomeViewModel personalHome, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, BrowseViewModel browse, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, PersonalHomeViewModel personalHome, Services.AppStateStore appState)
     {
         Search = search;
         Player = player;
         Lyric = lyric;
         Playlist = playlist;
         Recommend = recommend;
+        Browse = browse;
         Artist = artist;
         Album = album;
         ArtistSongsPage = artistSongsPage;
@@ -87,6 +88,9 @@ public sealed partial class MainViewModel : ViewModelBase
     public LyricViewModel Lyric { get; }
     public PlaylistViewModel Playlist { get; }
     public RecommendViewModel Recommend { get; }
+
+    /// <summary>浏览页:两个音源的官方榜单/推荐歌单/新歌混排。</summary>
+    public BrowseViewModel Browse { get; }
     public ArtistViewModel Artist { get; }
     public AlbumViewModel Album { get; }
     public ArtistSongsPageViewModel ArtistSongsPage { get; }
@@ -309,6 +313,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public object? CurrentContent => ActivePage switch
     {
         "Recommend" => Recommend,
+        "Browse" => Browse,
         "Search" => Search,
         "Favorites" => Playlist,
         "CloudDrive" => Playlist,
@@ -353,19 +358,12 @@ public sealed partial class MainViewModel : ViewModelBase
         // 超过容量且没有可见 Image 租用的条目会由缓存自动淘汰并释放。
         OnPropertyChanged(nameof(CurrentContent));
 
-        // 未完成页面使用明确占位，不伪装为可用功能。
-        if (value == "Browse")
-        {
-            (Placeholder.Title, Placeholder.Description) = value switch
-            {
-                "Browse" => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
-                "Favorites" => ("我喜欢的音乐", "喜欢列表与收藏操作将在队列阶段接入"),
-                _ => ("浏览", "Banner、榜单与更多发现内容将在后续阶段接入"),
-            };
-        }
-
         if (value == "Recommend")
             _ = Recommend.EnsureLoadedAsync();
+
+        // 浏览页:榜单/新歌不依赖登录态,首载后不再重复请求(要更新用页面里的"刷新")。
+        if (value == "Browse")
+            _ = Browse.EnsureLoadedAsync();
 
         if (value == "Library")
             _ = Playlist.EnsureLibraryOverviewAsync();

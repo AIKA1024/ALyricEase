@@ -19,6 +19,14 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 {
     private const string MusicuUrl = "https://u.y.qq.com/cgi-bin/musicu.fcg";
     private const string CBase = "https://c.y.qq.com";
+    /// <summary>歌单广场分类列表(匿名可用):categoryId=10000000 = 全部,排序用 sortId。</summary>
+    private const string PlaylistSquareUrl = CBase + "/splcloud/fcgi-bin/fcg_get_diss_by_tag.fcg";
+    /// <summary>推荐流卡片类型里的"歌单"(300 是视频/单曲)。</summary>
+    private const int FeedPlaylistCardType = 500;
+    /// <summary>推荐流里"为你推荐歌单"货架的 id(201 为你打造 / 202 最近常听 / 204 更多入口)。</summary>
+    private const int FeedPlaylistShelfId = 203;
+    /// <summary>推荐流里"每日30首"入口卡的固定名(它的 id 每日轮换,不是编辑精选歌单)。</summary>
+    private const string DailyRecommendEntryTitle = "每日30首";
     private const string PlayerReferer = "https://y.qq.com/portal/player.html";
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
@@ -30,9 +38,10 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     private static readonly TimeSpan NativeCredentialRefreshInterval = TimeSpan.FromHours(4);
 
     /// <summary>QQRefreshKey 不可用时退回 <c>Login</c> 续签的间隔。每次 Login 都新建登录会话，
-    /// 不能按 4 小时跑（一天 6 次）；24 小时能把 key 年龄压在实测失效点（约 55 小时）之下，
-    /// 又只占一天一次的设备/会话额度。</summary>
-    private static readonly TimeSpan NativeCredentialRefreshIntervalLogin = TimeSpan.FromHours(24);
+    /// 不能按 4 小时跑，但也不能像之前那样压到 24 小时：2026-10-28 那把 key 只活了约 15 小时
+    /// （00:16 拿到、15:11 已被 1000 拒收），24 小时的续签点永远等不到。
+    /// 6 小时让 key 年龄多数时间停在个位数小时；代价是一天最多 4 次 Login 会话。</summary>
+    private static readonly TimeSpan NativeCredentialRefreshIntervalLogin = TimeSpan.FromHours(6);
     /// <summary>续签失败后的重试间隔（同时用于已失效凭据的冷却）。</summary>
     private static readonly TimeSpan NativeCredentialRefreshRetry = TimeSpan.FromMinutes(30);
 
@@ -316,7 +325,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         try
         {
             if (_credentialValidated && DateTimeOffset.UtcNow < _nativeCredentialRefreshAt) return;
-            if (!await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false))
+            var checkCode = await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false);
+            if (checkCode == 0)
             {
                 _credentialValidated = true;
                 await RefreshNativeCredentialIfDueAsync(ct).ConfigureAwait(false);
@@ -325,8 +335,12 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
             if (_credentialRefreshRetryAt is { } retryAt && DateTimeOffset.UtcNow < retryAt)
             {
-                _logger.LogWarning("QQ credential refresh skipped after previous failed attempt. RetryAt={RetryAt}", retryAt);
-                throw new ApiException("QQ 音乐登录凭证已失效，请重新登录", 104401);
+                _logger.LogWarning(
+                    "QQ credential refresh skipped after previous failed attempt. RetryAt={RetryAt} Code={Code}",
+                    retryAt, checkCode);
+                // 冷却期内不重试，但要把服务端的真实码带回：这里若伪造成 104401，调用方会当
+                // "凭据作废"把存档删掉（2026-10-28 就是这样把还能救的 refresh_key 清了的）。
+                throw new ApiException("QQ 音乐登录凭证已失效，请重新登录", checkCode);
             }
 
             // 在发请求前就置位：网络中断时无法确认服务端是否已占用设备名额，不能盲目重发；
@@ -334,8 +348,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             _credentialRefreshRetryAt = DateTimeOffset.UtcNow + NativeCredentialRefreshRetry;
             await RefreshCredentialCoreAsync(ct, "expired").ConfigureAwait(false);
 
-            if (await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false))
-                throw new ApiException("QQ 音乐凭证刷新后仍无效，请重新登录", 104401);
+            checkCode = await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false);
+            if (checkCode != 0)
+                throw new ApiException("QQ 音乐凭证刷新后仍无效，请重新登录", checkCode);
             _credentialValidated = true;
             _credentialRefreshRetryAt = null;
             _logger.LogInformation("QQ credential refresh confirmed. Reason={Reason}", "expired");
@@ -378,7 +393,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
         // 与 PC 客户端一致：不看剩余寿命，从 key 创建时间起按固定间隔滚一次 key。
         // QQRefreshKey 可用时 4 小时（对齐客户端定时器）；该通道对本账号不可用时退回 Login，
-        // 间隔拉到 24 小时——Login 每次都新建会话，不能按 4 小时跑。
+        // 间隔放宽到 6 小时——Login 每次都新建会话，不能按 4 小时跑，但也追得上最短的实测寿命（约 15 小时）。
         // 寿命比间隔还短的凭据取半程，避免一开始就落在"已过点"。
         var interval = TimeSpan.FromSeconds(Math.Min(
             (_nativeRefreshKeyUnsupported ? NativeCredentialRefreshIntervalLogin : NativeCredentialRefreshInterval)
@@ -404,8 +419,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             // 通道还有效时按 4 小时跑，绝不能每 4 小时消耗一次登录链。
             await RefreshCredentialCoreAsync(ct, "approaching-expiry",
                 allowLoginFallback: _nativeRefreshKeyUnsupported).ConfigureAwait(false);
-            if (await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false))
-                throw new ApiException("QQ 音乐凭证刷新后仍无效，请重新登录", 104401);
+            var checkCode = await CheckCredentialExpiredCoreAsync(ct).ConfigureAwait(false);
+            if (checkCode != 0)
+                throw new ApiException("QQ 音乐凭证刷新后仍无效，请重新登录", checkCode);
             _credentialValidated = true;
             _logger.LogInformation("QQ credential refresh confirmed. Reason={Reason}", "approaching-expiry");
             // 服务端有时返回相同 key/有效期，避免立刻对同一份凭据再次发起刷新。
@@ -440,18 +456,20 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>红心/账号写操作触发重登引导时,登录弹层底部显示的提示文案(两处 UI 保持一致)。</summary>
     public const string ReloginHintText = "QQ 音乐登录凭证需要更新，请重新登录";
 
-    private async Task<bool> CheckCredentialExpiredCoreAsync(CancellationToken ct)
+    /// <summary>校验 musickey 是否仍被服务端接受。<c>0</c> = 有效；非 0 是服务端给的失效码。
+    /// 不能只回 bool：<c>1000</c>（限频/风控/通用失败）与 <c>104401</c>（凭据作废）后面的处理完全不同。</summary>
+    private async Task<int> CheckCredentialExpiredCoreAsync(CancellationToken ct)
     {
         var credential = ReadCredentialSnapshot();
         _logger.LogInformation("QQ credential validation started. IsNative={IsNative} LoginType={LoginType}",
             credential.IsNativeLogin, credential.LoginType);
         try
         {
-            var expired = await CheckCredentialExpiredAsync(credential, ct).ConfigureAwait(false);
-            _logger.Log(expired ? LogLevel.Warning : LogLevel.Information,
-                "QQ credential validation completed. IsExpired={IsExpired} IsNative={IsNative} LoginType={LoginType}",
-                expired, credential.IsNativeLogin, credential.LoginType);
-            return expired;
+            var code = await CheckCredentialExpiredAsync(credential, ct).ConfigureAwait(false);
+            _logger.Log(code == 0 ? LogLevel.Information : LogLevel.Warning,
+                "QQ credential validation completed. Code={Code} KeyAgeHours={KeyAgeHours} IsNative={IsNative} LoginType={LoginType}",
+                code, KeyAgeHours(credential), credential.IsNativeLogin, credential.LoginType);
+            return code;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -466,10 +484,19 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
     }
 
-    private async Task<bool> CheckCredentialExpiredAsync(CredentialSnapshot credential, CancellationToken ct)
+    /// <summary>musickey 已活了多久（小时）。提前续签窗口靠它定，因此每次校验都记下来：
+    /// key 的实际寿命在不同账号/不同时段差别很大（实测 15h 与 55h 都出现过），
+    /// 没有这条读数就只能靠猜。0 表示凭据里没有创建时间。</summary>
+    private static string KeyAgeHours(CredentialSnapshot credential)
+        => credential.MusicKeyCreateTime > 0
+            ? ((DateTimeOffset.UtcNow.ToUnixTimeSeconds() - credential.MusicKeyCreateTime) / 3600d)
+            .ToString("0.0", CultureInfo.InvariantCulture)
+            : "unknown";
+
+    private async Task<int> CheckCredentialExpiredAsync(CredentialSnapshot credential, CancellationToken ct)
     {
         if (credential.IsNativeLogin)
-            return !await _qrLogin.ValidateStoredCredentialAsync(
+            return await _qrLogin.CheckStoredCredentialAsync(
                 credential.StrMusicId, credential.MusicKey, credential.LoginType, ct).ConfigureAwait(false);
 
         using var doc = await PostCredentialRequestAsync(
@@ -478,7 +505,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         var code = PickCredentialCode(doc.RootElement);
         if (code < 0)
             throw new ApiException("QQ 音乐凭证验证响应异常", -2);
-        return code != 0;
+        return code;
     }
 
     /// <summary>用 Cookie 中的刷新信息强制续期一次凭证并落盘(internal:诊断探针需要
@@ -553,7 +580,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 }
                 // 40000 = 通道级拒绝：换相对/绝对 expired_in、换 appid/comm.ct、甚至换个不存在的
                 // method 都回同一个码（2026-10-28 真机对照），说明服务端没给这套客户端身份路由这个方法。
-                // 记住它并持久化，例行续签改走 Login + 24 小时节奏。
+                // 记住它并持久化，例行续签改走 Login + 6 小时节奏。
                 // 其他码（1000/104604/104401…）当次失败但下次照试，不打标记。
                 if (attempt.Code == RefreshKeyChannelRejectedCode)
                 {
@@ -2371,7 +2398,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             dissTid = (req.Data?.VShelf ?? [])
                 .SelectMany(s => s.VNiche ?? [])
                 .SelectMany(n => n.VCard ?? [])
-                .FirstOrDefault(c => c.Title == "每日30首" && c.Id != 0)?.Id ?? 0;
+                .FirstOrDefault(c => c.Title == DailyRecommendEntryTitle && c.Id != 0)?.Id ?? 0;
         }
         if (dissTid == 0)
             throw new ApiException("feed 中未找到\"每日30首\"入口卡片", -1);
@@ -2664,6 +2691,164 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             if (s.Id != 0 || s.Mid.Length > 0) songs.Add(s);
         }
         return songs;
+    }
+
+    // ---------- 官方榜单(musicToplist.ToplistInfoServer)----------
+
+    /// <summary>榜单元数据(GetAll):四个分组共 30 个榜,匿名可用。MV 榜没有可播曲目,直接滤掉;
+    /// 返回顺序按接口分组顺序(巅峰榜在最前),组内的榜已经是"飙升/热歌/新歌…"。
+    /// ⚠ topId 不是 disstid,取曲目必须走 <see cref="GetToplistSongsAsync"/>。</summary>
+    public async Task<List<ToplistItem>> GetToplistsAsync(int limit = 6, CancellationToken ct = default)
+    {
+        using var doc = await PostMusicuAsync(
+            w => WriteModuleReq(w, "musicToplist.ToplistInfoServer", "GetAll", _ => { }), ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQToplistAllResponse);
+        var req = resp?.Req0;
+        if (req is null || req.Code != 0 || req.Data?.Group is null)
+            throw new ApiException($"获取榜单失败(code={req?.Code ?? -1})", req?.Code ?? -1);
+
+        var items = new List<ToplistItem>(limit);
+        foreach (var one in req.Data.Group.SelectMany(g => g.Toplist ?? []))
+        {
+            if (items.Count >= limit) break;
+            var name = one.Title ?? "";
+            if (name.Length == 0 || name.Contains("MV", StringComparison.Ordinal)) continue;
+            var cover = FirstNonEmpty(one.FrontPicUrl, one.MbFrontPicUrl, one.HeadPicUrl);
+            // updateTime 是榜首更新日(「2026-11-01」),不是时间戳;拿月和日当更新节奏就够了
+            var updateText = (one.UpdateTime ?? "") is { Length: >= 10 } d ? d[5..] + " 更新" : "";
+            items.Add(new ToplistItem(one.TopId, name, cover, updateText,
+                one.TotalNum, one.ListenNum, MusicSource.QQ) { Description = one.Intro ?? "" });
+        }
+        return items;
+    }
+
+    /// <summary>榜单曲目:GetDetail 分页只给 id/标题/歌手(没有 songmid),播放所需的完整曲目
+    /// 再经 pf_song_detail_svr 按 id 解析(15 首/请求)。limit 取榜单上限(热歌 300 首),
+    /// 打开榜单页时通常只取前 100 首。</summary>
+    public async Task<List<Song>> GetToplistSongsAsync(int topId, int limit = 100, CancellationToken ct = default)
+    {
+        const int pageSize = 100;
+        var ids = new List<long>();
+        for (var offset = 0; offset < limit; offset += pageSize)
+        {
+            var num = Math.Min(pageSize, limit - offset);
+            using var doc = await PostMusicuAsync(w =>
+                WriteModuleReq(w, "musicToplist.ToplistInfoServer", "GetDetail", p =>
+                {
+                    p.WriteNumber("topId", topId);
+                    p.WriteNumber("offset", offset);
+                    p.WriteNumber("num", num);
+                    p.WriteString("period", "");
+                }), ct).ConfigureAwait(false);
+            var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQToplistDetailResponse);
+            var req = resp?.Req0;
+            if (req is null || req.Code != 0 || req.Data?.Data is null)
+                throw new ApiException($"获取榜单曲目失败(code={req?.Code ?? -1})", req?.Code ?? -1);
+
+            var page = req.Data.Data.Song ?? [];
+            ids.AddRange(page.Select(s => s.SongId).Where(id => id != 0));
+            if (page.Count < num) break;
+        }
+        if (ids.Count == 0) return new();
+        return await ResolveSongsByIdsAsync(ids.Take(limit), ct).ConfigureAwait(false);
+    }
+
+    /// <summary>推荐歌单(客户端里叫「你的私荐歌单」)。两条通道:
+    /// ① 推荐流 <c>get_recommend_feed</c> 里 <b>shelf id=203</b>(「为你推荐」)货架上的歌单卡
+    ///    —— 登录后按口味,每页 6 张且逐页不同,匿名只有 3 张(三页重复);
+    /// ② 不够时用歌单广场 <c>fcg_get_diss_by_tag</c>(sortId=5 按播放量)补位。
+    /// 两条都空才抛,单条失败不影响另一条。</summary>
+    public async Task<List<RecommendItem>> GetRecommendedPlaylistsAsync(int limit = 8, CancellationToken ct = default)
+    {
+        const int maxPages = 4;
+        var items = new List<RecommendItem>(limit);
+        var seen = new HashSet<long>();
+
+        try
+        {
+            for (var page = 1; page <= maxPages && items.Count < limit; page++)
+            {
+                var before = items.Count;
+                using var doc = await PostMusicuAsync(w =>
+                    WriteModuleReq(w, "music.recommend.RecommendFeed", "get_recommend_feed", p =>
+                    {
+                        p.WriteNumber("direction", 0);
+                        p.WriteNumber("page", page);
+                        p.WriteStartArray("v_cache");
+                        p.WriteEndArray();
+                        p.WriteStartArray("v_uniq");
+                        p.WriteEndArray();
+                        p.WriteNumber("s_num", 0);
+                    }), ct).ConfigureAwait(false);
+                var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQRecommendFeedResponse);
+                if (resp?.Req0 is not { Code: 0 } req) break;
+
+                // ⚠ 只认 id=203 的"为你推荐"货架:201 里是每日30首/听歌排行,202 是「最近常听」
+                // —— 那里面是**用户自己**听过的歌单(实测把"测试""BGM"当推荐推了出来)。
+                var cards = (req.Data?.VShelf ?? [])
+                    .Where(shelf => shelf.Id == FeedPlaylistShelfId)
+                    .SelectMany(shelf => shelf.VNiche ?? [])
+                    .SelectMany(niche => niche.VCard ?? [])
+                    .Where(card => card.Type == FeedPlaylistCardType && card.Id > 0 && card.Title is { Length: > 0 });
+
+                foreach (var card in cards)
+                {
+                    if (items.Count >= limit) break;
+                    if (!seen.Add(card.Id)) continue;
+                    items.Add(new RecommendItem(card.Id, card.Title!, RecommendationReason(card), card.Cover ?? "",
+                        card.Cnt, 0, MusicSource.QQ));
+                }
+                // 这一页没拿到新歌单:匿名(三页重复)或已经到底,提前收手
+                if (items.Count == before) break;
+            }
+        }
+        catch (Exception ex) when (ex is ApiException or JsonException)
+        {
+            // 推荐流不可用时照常走广场补位(匿名/风控都可能让这条失败)
+        }
+
+        if (items.Count < limit)
+            await FillFromPlaylistSquareAsync(items, seen, limit, ct).ConfigureAwait(false);
+
+        return items.Count > 0 ? items : throw new ApiException("获取 QQmusic 推荐歌单失败", -1);
+    }
+
+    /// <summary>推荐流歌单卡的副标题:优先用上游给的推荐理由(「达人精选 · 暗恋心事集」/
+    /// 「4人收藏」这类社交背书,QQ 客户端也是这么显示的)。「0人收藏」等于劝人别看,退回通用文案。</summary>
+    private static string RecommendationReason(QQFeedCardDto card)
+    {
+        var reason = FirstNonEmpty(card.Miscellany?.RcmdTemplate, card.Subtitle);
+        return reason.Length > 0 && !reason.StartsWith("0人", StringComparison.Ordinal)
+            ? reason
+            : "QQ音乐歌单";
+    }
+
+    /// <summary>歌单广场按播放量补位。<b>必须带 outCharset=utf-8</b> —— 不带时整份响应是 GB2312,
+    /// 中文全是乱码(项目没注册 CodePages 编码提供程序)。广场条目没有曲目数,副标题用创建者名。</summary>
+    private async Task FillFromPlaylistSquareAsync(List<RecommendItem> items, HashSet<long> seen,
+        int limit, CancellationToken ct)
+    {
+        var url = PlaylistSquareUrl + "?categoryId=10000000&sortId=5&sin=0&ein=" + Math.Max(limit * 2, 20)
+                  + "&format=json&outCharset=utf-8&inCharset=utf-8";
+        try
+        {
+            using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
+            await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var payload = JsonSerializer.Deserialize(body, QQMusicJsonContext.Default.QQPlaylistSquareResponse);
+            foreach (var one in payload?.Data?.List ?? [])
+            {
+                if (items.Count >= limit) break;
+                if (!long.TryParse(one.DissId, out var id) || id <= 0) continue;
+                if (!seen.Add(id) || string.IsNullOrWhiteSpace(one.DissName)) continue;
+                items.Add(new RecommendItem(id, one.DissName, FirstNonEmpty(one.Creator?.Name, "QQ音乐歌单"),
+                    one.ImgUrl ?? "", one.ListenNum, 0, MusicSource.QQ));
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            // 广场只是补位:拉不到就保持推荐流那几张
+        }
     }
 
     // ---------- 内部 ----------

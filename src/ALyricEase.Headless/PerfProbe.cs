@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -23,6 +23,9 @@ namespace ALyricEase.Headless;
 /// 关键指标:切回个性推荐时"首帧(不含封面)"成本应回落到占位图水平,换封面成本移出首帧。</summary>
 public static class PerfProbe
 {
+    /// <summary>切页计时用的"空页"锚点:浏览页已实现,占位页只能走未注册的页面键。</summary>
+    private const string BlankPage = "PlaceholderProbe";
+
     private static Window? _win;
     private static MainViewModel? _vm;
 
@@ -139,7 +142,7 @@ public static class PerfProbe
         Drain();
 
         // ── 修复5 验证:合并后区块布局(每日 340 高 + 5 行,卡片区自动高 + 6 卡) ──
-        _vm.ActivePage = "Browse";
+        _vm.ActivePage = BlankPage;
         Drain();
         _vm.ActivePage = "Recommend";
         Drain();
@@ -155,7 +158,7 @@ public static class PerfProbe
         MeasureSwitch("个性推荐(4区块×6项)", "Recommend");
         MeasureSwitch("搜索(30 结果)", "Search");
         MeasureSwitch("我的收藏(200 曲)", "Favorites");
-        MeasureSwitch("浏览(占位页)", "Browse");
+        MeasureSwitch("占位页", BlankPage);
     }
 
     private static string GetCoverUrl(RecommendCardViewModel card) => card.CoverUrl;
@@ -205,7 +208,7 @@ public static class PerfProbe
         var best = double.MaxValue;
         for (var i = 0; i < 3; i++)
         {
-            _vm!.ActivePage = "Browse";
+            _vm!.ActivePage = BlankPage;
             Drain();
             var sw = Stopwatch.StartNew();
             _vm.ActivePage = page;

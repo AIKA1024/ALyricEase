@@ -1901,3 +1901,138 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
 跑两条模型:旧行为必须回退(实测 5 次 / 最差 -182ms,证明数据能复现问题),新时钟必须
 0 次回退且终点偏差 <500ms;再加 seek(前/后)、切歌清零、暂停微调、暂停中 seek、恢复播放
 五条不连续场景,防止"不回退"把真正的跳转也吃掉。
+
+## 浏览页:两个音源装进同一页(2026-11-01,当晚两轮改版)
+
+**页面顺序**(`Views/BrowseView.axaml` + `ViewModels/BrowseViewModel.cs`):
+页头(标题 + 一句说明 + 刷新,固定)→ **海报位:真 Carousel(2/3)+ 右侧三宫格(1/3)** →
+**居中胶囊筛选**(带平台角标)→ 三个货架(排行榜 / 推荐歌单 / 新歌速递)。这就是 WinUI 商店首页的
+"大图 → 分类 → 货架"顺序;筛选同时也作用于海报位(切到 QQ 就换成 QQ 榜单的海报)。
+
+### 轮播用控件,不要手搓
+
+`Carousel`(Avalonia 12 自带,`PageTransition` / `IsSwipeEnabled` / `SelectedIndex`)+
+`infra:CompositionPageTransition`:翻页是合成线程的横移,不吃 UI 帧时钟(手搓"换 DataContext"
+是硬切,而且 `UI 线程静息 ~79ms` 时自带 `PageSlide` 会卡)。`--browse` 里有一条断言:点右箭头后
+40ms 读 `ElementComposition.GetElementVisual(...).Translation.X`,必须 ≠ 0 —— 只在数据层验证
+"SelectedIndex 变了"是过不了关的(那正是硬切也会通过的检查)。
+
+### 海报位的三个坑
+
+- **右半张图要从深色区化开**:用 `Image.OpacityMask` 给方图左缘做 alpha 渐变(透出下面同一张
+  20px 环境图),接缝处只有"清晰↔虚化"、"没有明暗台阶"。❌ 先试过在上面盖一条渐变 Border,
+  边界会从紫色环境一步跨到近黑,比不处理还明显。
+- **环境色仍然用 20px 解码铺满**(免费模糊,不挂 Effect);40px 还认得出封面大字、会变水印。
+  两张图都用 `ManagedCoverImage.DecodeSize`,只有一张在屏(轮播虚拟化只实现当前页)。
+- **翻页钮压在卡片两侧中间**,所以正文左边距要给到 64(钮占 10..44);否则圆钮会正好压在
+  第一行导语上,看着像文字前面多了个"‹"。
+
+### 右侧三宫格
+
+`TopPromo / BottomLeft / BottomRight` 三个属性(`BrowseCardViewModel`,和货架卡同一份数据),
+"全部"下按 网易云推荐歌单 / QQ 推荐歌单 / 网易云推荐歌单 交错,单平台筛选就三张同源;任意一张缺了
+整体收起(`HasPromos`),不留半格空位。布局用 **DockPanel**(停靠项在填充项之前):三宫格收起时
+轮播自然吃满整行,不会留下列间距那道缝(`.compact` / `.narrow` 里把外层 `Grid#HeroSide` 的
+`IsVisible` 设 False,所以内层的 `HasPromos` 绑定必须放在另一层,本地值会盖掉样式)。
+
+**⚠ 取每个源的「最后三张」,不是前三张**(`RebuildPromos` 里的 `TakeLast`)。宣传位和下面的
+「推荐歌单」货架是**同一批卡片实例**(同一个池子、同一份顺序),货架从头部排;宣传位若也取头部,
+同一摞封面会在一屏里出现两次,读者一眼看出"右边这三张就是下面那三张"。取尾部则落在货架右端,
+默认视野之外。`--browse` 用 `PromoDuplicatesWithShelfHead` 钉住这条(按引用比对,筛选前与
+单平台筛选各查一次),改回 `Take(3)` 会立刻 FAIL。
+
+列宽 **336**(总高仍对齐轮播的 340),`.compact` / `.narrow` 整块收起。⚠ 它一加宽,轮播就变窄,
+海报的导语会当场从一行变成两行、末行只剩一个字 —— 所以海报内部的比例跟着从 `1.3*` 调到
+**`1.46*,*`**(正文列 337px 才能装下 25 字的那句),改这两处要连起来看。
+
+### 推荐歌单:QQ 侧的「你的私荐歌单」
+
+网易云走 `personalized/playlist` 一条就够,QQ 要两条通道拼:
+
+1. **推荐流里的「为你推荐」货架**:`music.recommend.RecommendFeed/get_recommend_feed` 的
+   `v_shelf[]` 每个货架有个 `id`,**只有 `id=203` 才是"为你推荐歌单"**:
+   201=为你打造(每日30首 / 一周年听歌排行)、202=最近常听、203=为你推荐歌单、204=更多入口。
+   ⚠ **别只按 `v_card[].type=500` 抓**:201/202 里也有 type=500 的卡,202 里是
+   **用户自己最近听过的歌单** —— 按 type 抓会把自建的"测试""BGM"当推荐推出去(用户一眼就发现了)。
+   203 货架每页 6 张、且**逐页不同**(page 1..4 能凑 24 张);匿名只有 3 张且三页重复,
+   所以用 `seen` 判"这页没有新条目"提前收手,再交给广场补位。"每日30首"在 201 里,顺带被过滤掉。
+2. **歌单广场补位**:`c.y.qq.com/splcloud/fcgi-bin/fcg_get_diss_by_tag.fcg?categoryId=10000000&sortId=5`。
+   **必须带 `format=json&outCharset=utf-8&inCharset=utf-8`** —— 不带时整份响应是 GB2312,
+   中文全乱码,而项目没注册 CodePages 编码提供程序,拿到手也转不回来。广场条目没有曲目数,
+   副标题退回创建者名。
+
+两条都失败才抛异常;单条失败走另一条(`--browse` 里断言"推荐歌单两个源都有内容")。
+另有一条断言专守上面那个坑:**推荐里不得出现用户自己的歌单** —— 探针用
+`GetUserPlaylistsAsync` 取本机账号的歌单名做比对(实测 22 个,混入 0 个)。
+
+落地时 `RecommendItem` 增加了 **`Source`**(默认网易云)。不标源的话 `ToPlaylistCard` 会把它
+当成网易云歌单去 `OpenNetEasePlaylistAsync` —— 打开必然 404。QQ 侧新增
+`OpenQqPlaylistAsync`:`TopId` 留 0,歌单页走 `uniform_get_Dissinfo` 取全量曲目
+(`--browse` 会真的点开一张 QQ 歌单,断言 `TopId == 0`、源是 QQ、曲目非空)。
+
+右侧三宫格也跟着改成"两源推荐歌单轮流占格",某源少了用新歌补位(缺一张就整块收起)。
+
+### 轮播里有的,货架里不再出现
+
+海报位用的是榜单池的**前缀**(交错序列前 `HeroCount` 张),所以货架直接从 `items.Skip(HeroCount)` 起 ——
+同一张封面不会在一屏里出现两次。这条规则对任意平台筛选都自动成立:按源筛完,各源的轮播成员正好是
+它们在该源序列里的前缀,不需要额外记"哪张被轮播用过"。
+
+两个连带项:
+
+- **每源取 7 张**(原 5 张)。只取 5 张再剔掉 5 张,货架就只剩 5 张、单平台筛选只剩 2 张。
+- **`BuildStatus` 与 `_loaded` 要把 `_heroes` 算进去**:轮播里的榜单不在货架里,只看货架会把
+  "只有轮播有内容"误判成整源不可用(提示会说反)。
+- `--browse` 断言:货架卡片的 `(源, 标题)` 不得与 `HeroItems` 重复,且筛选后仍成立。
+
+### 图标符号为什么不在按钮正中(Avalonia 的 Shape 尺寸)
+
+`Path` 的期望尺寸取自几何的 **Right/Bottom,不是 Bounds 的宽高**。几何不从 (0,0) 起画时,
+元素本身照样被居中,图形却被整体推向右下:
+
+```xml
+<!-- ❌ 几何 x∈[6,12] ⇒ 期望尺寸 12×16 ⇒ 图形偏右下约 3px -->
+<Path Data="M12,4 L6,10 L12,16" />
+<!-- ✅ 给死 16×16 盒子,几何对称地画在盒子里 ⇒ 偏差 0.0 -->
+<Path Width="16" Height="16" Stretch="None" Data="M11,3 L5,8 L11,13" />
+```
+
+`--browse` 的 `CheckGlyphCentered` 量的是**几何中心**到按钮中心的偏移(元素中心量不出来:
+元素一直被居中,偏的是里面的图形),海报位左右钮、货架左右箭头四条都 `< 1px`。
+
+### 其它非显然的点
+
+- **圆点在卡片外面**(商店做法):`ListBox` 绑 `SelectedIndex` 做圆点,重建时先 `HeroIndex = -1`
+  再赋 0,否则"值没变不发通知"⇒ 内容有、圆点全灰。尺寸照 WinUI **PipsPager**:8×8 圆点、
+  选中拉成 **20×8** 胶囊(宽 8→20 走 180ms 补间)、点与点留 **8px** 缝。
+  ⚠ 这个缝必须写在 `ListBoxItem.Margin` 上:**`ListBoxItem.Padding` 和模板里
+  `ContentPresenter#PART_ContentPresenter.Padding` 是同一个值**,模板那条要设 0(让圆点贴满 item),
+  再给 item 写 Padding 会被一起吃掉 —— 上一版就是这么变成 6px 间距、点几乎连成一条线、
+  选中胶囊和第一个点几乎粘在一起。另外 `:selected` / `:pointerover` 的 ContentPresenter 底色
+  要显式设 Transparent,否则 item 底色会在圆点后面透出一块方块。
+- **胶囊筛选**:未选中透明、选中才铺 `AppSurface`,三个白胶囊并排根本看不出选中;图标用
+  `SourceBadges.For(...)`(平台)与字形 ``(全部)。自定义 ItemTemplate 里的 `TextBlock`
+  **不继承** `ListBoxItem.Foreground`,得单独写样式(含 `:selected`)。
+- **`MaxWidth` + 默认 Stretch = 文字居中**:导语限宽 440 后必须显式 `HorizontalAlignment="Left"`。
+- **`hero-meta` 必须给 `TextTrimming`**:小屏被右侧翻页钮挤,不裁剪会半个字直接消失。
+- **QQ 榜单导语是带 `<br>` 的条目清单**:`WebUtility.HtmlDecode` 去标签 → 压空白 → 只取第一个
+  「。」→ 去掉「1.」「榜单定义：」前缀(`BrowseHeroViewModel.Summarize`)。
+- **⚠ `StackPanel.Spacing` 对折叠(IsVisible=false)的子项照样计数**:内容根与区块列表都改用
+  子项自己的 `Margin`;`--browse` 有 `空态卡与页头间距 < 60px` 守着。
+- **筛选只换投影,不重新请求**:卡片池 `_toplists/_recommended/_newSongs`,筛选用
+  `CollectionSync.Apply` 投影;区块常驻 `Sections`,`IsVisible=HasItems`。
+- **货架箭头**按视口 80% 平移;箭头在 DataTemplate 里,靠"向上找第一个真的包含 ScrollViewer 的
+  祖先"定位(按 `DataContext is BrowseSectionViewModel` 会先撞上按钮那排 StackPanel)。
+
+### QQ 榜单不是歌单
+
+`musicToplist.ToplistInfoServer/GetAll` 给的是 `topId`(热歌 26 / 新歌 27 / 飙升 62…),**不是**
+disstid;`GetDetail` 分页只回 `songId/标题/歌手`,播放要的 `songmid` 得再经 `pf_song_detail_svr`
+按 id 解析(15 首/请求)。落地:`Playlist.TopId` + 歌单页 `OpenQqPlaylistAsync` 的 `TopId > 0` 分支,
+其余(队列/播放/缓存)完全复用歌单页。
+
+**回归**:`ALyricEase.Headless --browse`(真实接口):双源都有内容、相邻两张不同平台、轮播 5 项、
+圆点在卡片外且 8×8 / 选中 20×8 / 点缝 8px、四个箭头符号的几何中心偏差 < 1px、点右箭头有合成位移
+且圆点同步、三宫格 3 张且随筛选换源、货架箭头真的滚动、三档断点无横向溢出、卡片 168/156/148、
+海报位 340/300/230、点 QQ 榜单进歌单页拿到带 mid 的 100 首;顺带出明/暗/空态/整壳截图。
+底部预留由 `--pagereserve` 覆盖。

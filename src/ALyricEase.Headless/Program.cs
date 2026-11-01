@@ -547,6 +547,19 @@ public static class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--browse")
+        {
+            // 真实接口 + 截图 + 断点交互:走 dispatcher 主循环,await 才有续体可以跑
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { Environment.ExitCode = await BrowseProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--personal-fm")
         {
             Environment.ExitCode = PersonalFmProbe.Run();

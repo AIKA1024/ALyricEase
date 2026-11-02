@@ -547,6 +547,12 @@ public static class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--hotkeys")
+        {
+            Environment.ExitCode = HotkeyProbe.Run();
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--browse")
         {
             // 真实接口 + 截图 + 断点交互:走 dispatcher 主循环,await 才有续体可以跑

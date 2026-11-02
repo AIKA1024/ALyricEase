@@ -536,11 +536,26 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private static string FormatDevice(AudioOutputDevice device) =>
         device.IsDefault ? $"{device.Name}（系统默认）" : device.Name;
 
-    // ---- 占位入口(后端能力接入后替换实现) ----
+    // ---- 快捷键与网络设置入口 ----
 
-    /// <summary>键盘快捷键编辑。</summary>
+    /// <summary>快捷键目前只在桌面宿主接入，Android 隐藏该入口。</summary>
+    public bool HotkeysSupported => !OperatingSystem.IsAndroid();
+
+    /// <summary>打开快捷键设置弹窗(MainViewModel 承载的模态弹层,见 HotkeyDialogView)。</summary>
     [RelayCommand]
-    private void EditHotkeys() => Status = "快捷键自定义即将支持";
+    private void EditHotkeys()
+    {
+        if (!HotkeysSupported) return;
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().OpenHotkeyDialog();
+        }
+        catch
+        {
+            // 无宿主上下文(部分无头探针):不开弹窗
+            Status = "快捷键设置需要在桌面窗口中使用";
+        }
+    }
 
     /// <summary>应用网络代理设置。</summary>
     [RelayCommand]

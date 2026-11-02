@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using ALyricEase.Services;
+using ALyricEase.Services.Hotkeys;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Media.Imaging;
@@ -45,6 +47,13 @@ internal static class DesktopLifecycleProbe
             var closed = false;
             window.Closed += (_, _) => closed = true;
             using var controller = new DesktopLifecycleController(Application.Current!, window, settings, state, DialogHost(window));
+            var shortcutCount = 0;
+            state.SetHotkey(HotkeyCatalog.VolumeUp, new HotkeyGesture(Key.F6, KeyModifiers.None));
+            var hotkeys = new HotkeyService(state, () => controller.IsClosePromptPending);
+            window.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+            {
+                if (hotkeys.TryHandle(window.FocusManager?.GetFocusedElement(), e)) shortcutCount++;
+            }, RoutingStrategies.Tunnel);
             window.Show();
             window.Close();
             PumpUntil(() => Dialog(window) is not null);
@@ -53,6 +62,9 @@ internal static class DesktopLifecycleProbe
             Check(ModalVisibilityTransition.GetIsOpen(dialog), "关闭弹层复用统一显隐动画");
             PumpUntil(() => ModalVisibilityTransition.WaitForTransitionAsync(dialog).IsCompleted);
             Check(!((Grid)window.Content!).Children[0].IsEnabled, "遮罩下的主窗口内容禁用");
+            window.KeyPress(Key.F6, RawInputModifiers.None, PhysicalKey.F6, null);
+            window.KeyRelease(Key.F6, RawInputModifiers.None, PhysicalKey.F6, null);
+            Check(shortcutCount == 0, "关闭确认框内不触发无修饰键的自定义快捷键");
             for (var i = 0; i < 8; i++)
             {
                 window.KeyPress(Key.Tab, RawInputModifiers.None, PhysicalKey.Tab, null);

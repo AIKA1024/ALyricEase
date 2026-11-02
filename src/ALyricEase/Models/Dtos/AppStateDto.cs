@@ -103,6 +103,10 @@ public sealed class AppStateFile
 
     /// <summary>音乐、封面和歌词的统一磁盘缓存容量上限(MB)。</summary>
     public int? MusicCacheMaximumSizeMb { get; set; }
+
+    /// <summary>用户改过的快捷键(动作 Id → 手势文本,如 <c>Control+Shift+Left</c>)。
+    /// null = 从未改过(全部走出厂默认);值 "" = 用户显式清空该动作。</summary>
+    public Dictionary<string, string>? Hotkeys { get; set; }
 }
 
 /// <summary>聚合歌单落盘形态。</summary>

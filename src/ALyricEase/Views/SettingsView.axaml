@@ -260,10 +260,14 @@
         </Grid>
       </Border>
 
-      <Border Classes="setting-card" Margin="0,0,0,8">
+      <Border Classes="setting-card" Margin="0,0,0,8" IsVisible="{Binding HotkeysSupported}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconKeyboard}" />
-          <TextBlock Grid.Column="1" Classes="setting-title" Text="键盘快捷键" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+            <TextBlock Classes="setting-title" Text="键盘快捷键" />
+            <TextBlock Text="播放、音量与导航的组合键,均可自定义" FontSize="12"
+                       TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" Margin="0,2,0,0" />
+          </StackPanel>
           <Button Grid.Column="2" Classes="setting-action" Content="编辑设置"
                   Command="{Binding EditHotkeysCommand}" />
         </Grid>

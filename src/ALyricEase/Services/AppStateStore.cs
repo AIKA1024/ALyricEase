@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
+using ALyricEase.Services.Hotkeys;
 using Avalonia.Threading;
 
 namespace ALyricEase.Services;
@@ -167,6 +168,63 @@ public sealed class AppStateStore
     /// <summary>音乐、封面和歌词的统一磁盘缓存容量上限(MB)。</summary>
     public int MusicCacheMaximumSizeMb { get; set; } = MusicCacheService.DefaultMaximumSizeMb;
 
+    // ---- 快捷键(动作 Id → 落盘手势文本;只记"用户改过的",出厂默认不在文件里) ----
+
+    private readonly Dictionary<string, string> _hotkeys = new(StringComparer.Ordinal);
+
+    /// <summary>用户改动过的快捷键(动作 Id → 手势文本;值 "" 表示用户显式清空)。
+    /// 字典里没有的动作按 <see cref="HotkeyCatalog"/> 的默认值生效。</summary>
+    public IReadOnlyDictionary<string, string> Hotkeys => _hotkeys;
+
+    /// <summary>快捷键配置变化(设置弹窗改键、恢复默认);分发逻辑无需订阅,它每次按键都现查。</summary>
+    public event Action? HotkeysChanged;
+
+    /// <summary>取某个动作当前生效的组合:未改过 = 出厂默认,显式清空 = 空(不响应)。</summary>
+    public HotkeyGesture ResolveHotkey(string actionId)
+    {
+        if (!_hotkeys.TryGetValue(actionId, out var text))
+            return HotkeyCatalog.GetDefault(actionId);
+        if (text == "") return HotkeyGesture.None;
+        return HotkeyGesture.TryParse(text, out var gesture) ? gesture : HotkeyCatalog.GetDefault(actionId);
+    }
+
+    /// <summary>写入某个动作的组合。<paramref name="gesture"/> 等于出厂默认时移除覆盖项
+    /// (配置文件只留真正改过的,升级后默认值仍能跟着演进)。</summary>
+    public void SetHotkey(string actionId, HotkeyGesture gesture)
+    {
+        if (HotkeyCatalog.Find(actionId) is null) return;
+        if (!gesture.IsEmpty && !gesture.IsValid) return;
+        var text = gesture.ToStorageString();
+        bool changed;
+        if (text == HotkeyCatalog.GetDefault(actionId).ToStorageString())
+        {
+            changed = _hotkeys.Remove(actionId);
+        }
+        else if (_hotkeys.TryGetValue(actionId, out var existing))
+        {
+            changed = existing != text;
+            if (changed) _hotkeys[actionId] = text;
+        }
+        else
+        {
+            _hotkeys[actionId] = text;
+            changed = true;
+        }
+
+        if (!changed) return;
+        Save();
+        HotkeysChanged?.Invoke();
+    }
+
+    /// <summary>恢复全部出厂默认(清空覆盖项)。</summary>
+    public void ResetHotkeys()
+    {
+        if (_hotkeys.Count == 0) return;
+        _hotkeys.Clear();
+        Save();
+        HotkeysChanged?.Invoke();
+    }
+
     public AppStateStore()
         : this(GetDefaultPath())
     {
@@ -233,6 +291,13 @@ public sealed class AppStateStore
             Volume = Math.Clamp(dto.Volume ?? 80, 0, 100);
             MusicCacheMaximumSizeMb = MusicCacheService.NormalizeMaximumSizeMb(
                 dto.MusicCacheMaximumSizeMb ?? MusicCacheService.DefaultMaximumSizeMb);
+
+            _hotkeys.Clear();
+            foreach (var pair in dto.Hotkeys ?? new Dictionary<string, string>())
+            {
+                if (string.IsNullOrEmpty(pair.Key)) continue;
+                _hotkeys[pair.Key] = pair.Value ?? "";
+            }
 
             AggregatePlaylists.Clear();
             foreach (var f in dto.AggregatePlaylists ?? new List<AggregatePlaylistFile>())
@@ -366,6 +431,9 @@ public sealed class AppStateStore
                 PlaybackMode = PlaybackMode,
                 Volume = Volume,
                 MusicCacheMaximumSizeMb = MusicCacheMaximumSizeMb,
+                Hotkeys = _hotkeys.Count == 0
+                    ? null
+                    : new Dictionary<string, string>(_hotkeys, StringComparer.Ordinal),
             };
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, AppStateJsonContext.Default.AppStateFile));

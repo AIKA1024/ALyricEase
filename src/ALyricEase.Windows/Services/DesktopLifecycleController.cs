@@ -29,6 +29,8 @@ internal sealed class DesktopLifecycleController : IDisposable
     private bool _disposed;
     private WindowState _visibleWindowState = WindowState.Normal;
 
+    internal bool IsClosePromptPending => _promptPending;
+
     public DesktopLifecycleController(Application app, Window window, SettingsViewModel settings,
         AppStateStore state, ContentControl dialogHost)
     {

@@ -41,6 +41,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Collected = collected;
         RecentPlayback = recentPlayback;
         Settings = settings;
+        Hotkeys = new HotkeyDialogViewModel(appState);
         Account = account;
         PersonalHome = personalHome;
         _playlist = playlist;
@@ -101,6 +102,9 @@ public sealed partial class MainViewModel : ViewModelBase
     public SettingsViewModel Settings { get; }
     public AccountViewModel Account { get; }
     public PersonalHomeViewModel PersonalHome { get; }
+
+    /// <summary>键盘快捷键设置弹窗 VM(宿主绑定 HotkeyDialogView;打开前 Reload)。</summary>
+    public HotkeyDialogViewModel Hotkeys { get; }
 
     /// <summary>界面状态存储(折叠状态;主窗口大小/位置由 MainWindow 读写同一实例)。</summary>
     public Services.AppStateStore AppState { get; }
@@ -672,7 +676,14 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
-        // 红心平台选择声明在宿主弹层最后，系统返回/Esc 优先关闭它。
+        // 优先关闭最上层的设置弹窗。
+        if (IsHotkeyDialogOpen)
+        {
+            // 录音中由 HotkeyDialogView 自己吞掉 Esc(取消改键),走到这里说明只是在看列表
+            CloseHotkeyDialogCommand.Execute(null);
+            return true;
+        }
+
         if (IsDownloadSongDialogOpen)
         {
             DownloadSongDialog?.CloseCommand.Execute(null);
@@ -1400,6 +1411,55 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>关闭输出设备选择弹窗(关闭按钮/Esc)。</summary>
     [RelayCommand] private void CloseAudioDeviceDialog() => IsAudioDeviceDialogOpen = false;
+
+    // ---- 键盘快捷键设置弹窗 ----
+
+    /// <summary>键盘快捷键设置弹窗(WinUI3 ContentDialog 式窗口内弹层):true=显示。</summary>
+    [ObservableProperty] private bool _isHotkeyDialogOpen;
+
+    /// <summary>打开快捷键弹窗:先按 state.json 重读一遍,列表显示的永远是当前真正生效的组合。</summary>
+    public void OpenHotkeyDialog()
+    {
+        Hotkeys.Reload();
+        IsHotkeyDialogOpen = true;
+    }
+
+    /// <summary>关闭快捷键弹窗(完成按钮/Esc);未录完的改键直接丢弃。</summary>
+    [RelayCommand]
+    private void CloseHotkeyDialog()
+    {
+        Hotkeys.CancelCapture();
+        IsHotkeyDialogOpen = false;
+    }
+
+    // ---- 模态弹层状态汇总 ----
+
+    /// <summary>
+    /// 是否有任意模态弹层打开。快捷键分发靠它让位 —— 否则弹窗里按空格会顺手暂停后台播放。
+    /// ⚠ 新增弹层时记得补进这里,并在其 <c>OnIsXxxDialogOpenChanged</c> 里刷新本属性。
+    /// </summary>
+    public bool IsAnyModalOpen =>
+        IsLoginDialogOpen || IsAggregateDialogOpen || IsCreatePlaylistDialogOpen ||
+        IsAddSongToPlaylistDialogOpen || IsLikeSourceDialogOpen || IsRenamePlaylistDialogOpen ||
+        IsDeletePlaylistDialogOpen || IsLocalPlaylistSettingsDialogOpen || IsAudioDeviceDialogOpen ||
+        IsClearCacheDialogOpen || IsUpdateDialogOpen || IsAggregateSettingsDialogOpen ||
+        IsHotkeyDialogOpen || IsDownloadSongDialogOpen || IsErrorDialogOpen;
+
+    partial void OnIsLoginDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsAggregateDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsCreatePlaylistDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsAddSongToPlaylistDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsLikeSourceDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsRenamePlaylistDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsDeletePlaylistDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsLocalPlaylistSettingsDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsAudioDeviceDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsClearCacheDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsUpdateDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsAggregateSettingsDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsHotkeyDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsDownloadSongDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+    partial void OnIsErrorDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
 
     // ---- 清除缓存确认弹窗 ----
 

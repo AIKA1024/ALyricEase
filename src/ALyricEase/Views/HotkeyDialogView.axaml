@@ -1,0 +1,131 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:views="using:ALyricEase.Views"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d"
+             x:Class="ALyricEase.Views.HotkeyDialogView"
+             KeyboardNavigation.TabNavigation="Cycle">
+  <!-- 键盘快捷键设置弹窗(WinUI3 ContentDialog 式窗口内弹层,与 AudioDeviceDialogView 同款):
+       烟雾层 + 居中卡片;点某行的组合键按钮进入"录音态",再按一次组合键即写回 state.json。
+       Esc=取消录入(录入中)/关闭弹窗(平时)，由视图统一处理。
+       键盘捕获必须走隧道阶段,否则空格会先被聚焦的按钮吃掉(见 code-behind)。 -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.hotkey-group">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="Margin" Value="0,14,0,4" />
+    </Style>
+    <!-- 组合键按钮:只收尺寸/对齐,底色描边走主题(否则悬停态被局部值压掉) -->
+    <Style Selector="Button.hotkey-key">
+      <Setter Property="MinWidth" Value="164" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.hotkey-key.capturing">
+      <Setter Property="BorderBrush" Value="{DynamicResource LyricEaseTeal}" />
+      <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
+    </Style>
+    <!-- 已改过的行:标题右侧加一个小圆点,和"恢复默认"形成对照 -->
+    <Style Selector="Ellipse.hotkey-modified">
+      <Setter Property="Width" Value="6" />
+      <Setter Property="Height" Value="6" />
+      <Setter Property="Margin" Value="0,0,0,1" />
+      <Setter Property="Fill" Value="{DynamicResource LyricEaseTeal}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.hotkey-clear">
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Margin" Value="4,0,0,0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid x:Name="Root">
+    <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
+    <Panel Background="#99000000" />
+    <Grid DataContext="{Binding Hotkeys}" x:DataType="vm:HotkeyDialogViewModel"
+          HorizontalAlignment="Center" VerticalAlignment="Center">
+      <Border MaxWidth="560" MaxHeight="640" Margin="24" Padding="24" CornerRadius="8"
+              Background="{DynamicResource AppSurface}"
+              BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
+              BoxShadow="0 32 64 #66000000">
+        <DockPanel LastChildFill="True">
+          <StackPanel DockPanel.Dock="Top" Spacing="6">
+            <TextBlock Text="键盘快捷键" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="点击右侧按钮后按下新的组合键。仅在应用窗口内生效;焦点在输入框时不响应。"
+                       FontSize="13" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}" />
+          </StackPanel>
+
+          <Grid DockPanel.Dock="Bottom" Margin="0,16,0,0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+            <TextBlock Grid.ColumnSpan="2" Margin="0,0,0,12"
+                       Text="{Binding Hint}" IsVisible="{Binding HasHint}"
+                       FontSize="12" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}" />
+            <Button Grid.Row="1" Content="恢复默认" MinWidth="96" Height="32" HorizontalAlignment="Left"
+                    Command="{Binding ResetAllCommand}" />
+            <Button x:Name="DoneButton" Grid.Row="1" Grid.Column="1" Classes="accent" Content="完成" MinWidth="96" Height="32"
+                    Command="{Binding $parent[views:HotkeyDialogView].((vm:MainViewModel)DataContext).CloseHotkeyDialogCommand}" />
+          </Grid>
+
+          <ScrollViewer Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Groups}" Margin="0,0,20,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:HotkeyGroupViewModel">
+                  <StackPanel>
+                    <TextBlock Classes="hotkey-group" Text="{Binding Title}" />
+                    <ItemsControl ItemsSource="{Binding Items}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:HotkeyItemViewModel">
+                          <Grid ColumnDefinitions="*,Auto,32" Height="40">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+                              <TextBlock Text="{Binding Title}" FontSize="14" VerticalAlignment="Center"
+                                         Foreground="{DynamicResource TextPrimary}" />
+                              <Ellipse Classes="hotkey-modified" IsVisible="{Binding IsModified}" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Classes="hotkey-key"
+                                    Classes.capturing="{Binding IsCapturing}"
+                                    Content="{Binding GestureText}"
+                                    ToolTip.Tip="{Binding DefaultHint}"
+                                    AutomationProperties.Name="{Binding Title}"
+                                    Command="{Binding CaptureCommand}" />
+                            <Button Grid.Column="2" Classes="hotkey-clear" Content="×"
+                                    IsVisible="{Binding HasBinding}"
+                                    ToolTip.Tip="清除该快捷键"
+                                    AutomationProperties.Name="清除快捷键"
+                                    Command="{Binding ClearCommand}" />
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Grid>
+
+    <!-- 录音态接收键盘的落点:不可见、0 尺寸,只是为了让焦点离开"组合键按钮"
+         (焦点在按钮上时,空格/Enter 会被按钮自身的 Click 逻辑抢走) -->
+    <Border x:Name="CaptureSurface" Width="0" Height="0" Focusable="True" KeyboardNavigation.IsTabStop="False"
+            HorizontalAlignment="Left" VerticalAlignment="Top" />
+  </Grid>
+</UserControl>

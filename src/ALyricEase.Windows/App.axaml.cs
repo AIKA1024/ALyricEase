@@ -7,6 +7,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
+using ALyricEase.Services.Hotkeys;
 using ALyricEase.Services.Smtc;
 using ALyricEase.Services.Taskbar;
 using ALyricEase.ViewModels;
@@ -18,6 +19,15 @@ namespace ALyricEase;
 public partial class App : Application
 {
   private DesktopLifecycleController? _desktopLifecycle;
+  private HotkeyService? _hotkeys;
+
+  /// <summary>快捷键分发:焦点元素决定是否让位(文本框里不抢空格/Ctrl+←)。</summary>
+  private void OnHotkeyKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+  {
+    if (_hotkeys is null) return;
+    var focused = (sender as TopLevel)?.FocusManager?.GetFocusedElement();
+    _hotkeys.TryHandle(focused, e);
+  }
   public override void Initialize()
   {
     AvaloniaXamlLoader.Load(this);
@@ -47,6 +57,15 @@ public partial class App : Application
       desktop.MainWindow = mainWindow;
       _desktopLifecycle = new DesktopLifecycleController(this, mainWindow,
           ServiceLocator.Get<SettingsViewModel>(), ServiceLocator.Get<AppStateStore>(), mainWindow.DesktopDialogHost);
+
+      // 应用内快捷键(窗口级,不是系统全局热键):隧道阶段接管,焦点在输入框或
+      // 有模态弹层打开时让位。必须注册在 DesktopLifecycleController 之后 ——
+      // 关闭确认弹窗的隧道处理器要先跑,才能把按键关在弹窗里。
+      _hotkeys = new HotkeyService(ServiceLocator.Get<AppStateStore>(),
+          () => ServiceLocator.Get<MainViewModel>().IsAnyModalOpen ||
+                _desktopLifecycle?.IsClosePromptPending == true);
+      mainWindow.AddHandler(Avalonia.Input.InputElement.KeyDownEvent, OnHotkeyKeyDown,
+          Avalonia.Interactivity.RoutingStrategies.Tunnel);
 #if WINDOWS
       // 首次 Show 前监听 TaskbarButtonCreated，首次显示与托盘恢复共用同一条注册路径。
       var hwnd = mainWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;

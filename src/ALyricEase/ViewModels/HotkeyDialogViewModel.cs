@@ -31,6 +31,29 @@ public sealed partial class HotkeyItemViewModel : ViewModelBase
     /// <summary>未改过时右侧按钮的悬停提示:告诉用户默认是什么,免得以为"没设置"。</summary>
     public string DefaultHint => $"默认 {Definition.Default.ToDisplayString()}";
 
+    /// <summary>是否勾选了「应用在后台也响应」(注册成系统级热键)。</summary>
+    public bool IsGlobal
+    {
+        get => _owner.IsGlobal(Definition.Id);
+        set => _owner.SetGlobal(this, value);
+    }
+
+    /// <summary>平台是否支持系统级热键(Android 没有注册器,整列隐藏)。</summary>
+    public bool IsGlobalSupported => _owner.IsGlobalSupported;
+
+    /// <summary>勾了全局但系统没给(组合被其他程序占用)。</summary>
+    public bool GlobalFailed => IsGlobal && _owner.IsGlobalFailed(Definition.Id);
+
+    /// <summary>没有绑定、或组合是单键(空格)时不可勾选 —— 注册不了的东西别让点。</summary>
+    public bool CanBeGlobal => HasBinding && GlobalHotkeyRules.CanRegister(_gesture);
+
+    /// <summary>复选框的悬停说明:说明为什么能/不能全局。</summary>
+    public string GlobalHint => !HasBinding
+        ? "先给这个动作设置快捷键"
+        : CanBeGlobal
+            ? "应用在后台（切到其他程序或最小化到托盘）也响应"
+            : $"「{_gesture.ToDisplayString()}」是单键；全局热键要带 Ctrl / Alt / Shift，或改用 Pause、媒体键";
+
     /// <summary>正在等待用户按键(按钮切到强调色并显示"请按键…")。</summary>
     public bool IsCapturing
     {
@@ -63,6 +86,17 @@ public sealed partial class HotkeyItemViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasBinding));
         OnPropertyChanged(nameof(IsModified));
         OnPropertyChanged(nameof(GestureText));
+        NotifyGlobalChanged();
+    }
+
+    /// <summary>全局状态不在行 VM 里存(以 state 为准),变更后显式喊一次让绑定回读。</summary>
+    internal void NotifyGlobalChanged()
+    {
+        OnPropertyChanged(nameof(IsGlobal));
+        OnPropertyChanged(nameof(GlobalFailed));
+        OnPropertyChanged(nameof(IsGlobalSupported));
+        OnPropertyChanged(nameof(CanBeGlobal));
+        OnPropertyChanged(nameof(GlobalHint));
     }
 
     [RelayCommand]
@@ -84,11 +118,14 @@ public sealed partial class HotkeyItemViewModel : ViewModelBase
 public sealed partial class HotkeyDialogViewModel : ViewModelBase
 {
     private readonly AppStateStore _state;
+    private readonly GlobalHotkeyHost? _globals;
     private HotkeyItemViewModel? _capturingItem;
 
-    public HotkeyDialogViewModel(AppStateStore state)
+    /// <param name="globals">系统级热键对账器;null 或未接平台注册器时,"全局"列不可用。</param>
+    public HotkeyDialogViewModel(AppStateStore state, GlobalHotkeyHost? globals = null)
     {
         _state = state;
+        _globals = globals;
         var items = HotkeyCatalog.Actions
             .Select(action => new HotkeyItemViewModel(action, state.ResolveHotkey(action.Id), this))
             .ToList();
@@ -97,6 +134,67 @@ public sealed partial class HotkeyDialogViewModel : ViewModelBase
             .GroupBy(item => item.Definition.Group)
             .Select(group => new HotkeyGroupViewModel(group.Key, group.ToList()))
             .ToList();
+        // 注册失败集合会在对账后变化(启动时被占用、用户改键后换了个也被占用的组合)。
+        if (_globals is not null) _globals.Changed += OnGlobalStateChanged;
+    }
+
+    /// <summary>平台是否支持系统级热键。</summary>
+    public bool IsGlobalSupported => _globals?.IsSupported == true;
+
+    internal bool IsGlobal(string actionId) => _state.IsGlobalHotkey(actionId);
+
+    internal bool IsGlobalFailed(string actionId) => _globals?.IsFailed(actionId) == true;
+
+    /// <summary>勾选 / 取消「全局」。勾选当场就注册,失败(被占用、组合不可注册)立刻回滚并提示。</summary>
+    internal void SetGlobal(HotkeyItemViewModel item, bool value)
+    {
+        if (!IsGlobalSupported)
+        {
+            item.NotifyGlobalChanged();
+            return;
+        }
+
+        var actionId = item.Definition.Id;
+        if (value)
+        {
+            var gesture = item.Gesture;
+            if (gesture.IsEmpty)
+            {
+                Hint = $"「{item.Title}」还没有绑定快捷键，先按一下组合键再勾选。";
+                item.NotifyGlobalChanged();
+                return;
+            }
+
+            if (!GlobalHotkeyRules.CanRegister(gesture))
+            {
+                Hint = $"「{gesture.ToDisplayString()}」是单键，全局热键要带 Ctrl / Alt / Shift，或改用 Pause、媒体键。";
+                item.NotifyGlobalChanged();
+                return;
+            }
+
+            _state.SetGlobalHotkey(actionId, true); // 触发对账
+            if (_globals?.IsFailed(actionId) == true)
+            {
+                _state.SetGlobalHotkey(actionId, false);
+                Hint = $"「{gesture.ToDisplayString()}」已被其他程序占用，没能注册成全局热键。";
+            }
+            else
+            {
+                Hint = $"「{item.Title}」已设为全局：切到其他程序也会响应。";
+            }
+        }
+        else
+        {
+            _state.SetGlobalHotkey(actionId, false);
+            Hint = $"「{item.Title}」只在应用窗口内生效。";
+        }
+
+        item.NotifyGlobalChanged();
+    }
+
+    private void OnGlobalStateChanged()
+    {
+        foreach (var item in Items) item.NotifyGlobalChanged();
     }
 
     public IReadOnlyList<HotkeyItemViewModel> Items { get; }
@@ -122,7 +220,10 @@ public sealed partial class HotkeyDialogViewModel : ViewModelBase
         CancelCapture();
         Hint = null;
         foreach (var item in Items)
+        {
             item.SetGesture(_state.ResolveHotkey(item.Definition.Id));
+            item.NotifyGlobalChanged();
+        }
     }
 
     internal void BeginCapture(HotkeyItemViewModel item)
@@ -141,6 +242,7 @@ public sealed partial class HotkeyDialogViewModel : ViewModelBase
     {
         item.SetGesture(HotkeyGesture.None);
         _state.SetHotkey(item.Definition.Id, HotkeyGesture.None);
+        item.NotifyGlobalChanged(); // 清绑定会连带收回全局标记
         if (ReferenceEquals(_capturingItem, item)) CancelCapture();
         Hint = $"已清除「{item.Title}」的快捷键。";
     }
@@ -222,9 +324,13 @@ public sealed partial class HotkeyDialogViewModel : ViewModelBase
     [RelayCommand]
     private void ResetAll()
     {
-        _state.ResetHotkeys();
+        _state.ResetHotkeys(); // 连带清掉全部全局标记
         CancelCapture();
-        foreach (var item in Items) item.SetGesture(item.Definition.Default);
+        foreach (var item in Items)
+        {
+            item.SetGesture(item.Definition.Default);
+            item.NotifyGlobalChanged();
+        }
         Hint = "已恢复全部默认快捷键。";
     }
 }

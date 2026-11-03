@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ALyricEase.ViewModels"
+        x:Class="ALyricEase.Views.DesktopLyricWindow" x:DataType="vm:DesktopLyricViewModel"
+        Title="ALyricEase 桌面歌词" Width="720" SizeToContent="Height" CanResize="False"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="False"
+        WindowDecorations="None" Background="Transparent" TransparencyLevelHint="Transparent" RequestedThemeVariant="Dark">
+  <Grid>
+    <Border x:Name="LyricSurface" Background="{CompiledBinding BackgroundBrush}" CornerRadius="12" />
+    <Grid x:Name="LyricLayout" Margin="18,12" RowDefinitions="Auto,Auto" RowSpacing="8">
+      <Grid x:Name="Toolbar" ColumnDefinitions="*,Auto"
+            IsEnabled="{CompiledBinding !ClickThrough}" IsHitTestVisible="{CompiledBinding !ClickThrough}">
+        <Border x:Name="ToolbarDragArea" Background="Transparent" PointerPressed="OnDragPressed"
+                ToolTip.Tip="拖动调整歌词位置" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+        <StackPanel.Styles>
+          <Style Selector="Button, ToggleButton">
+            <Setter Property="MinHeight" Value="32" /><Setter Property="MinWidth" Value="36" />
+            <Setter Property="Foreground" Value="White" /><Setter Property="Background" Value="#E632373E" />
+          </Style>
+          <Style Selector="ToggleButton:checked">
+            <Setter Property="Background" Value="#72E5D3" /><Setter Property="Foreground" Value="#23272D" />
+          </Style>
+        </StackPanel.Styles>
+        <Button Content="A−" Command="{CompiledBinding DecreaseFontCommand}" ToolTip.Tip="缩小字号" AutomationProperties.Name="缩小字号" />
+        <Button Content="A+" Command="{CompiledBinding IncreaseFontCommand}" ToolTip.Tip="放大字号" AutomationProperties.Name="放大字号" />
+        <ToggleButton x:Name="TranslationButton" Content="译" IsChecked="{CompiledBinding ShowTranslation, Mode=TwoWay}"
+                      ToolTip.Tip="显示翻译" AutomationProperties.Name="显示翻译" />
+        <Button Content="背景" ToolTip.Tip="调整背景透明度">
+          <Button.Flyout><Flyout><StackPanel Width="200" Spacing="8">
+            <TextBlock Text="背景不透明度" />
+            <Slider Minimum="0" Maximum="1" Value="{CompiledBinding BackgroundOpacity, Mode=TwoWay}" AutomationProperties.Name="背景不透明度" />
+          </StackPanel></Flyout></Button.Flyout>
+        </Button>
+        <Button Content="穿透" Command="{CompiledBinding EnableClickThroughCommand}" ToolTip.Tip="开启鼠标穿透；按快捷键或在应用设置中解除" />
+        <Button Content="×" Command="{CompiledBinding CloseCommand}" ToolTip.Tip="关闭桌面歌词" AutomationProperties.Name="关闭桌面歌词" />
+      </StackPanel>
+      </Grid>
+      <StackPanel x:Name="LyricContent" Grid.Row="1" Spacing="4" PointerPressed="OnDragPressed" Background="Transparent"
+                  ToolTip.Tip="拖动调整歌词位置">
+        <StackPanel.Effect><DropShadowEffect Color="Black" BlurRadius="3" OffsetX="0" OffsetY="1" /></StackPanel.Effect>
+        <TextBlock Text="{CompiledBinding Original}" FontSize="{CompiledBinding FontSize}"
+                   Foreground="#72E5D3" FontWeight="SemiBold" TextAlignment="Center"
+                   TextWrapping="Wrap" MaxHeight="200" />
+        <TextBlock Text="{CompiledBinding Translation}" IsVisible="{CompiledBinding HasTranslation}"
+                   FontSize="{CompiledBinding TranslationFontSize}" Foreground="White"
+                   TextAlignment="Center" TextWrapping="Wrap" MaxHeight="100" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

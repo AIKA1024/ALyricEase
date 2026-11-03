@@ -96,6 +96,8 @@ public partial class App : Avalonia.Application
             () => ActivatorUtilities.CreateInstance<ExoPlayerMediaPlayer>(sp)));
         services.AddSingleton<ISmtcService, SmtcService>();
         services.AddSingleton<LyricViewModel>();
+        services.AddSingleton<DesktopLyricViewModel>();
+        services.AddSingleton<AndroidDesktopLyricService>();
         services.AddSingleton<PlayerViewModel>();
         services.AddSingleton<SearchViewModel>();
         services.AddSingleton<PlaylistViewModel>();

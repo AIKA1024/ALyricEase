@@ -58,14 +58,18 @@ public sealed class HotkeyService
             if (!gesture.Matches(e.Key, e.KeyModifiers)) continue;
 
             e.Handled = true;
-            _ = ExecuteAsync(action.Id);
+            _ = ExecuteActionAsync(action.Id);
             return true;
         }
 
         return false;
     }
 
-    private static async Task ExecuteAsync(string actionId)
+    /// <summary>
+    /// 执行一个动作。应用内分发与系统级热键(<see cref="IGlobalHotkeyRegistrar"/>)共用这一个入口,
+    /// 避免两套执行逻辑走偏。
+    /// </summary>
+    public static async Task ExecuteActionAsync(string actionId)
     {
         try
         {
@@ -106,6 +110,27 @@ public sealed class HotkeyService
                     {
                         if (main.ShowNowPlaying) main.CloseNowPlayingCommand.Execute(null);
                         else main.OpenNowPlayingCommand.Execute(null);
+                    }
+                    break;
+                case HotkeyCatalog.ToggleDesktopLyric:
+                    {
+                        var lyric = ServiceLocator.Get<DesktopLyricViewModel>();
+                        lyric.Enabled = !lyric.Enabled;
+                    }
+                    break;
+                case HotkeyCatalog.ToggleDesktopLyricTranslation:
+                    {
+                        // 只切偏好:歌词窗口未开时也照样记住,下次显示直接生效。
+                        var lyric = ServiceLocator.Get<DesktopLyricViewModel>();
+                        lyric.ShowTranslation = !lyric.ShowTranslation;
+                    }
+                    break;
+                case HotkeyCatalog.ToggleDesktopLyricClickThrough:
+                    {
+                        // 穿透只在有窗口时才有意义:未开启就顺手显示歌词,否则按下去毫无反馈。
+                        var lyric = ServiceLocator.Get<DesktopLyricViewModel>();
+                        if (!lyric.Enabled) lyric.Enabled = true;
+                        lyric.ClickThrough = !lyric.ClickThrough;
                     }
                     break;
             }

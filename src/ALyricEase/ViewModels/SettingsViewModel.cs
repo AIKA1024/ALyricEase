@@ -44,8 +44,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public SettingsViewModel(AppStateStore state, MusicCacheService musicCache, IAudioPlayer player,
         IAppUpdateService? updateService = null, IStartupService? startupService = null,
-        ILogger<SettingsViewModel>? logger = null)
+        ILogger<SettingsViewModel>? logger = null, DesktopLyricViewModel? desktopLyrics = null)
     {
+        DesktopLyrics = desktopLyrics;
         _logger = logger ?? NullLogger<SettingsViewModel>.Instance;
         _state = state;
         _musicCache = musicCache;
@@ -63,6 +64,15 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     // ---- 桌面启动与关闭行为 ----
+    public DesktopLyricViewModel? DesktopLyrics { get; }
+    public bool DesktopLyricsSupported => DesktopLyrics is not null;
+
+    [RelayCommand]
+    private void OpenDesktopLyricDialog()
+    {
+        if (DesktopLyricsSupported)
+            ServiceLocator.Get<MainViewModel>().IsDesktopLyricDialogOpen = true;
+    }
 
     public bool DesktopSettingsSupported => _startup is { IsSupported: true };
 

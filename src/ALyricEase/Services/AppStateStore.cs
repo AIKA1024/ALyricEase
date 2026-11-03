@@ -120,6 +120,18 @@ public sealed class AppStateStore
     /// <summary>播放详情页动态背景效果。</summary>
     public bool DynamicBackground { get; set; } = true;
 
+    public bool DesktopLyricEnabled { get; set; }
+    public bool DesktopLyricClickThrough { get; set; }
+    public bool DesktopLyricShowTranslation { get; set; } = true;
+    /// <summary>播放暂停/停止时收起歌词窗口。默认关:保持"一直显示"的旧行为。</summary>
+    public bool DesktopLyricHideWhenPaused { get; set; }
+    public double DesktopLyricFontSize { get; set; } = 28;
+    public double DesktopLyricBackgroundOpacity { get; set; } = 0.85;
+    public int? DesktopLyricX { get; set; }
+    public int? DesktopLyricY { get; set; }
+    public int? AndroidLyricX { get; set; }
+    public int? AndroidLyricY { get; set; }
+
     /// <summary>兼容的视觉效果。</summary>
     public bool CompatibilityVisual { get; set; } = true;
 
@@ -172,12 +184,30 @@ public sealed class AppStateStore
 
     private readonly Dictionary<string, string> _hotkeys = new(StringComparer.Ordinal);
 
+    /// <summary>勾选了「应用外也生效」的动作(注册成系统级热键)。
+    /// 这是用户意图,实际能否注册由 <see cref="Hotkeys.GlobalHotkeyHost"/> 对账。</summary>
+    private readonly HashSet<string> _globalHotkeys = new(StringComparer.Ordinal);
+
     /// <summary>用户改动过的快捷键(动作 Id → 手势文本;值 "" 表示用户显式清空)。
     /// 字典里没有的动作按 <see cref="HotkeyCatalog"/> 的默认值生效。</summary>
     public IReadOnlyDictionary<string, string> Hotkeys => _hotkeys;
 
-    /// <summary>快捷键配置变化(设置弹窗改键、恢复默认);分发逻辑无需订阅,它每次按键都现查。</summary>
+    /// <summary>快捷键配置变化(设置弹窗改键、勾选全局、恢复默认);应用内分发无需订阅,它每次按键都现查。</summary>
     public event Action? HotkeysChanged;
+
+    /// <summary>该动作是否勾选了「应用在后台也响应」。</summary>
+    public bool IsGlobalHotkey(string actionId) => _globalHotkeys.Contains(actionId);
+
+    /// <summary>写入全局标记。没有绑定(或绑定为空)的动作不予标记 —— 没键可注册。</summary>
+    public void SetGlobalHotkey(string actionId, bool global)
+    {
+        if (HotkeyCatalog.Find(actionId) is null) return;
+        if (global && ResolveHotkey(actionId).IsEmpty) return;
+        var changed = global ? _globalHotkeys.Add(actionId) : _globalHotkeys.Remove(actionId);
+        if (!changed) return;
+        Save();
+        HotkeysChanged?.Invoke();
+    }
 
     /// <summary>取某个动作当前生效的组合:未改过 = 出厂默认,显式清空 = 空(不响应)。</summary>
     public HotkeyGesture ResolveHotkey(string actionId)
@@ -211,16 +241,20 @@ public sealed class AppStateStore
             changed = true;
         }
 
+        // 绑定被清空 ⇒ 没有键可注册,顺手收回全局标记(否则界面会显示勾着却不生效)。
+        if (gesture.IsEmpty && _globalHotkeys.Remove(actionId)) changed = true;
+
         if (!changed) return;
         Save();
         HotkeysChanged?.Invoke();
     }
 
-    /// <summary>恢复全部出厂默认(清空覆盖项)。</summary>
+    /// <summary>恢复全部出厂默认(清空覆盖项与全局标记)。</summary>
     public void ResetHotkeys()
     {
-        if (_hotkeys.Count == 0) return;
+        if (_hotkeys.Count == 0 && _globalHotkeys.Count == 0) return;
         _hotkeys.Clear();
+        _globalHotkeys.Clear();
         Save();
         HotkeysChanged?.Invoke();
     }
@@ -275,6 +309,17 @@ public sealed class AppStateStore
                 ? "Performance"
                 : "Quality";
             DynamicBackground = dto.DynamicBackground ?? true;
+            DesktopLyricEnabled = dto.DesktopLyricEnabled;
+            // 歌词关着的时候穿透没有意义(窗口不存在),旧配置里的残留一律归一为 false。
+            DesktopLyricClickThrough = dto.DesktopLyricEnabled && dto.DesktopLyricClickThrough == true;
+            DesktopLyricBackgroundOpacity = dto.DesktopLyricBackgroundOpacity is >= 0 and <= 1 ? dto.DesktopLyricBackgroundOpacity.Value : 0.85;
+            DesktopLyricShowTranslation = dto.DesktopLyricShowTranslation ?? true;
+            DesktopLyricHideWhenPaused = dto.DesktopLyricHideWhenPaused ?? false;
+            DesktopLyricFontSize = dto.DesktopLyricFontSize is >= 16 and <= 48 ? dto.DesktopLyricFontSize.Value : 28;
+            DesktopLyricX = dto.DesktopLyricX;
+            DesktopLyricY = dto.DesktopLyricY;
+            AndroidLyricX = dto.AndroidLyricX;
+            AndroidLyricY = dto.AndroidLyricY;
             CompatibilityVisual = dto.CompatibilityVisual ?? true;
             AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 3);
             LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
@@ -297,6 +342,16 @@ public sealed class AppStateStore
             {
                 if (string.IsNullOrEmpty(pair.Key)) continue;
                 _hotkeys[pair.Key] = pair.Value ?? "";
+            }
+
+            // 全局标记只在"动作仍存在且真的有绑定"时保留:旧配置里残留的 Id 或已清空的绑定
+            // 都不能变成一条永远注册不上的死记录。
+            _globalHotkeys.Clear();
+            foreach (var id in dto.GlobalHotkeys ?? [])
+            {
+                if (string.IsNullOrEmpty(id) || HotkeyCatalog.Find(id) is null) continue;
+                if (ResolveHotkey(id).IsEmpty) continue;
+                _globalHotkeys.Add(id);
             }
 
             AggregatePlaylists.Clear();
@@ -417,6 +472,16 @@ public sealed class AppStateStore
                 Language = Language,
                 PerformanceMode = PerformanceMode,
                 DynamicBackground = DynamicBackground,
+                DesktopLyricEnabled = DesktopLyricEnabled,
+                DesktopLyricClickThrough = DesktopLyricClickThrough,
+                DesktopLyricBackgroundOpacity = DesktopLyricBackgroundOpacity,
+                DesktopLyricShowTranslation = DesktopLyricShowTranslation,
+                DesktopLyricHideWhenPaused = DesktopLyricHideWhenPaused,
+                DesktopLyricFontSize = DesktopLyricFontSize,
+                DesktopLyricX = DesktopLyricX,
+                DesktopLyricY = DesktopLyricY,
+                AndroidLyricX = AndroidLyricX,
+                AndroidLyricY = AndroidLyricY,
                 CompatibilityVisual = CompatibilityVisual,
                 AudioQuality = AudioQuality,
                 LegacyPlaybackControl = LegacyPlaybackControl,
@@ -434,6 +499,7 @@ public sealed class AppStateStore
                 Hotkeys = _hotkeys.Count == 0
                     ? null
                     : new Dictionary<string, string>(_hotkeys, StringComparer.Ordinal),
+                GlobalHotkeys = _globalHotkeys.Count == 0 ? null : _globalHotkeys.ToArray(),
             };
             var tmp = _path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(dto, AppStateJsonContext.Default.AppStateFile));

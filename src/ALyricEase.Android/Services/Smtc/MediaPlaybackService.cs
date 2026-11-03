@@ -19,6 +19,8 @@ using Android.OS;
 using Android.Support.V4.Media;
 using Android.Support.V4.Media.Session;
 using AndroidX.Media.Session;
+using ALyricEase.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using CoreNotificationCompat = AndroidX.Core.App.NotificationCompat;
 using MediaNotificationCompat = AndroidX.Media.App.NotificationCompat;
 
@@ -166,6 +168,7 @@ public sealed class MediaPlaybackService : Service
     {
         IsRunning = false;
         IsForeground = false;
+        ServiceLocator.Provider?.GetService<AndroidDesktopLyricService>()?.Refresh();
         try
         {
             if (_session is not null)
@@ -204,6 +207,7 @@ public sealed class MediaPlaybackService : Service
             StartForeground(NotificationId, notification);
         _foreground = true;
         IsForeground = true;
+        ServiceLocator.Provider?.GetService<AndroidDesktopLyricService>()?.Refresh();
         Log("foreground started");
     }
 

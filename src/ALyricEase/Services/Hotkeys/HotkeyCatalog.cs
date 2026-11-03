@@ -27,10 +27,14 @@ public static class HotkeyCatalog
     public const string CyclePlaybackMode = "cycle-playback-mode";
     public const string OpenSearch = "open-search";
     public const string ToggleNowPlaying = "toggle-now-playing";
+    public const string ToggleDesktopLyric = "toggle-desktop-lyric";
+    public const string ToggleDesktopLyricTranslation = "toggle-desktop-lyric-translation";
+    public const string ToggleDesktopLyricClickThrough = "toggle-desktop-lyric-click-through";
 
     public const string GroupPlayback = "播放控制";
     public const string GroupVolume = "音量";
     public const string GroupNavigation = "导航";
+    public const string GroupDesktopLyric = "桌面歌词";
 
     /// <summary>后退/前进一次跳过的毫秒数。</summary>
     public const long SeekStepMs = 5_000;
@@ -60,6 +64,12 @@ public static class HotkeyCatalog
             new HotkeyGesture(Key.F, KeyModifiers.Control)),
         new(ToggleNowPlaying, GroupNavigation, "打开 / 关闭播放详情",
             new HotkeyGesture(Key.Enter, KeyModifiers.Control)),
+        new(ToggleDesktopLyric, GroupDesktopLyric, "打开 / 关闭桌面歌词",
+            new HotkeyGesture(Key.L, KeyModifiers.Control | KeyModifiers.Shift)),
+        new(ToggleDesktopLyricTranslation, GroupDesktopLyric, "显示 / 隐藏翻译",
+            new HotkeyGesture(Key.T, KeyModifiers.Control | KeyModifiers.Shift)),
+        new(ToggleDesktopLyricClickThrough, GroupDesktopLyric, "切换鼠标穿透",
+            new HotkeyGesture(Key.P, KeyModifiers.Control | KeyModifiers.Shift)),
     ];
 
     public static HotkeyActionDefinition? Find(string? id)

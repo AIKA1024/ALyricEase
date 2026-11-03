@@ -20,6 +20,8 @@ public partial class App : Application
 {
   private DesktopLifecycleController? _desktopLifecycle;
   private HotkeyService? _hotkeys;
+  private DesktopLyricController? _desktopLyrics;
+  private Win32GlobalHotkeyRegistrar? _globalHotkeys;
 
   /// <summary>快捷键分发:焦点元素决定是否让位(文本框里不抢空格/Ctrl+←)。</summary>
   private void OnHotkeyKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
@@ -45,6 +47,8 @@ public partial class App : Application
       desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
       desktop.Exit += (_, _) => ServiceLocator.Get<AppStateStore>().Flush();
       desktop.Exit += (_, _) => _desktopLifecycle?.Dispose();
+      desktop.Exit += (_, _) => _desktopLyrics?.Dispose();
+      desktop.Exit += (_, _) => _globalHotkeys?.Dispose();
 
       // 主窗口本身秒开:内部先显示启动画面(标题栏+图标+合成线程旋转指示),
       // 重内容壳层(MainWindowShell)在其首帧后由 MainWindow 自行挂载并原地收起启动画面。
@@ -72,6 +76,15 @@ public partial class App : Application
       InitTaskbarThumbButtons(mainWindow, hwnd);
 #endif
       mainWindow.Show();
+      // 系统级热键(逐条勾选「全局」):必须在 Show 之后接 —— 注册要 HWND。
+      // 注册失败的动作只是退回"仅应用内生效",不影响启动。
+      _globalHotkeys = new Win32GlobalHotkeyRegistrar(mainWindow,
+          id => _ = HotkeyService.ExecuteActionAsync(id));
+      ServiceLocator.Get<GlobalHotkeyHost>().Attach(_globalHotkeys);
+      // 桌面歌词窗口同样接入快捷键:焦点在它上面时(比如刚点了穿透按钮)
+      // 主窗口的隧道处理器收不到按键,不解开穿透就彻底操作不了。
+      _desktopLyrics = new DesktopLyricController(ServiceLocator.Get<DesktopLyricViewModel>(),
+          ServiceLocator.Get<AppStateStore>(), _hotkeys);
 
       // 第二个进程(双击图标 / 开机自启撞车 / 更新重启)经命名事件请求激活:
       // 把它当成"再点一次图标"——托盘里就先还原窗口,已经可见就抬到前台。

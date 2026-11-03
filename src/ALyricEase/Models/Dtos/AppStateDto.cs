@@ -67,6 +67,18 @@ public sealed class AppStateFile
 
     /// <summary>播放详情页动态背景效果。</summary>
     public bool? DynamicBackground { get; set; }
+    public bool DesktopLyricEnabled { get; set; }
+    /// <summary>鼠标穿透。只在歌词开启时才有意义(关闭歌词会一并复位)。</summary>
+    public bool? DesktopLyricClickThrough { get; set; }
+    public double? DesktopLyricBackgroundOpacity { get; set; }
+    public bool? DesktopLyricShowTranslation { get; set; }
+    /// <summary>暂停(或停止)时收起歌词窗口;null 表示沿用旧配置的默认值 false。</summary>
+    public bool? DesktopLyricHideWhenPaused { get; set; }
+    public double? DesktopLyricFontSize { get; set; }
+    public int? DesktopLyricX { get; set; }
+    public int? DesktopLyricY { get; set; }
+    public int? AndroidLyricX { get; set; }
+    public int? AndroidLyricY { get; set; }
 
     /// <summary>兼容的视觉效果(低端设备关掉重动效)。</summary>
     public bool? CompatibilityVisual { get; set; }
@@ -107,6 +119,10 @@ public sealed class AppStateFile
     /// <summary>用户改过的快捷键(动作 Id → 手势文本,如 <c>Control+Shift+Left</c>)。
     /// null = 从未改过(全部走出厂默认);值 "" = 用户显式清空该动作。</summary>
     public Dictionary<string, string>? Hotkeys { get; set; }
+
+    /// <summary>勾选了「应用外也生效」的动作 Id(注册成系统级热键)。
+    /// null = 全部只在应用内生效。</summary>
+    public string[]? GlobalHotkeys { get; set; }
 }
 
 /// <summary>聚合歌单落盘形态。</summary>

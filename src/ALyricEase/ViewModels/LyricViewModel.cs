@@ -17,6 +17,8 @@ public sealed partial class LyricViewModel : ViewModelBase
     private readonly MusicCacheService _cache;
     private LyricDocument? _doc;
     private int _loadVersion;
+    private long _positionMs;
+    [ObservableProperty] private Song? _song;
 
     public LyricViewModel(
         MusicApiProvider sources,
@@ -60,6 +62,8 @@ public sealed partial class LyricViewModel : ViewModelBase
     {
         var version = ++_loadVersion;
         Reset();
+        _positionMs = 0;
+        Song = song;
 
         LyricDocument? doc = null;
         try
@@ -104,12 +108,14 @@ public sealed partial class LyricViewModel : ViewModelBase
             Lines = new ObservableCollection<LyricLine>(doc.Lines);
             HasLyric = true;
             CurrentIndex = -1;
+            UpdatePosition(_positionMs);
         });
     }
 
     /// <summary>播放进度回调(UI 线程):二分定位当前句。</summary>
     public void UpdatePosition(long positionMs)
     {
+        _positionMs = positionMs;
         if (_doc is null) return;
         var idx = _doc.FindIndex(positionMs);
         if (idx != CurrentIndex) CurrentIndex = idx;

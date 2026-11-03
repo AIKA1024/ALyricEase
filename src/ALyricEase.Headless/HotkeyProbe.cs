@@ -35,7 +35,15 @@ internal static class HotkeyProbe
         {
             // 隔离真实用户配置:构造函数是 internal,Headless 有 InternalsVisibleTo
             services.AddSingleton(new AppStateStore(statePath));
+            // 桌面歌词快捷键直接改这个 VM
+            services.AddSingleton<DesktopLyricViewModel>();
+            // 系统级热键对账器(注册器用下面的假实现,不碰真实 RegisterHotKey)
+            services.AddSingleton<GlobalHotkeyHost>();
         });
+
+        var globals = ServiceLocator.Get<GlobalHotkeyHost>();
+        var registrar = new FakeGlobalHotkeyRegistrar();
+        globals.Attach(registrar);
 
         var state = ServiceLocator.Get<AppStateStore>();
         var main = ServiceLocator.Get<MainViewModel>();
@@ -187,6 +195,115 @@ internal static class HotkeyProbe
             window.KeyPress(Key.F, RawInputModifiers.Control, PhysicalKey.F, null);
             Check(main.ActivePage == "Search" && !main.ShowNowPlaying, "从播放详情打开搜索时收起详情");
 
+            // ---- ⑤ 桌面歌词动作 ----
+            var lyrics = ServiceLocator.Get<DesktopLyricViewModel>();
+            lyrics.Enabled = false;
+            lyrics.ShowTranslation = false;
+            const RawInputModifiers lyricMods = RawInputModifiers.Control | RawInputModifiers.Shift;
+
+            window.KeyPress(Key.L, lyricMods, PhysicalKey.L, null);
+            Check(lyrics.Enabled, "Ctrl+Shift+L 打开桌面歌词");
+            window.KeyPress(Key.L, lyricMods, PhysicalKey.L, null);
+            Check(!lyrics.Enabled, "再按一次关闭桌面歌词");
+
+            window.KeyPress(Key.T, lyricMods, PhysicalKey.T, null);
+            Check(lyrics.ShowTranslation, "Ctrl+Shift+T 显示翻译");
+            window.KeyPress(Key.T, lyricMods, PhysicalKey.T, null);
+            Check(!lyrics.ShowTranslation, "再按一次隐藏翻译");
+
+            lyrics.Enabled = true;
+            lyrics.ClickThrough = false;
+            window.KeyPress(Key.P, lyricMods, PhysicalKey.P, null);
+            Check(lyrics.ClickThrough, "Ctrl+Shift+P 开启鼠标穿透");
+            window.KeyPress(Key.P, lyricMods, PhysicalKey.P, null);
+            Check(!lyrics.ClickThrough, "再按一次解除穿透");
+
+            lyrics.Enabled = false;
+            window.KeyPress(Key.P, lyricMods, PhysicalKey.P, null);
+            Check(lyrics.Enabled && lyrics.ClickThrough, "歌词未开启时按穿透会先显示歌词");
+            lyrics.Enabled = false;
+            Check(!lyrics.ClickThrough, "关闭桌面歌词顺带解除穿透");
+
+            // ---- ⑥ 逐条「全局」热键 ----
+            Check(globals.IsSupported, "接入模拟注册器后全局热键可用");
+
+            // 单键规则:不产生字符的少数键才允许全局(空格/字母/Insert 会把键从别的程序手里抢走)。
+            Check(GlobalHotkeyRules.CanRegister(new HotkeyGesture(Key.Pause, KeyModifiers.None)),
+                "Pause 允许作为单键全局热键");
+            Check(GlobalHotkeyRules.CanRegister(new HotkeyGesture(Key.MediaPlayPause, KeyModifiers.None)),
+                "媒体键允许作为单键全局热键");
+            Check(!GlobalHotkeyRules.CanRegister(new HotkeyGesture(Key.Space, KeyModifiers.None)),
+                "空格不允许单键全局");
+            Check(!GlobalHotkeyRules.CanRegister(new HotkeyGesture(Key.Insert, KeyModifiers.None)),
+                "Insert 不允许单键全局");
+            Check(GlobalHotkeyRules.CanRegister(new HotkeyGesture(Key.K, KeyModifiers.Control)),
+                "带修饰键的组合允许全局");
+            Check(HotkeyGesture.TryParse("Pause", out var pauseGesture)
+                  && pauseGesture == new HotkeyGesture(Key.Pause, KeyModifiers.None),
+                "Pause 能解析并落盘为单键");
+
+            dialog.Reload();
+            var playItem = dialog.Items.First(i => i.Definition.Id == HotkeyCatalog.PlayPause);
+            var volumeItem = dialog.Items.First(i => i.Definition.Id == HotkeyCatalog.VolumeUp);
+            var nextItem = dialog.Items.First(i => i.Definition.Id == HotkeyCatalog.NextTrack);
+
+            playItem.IsGlobal = true;
+            Check(!playItem.CanBeGlobal, "空格行不允许勾选全局（复选框禁用）");
+            Check(!playItem.IsGlobal && !state.IsGlobalHotkey(HotkeyCatalog.PlayPause),
+                "单键（空格）不能设为全局");
+            Check(dialog.Hint is not null && dialog.Hint.Contains("Ctrl"), "单键被拒时给出原因");
+
+            // 把播放/暂停改绑到 Pause 就能勾全局 —— 单键播放/暂停的正解。
+            dialog.BeginCapture(playItem);
+            dialog.HandleCaptureKey(Key.Pause, KeyModifiers.None);
+            Check(playItem.Gesture == new HotkeyGesture(Key.Pause, KeyModifiers.None), "录音可录入 Pause");
+            Check(playItem.CanBeGlobal, "改绑 Pause 后允许勾全局");
+            playItem.IsGlobal = true;
+            Check(registrar.Registered.TryGetValue(HotkeyCatalog.PlayPause, out var pauseRegistered)
+                  && pauseRegistered == new HotkeyGesture(Key.Pause, KeyModifiers.None),
+                "Pause 单键注册为全局");
+            playItem.IsGlobal = false;
+
+            volumeItem.IsGlobal = true;
+            Check(volumeItem.IsGlobal && registrar.Registered.ContainsKey(HotkeyCatalog.VolumeUp),
+                "勾选全局立即注册");
+            Check(registrar.Registered[HotkeyCatalog.VolumeUp] == volumeItem.Gesture, "注册的是当前组合");
+
+            registrar.Blocked.Add(HotkeyCatalog.NextTrack);
+            nextItem.IsGlobal = true;
+            Check(!nextItem.IsGlobal, "组合被占用时复选框回滚");
+            Check(dialog.Hint is not null && dialog.Hint.Contains("占用"), "被占用时给出提示");
+            registrar.Blocked.Remove(HotkeyCatalog.NextTrack);
+
+            dialog.BeginCapture(volumeItem);
+            dialog.HandleCaptureKey(Key.F7, KeyModifiers.Control);
+            Check(registrar.Registered.TryGetValue(HotkeyCatalog.VolumeUp, out var rebound)
+                  && rebound.Key == Key.F7, "改键后按新组合重新注册");
+            Check(!registrar.Registered.ContainsKey(HotkeyCatalog.PlayPause), "未勾选的动作不会被注册");
+
+            volumeItem.IsGlobal = false;
+            Check(!registrar.Registered.ContainsKey(HotkeyCatalog.VolumeUp), "取消勾选立即注销");
+
+            volumeItem.IsGlobal = true;
+            volumeItem.ClearCommand.Execute(null);
+            Check(!state.IsGlobalHotkey(HotkeyCatalog.VolumeUp)
+                  && !registrar.Registered.ContainsKey(HotkeyCatalog.VolumeUp),
+                "清空键位连带收回全局并注销");
+
+            // 落盘 + 重启后仍是全局意图(实际注册由启动时的对账重做)
+            dialog.BeginCapture(volumeItem);
+            dialog.HandleCaptureKey(Key.F8, KeyModifiers.Control);
+            volumeItem.IsGlobal = true;
+            Check(volumeItem.IsGlobal, "清空后重新绑定可以再勾全局");
+            state.Flush();
+            var restarted = new AppStateStore(statePath);
+            Check(restarted.IsGlobalHotkey(HotkeyCatalog.VolumeUp), "全局标记落盘");
+            Check(dialog.Hint is not null && dialog.Hint.Contains("全局"), "勾选全局给出确认提示");
+
+            dialog.ResetAllCommand.Execute(null);
+            Check(registrar.Registered.Count == 0 && !state.IsGlobalHotkey(HotkeyCatalog.VolumeUp),
+                "恢复默认释放全部全局热键");
+
             // 弹窗视图:录音态靠隧道阶段吞键,并真的改掉绑定
             var background = new Button { Content = "背景设置入口" };
             var view = new HotkeyDialogView { DataContext = main, IsVisible = false };
@@ -280,5 +397,23 @@ internal static class HotkeyProbe
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
+    }
+
+    /// <summary>模拟平台注册器:记录注册结果,可指定"被其他程序占用"的动作。</summary>
+    private sealed class FakeGlobalHotkeyRegistrar : IGlobalHotkeyRegistrar
+    {
+        public HashSet<string> Blocked { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, HotkeyGesture> Registered { get; } = new(StringComparer.Ordinal);
+
+        public bool TryRegister(string actionId, HotkeyGesture gesture)
+        {
+            if (Blocked.Contains(actionId)) return false;
+            Registered[actionId] = gesture;
+            return true;
+        }
+
+        public void Unregister(string actionId) => Registered.Remove(actionId);
+
+        public void UnregisterAll() => Registered.Clear();
     }
 }

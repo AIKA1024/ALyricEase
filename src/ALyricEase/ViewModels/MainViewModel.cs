@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
+using ALyricEase.Services.Hotkeys;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -24,7 +25,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, BrowseViewModel browse, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, PersonalHomeViewModel personalHome, Services.AppStateStore appState)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, BrowseViewModel browse, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, PersonalHomeViewModel personalHome, Services.AppStateStore appState, GlobalHotkeyHost? globalHotkeys = null)
     {
         Search = search;
         Player = player;
@@ -41,7 +42,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Collected = collected;
         RecentPlayback = recentPlayback;
         Settings = settings;
-        Hotkeys = new HotkeyDialogViewModel(appState);
+        Hotkeys = new HotkeyDialogViewModel(appState, globalHotkeys);
         Account = account;
         PersonalHome = personalHome;
         _playlist = playlist;
@@ -711,6 +712,12 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         // 设备选择弹层声明在所有弹层最后(盖在最上) ⇒ 返回链最先消费
+        if (IsDesktopLyricDialogOpen)
+        {
+            CloseDesktopLyricDialogCommand.Execute(null);
+            return true;
+        }
+
         if (IsAudioDeviceDialogOpen)
         {
             CloseAudioDeviceDialogCommand.Execute(null);
@@ -1408,6 +1415,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>音频输出设备选择弹窗(WinUI3 ContentDialog 式窗口内弹层):true=显示。
     /// 设备列表与选择逻辑都在 SettingsViewModel(弹层内层 DataContext 绑 Settings)。</summary>
     [ObservableProperty] private bool _isAudioDeviceDialogOpen;
+    [ObservableProperty] private bool _isDesktopLyricDialogOpen;
+    [RelayCommand] private void CloseDesktopLyricDialog() => IsDesktopLyricDialogOpen = false;
+    partial void OnIsDesktopLyricDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
 
     /// <summary>关闭输出设备选择弹窗(关闭按钮/Esc)。</summary>
     [RelayCommand] private void CloseAudioDeviceDialog() => IsAudioDeviceDialogOpen = false;
@@ -1441,7 +1451,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool IsAnyModalOpen =>
         IsLoginDialogOpen || IsAggregateDialogOpen || IsCreatePlaylistDialogOpen ||
         IsAddSongToPlaylistDialogOpen || IsLikeSourceDialogOpen || IsRenamePlaylistDialogOpen ||
-        IsDeletePlaylistDialogOpen || IsLocalPlaylistSettingsDialogOpen || IsAudioDeviceDialogOpen ||
+        IsDeletePlaylistDialogOpen || IsLocalPlaylistSettingsDialogOpen || IsAudioDeviceDialogOpen || IsDesktopLyricDialogOpen ||
         IsClearCacheDialogOpen || IsUpdateDialogOpen || IsAggregateSettingsDialogOpen ||
         IsHotkeyDialogOpen || IsDownloadSongDialogOpen || IsErrorDialogOpen;
 

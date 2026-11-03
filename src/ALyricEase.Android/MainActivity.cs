@@ -8,6 +8,7 @@ using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using ALyricEase.ViewModels;
 using Avalonia.Android;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ALyricEase;
 
@@ -81,6 +82,7 @@ public class MainActivity : AvaloniaMainActivity
 
     protected override void OnStop()
     {
+        ServiceLocator.Provider?.GetService<AndroidDesktopLyricService>()?.Background();
         // Android 可能在后台直接回收进程；进入后台前同步刷新高频配置的延迟保存。
         ServiceLocator.Get<AppStateStore>().Flush();
 
@@ -88,6 +90,18 @@ public class MainActivity : AvaloniaMainActivity
         _backCallback = null;
 
         base.OnStop();
+    }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        ServiceLocator.Provider?.GetService<AndroidDesktopLyricService>()?.Resume();
+    }
+
+    public override void OnConfigurationChanged(global::Android.Content.Res.Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        ServiceLocator.Provider?.GetService<AndroidDesktopLyricService>()?.Refresh();
     }
 
     protected override void OnDestroy()

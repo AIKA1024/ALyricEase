@@ -54,6 +54,22 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
     </Style>
+    <!-- 「全局」勾选:小一号,和右侧键位按钮同一视觉层级 -->
+    <Style Selector="CheckBox.hotkey-global">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <!-- 单键(空格)没有可注册的全局组合:显式用禁用色,别让用户以为只是没点亮 -->
+    <Style Selector="CheckBox.hotkey-global:disabled">
+      <Setter Property="Foreground" Value="{DynamicResource TextDisabled}" />
+    </Style>
+    <!-- 勾了却没注册上(被其他程序占用):标红,避免以为已经在后台生效 -->
+    <Style Selector="CheckBox.hotkey-global.failed">
+      <Setter Property="Foreground" Value="#E06A6A" />
+    </Style>
   </UserControl.Styles>
 
   <Grid x:Name="Root">
@@ -68,7 +84,7 @@
         <DockPanel LastChildFill="True">
           <StackPanel DockPanel.Dock="Top" Spacing="6">
             <TextBlock Text="键盘快捷键" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="点击右侧按钮后按下新的组合键。仅在应用窗口内生效;焦点在输入框时不响应。"
+            <TextBlock Text="点击右侧按钮后按下新的组合键。勾选「全局」后切到其他程序也会响应；单键只有 Pause、ScrollLock 与媒体键可以全局。"
                        FontSize="13" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextSecondary}" />
           </StackPanel>
@@ -93,19 +109,27 @@
                     <ItemsControl ItemsSource="{Binding Items}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:HotkeyItemViewModel">
-                          <Grid ColumnDefinitions="*,Auto,32" Height="40">
+                          <Grid ColumnDefinitions="*,Auto,Auto,32" Height="40">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
                               <TextBlock Text="{Binding Title}" FontSize="14" VerticalAlignment="Center"
                                          Foreground="{DynamicResource TextPrimary}" />
                               <Ellipse Classes="hotkey-modified" IsVisible="{Binding IsModified}" />
                             </StackPanel>
-                            <Button Grid.Column="1" Classes="hotkey-key"
+                            <CheckBox Grid.Column="1" Classes="hotkey-global"
+                                      Classes.failed="{Binding GlobalFailed}"
+                                      Content="全局"
+                                      IsVisible="{Binding IsGlobalSupported}"
+                                      IsEnabled="{Binding CanBeGlobal}"
+                                      IsChecked="{Binding IsGlobal, Mode=TwoWay}"
+                                      ToolTip.Tip="{Binding GlobalHint}"
+                                      AutomationProperties.Name="{Binding Title, StringFormat={}{0}：全局}" />
+                            <Button Grid.Column="2" Classes="hotkey-key"
                                     Classes.capturing="{Binding IsCapturing}"
                                     Content="{Binding GestureText}"
                                     ToolTip.Tip="{Binding DefaultHint}"
                                     AutomationProperties.Name="{Binding Title}"
                                     Command="{Binding CaptureCommand}" />
-                            <Button Grid.Column="2" Classes="hotkey-clear" Content="×"
+                            <Button Grid.Column="3" Classes="hotkey-clear" Content="×"
                                     IsVisible="{Binding HasBinding}"
                                     ToolTip.Tip="清除该快捷键"
                                     AutomationProperties.Name="清除快捷键"

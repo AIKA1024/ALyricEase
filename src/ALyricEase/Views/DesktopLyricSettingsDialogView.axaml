@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:Class="ALyricEase.Views.DesktopLyricSettingsDialogView"
+             x:DataType="vm:MainViewModel">
+  <Grid Background="#99000000" KeyboardNavigation.TabNavigation="Cycle">
+    <Border MaxWidth="460" MaxHeight="640" Margin="16" Padding="24" CornerRadius="8"
+            HorizontalAlignment="Stretch" VerticalAlignment="Center"
+            Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorderStrong}"
+            BorderThickness="1" BoxShadow="0 32 64 #66000000">
+      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="20">
+        <StackPanel Spacing="6">
+          <TextBlock Text="歌词设置" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Text="调整即时生效，并自动保存。" FontSize="13" Foreground="{DynamicResource TextSecondary}" />
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" Padding="0,0,12,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel DataContext="{CompiledBinding Settings.DesktopLyrics}" x:DataType="vm:DesktopLyricViewModel" Spacing="20">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="桌面歌词" VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0"
+                            IsChecked="{CompiledBinding Enabled, Mode=TwoWay}" AutomationProperties.Name="桌面歌词总开关" />
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="显示翻译" VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0" IsChecked="{CompiledBinding ShowTranslation, Mode=TwoWay}" AutomationProperties.Name="显示翻译" />
+            </Grid>
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="暂停时隐藏歌词" VerticalAlignment="Center" />
+                <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0"
+                              IsChecked="{CompiledBinding HideWhenPaused, Mode=TwoWay}" AutomationProperties.Name="暂停时隐藏歌词" />
+              </Grid>
+              <TextBlock Text="播放暂停或停止时收起歌词窗口，继续播放后自动显示。"
+                         FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="鼠标 / 触摸穿透" VerticalAlignment="Center" />
+                <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0" IsEnabled="{CompiledBinding Enabled}" IsChecked="{CompiledBinding ClickThrough, Mode=TwoWay}" AutomationProperties.Name="鼠标或触摸穿透" />
+              </Grid>
+              <TextBlock Text="开启后歌词窗口不响应点击。在此关闭穿透，或用快捷键切换，即可恢复拖动和按钮操作。"
+                         FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
+            </StackPanel>
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="歌词字号" />
+                <TextBlock Grid.Column="1" Text="{CompiledBinding FontSize, StringFormat={}{0:0}}" Foreground="{DynamicResource TextSecondary}" />
+              </Grid>
+              <Slider Minimum="16" Maximum="48" TickFrequency="2" IsSnapToTickEnabled="True"
+                      Value="{CompiledBinding FontSize, Mode=TwoWay}" AutomationProperties.Name="歌词字号" />
+            </StackPanel>
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="背景不透明度" />
+                <TextBlock Grid.Column="1" Text="{CompiledBinding BackgroundOpacity, StringFormat={}{0:P0}}" Foreground="{DynamicResource TextSecondary}" />
+              </Grid>
+              <Slider Minimum="0" Maximum="1" Value="{CompiledBinding BackgroundOpacity, Mode=TwoWay}" AutomationProperties.Name="背景不透明度" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+        <Button x:Name="DoneButton" Grid.Row="2" Classes="accent" Content="完成" MinWidth="96" Height="32"
+                HorizontalAlignment="Right" Command="{CompiledBinding CloseDesktopLyricDialogCommand}" />
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

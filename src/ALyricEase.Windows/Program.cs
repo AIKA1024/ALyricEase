@@ -6,6 +6,7 @@ using ALyricEase.Services;
 using ALyricEase.Services.Audio;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.Crypto;
+using ALyricEase.Services.Hotkeys;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.QQMusic;
 using ALyricEase.Services.Sharing;
@@ -185,6 +186,33 @@ class Program
       return;
     }
 
+    // 系统级热键真机探针(--hotkeytest):真窗口 + RegisterHotKey + WM_HOTKEY,
+    // Headless 的假注册器覆盖不到这一层(见 GlobalHotkeyProbe)。
+    // 用空 Application 起平台:不走 App 的启动流程(不建主窗口、不恢复登录、不读用户配置)。
+    if (args.Length > 0 && args[0] == "--hotkeytest")
+    {
+      var hotkeyBuilder = AppBuilder.Configure<Avalonia.Application>()
+          .UsePlatformDetect()
+          .LogToTrace();
+      Dispatcher.UIThread.Post(async () =>
+      {
+        try
+        {
+          await GlobalHotkeyProbe.RunAsync();
+          Environment.ExitCode = 0;
+        }
+        catch (Exception ex)
+        {
+          Console.Error.WriteLine($"[hotkeytest] 失败: {ex.Message}");
+          Console.Error.WriteLine(ex);
+          Environment.ExitCode = 1;
+        }
+        finally { Dispatcher.UIThread.InvokeShutdown(); }
+      }, DispatcherPriority.Background);
+      hotkeyBuilder.StartWithClassicDesktopLifetime(Array.Empty<string>(), Avalonia.Controls.ShutdownMode.OnExplicitShutdown);
+      return;
+    }
+
     // 单实例闸:开机自启、手动双击、更新后重启三路都可能同时到达,而本应用没有第二个
     // 进程该抢的东西(同一份 state.json/日志/托盘图标)。放在所有探针分支之后 ——
     // --selftest-*/--sharetest 是独立的诊断进程,必须允许并行。
@@ -244,6 +272,7 @@ class Program
     services.AddSingleton<ISmtcService, SmtcService>();
 #endif
     services.AddSingleton<LyricViewModel>();
+    services.AddSingleton<DesktopLyricViewModel>();
     services.AddSingleton<PlayerViewModel>();
     services.AddSingleton<SearchViewModel>();
     services.AddSingleton<PlaylistViewModel>();
@@ -259,6 +288,8 @@ class Program
     services.AddSingleton<RecentPlaybackViewModel>();
     services.AddSingleton<SettingsViewModel>();
     services.AddSingleton<AccountViewModel>();
+    // 逐条「全局」热键的对账器:注册器在窗口 Show 之后由 App 接入(需要 HWND)。
+    services.AddSingleton<GlobalHotkeyHost>();
     services.AddSingleton<MainViewModel>();
     ServiceLocator.Provider = services.BuildServiceProvider();
     CoverImagePipeline.Configure(ServiceLocator.Get<MusicCacheService>());

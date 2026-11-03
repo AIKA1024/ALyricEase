@@ -783,3 +783,8 @@ UI 线程 27.7% + 另一条线程 32%，4 秒里分配 **245MB**（主页没有�
 **口径（下次不要再踩）**：跨页比 GPU 绝对值是无意义的（同一个页面就能差 2.4×）。
 要比就比 **⑤ 每帧开销**（已除掉帧数）或 **① 的"滚动−静止"差值**（两档含同一份底噪）。
 
+
+## 附：headless 探针的环境
+
+要开真窗口（建 TopLevel / 验证窗口行为）时，注册 AppBuilder 必须用 `.UsePlatformDetect()`；
+`.UseSkia() + .UseHeadless()` 一起调会抛 `Setup was already called`。抄 `--pl-cover-flash` 那份。

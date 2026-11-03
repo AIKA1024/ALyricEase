@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Android 12(API 31)+ 的启动页会自己画一个图标,默认取应用图标 —— 而应用图标是自适应图标,
+     它的前景层是 108dp 画布,被系统拉到 288dp 显示(2.67 倍),最高密度桶也喂不满,
+     圆盘边缘就会露出放大的台阶。这里显式指定一张按 288dp 预渲染的高分辨率图
+     (drawable-nodpi/splash_icon.png),由系统缩小显示,边缘才平滑。
+     背景色不覆盖:沿用主题的 windowBackground,和之前观感一致。 -->
+<resources>
+
+  <style name="MyTheme.NoActionBar" parent="@style/Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:windowActionBar">false</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+  </style>
+
+</resources>

@@ -84,6 +84,28 @@
    handshake timeout),失败后草稿可能已经建好 —— 用
    `GET /repos/AIKA1024/ALyricEase/releases?per_page=5` 找到 draft id 续传,别重复建。
 
+   ⚠ **`git push` 与上面是两条独立通道**(2026-11-01 实测,一次完整的失败排查)。
+   当晚 github.com 的 receive-pack **请求体 ≥1KB 就被重置**:空提交推得上去,
+   加一个 1KB 文件必失败 —— `curl 52 Empty reply from server`(偶发 `curl 55 Send failure:
+   Connection was reset`),git 侧表现为 `send-pack: unexpected disconnect while reading
+   sideband packet`。与仓库、体积、`http.version`、`Expect` 头都无关:同一份历史推到另一个
+   空仓库同样失败;同一个 POST 去掉请求体立刻正常(401);`baidu` 收 64KB 也正常
+   ⇒ 是**到 github.com 的上行**被卡,不是代理端口选错,换端口白费。
+   这时改走 **REST Git Data API 复刻这次提交**,`api.github.com` 经
+   `http://127.0.0.1:10527` 能正常收上百 KB 的 POST:
+
+   ```
+   POST repos/:o/:r/git/blobs    {"content":base64,"encoding":"base64"}   # 逐个文件,返回 sha 与本地比对
+   POST repos/:o/:r/git/trees    {"base_tree":<父树>,"tree":[{path,mode,type,sha}]}  # 返回树 sha 应等于本地
+   POST repos/:o/:r/git/commits  {message,tree,parents,author,committer}  # 照抄元信息 ⇒ sha 与本地一致
+   PATCH repos/:o/:r/git/refs/heads/master {"sha":...,"force":false}
+   ```
+
+   关键是**照抄 `author` / `committer` / `message`**(date 用 `2026-11-01T23:22:05+08:00` 形式):
+   blob、tree、commit 的 SHA 全由内容决定,照抄后服务端算出的 SHA 与本地相同,master 不会分叉,
+   推完 `git ls-remote` 与本地 `rev-parse` 一致,`git status` 也不显示 ahead。
+   顺带:这类排障要先验「空提交能不能推」—— 能推说明凭据/权限都正常,问题在上行通道。
+
    ```bash
    # ---- TUN 开着:走 mixed-port 代理 ----
    curl -x http://127.0.0.1:7890 -H "Expect:" \

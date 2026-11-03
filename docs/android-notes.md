@@ -226,3 +226,77 @@ src\ALyricEase.Android\bin\Release\net10.0-android
 
 **另外**：直接 `dotnet publish` 不走脚本时，产物 APK 名是 `com.aika1024.alyricease-Signed.apk`，
 脚本里的 ABI 校验与改名不会执行，需要手工改名成 `ALyricEase-<abi>-Signed.apk` 再上传。
+
+## 10. 装不上先看 ABI:bin 下的 Signed.apk 是"最后一次构建的 ABI"(2026-10-31)
+
+**症状**:安卓 16(64 位-only)上"无法安装",没有别的线索。
+
+**缘由**:`scripts/publish-aot.ps1` 按 ABI 分别构建,产物在
+`artifacts/aot-android-per-abi/<abi>/`(文件名带 ABI);但**最后一次构建**同样会在
+`src/ALyricEase.Android/bin/Release/net10.0-android/` 留下同名
+`com.aika1024.alyricease-Signed.apk` —— 那是最后跑的那个 ABI(2026-10-28 那次是
+armeabi-v7a)。把这份发给 64 位-only 设备就是 `INSTALL_FAILED_NO_MATCHING_ABIS`
+(系统提示"应用与设备不兼容")。
+
+**判据**(一条命令):
+```
+aapt2 dump badging <apk> | grep native-code
+# native-code: 'arm64-v8a' 'armeabi-v7a'   ← 通用包,两种都装得上
+# native-code: 'armeabi-v7a'               ← 只有 32 位,安卓 16 必然装不上
+```
+
+**怎么出包**:
+- 发布用单 ABI:走发布脚本,只发 `artifacts/aot-android-per-abi/<abi>/ALyricEase-<abi>-Signed.apk`
+  (别拿 bin 里的那份,它没有 ABI 标识,还会被下一次构建覆盖);
+- 通用包(arm64 + v7a):`dotnet build src/ALyricEase.Android/ALyricEase.Android.csproj -c Release
+  -f net10.0-android` —— 不传 `AndroidTargetAbi` 时 csproj 走
+  `RuntimeIdentifiers=android-arm;android-arm64`,产物含两套 `.so`。
+
+**顺带核过(2026-10-31)**:arm64 包的 `.so` 都是 `p_align=0x4000`(16KB 页),
+`zipalign -c -P 16 4` 通过 ⇒ 安卓 15/16 的 16KB 页要求不是拦路虎;targetSdk 36、minSdk 23
+也都合规。另外仓库只出 ARM 包:x86_64 模拟器(没有 ARM 翻译)装不了,要另加 `android-x64`。
+
+## 11. 启动页图标为什么有锯齿,以及怎么修(2026-11-02)
+
+**现象**:Android 12+ 冷启动时,屏幕中央的图标边缘是硬阶跃(1px 台阶),放大看像马赛克;
+桌面上的启动器图标却是正常的。
+
+**根因不在缩放算法,在"喂进去的分辨率"**:
+
+- Android 12+ 的启动页把图标画在 **288dp** 的框里(不设 `windowSplashScreenIconBackgroundColor`
+  时按 288dp 画;设了图标底板才是 240dp)。
+- 应用图标是自适应图标(adaptive-icon),它的**前景层是 108dp 画布** ⇒ 系统把 108dp 拉到 288dp,
+  即 **2.67 倍**。图标内容按 66/108 摆放,于是最终显示为 66/108×288 = **176dp**。
+- 而密度桶最高只到 xxxhdpi(108dp→432px),**任何 mipmap 都喂不满 288dp**:
+  560dpi 的手机上 176dp = 616px,对应前景 PNG 里的内容只有 264px ⇒ 放大 2.33 倍。
+  实测(1440×3120 截图)图标画幅 615px,和这个推算完全对上。
+
+**判据**(不用猜):截图里量图标画幅,`画幅 / 176` 就是设备密度;
+再和 `Resources/mipmap-xxxhdpi/ic_launcher_foreground.png` 的内容像素(264)比,
+倍数 >1 就是在放大。另:桌面上正常、只有启动页糊 ⇒ 就是这条,不是图标本身的问题。
+
+**修法**:给启动页单独一张按目标尺寸预渲染的图,让系统只**缩小**:
+
+| 文件 | 内容 |
+|---|---|
+| `Resources/drawable-nodpi/splash_icon.png` | 1152px 画布(288dp@640dpi),内容 704px,66/108 比例不变 |
+| `Resources/values-v31/styles.xml` | `android:windowSplashScreenAnimatedIcon=@drawable/splash_icon` |
+
+- 为什么是 1152:**nodpi 不随密度缩放**,按像素画;取 288dp 的最高密度档(640dpi)作画布,
+  所有设备都只会缩小(缩小永远平滑)。560dpi 上 1152→1008(0.875x),480dpi 上 1152→864(0.75x)。
+- 为什么内容还是 704 而不是铺满:要和自适应图标**同一个视觉尺寸**。实测同机 A/B:
+  改前/改后画幅都是 529×518、中心都在 (540,953) —— 尺寸位置一字不差,只有边缘采样变干净。
+- 生成用 Lanczos3(按 alpha 预乘)。`resize_area` 放大时会退化成"复制整像素",
+  源图的 1px 硬阶跃原样保留,台阶就是这么来的;脚本里两个函数各管放大/缩小。
+- 生成量:`python scripts/make-android-icons.py`(纯标准库,约 2 秒)。
+
+**验证**:
+```
+aapt2 dump resources <apk> | grep -A6 "style/MyTheme.NoActionBar"
+#   (v31) (style) size=3 …
+#     0x0101062d=@drawable/splash_icon      ← 0x0101062d = windowSplashScreenAnimatedIcon
+unzip -l <apk> | grep splash_icon           # res/drawable-nodpi-v4/splash_icon.png
+```
+
+**遗留**:源图 `src/ALyricEase/Assets/icon_256.png` 只有 256px,放到 616px 显示时是"软"的
+(但不再有台阶)。要真正锐利得换更大的原图(≥1024)或改矢量;换图后重跑脚本即可。

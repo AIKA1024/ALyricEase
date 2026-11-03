@@ -18,10 +18,15 @@ key 创建时间/寿命、验证结果、提前续签计划、续签触发原因
 `QQRefreshKey`、`Login`、`GetLoginUserInfo` 等调用，区分 HTTP 状态、`GlobalCode` 顶层码、`ItemCode` 子请求码，
 网络/解析异常只记类型及接口名。排查 `1000` 时先确认具体接口，不能仅凭外层的“续签失败”认定刷新票据已过期。
 
+`QQ credential validation completed` 记 `Code`（`0` = 有效，非 `0` 是服务端原始失效码）与 `KeyAgeHours`
+（该 musickey 已活了多少小时）。看掉登录先看这两项：`Code=1000` + `KeyAgeHours` 很小 ⇒ 不是自然到期，
+而是会话被踢/风控；`KeyAgeHours` 接近 72 说明确实是寿命到了。冷却期与“刷新后仍无效”抛出的错误码
+必须与这里的 `Code` 一致——历史上冷却门伪造过 `104401`，把还能救的凭据删了。
+
 续签通道本身另有三条记录：`QQ native refresh key channel accepted`（QQRefreshKey 成功，带第几次尝试）、
 `... returned 1000; retrying once`（通用失败码先隔一次重试）、`... unavailable; falling back to Login`
-（该通道被拒，本次改走 Login 并记录 `Code`）。排查“第 4 次续签就断”时按这个顺序看：
-先确认有没有 `accepted`，再看是不是每轮都在 `falling back`。
+（该通道被拒，本次改走 Login 并记录 `Code`）。排查“续签几次就断”时按这个顺序看：
+先确认有没有 `accepted`，再看是不是每轮都在 `falling back`，最后用 `KeyAgeHours` 判断是寿命到了还是被踢。
 
 每次续签还记录 `authorization snapshot`（请求前授权到期时间）、`field changes`（响应字段状态：
 `changed`、`unchanged`、`missing`、`empty`）和 `expiry changes`（原值、响应值、合并后值及是否过期）。

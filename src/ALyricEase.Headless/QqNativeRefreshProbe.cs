@@ -164,7 +164,7 @@ internal static class QqNativeRefreshProbe
                 Check(handler.RefreshKeyCalls == 2 && cookie.QQCookieRaw != before, "重试窗口过后可续签成功");
             }
 
-            // 40000 = 通道级拒绝：不打 Login 兜底、判定写进 Cookie、节奏改 24 小时；失效后仍可 Login。
+            // 40000 = 通道级拒绝：不打 Login 兜底、判定写进 Cookie、节奏改 6 小时；失效后仍可 Login。
             {
                 var (api, cookie, handler) = Create(root, 2, true, Now - 14401);
                 handler.ErrorCode = QQMusicApiClient.RefreshKeyChannelRejectedCode;
@@ -176,8 +176,9 @@ internal static class QqNativeRefreshProbe
                     "通道不可用判定写进 Cookie（重启后不再白试）");
                 var refreshAt = (DateTimeOffset)typeof(QQMusicApiClient)
                     .GetField("_nativeCredentialRefreshAt", PrivateInstance)!.GetValue(api)!;
-                Check((refreshAt - DateTimeOffset.UtcNow).TotalHours is > 19 and < 25,
-                    "已知通道不可用时改成 24 小时节奏");
+                // key 已经 4 小时，改判后按创建时间+6 小时算，下一个点约 2 小时后。
+                Check((refreshAt - DateTimeOffset.UtcNow).TotalHours is > 1 and < 3,
+                    "已知通道不可用时改成 6 小时节奏");
                 handler.ErrorCode = 0;
                 handler.FailRefreshKeyTimes = 0;
                 handler.ExpiredKeys.Add(InitialKey);
@@ -227,6 +228,24 @@ internal static class QqNativeRefreshProbe
             Check(deniedCookie.QQCookieRaw == deniedBefore
                   && deniedHandler.RefreshKeyCalls == 1 && deniedHandler.RefreshCalls == 1,
                 "已失效且续签被拒时透出错误，不覆盖凭据或重复占用设备名额");
+
+            // 1000 是通用码（限频/风控/参数），不能变成"凭据作废"：冷却门与"刷新后仍无效"
+            // 必须把服务端原始码透给调用方，否则 PlaylistViewModel 会按 104401 把存档删掉
+            // ——2026-10-28 15:11 的掉登录就是这么发生的（校验回 1000，冷却门伪造成 104401）。
+            {
+                var (generic, genericCookie, genericHandler) = Create(root, 2, true);
+                genericHandler.ExpiredKeys.Add(InitialKey);
+                genericHandler.ExpiredCode = 1000;
+                genericHandler.ErrorCode = 1000;
+                genericHandler.FailAllChannels = true;
+                SetField(generic, "_nativeRefreshKeyRetryDelay", TimeSpan.Zero);
+                var genericBefore = genericCookie.QQCookieRaw;
+                await ExpectApiAsync(() => generic.EnsureCredentialValidAsync(), 1000);
+                await ExpectApiAsync(() => generic.EnsureCredentialValidAsync(), 1000);
+                Check(QQMusicApiClient.ShouldDiscardCredential(1000) is false
+                      && genericCookie.QQCookieRaw == genericBefore && genericHandler.RefreshCalls == 1,
+                    "续签回 1000 时冷却门透出 1000 而非伪造 104401，凭据保留且不重复续签");
+            }
 
             var (invalid, _, invalidHandler) = Create(root, 2, true);
             invalidHandler.ExpiredKeys.Add(InitialKey);
@@ -420,6 +439,8 @@ internal static class QqNativeRefreshProbe
     {
         public HashSet<string> ExpiredKeys { get; } = [];
         public int ErrorCode { get; set; }
+        /// <summary>过期 key 的校验返回码（默认 104401；<c>1000</c> 用来覆盖"通用码"路径）。</summary>
+        public int ExpiredCode { get; set; } = 104401;
         public string FailureMethod { get; set; } = "Login";
         public bool GlobalError { get; set; }
         public string AuthorizationResponse { get; set; } = "missing";
@@ -479,7 +500,7 @@ internal static class QqNativeRefreshProbe
                 case "GetLoginUserInfo":
                     var key = doc.RootElement.GetProperty("comm").GetProperty("authst").GetString()!;
                     return ExpiredKeys.Contains(key)
-                        ? Response("""{"code":0,"req_0":{"code":104401}}""")
+                        ? Response($"{{\"code\":0,\"req_0\":{{\"code\":{ExpiredCode}}}}}")
                         : Response("""{"code":0,"req_0":{"code":0,"data":{}}}""");
                 case "Login":
                     RefreshCalls++;

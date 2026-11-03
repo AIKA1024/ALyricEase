@@ -126,9 +126,11 @@ musickey 寿命使用项目元数据键 `alyric_qq_key_expires_in`（秒），�
 - **`Login` 续签只要 key 还活着就能用**：10-28 用刚签发的手机号凭据实测 `loginMode=2` → 291ms 成功换新 key。
   10-27 那次 `1000` 的真实原因是**key 已经先死了**（19:47 校验已 `IsExpired=true`），不是"登录链用尽"。
 - **节奏**：例行续签从 `psrf_musickey_createtime` 起算。QQRefreshKey 可用时 4 小时（对齐 PC 客户端
-  `SetTimer(hwnd,1,14400000)`）；对本账号不可用时退回 `Login`，间隔 24 小时——Login 每次新建会话，
-  不能按 4 小时跑。实测 key 名义 72 小时、有一次 55 小时就被拒收，24 小时把 key 年龄压在失效点之下。
+  `SetTimer(hwnd,1,14400000)`）；对本账号不可用时退回 `Login`，间隔 **6 小时**——Login 每次新建会话，
+  不能按 4 小时跑，但也不能再放宽到 24 小时：2026-10-28 那把 key 00:16 签发、15:11 就被 `1000` 拒收
+  （只活了约 15 小时），24 小时的续签点根本赶不上；此前那把活了 55 小时，说明寿命并不固定。
   已过点则下次请求立刻续签；由 `EnsureCredentialValidAsync` 按需触发，不建后台定时器。
+  每次校验都记 `KeyAgeHours`，用真实读数校准下一版间隔。
 - **例行续签不消耗登录链**：`approaching-expiry` 路径只有"已知 QQRefreshKey 不可用"时才允许 Login 兜底；
   通道还有效时按 4 小时跑，绝不能每 4 小时烧一次登录会话。`40000` 会写进
   Cookie 元数据 `alyric_qq_refreshkey_unsupported=1`（换新登录时清除），重启后不再白试。
@@ -138,6 +140,9 @@ musickey 寿命使用项目元数据键 `alyric_qq_key_expires_in`（秒），�
 - **`1000` 不判死**：`QQRefreshKey` 遇 `1000` 先隔 2 秒重试一次；已失效路径的"只刷一次"改为
   30 分钟冷却后允许再试（`_credentialRefreshRetryAt`）。`RequiresFreshLogin` 仍把 `104400/104401/20279`
   视为丢弃凭据，`1000` 只提示重登、保留 refresh_key（`ShouldDiscardCredential`）。
+- **冷却门不许伪造错误码**：校验方法返回服务端原始码（`0` = 有效），冷却期与"刷新后仍无效"两处
+  都透传它。2026-10-28 15:11 的掉登录就是这里出的错——校验回 `1000`，冷却门却抛 `104401`，
+  调用方据此把整份 Cookie（含 refresh_key）删了，自愈路径被自己掐断。
 - 验证码凭据实测有 `openid` / `access_token` / `refresh_key`，没有 `refresh_token`。
   原生通道以 `refresh_key` 为刷新前提；其余可选字段缺失时发送空值，不能沿用网页 OAuth 的强制门槛。
 - 扫码与验证码通过 `alyric_native_login=qr/phone` 标记来源；兼容旧扫码 `tmeLoginType=6`。
@@ -155,7 +160,7 @@ musickey 寿命使用项目元数据键 `alyric_qq_key_expires_in`（秒），�
 [提前刷新及重试](https://github.com/yakult-green-tea/qq-music-api/blob/HEAD/src/services/auth/sessionState.ts#L243)。
 
 回归线 `--qq-native-credential`（模拟响应、保存、重启恢复、刷新轮换、缺字段及旧格式兼容），不触网、不打印凭据值。
-续签回归线 `--qq-native-refresh`（QQRefreshKey 优先/40000 判定与持久化/24 小时节奏/1000 重试/失败退避/轮换/并发/换号和取消）。
+续签回归线 `--qq-native-refresh`（QQRefreshKey 优先/40000 判定与持久化/6 小时节奏/1000 重试与原始码透传/失败退避/轮换/并发/换号和取消）。
 真机探针 `--qqrefreshkey`（需本机有效凭据）：只读校验 → 打一次 `QQRefreshKey`（绝对 `expired_in`）→
 失败再打相对秒数对照 → 成功按生产路径落盘。`--qqrefreshkey variants` 逐个改请求形状定位 `40000`；
 `--qqrefreshkey login` 走生产路径（QQRefreshKey 被拒后回落 Login）验证 Login 通道——**会真实消耗一次登录会话**，

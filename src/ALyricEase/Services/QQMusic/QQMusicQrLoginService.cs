@@ -248,16 +248,23 @@ internal sealed class QQMusicQrLoginService : IDisposable
     /// <summary>应用重启后用已保存的原生设备上下文验证扫码凭证。</summary>
     public async Task<bool> ValidateStoredCredentialAsync(
         string musicId, string musicKey, int loginType, CancellationToken ct)
+        => await CheckStoredCredentialAsync(musicId, musicKey, loginType, ct).ConfigureAwait(false) == 0;
+
+    /// <summary>同 <see cref="ValidateStoredCredentialAsync"/>，但把服务端给的失效码原样带出（0 = 有效）。
+    /// 调用方必须区分 <c>1000</c> 与真正的"凭据作废"：前者是通用码（限频、风控、参数），
+    /// 拿它当删除存档的依据会把唯一能自愈的 refresh_key 一起清掉。</summary>
+    public async Task<int> CheckStoredCredentialAsync(
+        string musicId, string musicKey, int loginType, CancellationToken ct)
     {
         try
         {
             await ValidateCredentialAsync(new Credential(musicId, musicKey, loginType, default), ct)
                 .ConfigureAwait(false);
-            return true;
+            return 0;
         }
         catch (ApiException ex) when (ex.Code is 1000 or 104400 or 104401)
         {
-            return false;
+            return ex.Code;
         }
     }
 

@@ -1,0 +1,152 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             x:DataType="vm:UserRelationsPageViewModel"
+             x:CompileBindings="True"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="ALyricEase.Views.UserRelationsPageView">
+  <UserControl.Styles>
+    <!-- 底部播放条预留:内容根 margin bottom = PlayerBarReserve(120,计入滚动范围,滚到底才空出) -->
+    <Style Selector="StackPanel.page-root">
+      <Setter Property="Margin" Value="48,20,32,120" />
+    </Style>
+    <Style Selector=".narrow StackPanel.page-root">
+      <Setter Property="Margin" Value="16,12,16,120" />
+    </Style>
+    <Style Selector="TextBlock.page-sub">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.row-title">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TextBlock.row-sub">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <!-- 名单行:44px 圆头像 + 昵称/签名 + 右侧关注粉丝数。
+         行是 Button,激活走 Tapped(触屏长按不补发激活);悬停/按下画在内容之下的独立
+         Border(TrackRow row-hover-bg 同构),避免画刷过渡拖着整个行子树重绘 -->
+    <Style Selector="Button.user-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Border.user-row-hover">
+      <Setter Property="Background" Value="{DynamicResource UserSectionRowHover}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.user-row:pointerover Border.user-row-hover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <!-- 按住期间锁显:捕获时 over 链被清空,高亮层会闪 -->
+    <Style Selector="Button.user-row:pressed Border.user-row-hover">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Border.user-row-pressed">
+      <Setter Property="Background" Value="{DynamicResource UserSectionRowPressed}" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="IsVisible" Value="False" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.user-row:pressed Border.user-row-pressed">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="Border.avatar">
+      <Setter Property="Width" Value="44" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="22" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="Background" Value="{DynamicResource ArtFallback}" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer x:Name="PageScroller" Classes="page-scroll"
+                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Classes="page-root" Spacing="20">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="page-title" Text="{Binding Title}" />
+        <TextBlock Classes="page-sub" Text="{Binding Subtitle}"
+                   IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
+
+      <!-- 首屏加载(名单为空且还在拉第一页):转圈与用户页同一套 -->
+      <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
+        <Ellipse Classes="spinner" Width="18" Height="18" StrokeThickness="2.5"
+                 infra:SpinnerRotation.IsActive="{Binding IsLoading}"
+                 Stroke="{DynamicResource LyricEaseTeal}" StrokeDashArray="8,14" />
+        <TextBlock Classes="page-sub" Text="加载中…" VerticalAlignment="Center" />
+      </StackPanel>
+
+      <!-- 空态(隐私账号的粉丝名单、或确实一个人都没有) -->
+      <Border IsVisible="{Binding IsEmpty}" Padding="24,32" CornerRadius="8"
+              Background="{DynamicResource UserSectionCardBackground}"
+              BorderBrush="{DynamicResource ListCardBorder}" BorderThickness="1">
+        <TextBlock Text="{Binding EmptyText}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+      </Border>
+
+      <Border IsVisible="{Binding HasUsers}" CornerRadius="8" Padding="4"
+              infra:FadeInWhenShown.IsEnabled="True"
+              Background="{DynamicResource UserSectionCardBackground}"
+              BorderBrush="{DynamicResource ListCardBorder}" BorderThickness="1">
+        <ItemsControl ItemsSource="{Binding Users}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:UserRelationItemViewModel">
+              <Button Classes="user-row" Tapped="OnUserRowTapped"
+                      AutomationProperties.Name="{Binding Nickname, StringFormat='打开 {0}'}"
+                      ToolTip.Tip="{Binding Nickname}">
+                <Panel>
+                  <Border Classes="user-row-hover" />
+                  <Border Classes="user-row-pressed" />
+                  <Grid ColumnDefinitions="44,*,Auto" ColumnSpacing="12" Margin="8">
+                    <Border Grid.Column="0" Classes="avatar" IsHitTestVisible="False">
+                      <Panel>
+                        <TextBlock Text="{DynamicResource IconPerson}" FontSize="20"
+                                   FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                                   Foreground="{DynamicResource TextTertiary}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsVisible="{Binding !HasAvatar}" />
+                        <Image Stretch="UniformToFill"
+                               infra:ManagedCoverImage.DecodeSize="96"
+                               infra:ManagedCoverImage.Source="{Binding AvatarUrl}" />
+                      </Panel>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
+                      <TextBlock Classes="row-title" Text="{Binding Nickname}" MaxLines="1" />
+                      <TextBlock Classes="row-sub" Text="{Binding Signature}" MaxLines="1"
+                                 IsVisible="{Binding HasSignature}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Classes="row-sub" Text="{Binding MetaText}"
+                               VerticalAlignment="Center" IsHitTestVisible="False"
+                               Margin="12,0,0,0" />
+                  </Grid>
+                </Panel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <!-- 页尾增量补页指示 -->
+      <TextBlock Classes="page-sub" Text="加载中…" HorizontalAlignment="Center"
+                 IsVisible="{Binding IsLoadingMore}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

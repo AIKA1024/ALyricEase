@@ -48,6 +48,27 @@
     <Style Selector="TextBlock.hero-sub">
       <Setter Property="Foreground" Value="#B3FFFFFF" />
     </Style>
+    <!-- "关注 / 粉丝"计数按钮:外观等同文字,悬停才浮出半透明白底。
+         Padding 6,2 + 容器 -6 左边距 = 视觉位置与纯文字一致;禁用时不画底(QQ 侧没有名单协议) -->
+    <Style Selector="Button.hero-link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.hero-link /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.hero-link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#22FFFFFF" />
+    </Style>
+    <Style Selector="Button.hero-link:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#3DFFFFFF" />
+    </Style>
+    <Style Selector="Button.hero-link:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
     <!-- 横向卡片(宽/中):与推荐页卡片同构 200x250 -->
     <Style Selector="Button.card">
       <Setter Property="Width" Value="200" />
@@ -195,9 +216,13 @@
     <!-- ▶/••• 圆形按钮复用全局 Button.row-action 样式 + RowButtonTheme(与歌曲行同一套) -->
   </UserControl.Styles>
 
+  <Panel>
   <ScrollViewer x:Name="PageScroller" Classes="page-scroll"
                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Classes="page-root" Spacing="28" IsVisible="{Binding !IsLoading}">
+    <!-- 加载完成时内容从"整块出现"改成 180ms 合成层淡入(见 infra:FadeInWhenShown):
+         只切 IsVisible 的话,转圈一消失整页就"啪"地跳出来。 -->
+    <StackPanel Classes="page-root" Spacing="28" IsVisible="{Binding !IsLoading}"
+                infra:FadeInWhenShown.IsEnabled="True">
       <!-- 英雄卡:背景 = 头像放大模糊(即"头像采样")+ PlaybackOverlay 暗化,白字可读。
            背景图装在 OverlayPanel 里:它不参与测量,卡片高度完全由内容(头像/文字)决定,
            大图结构上不可能撑爆卡片 —— 此前两次 SizeChanged 回写方案都死于正反馈
@@ -233,17 +258,24 @@
                       <TextBlock Text="{Binding LevelText}" FontSize="12" Classes="hero-text" />
                     </Border>
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal" Spacing="14">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock Classes="hero-sub" Text="关注" VerticalAlignment="Center" />
-                      <TextBlock Classes="hero-text" Text="{Binding Follows}" FontWeight="SemiBold"
-                                 VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock Classes="hero-sub" Text="粉丝" VerticalAlignment="Center" />
-                      <TextBlock Classes="hero-text" Text="{Binding Followeds}" FontWeight="SemiBold"
-                                 VerticalAlignment="Center" />
-                    </StackPanel>
+                  <!-- 关注/粉丝:点进名单页(只有网易云有名单协议,QQ 用户按钮禁用) -->
+                  <StackPanel Orientation="Horizontal" Spacing="2" Margin="-6,0,0,0">
+                    <Button Classes="hero-link" Click="OnFollowingClick"
+                            IsEnabled="{Binding CanOpenRelations}" ToolTip.Tip="查看关注的人">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Classes="hero-sub" Text="关注" VerticalAlignment="Center" />
+                        <TextBlock Classes="hero-text" Text="{Binding Follows}" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                      </StackPanel>
+                    </Button>
+                    <Button Classes="hero-link" Click="OnFollowersClick"
+                            IsEnabled="{Binding CanOpenRelations}" ToolTip.Tip="查看粉丝">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Classes="hero-sub" Text="粉丝" VerticalAlignment="Center" />
+                        <TextBlock Classes="hero-text" Text="{Binding Followeds}" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                      </StackPanel>
+                    </Button>
                   </StackPanel>
                 </StackPanel>
               </StackPanel>
@@ -551,4 +583,19 @@
       </Border>
     </StackPanel>
   </ScrollViewer>
+
+  <!-- 加载层:进入用户页要连拉 资料/歌单(QQ 还多两次),此前整页空白才突然出现内容。
+       放在滚动层之外 = 居中于视口,不随滚动位置漂移;底边让开播放条(内容区中心,同其余页面预留),
+       加载完成随 IsLoading 一起消失。 -->
+  <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsLoading}"
+              HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
+              Margin="{DynamicResource PlayerBarReserve}"
+              AutomationProperties.Name="正在加载用户信息">
+    <Ellipse Classes="spinner" Width="22" Height="22" StrokeThickness="3"
+             infra:SpinnerRotation.IsActive="{Binding IsLoading}"
+             Stroke="{DynamicResource LyricEaseTeal}" StrokeDashArray="8,14" />
+    <TextBlock Text="加载中…" FontSize="14" VerticalAlignment="Center"
+               Foreground="{DynamicResource TextSecondary}" />
+  </StackPanel>
+  </Panel>
 </UserControl>

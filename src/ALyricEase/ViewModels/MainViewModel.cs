@@ -25,7 +25,7 @@ public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
 
-    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, BrowseViewModel browse, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, PersonalHomeViewModel personalHome, Services.AppStateStore appState, GlobalHotkeyHost? globalHotkeys = null)
+    public MainViewModel(SearchViewModel search, PlayerViewModel player, LyricViewModel lyric, PlaylistViewModel playlist, RecommendViewModel recommend, BrowseViewModel browse, ArtistViewModel artist, AlbumViewModel album, ArtistSongsPageViewModel artistSongsPage, ArtistAlbumsPageViewModel artistAlbumsPage, UserProfileViewModel userProfile, UserRelationsPageViewModel userRelations, CollectedPlaylistsViewModel collected, RecentPlaybackViewModel recentPlayback, SettingsViewModel settings, AccountViewModel account, PersonalHomeViewModel personalHome, Services.AppStateStore appState, GlobalHotkeyHost? globalHotkeys = null)
     {
         Search = search;
         Player = player;
@@ -39,6 +39,7 @@ public sealed partial class MainViewModel : ViewModelBase
         ArtistAlbumsPage = artistAlbumsPage;
         UserProfile = userProfile;
         UserProfile.QqLoadFailed += OnQqUserLoadFailed;
+        UserRelations = userRelations;
         Collected = collected;
         RecentPlayback = recentPlayback;
         Settings = settings;
@@ -68,6 +69,8 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist.PropertyChanged += OnPlaylistLoginChanged;
         // 歌单页标题跟着"当前打开的歌单"走(顶部横幅),不走导航项文案
         Playlist.PropertyChanged += OnPlaylistTitleChanged;
+        // 关注/粉丝名单页的标题(关注 / 粉丝)在 LoadAsync 里才定,横幅要跟着变
+        UserRelations.PropertyChanged += OnUserRelationsTitleChanged;
         // 设置里的渲染开关改了要立刻反映到正在显示的详情页背景上(见 NowPlayingMotionEnabled)
         appState.VisualEffectsChanged += () =>
         {
@@ -98,6 +101,9 @@ public sealed partial class MainViewModel : ViewModelBase
     public ArtistSongsPageViewModel ArtistSongsPage { get; }
     public ArtistAlbumsPageViewModel ArtistAlbumsPage { get; }
     public UserProfileViewModel UserProfile { get; }
+
+    /// <summary>用户页"关注/粉丝"点进来的名单页(两个入口共用这个 VM,Kind 决定拉哪一份)。</summary>
+    public UserRelationsPageViewModel UserRelations { get; }
     public CollectedPlaylistsViewModel Collected { get; }
     public RecentPlaybackViewModel RecentPlayback { get; }
     public SettingsViewModel Settings { get; }
@@ -221,6 +227,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 "Account" => "账号",
                 "Settings" => "设置",
                 "User" => "个人主页",
+                "UserRelations" => UserRelations.Title is { Length: > 0 } relationTitle ? relationTitle : "关注与粉丝",
                 "PersonalHome" => "我的音乐",
                 "Artist" => "歌手",
                 "Album" => "专辑",
@@ -328,6 +335,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "ArtistSongs" => ArtistSongsPage,
         "ArtistAlbums" => ArtistAlbumsPage,
         "User" => UserProfile,
+        "UserRelations" => UserRelations,
         "PersonalHome" => PersonalHome,
         "Library" => Collected,
         "Recents" => RecentPlayback,
@@ -427,6 +435,13 @@ public sealed partial class MainViewModel : ViewModelBase
     private void OnPlaylistTitleChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(PlaylistViewModel.PlaylistTitle))
+            OnPropertyChanged(nameof(CurrentPageTitle));
+    }
+
+    /// <summary>名单页标题("关注"/"粉丝")在 LoadAsync 里才定 → 顶部横幅跟着刷新。</summary>
+    private void OnUserRelationsTitleChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(UserRelationsPageViewModel.Title))
             OnPropertyChanged(nameof(CurrentPageTitle));
     }
 
@@ -868,6 +883,7 @@ public sealed partial class MainViewModel : ViewModelBase
         "ArtistSongs" => ArtistSongsPage.CaptureAndReleaseNavigationSnapshot(),
         "ArtistAlbums" => ArtistAlbumsPage.CaptureAndReleaseNavigationSnapshot(),
         "User" => UserProfile.CaptureAndReleaseNavigationSnapshot(),
+        "UserRelations" => UserRelations.CaptureAndReleaseNavigationSnapshot(),
         _ => null,
     };
 
@@ -880,6 +896,7 @@ public sealed partial class MainViewModel : ViewModelBase
             case "ArtistSongs": ArtistSongsPage.ReleaseCurrentPageData(); break;
             case "ArtistAlbums": ArtistAlbumsPage.ReleaseCurrentPageData(); break;
             case "User": UserProfile.ReleaseCurrentPageData(); break;
+            case "UserRelations": UserRelations.ReleaseCurrentPageData(); break;
         }
     }
 
@@ -892,6 +909,8 @@ public sealed partial class MainViewModel : ViewModelBase
             DetailPageKind.ArtistSongs => ArtistSongsPage.RestoreNavigationSnapshotAsync(snapshot),
             DetailPageKind.ArtistAlbums => ArtistAlbumsPage.RestoreNavigationSnapshotAsync(snapshot),
             DetailPageKind.User => UserProfile.RestoreNavigationSnapshotAsync(snapshot),
+            DetailPageKind.UserFollowing or DetailPageKind.UserFollowers
+                => UserRelations.RestoreNavigationSnapshotAsync(snapshot),
             _ => Task.CompletedTask,
         };
     }
@@ -906,6 +925,8 @@ public sealed partial class MainViewModel : ViewModelBase
             case DetailPageKind.ArtistSongs: ArtistSongsPage.DiscardNavigationSnapshot(snapshot); break;
             case DetailPageKind.ArtistAlbums: ArtistAlbumsPage.DiscardNavigationSnapshot(snapshot); break;
             case DetailPageKind.User: UserProfile.DiscardNavigationSnapshot(snapshot); break;
+            case DetailPageKind.UserFollowing or DetailPageKind.UserFollowers:
+                UserRelations.DiscardNavigationSnapshot(snapshot); break;
         }
     }
 
@@ -1001,6 +1022,16 @@ public sealed partial class MainViewModel : ViewModelBase
             await UserProfile.LoadQqAsync();
         else
             await UserProfile.LoadQqUserAsync(euin);
+    }
+
+    /// <summary>用户页"关注 / 粉丝" → 名单页。网易云按 uid 拉,QQ 按 encrypt_uin(空 = 自己),
+    /// QQ 的关系名单接口需登录。快照由 OnActivePageChanging 统一保留(页面键会从 User 换走)。</summary>
+    public void OpenUserRelations(MusicSource source, long userId, string encryptUin,
+        UserRelationKind kind, string ownerName, int total)
+    {
+        if (source == MusicSource.NetEase && userId == 0) return;
+        ActivePage = "UserRelations";
+        _ = UserRelations.LoadAsync(source, userId, encryptUin, kind, ownerName, total);
     }
 
     /// <summary>QQ 音乐曲目点击歌手 → 歌手页(按 singer mid)。</summary>

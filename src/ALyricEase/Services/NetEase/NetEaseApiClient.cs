@@ -924,6 +924,8 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
             MembershipName = ResolveNetEaseMembershipName(vipType, vipData),
             MembershipLevel = membershipLevel,
             AccountLevel = detail?.Code == 200 ? detail.Level : 0,
+            Follows = rawProfile?.Follows ?? 0,
+            Followeds = rawProfile?.Followeds ?? 0,
             MembershipExpiresAt = ToTimestamp(expire),
         };
     }
@@ -1079,6 +1081,34 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         if (resp is null || resp.Code != 200 || resp.Profile is null)
             throw new ApiException("获取用户信息失败", resp?.Code ?? -1);
         return resp;
+    }
+
+    /// <summary>关注/粉丝名单(明文 GET,匿名可用;关注 /api/user/getfollows/{uid}、
+    /// 粉丝 /api/user/getfolloweds?userId=,两个端点只有数组字段名不同)。
+    /// 服务端按 offset/limit 分页(实测 limit=100 仍整页返回),more = 还有下一页;
+    /// 隐私账号 / 无此用户一律回空表,不当失败。</summary>
+    public async Task<(List<UserRelationUser> Users, bool HasMore)> GetUserRelationsAsync(
+        long uid, bool followers, int offset, int limit = 30, CancellationToken ct = default)
+    {
+        var url = followers
+            ? $"{BaseUrl}/api/user/getfolloweds?userId={uid}&offset={offset}&limit={limit}"
+            : $"{BaseUrl}/api/user/getfollows/{uid}?offset={offset}&limit={limit}";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyCommonHeaders(req, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LegacyUserRelationsResponse);
+        if (resp is null || resp.Code != 200)
+            throw new ApiException("获取关注/粉丝列表失败", resp?.Code ?? -1);
+
+        var raw = (followers ? resp.Followeds : resp.Follow) ?? [];
+        var users = new List<UserRelationUser>(raw.Count);
+        foreach (var u in raw)
+        {
+            if (u.UserId == 0) continue; // 注销/异常条目跳过
+            users.Add(new UserRelationUser(u.UserId, u.Nickname, u.AvatarUrl,
+                u.Signature ?? "", u.Follows, u.Followeds));
+        }
+        return (users, resp.More);
     }
 
     /// <summary>明文 /api/song/detail 批量取曲目元数据，单批 ≤100 首。供歌单增量加载补齐缺失段。</summary>

@@ -283,6 +283,7 @@ class Program
     services.AddSingleton<ArtistSongsPageViewModel>();
     services.AddSingleton<ArtistAlbumsPageViewModel>();
     services.AddSingleton<UserProfileViewModel>();
+    services.AddSingleton<UserRelationsPageViewModel>();
     services.AddSingleton<PersonalHomeViewModel>();
     services.AddSingleton<CollectedPlaylistsViewModel>();
     services.AddSingleton<RecentPlaybackViewModel>();

@@ -62,6 +62,29 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
 
     partial void OnLevelChanged(int value) => OnPropertyChanged(nameof(LevelText));
 
+    /// <summary>当前页展示的用户 id(QQ 他人主页与空页为 0)。关系名单入口用。</summary>
+    public long UserId => _userId;
+
+    /// <summary>QQ 他人主页的 encrypt_uin(名单接口的 HostUin;空 = 自己)。</summary>
+    public string EncryptUin => _euin;
+
+    /// <summary>当前页音源(名单页按它选接口)。</summary>
+    public MusicSource RelationSource => _source;
+
+    /// <summary>能否点开关注/粉丝名单:网易云匿名可读;QQ 的关系名单接口需登录
+    /// (匿名回 code=1000 未登录),所以只有登录态才放行。</summary>
+    public bool CanOpenRelations =>
+        _source == MusicSource.NetEase ? _userId != 0 : _qqApi.IsLoggedIn;
+
+    /// <summary>_userId/_source/_euin 变化后同步"能否点开名单"相关的派生绑定。</summary>
+    private void NotifyRelationState()
+    {
+        OnPropertyChanged(nameof(UserId));
+        OnPropertyChanged(nameof(EncryptUin));
+        OnPropertyChanged(nameof(RelationSource));
+        OnPropertyChanged(nameof(CanOpenRelations));
+    }
+
     /// <summary>音乐品味:喜欢的音乐(specialType 5)+ 年度歌单(specialType 20)。
     /// 听歌排行未收录:play/record 的 allData 上限 100 首,拿不到真实"累计播放"总数。</summary>
     public RangeObservableCollection<UserTasteRowViewModel> TasteRows { get; } = new();
@@ -114,6 +137,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
     public async Task LoadAsync(long uid)
     {
         _source = MusicSource.NetEase;
+        _euin = "";
         var (generation, ct) = BeginLoad();
         ClearContent();
         try
@@ -125,6 +149,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
                 uid = self.UserId;
             }
             _userId = uid;
+            NotifyRelationState();
 
             var detail = await _api.GetUserDetailAsync(uid, ct);
             if (!IsCurrentLoad(generation, ct)) return;
@@ -184,12 +209,14 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         }
     }
 
-    /// <summary>打开 QQ 自己的用户页:头像/昵称/等级走账号摘要,歌单与侧栏同源。
+    /// <summary>打开 QQ 自己的用户页:头像/昵称/等级/关注粉丝走账号摘要,歌单与侧栏同源。
     /// 分组口径:我喜欢(dirId=201)进音乐品味行;有 dirId = 自建;无 dirId = 收藏的他人歌单。
-    /// 关注/粉丝 QQ 侧无轻量协议,保持 0(页面照常渲染)。</summary>
+    /// 计数来自主页 fcg 的 creator.nums,取不到为 0(页面照常渲染)。</summary>
     public async Task LoadQqAsync()
     {
         _source = MusicSource.QQ;
+        // 自己的名单 = HostUin 留空;不清会沿用上一个"他人页"的 euin,点自己的关注却拉别人的名单
+        _euin = "";
         var (generation, ct) = BeginLoad();
         ClearContent();
         try
@@ -197,9 +224,12 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
             var summary = await _qqApi.GetAccountSummaryAsync(ct);
             if (!IsCurrentLoad(generation, ct)) return;
             _userId = summary.UserId;
+            NotifyRelationState();
             Nickname = summary.Nickname;
             AvatarUrl = summary.AvatarUrl;
             Level = summary.AccountLevel; // QQ 音乐等级,0 级徽标自动隐藏
+            Follows = summary.Follows;
+            Followeds = summary.Followeds;
 
             var playlists = await _qqApi.GetUserPlaylistsAsync(ct);
             if (!IsCurrentLoad(generation, ct)) return;
@@ -248,6 +278,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
             var home = await _qqApi.GetUserHomepageAsync(euin, ct);
             if (!IsCurrentLoad(generation, ct)) return;
             _userId = 0;
+            NotifyRelationState();
             Nickname = home.Nickname;
             AvatarUrl = home.AvatarUrl;
             Follows = home.Follows;
@@ -368,6 +399,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         _userId = 0;
         _euin = "";
         _source = MusicSource.NetEase;
+        NotifyRelationState();
         ResetPageScrollState();
     }
 
@@ -378,6 +410,7 @@ public sealed partial class UserProfileViewModel : NavigationDetailViewModelBase
         var (generation, ct) = BeginLoad();
         ClearContent();
         _userId = snapshot.Id;
+        NotifyRelationState();
         var cached = (await _musicCache.TryTakeDetailPageSnapshotAsync(snapshot.CacheKey))?.UserProfile;
         if (!IsCurrentLoad(generation, ct)) return;
         if (cached is not null && cached.AccountGeneration == CurrentAccountGeneration

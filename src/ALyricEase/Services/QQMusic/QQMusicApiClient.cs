@@ -2012,6 +2012,66 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         };
     }
 
+    /// <summary>关系名单一页(关注用户 / 关注歌手 / 粉丝)。Total = 这份名单的总人数,
+    /// HasMore 驱动翻页。</summary>
+    public sealed record QQRelationPage(IReadOnlyList<UserRelationUser> Users, bool HasMore, int Total);
+
+    /// <summary>他关注的人(music.concern.RelationList / GetFollowUserList,网页 profile 关注 Tab 的"用户")。</summary>
+    public Task<QQRelationPage> GetFollowUsersAsync(string euin, int from, int size, CancellationToken ct = default)
+        => GetRelationPageAsync("GetFollowUserList", euin, from, size, ct);
+
+    /// <summary>他关注的歌手(同模块 / GetFollowSingerList)。QQ 的"关注"总数 = 用户 + 歌手
+    /// (主页 nums.follownum = followusernum + followsingernum),所以关注名单要把两份拼起来。</summary>
+    public Task<QQRelationPage> GetFollowSingersAsync(string euin, int from, int size, CancellationToken ct = default)
+        => GetRelationPageAsync("GetFollowSingerList", euin, from, size, ct);
+
+    /// <summary>他的粉丝(同模块 / GetFansList)。</summary>
+    public Task<QQRelationPage> GetFansAsync(string euin, int from, int size, CancellationToken ct = default)
+        => GetRelationPageAsync("GetFansList", euin, from, size, ct);
+
+    /// <summary>关系名单通用查询。<c>HostUin</c> 留空 = 自己;非空 = 对方的 encrypt_uin。
+    /// ⚠ 三个 method 都需登录(匿名 code=1000 未登录),锁定名单回 LockFlag≠0 + 空 List。</summary>
+    private async Task<QQRelationPage> GetRelationPageAsync(
+        string method, string euin, int from, int size, CancellationToken ct)
+    {
+        if (IsLoggedIn)
+            await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
+        using var doc = await PostMusicuAsync(w => WriteModuleReq(
+            w, "music.concern.RelationList", method, p =>
+            {
+                p.WriteNumber("From", from);
+                p.WriteNumber("Size", size);
+                // 字段名是 HostUin 但值是 encrypt_uin(网页版同款),不是数字 uin
+                p.WriteString("HostUin", euin);
+            }), ct).ConfigureAwait(false);
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQRelationListResponse);
+        var node = resp?.Req0;
+        if (node is null || node.Code != 0 || node.Data is null)
+            throw new ApiException(node?.Msg is { Length: > 0 } msg ? msg : "获取关注/粉丝列表失败",
+                node?.Code ?? resp?.Code ?? -1);
+
+        var raw = node.Data.List ?? [];
+        var users = new List<UserRelationUser>(raw.Count);
+        foreach (var item in raw)
+        {
+            // 歌手条目没有 EncUin(用 MID),用户条目反之;两者都空的异常条目跳过
+            var singerMid = item.Mid ?? "";
+            var encUin = item.EncryptUin ?? "";
+            if (singerMid.Length == 0 && encUin.Length == 0) continue;
+            users.Add(new UserRelationUser(
+                0,
+                FirstNonEmpty(item.Name ?? ""),
+                item.AvatarUrl ?? "",
+                item.Desc ?? "",
+                0,
+                item.FanNum,
+                MusicSource.QQ,
+                encUin,
+                singerMid));
+        }
+        return new QQRelationPage(users, node.Data.HasMore, node.Data.Total);
+    }
+
     /// <summary>他人收藏歌单(网页主页"收藏"Tab 同源)。隐私/失败只空分区,不影响主页头。</summary>
     private async Task<List<Playlist>> GetUserFavPlaylistsSafeAsync(string euin, CancellationToken ct)
     {
@@ -2083,6 +2143,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     {
         var profile = await GetUserProfileAsync(ct).ConfigureAwait(false);
         await EnsureVipStatusAsync(ct).ConfigureAwait(false);
+        var (follows, followeds) = await GetSelfRelationCountsSafeAsync(ct).ConfigureAwait(false);
         return new MusicAccountSummary
         {
             UserId = profile.UserId,
@@ -2093,7 +2154,38 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             MembershipLevel = _vipLevel,
             AccountLevel = _musicLevel,
             MembershipExpiresAt = _membershipExpiresAt,
+            Follows = follows,
+            Followeds = followeds,
         };
+    }
+
+    /// <summary>自己的关注/粉丝数：主页 fcg 的 creator.nums（follownum / fansnum，
+    /// 其中 follownum = followusernum + followsingernum，与名单页两段之和一致）。
+    /// 计数属增强信息：拿不到就回 0，不让它把整张账号卡降级。</summary>
+    private async Task<(int Follows, int Followeds)> GetSelfRelationCountsSafeAsync(CancellationToken ct)
+    {
+        try
+        {
+            var home = await GetHomepageAsync(ct).ConfigureAwait(false);
+            var nums = home.Data?.Creator?.Nums;
+            return (nums?.FollowNum ?? 0, nums?.FansNum ?? 0);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ApiException)
+        {
+            return (0, 0);
+        }
+        catch (HttpRequestException)
+        {
+            return (0, 0);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (0, 0);
+        }
     }
 
     private void ResetVipDetails()
@@ -2509,15 +2601,18 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     // ---------- 歌手/专辑(mid 维度,QQ 专属导航页)----------
 
-    /// <summary>歌手热门歌曲:musichall.song_list_server/GetSingerSongList(条目为 songInfo 包裹的标准曲目)。</summary>
-    public async Task<List<Song>> GetArtistSongsAsync(string singerMid, int limit = 30, CancellationToken ct = default)
+    /// <summary>歌手歌曲:musichall.song_list_server/GetSingerSongList(条目为 songInfo 包裹的标准曲目)。
+    /// <paramref name="order"/> 是服务端的排序档:1=热度(歌手页默认),2=按发行时间倒序
+    /// (实测见 <c>--qq-singer-songs</c>)。做"关注歌手新歌"必须用 2。</summary>
+    public async Task<List<Song>> GetArtistSongsAsync(string singerMid, int limit = 30,
+        CancellationToken ct = default, int order = 1)
     {
         using var doc = await PostMusicuAsync(w =>
         {
             WriteModuleReq(w, "musichall.song_list_server", "GetSingerSongList", p =>
             {
                 p.WriteString("singerMid", singerMid);
-                p.WriteNumber("order", 1);
+                p.WriteNumber("order", order);
                 p.WriteNumber("number", limit);
                 p.WriteNumber("begin", 0);
             });

@@ -38,6 +38,9 @@
     <DataTemplate DataType="vm:UserProfileViewModel">
       <views:UserProfileView />
     </DataTemplate>
+    <DataTemplate DataType="vm:UserRelationsPageViewModel">
+      <views:UserRelationsPageView />
+    </DataTemplate>
     <DataTemplate DataType="vm:CollectedPlaylistsViewModel">
       <views:CollectedPlaylistsView />
     </DataTemplate>

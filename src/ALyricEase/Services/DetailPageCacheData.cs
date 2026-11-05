@@ -20,7 +20,10 @@ internal sealed record DetailPageCacheData(
     int Total = -1,
     bool HasMore = false,
     UserProfilePageCacheData? UserProfile = null,
-    IReadOnlyList<NavigationPageCacheArtist>? Artists = null);
+    IReadOnlyList<NavigationPageCacheArtist>? Artists = null,
+    IReadOnlyList<NavigationPageCacheUser>? RelationUsers = null,
+    // RelationStage:QQ 关注名单的翻页段(0 = 关注用户,1 = 关注歌手);网易云不用。
+    int RelationStage = 0);
 
 internal sealed record UserProfilePageCacheData(
     string Nickname, string AvatarUrl, string Signature, int Level, int Follows, int Followeds,
@@ -55,3 +58,16 @@ internal sealed record NavigationPageCacheArtist(
     long NetEaseId,
     string QqMid,
     string Name);
+
+/// <summary>关注/粉丝名单里的一行(返回列表页时免联网重建)。QQ 条目没有数字 uid:
+/// 点行靠 EncryptUin(用户)或 SingerMid(歌手)定位,所以三者都要存。</summary>
+internal sealed record NavigationPageCacheUser(
+    long UserId,
+    string Nickname,
+    string AvatarUrl,
+    string Signature,
+    int Follows,
+    int Followeds,
+    MusicSource Source = MusicSource.NetEase,
+    string EncryptUin = "",
+    string SingerMid = "");

@@ -23,6 +23,23 @@ public partial class UserProfileView : UserControl
         // 勿改回 SizeChanged 回写方案:回写的"卡片尺寸"正是被图片撑大的值,正反馈冻结。
     }
 
+    /// <summary>英雄卡"关注" → 关注名单页(点行再进对方用户页)。</summary>
+    private void OnFollowingClick(object? sender, RoutedEventArgs e)
+        => OpenRelations(UserRelationKind.Following);
+
+    /// <summary>英雄卡"粉丝" → 粉丝名单页。</summary>
+    private void OnFollowersClick(object? sender, RoutedEventArgs e)
+        => OpenRelations(UserRelationKind.Followers);
+
+    /// <summary>计数用页面上已展示的值(名单可能被隐私裁掉一部分,仍按用户看到的数字做副标题)。</summary>
+    private void OpenRelations(UserRelationKind kind)
+    {
+        if (DataContext is not UserProfileViewModel vm || !vm.CanOpenRelations) return;
+        var total = kind == UserRelationKind.Following ? vm.Follows : vm.Followeds;
+        ServiceLocator.Get<MainViewModel>().OpenUserRelations(
+            vm.RelationSource, vm.UserId, vm.EncryptUin, kind, vm.Nickname, total);
+    }
+
     /// <summary>Tapped 命中是否来自行内操作按钮(▶/•••):它们的 Click 已自处理,
     /// 但 Tapped 是独立路由事件会继续冒泡 —— 源的最近 Button 祖先不是行自身即排除。
     /// (TrackRow 同款思路;那边行是 TemplatedControl,"任意 Button 祖先"即内部按钮,

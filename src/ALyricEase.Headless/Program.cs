@@ -65,6 +65,29 @@ public static class Program
             return;
         }
 
+        if (args.Length > 0 && args[0] == "--user-relations")
+        {
+            AppBuilder.Configure<HeadlessApp>().UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .SetupWithoutStarting();
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await UserRelationsProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--user-relations-live")
+        {
+            var uid = args.Length > 1 && long.TryParse(args[1], out var parsed) ? parsed : 368236520L;
+            try { UserRelationsProbe.RunLiveAsync(uid).GetAwaiter().GetResult(); }
+            catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+            return;
+        }
+
         if (args.Length > 0 && args[0] == "--qq-login-response")
         {
             Environment.ExitCode = QqLoginResponseProbe.RunAsync().GetAwaiter().GetResult();
@@ -332,6 +355,59 @@ public static class Program
             });
             cpuBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
             Environment.ExitCode = cpuExitCode;
+            return;
+        }
+
+        // 转圈是否真的在转(--spinner-motion-real):合成动画的结果不写回 UI 属性、截图也拍不到,
+        // 只能用真窗口 + 外部抓屏数像素变化;顺带验"停下后逐像素相同"。
+        if (args.Length > 0 && args[0] == "--spinner-motion-real")
+        {
+            var spinBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var spinExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { spinExitCode = await SpinnerMotionProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[spinner-motion] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            spinBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = spinExitCode;
+            return;
+        }
+
+        // QQ 关注歌手新歌(--qq-singer-songs):关注列表 MID 能否直接查歌 + order 哪个是时间序。
+        if (args.Length > 0 && args[0] == "--qq-singer-songs")
+        {
+            var qqBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var qqExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { qqExitCode = await QqSingerSongProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[qq-singer] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            qqBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = qqExitCode;
+            return;
+        }
+
+        // 淡入时序(--fade-timing-real):验证"变可见那一帧"有没有先闪一帧全亮再淡入。
+        // 结构照抄用户页(Panel > ScrollViewer > 内容根),只看屏幕像素的亮度序列。
+        if (args.Length > 0 && args[0] == "--fade-timing-real")
+        {
+            var fadeBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var fadeExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { fadeExitCode = await FadeTimingProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[fade-timing] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            fadeBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = fadeExitCode;
             return;
         }
 

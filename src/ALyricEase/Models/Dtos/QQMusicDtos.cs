@@ -1009,3 +1009,58 @@ public sealed record QQToplistDetailData
 {
     [JsonPropertyName("data")] public QQToplistDto? Data { get; init; }
 }
+
+// ---------- musicu.fcg music.concern.RelationList(关注/粉丝名单) ----------
+
+/// <summary>关系名单响应外壳。网页版 profile 的 关注/粉丝 两个 Tab 同源
+/// (y.qq.com/ryqq/js/common.chunk 里 <c>p.h</c> 的请求):method 决定取哪一份。
+/// ⚠ 需登录(匿名 code=1000),HostUin 留空 = 自己。</summary>
+public sealed record QQRelationListResponse
+{
+    public int Code { get; init; }
+
+    [JsonPropertyName("req_0")] public QQRelationListNode? Req0 { get; init; }
+}
+
+public sealed record QQRelationListNode
+{
+    public int Code { get; init; }
+
+    public string? Msg { get; init; }
+
+    public QQRelationListData? Data { get; init; }
+}
+
+/// <summary>data:Total = 这份名单的总人数(关注用户数 / 粉丝数,不含关注的歌手),
+/// HasMore 驱动翻页,LockFlag ≠ 0 表示对方锁了名单(此时 List 为空)。</summary>
+public sealed record QQRelationListData
+{
+    public int Total { get; init; }
+
+    public bool HasMore { get; init; }
+
+    public string? Msg { get; init; }
+
+    public int LockFlag { get; init; }
+
+    [JsonPropertyName("List")] public List<QQRelationUserDto>? List { get; init; }
+}
+
+/// <summary>名单条目:EncUin 就是 encrypt_uin(点行打开对方用户页要用的那个),
+/// MID 只有歌手条目才填;FanNum 是对方粉丝数,没有对方的关注数。</summary>
+public sealed record QQRelationUserDto
+{
+    [JsonPropertyName("EncUin")] public string? EncryptUin { get; init; }
+
+    [JsonPropertyName("Name")] public string? Name { get; init; }
+
+    [JsonPropertyName("Desc")] public string? Desc { get; init; }
+
+    [JsonPropertyName("AvatarUrl")] public string? AvatarUrl { get; init; }
+
+    [JsonPropertyName("FanNum")] public int FanNum { get; init; }
+
+    [JsonPropertyName("IsFollow")] public bool IsFollow { get; init; }
+
+    [JsonPropertyName("MID")] public string? Mid { get; init; }
+}

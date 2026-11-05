@@ -538,6 +538,10 @@ vs 位图填充 9.02% ⇒ +0.32%」。两次**互换了哪个是"现状"**、绝
 | `--neproxy` | 代理登录回归线 | — |
 | `--combobox` | ComboBox 弹层:选中项对齐 <1px、`t=0` 不可见、阴影在揭示完成后才淡入 | `ALY_CB_COUNT/SELECTED/LIGHT/CYCLES` |
 | `--menu-frames` | 菜单展开的**逐帧**揭示曲线(后台 6ms 抓屏);首轮 `opened` < 60ms 才算预热生效 | `ALY_MENU_PREWARM` / `_ANCHOR=hidden` / `_BARE` |
+| `--user-relations` | 用户页"关注/粉丝"名单:网易云+QQ 解析/分页/点行进用户页(QQ 歌手进歌手页)/返回快照(滚动位置);顺手出宽/窄/深色截图 | `--user-relations-live [uid]` 只联网冒烟(网易云+QQ 三个 method) |
+| `--qq-singer-songs` | 联网只读:QQ 关注歌手的 `MID` 能否直接查歌,以及 `GetSingerSongList` 的 `order` 语义(1=热度、**2=按发行时间倒序**) | 输出每位歌手 order=1/2 各 3 首 + `PublishDate`,自己看日期是否倒序 |
+| `--spinner-motion-real` | 加载转圈是否真的在转:**真窗口 + 外部抓屏**数像素(合成动画不写回 UI 属性、`RenderTargetBitmap` 拍不到) | 断言旋转期帧帧有变化、`UiFramePacer` 持有者=0、停后两帧逐像素相同 |
+| `--fade-timing-real` | 淡入**时序**:结构照抄用户页,每 ~10ms 抓一帧看亮度序列;抓的是"变可见那一帧有没有先画满亮度再跳回透明"(属性断言抓不到,旧实现在旧断言下也是绿的) | 修前 `[0,0,246,246,169,…]` 闪 2 帧;修后必须单调上升 |
 
 加上新档后别忘 `artifacts/` 里的日志当回归线留档（尤其**跨轮**读数不可比，见第二节那条警告）。
 
@@ -622,6 +626,12 @@ DispatcherTimer.RunOnce(() =>
 **修法**：`ModalVisibilityTransition.OpenAsync/CloseAsync` 在 `BeginTransition` 后
 `UiFramePacer.Acquire()`，finally 里 `Release()`（引用计数，重叠过渡各自持有）。
 回归：`--login-idle-close` / `--login-close`。
+
+**同族（2026-11）**：加载转圈 `Ellipse.spinner` 原来也是"卡"的（用户报"转圈卡卡的"，同一机理 ~12fps），
+但它的正解**不是**再挂一个帧泵，而是把旋转搬到合成层 —— `CompositionVisual.RotationAngle` 由渲染线程
+驱动，UI 线程一点都不用醒（实测 `UiFramePacer` 持有者=0）。驱动器 `infra:SpinnerRotation.IsActive`
+只负责"可见才 Start、隐藏/离树/最小化 Stop"（合成层对隐藏元素照旧推进时钟），
+取不到合成视觉时退回样式动画 + 帧泵。验证见 `--spinner-motion-real`、细节见 [user-page.md](user-page.md) §3。
 
 ## 十、个人主页滚动"GPU 能到 20%"：出帧次数 × 每帧固定开销，与画什么无关（2026-10-08）
 

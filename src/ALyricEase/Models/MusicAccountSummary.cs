@@ -10,5 +10,12 @@ public sealed record MusicAccountSummary
     public string MembershipName { get; init; } = "普通用户";
     public int MembershipLevel { get; init; }
     public int AccountLevel { get; init; }
+
+    /// <summary>关注数(自己用户页头部的"关注")。平台无此读数时为 0。</summary>
+    public int Follows { get; init; }
+
+    /// <summary>粉丝数(自己用户页头部的"粉丝")。平台无此读数时为 0。</summary>
+    public int Followeds { get; init; }
+
     public DateTimeOffset? MembershipExpiresAt { get; init; }
 }

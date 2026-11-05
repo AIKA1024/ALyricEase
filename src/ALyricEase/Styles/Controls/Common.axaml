@@ -118,4 +118,26 @@
     <Style Selector="MenuItem /template/ Popup#PART_Popup ScrollViewer ItemsPresenter">
         <Setter Property="Margin" Value="0" />
     </Style>
+
+    <!-- 通用"转圈"指示:Avalonia 12 基础包没有 ProgressRing,用 Ellipse 弧线自绘旋转。
+         用法:<Ellipse Classes="spinner" infra:SpinnerRotation.IsActive="{Binding IsLoading}"
+                       Width="20" Height="20" StrokeThickness="3"
+                       Stroke="{DynamicResource LyricEaseTeal}" StrokeDashArray="8,14" />
+         DashArray 前半段是可见弧长(值越小弧越短),后半段是空隙。
+         ⚠ 旋转本身在 infra:SpinnerRotation 里用**合成动画**驱动(RotationAngle),不依赖 UI 帧;
+         下面的 .running 样式只是"取不到合成视觉时"的兜底(那条路要占 UI 线程,必须持帧泵)。 -->
+    <Style Selector="Ellipse.spinner">
+        <Setter Property="RenderTransform" Value="rotate(0deg)" />
+    </Style>
+    <!-- 兜底路径专用:由 SpinnerRotation 增删本类并同步持有 UiFramePacer 租约。
+         不能与合成动画同时开 —— 两条路径都写角度会叠加成双倍转速。 -->
+    <Style Selector="Ellipse.spinner.running">
+        <Style.Animations>
+            <Animation Duration="0:0:0.9" IterationCount="Infinite">
+                <KeyFrame Cue="100%">
+                    <Setter Property="RotateTransform.Angle" Value="360" />
+                </KeyFrame>
+            </Animation>
+        </Style.Animations>
+    </Style>
 </Styles>

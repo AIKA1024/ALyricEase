@@ -319,6 +319,28 @@ Form: trackId=186016&userid=368236520&like=true
 
 > ⚠️ 老资料常写 `id`/`like` 两参数，**是错的**——实测返回 400。
 > 正确参数名 `trackId`/`userid`/`like`（与 HyPlayer LikeApi.cs 一致，2026-08 实测）。
+### E5. 用户关注 / 粉丝名单（明文 GET，匿名可用）
+
+用户页点"关注/粉丝"进名单页用的两个端点（2026-11 实测可用）：
+
+```
+GET /api/user/getfollows/{uid}?offset=0&limit=30      # 他关注的人
+GET /api/user/getfolloweds?userId={uid}&offset=0&limit=30   # 关注他的人
+```
+
+| 要点 | 说明 |
+|---|---|
+| 数组字段名**不同** | 关注 → `follow[]`，粉丝 → `followeds[]`（同一份 `LegacyRelationUser` 映射，DTO 里两个都留） |
+| 分页 | 服务端按 `offset/limit` 切，`more` = 还有下一页；`limit=100` 实测整页返回 |
+| 登录 | 匿名可读；隐私账号下发**空数组**而不是报错（计数仍 > 0）|
+| 条目字段 | `userId` / `nickname` / `avatarUrl` / `signature`（可能 null）/ `follows` / `followeds` |
+| 点进用户页 | 用条目里的 `userId` 走 `GET /api/v1/user/detail/{uid}`，与搜索结果同一套 |
+
+> **QQ 音乐侧**：网页版用 `music.concern.RelationList` 的 `GetFansList` / `GetFollowUserList` /
+> `GetFollowSingerList`（需登录、`HostUin` = encrypt_uin），桌面客户端只有混排的关注接口。
+> 详见 [../user-page.md](../user-page.md) §3。
+
+
 
 ---
 
@@ -665,6 +687,7 @@ GET /api/v3/discovery/recommend/songs?csrf_token=
 | 歌词 | `weapi/song/lyric` POST | `GET /api/song/lyric` | 否 | `lv/kv/tv=-1` |
 | 播放地址 | `eapi/song/enhance/player/url/v1` POST | `GET /api/song/enhance/player/url` | 否(匿名低码) | 明文必带 `br`；VIP `-110`；需 `X-Real-IP` |
 | 用户资料 | — | `GET /api/nuser/account/get` | ✅ | |
+| 关注/粉丝名单 | — | `GET /api/user/getfollows/{uid}`、`GET /api/user/getfolloweds?userId=` | 否 | 字段名 follow / followeds，`more` 分页；QQ 走 `music.concern.RelationList` |
 | 我的歌单 | — | `GET /api/user/playlist?uid=` | ✅ | `specialType=5` 红心 |
 | 红心切换 | — | `POST /api/song/like` | ✅ | 参数 trackId/userid/like(id 会 400) |
 | 歌单增删曲目 | — | `POST /api/playlist/manipulate/tracks` | ✅ | op=del/add, trackIds 必须 JSON 数组字符串 |

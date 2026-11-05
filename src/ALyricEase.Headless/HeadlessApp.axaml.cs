@@ -159,6 +159,7 @@ public partial class HeadlessApp : Application
         services.AddSingleton<AccountViewModel>();
         // 用户页/收藏页 VM:MainViewModel 构造注入(此前缺失,凡取 MainViewModel 的探针都会解析失败)
         services.AddSingleton<UserProfileViewModel>();
+        services.AddSingleton<UserRelationsPageViewModel>();
         services.AddSingleton<PersonalHomeViewModel>();
         services.AddSingleton<CollectedPlaylistsViewModel>();
         services.AddSingleton<MainViewModel>();

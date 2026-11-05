@@ -69,6 +69,37 @@ public sealed record LegacyUserDetailResponse
     public LegacyProfile? Profile { get; init; }
 }
 
+/// <summary>关注/粉丝列表(明文 GET /api/user/getfollows/{uid} 与 /api/user/getfolloweds)。
+/// 两个端点只有数组字段名不同(follow / followeds),more = 还有下一页;
+/// 隐私账号或不存在的 uid 下发空数组而非报错。</summary>
+public sealed record LegacyUserRelationsResponse
+{
+    public int Code { get; init; }
+
+    public bool More { get; init; }
+
+    public List<LegacyRelationUser>? Follow { get; init; }
+
+    public List<LegacyRelationUser>? Followeds { get; init; }
+}
+
+/// <summary>关系列表里的一个用户(匿名可用;signature 可能为 null)。</summary>
+[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
+public sealed record LegacyRelationUser
+{
+    [JsonPropertyName("userId")] public long UserId { get; init; }
+
+    public string Nickname { get; init; } = "";
+
+    [JsonPropertyName("avatarUrl")] public string AvatarUrl { get; init; } = "";
+
+    public string? Signature { get; init; }
+
+    public int Follows { get; init; }
+
+    public int Followeds { get; init; }
+}
+
 public sealed record NetEaseVipInfoResponse
 {
     public int Code { get; init; }

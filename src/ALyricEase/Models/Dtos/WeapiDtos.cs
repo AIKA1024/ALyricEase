@@ -157,6 +157,10 @@ public sealed record SearchAlbum
     public string Name { get; init; } = "";
 
     [JsonPropertyName("picUrl")] public string PicUrl { get; init; } = "";
+
+    /// <summary>发行时间(毫秒)。/api/v1/artist/songs 与 legacy song/detail 都会下发,
+    /// 关注歌手新歌靠它判断是否在时间窗口内。</summary>
+    [JsonPropertyName("publishTime")] public long PublishTimeMs { get; init; }
 }
 
 // ---------- 云盘(weapi /api/v1/cloud/get,需登录) ----------

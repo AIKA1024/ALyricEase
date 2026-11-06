@@ -376,6 +376,40 @@ public static class Program
             return;
         }
 
+        // 浏览页「关注新歌」渲染(--browse-followed):真数据截图 + 徽章/溢出断言。
+        if (args.Length > 0 && args[0] == "--browse-followed")
+        {
+            var followedUiBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var followedUiExit = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { followedUiExit = await BrowseFollowedProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[browse-followed] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            followedUiBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = followedUiExit;
+            return;
+        }
+
+        // 关注歌手新歌(--followed-new-songs):联网只读,验两源关注列表 + 按时间取最新 + 3 个月窗口。
+        if (args.Length > 0 && args[0] == "--followed-new-songs")
+        {
+            var feedBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var feedExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { feedExitCode = await FollowedNewSongProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[followed-new] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            feedBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = feedExitCode;
+            return;
+        }
+
         // QQ 关注歌手新歌(--qq-singer-songs):关注列表 MID 能否直接查歌 + order 哪个是时间序。
         if (args.Length > 0 && args[0] == "--qq-singer-songs")
         {
@@ -633,6 +667,20 @@ public static class Program
         if (args.Length > 0 && args[0] == "--hotkeys")
         {
             Environment.ExitCode = HotkeyProbe.Run();
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--hero-ring")
+        {
+            // 要往窗口里注入鼠标(验悬停暂停),必须走标准 headless 平台:自建 UsePlatformDetect 的
+            // 那条路没有 compositor,MouseMove 直接抛 "Compositor is not initialized"。
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { Environment.ExitCode = await HeroRingProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[hero-ring] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
             return;
         }
 

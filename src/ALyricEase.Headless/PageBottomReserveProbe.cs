@@ -212,7 +212,8 @@ public static class PageBottomReserveProbe
             ServiceLocator.Get<ALyricEase.Services.NetEase.NetEaseApiClient>(),
             ServiceLocator.Get<ALyricEase.Services.QQMusic.QQMusicApiClient>(),
             ServiceLocator.Get<DispatcherService>(),
-            ServiceLocator.Get<PlayerViewModel>());
+            ServiceLocator.Get<PlayerViewModel>(),
+            ServiceLocator.Get<ALyricEase.Services.FollowedNewSongService>());
         vm.SourceIndex = 0;
         foreach (var section in vm.Sections)
         {

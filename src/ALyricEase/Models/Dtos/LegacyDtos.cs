@@ -255,3 +255,29 @@ public sealed record ToplistDetailResponse
 
     public List<ToplistDto>? List { get; init; }
 }
+
+/// <summary>/api/artist/sublist(收藏的歌手)响应。⚠ 请求必须带 total=true,否则回 301。</summary>
+public sealed record ArtistSublistResponse
+{
+    public int Code { get; init; }
+
+    /// <summary>收藏歌手总数(不是本页条数)。</summary>
+    public int Count { get; init; }
+
+    public bool HasMore { get; init; }
+
+    public List<ArtistSublistItem>? Data { get; init; }
+}
+
+public sealed record ArtistSublistItem
+{
+    public long Id { get; init; }
+
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("picUrl")] public string PicUrl { get; init; } = "";
+
+    public int AlbumSize { get; init; }
+
+    public int MusicSize { get; init; }
+}

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
 using ALyricEase.Infrastructure;
@@ -24,13 +25,14 @@ public sealed partial class BrowseCardViewModel : ViewModelBase
     private bool _coverRequestScheduled;
 
     public BrowseCardViewModel(string title, string subtitle, string coverUrl, MusicSource source,
-        long playCount = 0, Func<Task>? activate = null)
+        long playCount = 0, Func<Task>? activate = null, string badge = "")
     {
         Title = title;
         Subtitle = subtitle;
         CoverUrl = coverUrl;
         Source = source;
         PlayCount = playCount;
+        Badge = badge;
         _activate = activate;
     }
 
@@ -39,6 +41,11 @@ public sealed partial class BrowseCardViewModel : ViewModelBase
     public string Subtitle { get; }
 
     public string CoverUrl { get; }
+
+    /// <summary>封面右上角的时间徽章(「3 天前」)。新歌没有播放量,那个位置空着不如给发行时间。</summary>
+    public string Badge { get; }
+
+    public bool HasBadge => Badge.Length > 0;
 
     /// <summary>音源:决定封面左下角角标,也是"全部"筛选下唯一的平台标识。</summary>
     public MusicSource Source { get; }
@@ -174,28 +181,54 @@ public sealed record BrowseSourceFilterViewModel(string Label, IImage? Badge, st
 }
 
 /// <summary>浏览页区块:标题 + 一行横向卡片。筛选平台时只换 Items 的内容,
-/// 区块本身常驻(卡片实例保留在各自的源列表里,切回来不重新解码封面)。</summary>
-public sealed class BrowseSectionViewModel : ViewModelBase
+/// 区块本身常驻(卡片实例保留在各自的源列表里,切回来不重新解码封面)。
+/// 「关注新歌」要等逐位歌手查完才出内容,所以额外带 <see cref="IsBusy"/>:
+/// 那段空窗期显示一行"正在汇总",而不是整块消失让人以为没这个功能。</summary>
+public sealed partial class BrowseSectionViewModel : ViewModelBase
 {
-    public BrowseSectionViewModel(string title)
+    public BrowseSectionViewModel(string title, string caption = "")
     {
         Title = title;
+        Caption = caption;
         // 空/满与"这一块有几个源"都由 Items 派生:谁改集合都自动刷新,调用方不用记得补通知。
         Items.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasItems));
             OnPropertyChanged(nameof(IsEmpty));
+            OnPropertyChanged(nameof(IsSectionVisible));
+            OnPropertyChanged(nameof(ShowBusy));
             OnPropertyChanged(nameof(SourceSummary));
         };
     }
 
     public string Title { get; }
 
+    /// <summary>标题右侧的小字(「最近 3 个月」)。空则不占位。</summary>
+    [ObservableProperty] private string _caption;
+
+    public bool HasCaption => Caption.Length > 0;
+
+    partial void OnCaptionChanged(string value) => OnPropertyChanged(nameof(HasCaption));
+
+    [ObservableProperty] private bool _isBusy;
+
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsSectionVisible));
+        OnPropertyChanged(nameof(ShowBusy));
+    }
+
+    /// <summary>只有"还没有内容又要等"时才显示进度行:刷新时旧卡片还在,再压一行进度会显得抖动。</summary>
+    public bool ShowBusy => IsBusy && !HasItems;
+
     public ObservableCollection<BrowseCardViewModel> Items { get; } = new();
 
     public bool HasItems => Items.Count > 0;
 
     public bool IsEmpty => !HasItems;
+
+    /// <summary>区块整体显隐:有内容、或正在拉内容。</summary>
+    public bool IsSectionVisible => HasItems || IsBusy;
 
     /// <summary>区块右侧来源提示:混合内容显示"网易云音乐 + QQ音乐",单一来源只显示那个平台。</summary>
     public string SourceSummary
@@ -242,6 +275,7 @@ public sealed partial class BrowseViewModel : ViewModelBase
     private readonly QQMusicApiClient _qq;
     private readonly PlayerViewModel _player;
     private readonly DispatcherService _dispatcher;
+    private readonly FollowedNewSongService _followedFeed;
 
     private bool _loading;
     private bool _loaded;
@@ -255,16 +289,27 @@ public sealed partial class BrowseViewModel : ViewModelBase
     /// <summary>新歌速递的播放队列:点任意一首,上一首/下一首在两边的新歌之间连续切换。</summary>
     private IReadOnlyList<Song> _newSongQueue = [];
 
-    public BrowseViewModel(NetEaseApiClient api, QQMusicApiClient qq, DispatcherService dispatcher, PlayerViewModel player)
+    /// <summary>关注新歌的卡片与播放队列(独立加载,后到)。</summary>
+    private IReadOnlyList<BrowseCardViewModel> _followed = [];
+    private IReadOnlyList<Song> _followedQueue = [];
+    private CancellationTokenSource? _followedCts;
+
+    public BrowseViewModel(NetEaseApiClient api, QQMusicApiClient qq, DispatcherService dispatcher,
+        PlayerViewModel player, FollowedNewSongService followedFeed)
     {
         _api = api;
         _qq = qq;
         _dispatcher = dispatcher;
         _player = player;
+        _followedFeed = followedFeed;
         ToplistsSection = new BrowseSectionViewModel("排行榜");
         RecommendedSection = new BrowseSectionViewModel("推荐歌单");
         NewSongsSection = new BrowseSectionViewModel("新歌速递");
-        Sections = [ToplistsSection, RecommendedSection, NewSongsSection];
+        FollowedSection = new BrowseSectionViewModel("关注新歌",
+            $"最近 {FollowedNewSongService.LookbackMonths} 个月");
+        // 「关注新歌」排在「新歌速递」之前:它是按自己的关注列表算的,和下面的榜单没有重叠。
+        // 它要逐位歌手查(近 50 次请求),所以**不阻塞**首屏:前三块先上屏,它自己后补。
+        Sections = [ToplistsSection, RecommendedSection, FollowedSection, NewSongsSection];
         HeroItems.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasMultipleHeroes));
         SourceFilters =
         [
@@ -373,6 +418,9 @@ public sealed partial class BrowseViewModel : ViewModelBase
 
     public BrowseSectionViewModel NewSongsSection { get; }
 
+    /// <summary>关注歌手最近三个月的新歌(需登录;都没登录时整块隐藏)。</summary>
+    public BrowseSectionViewModel FollowedSection { get; }
+
     /// <summary>平台筛选:0=全部,1=网易云音乐,2=QQ音乐(与个人主页的筛选顺序一致)。</summary>
     [ObservableProperty] private int _sourceIndex;
 
@@ -385,13 +433,13 @@ public sealed partial class BrowseViewModel : ViewModelBase
     public bool IsEmpty => !IsLoading && Sections.All(section => !section.HasItems);
 
     /// <summary>首载(幂等):榜单与新歌不依赖登录态,整页只拉一次;需要重新取用 <see cref="RefreshCommand"/>。</summary>
-    public Task EnsureLoadedAsync() => _loaded || _loading ? Task.CompletedTask : LoadAsync();
+    public Task EnsureLoadedAsync() => _loaded || _loading ? Task.CompletedTask : LoadAsync(force: false);
 
     [RelayCommand]
     private async Task RefreshAsync()
     {
         if (_loading) return;
-        await LoadAsync();
+        await LoadAsync(force: true);
     }
 
     partial void OnSourceIndexChanged(int value) => RebuildSections();
@@ -400,7 +448,7 @@ public sealed partial class BrowseViewModel : ViewModelBase
 
     partial void OnStatusMessageChanged(string? value) => OnPropertyChanged(nameof(HasStatus));
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(bool force)
     {
         if (_loading) return;
         _loading = true;
@@ -434,6 +482,12 @@ public sealed partial class BrowseViewModel : ViewModelBase
                 RebuildPromos();
                 StatusMessage = BuildStatus(toplistFailures | recommendFailures | newSongFailures);
             }).ConfigureAwait(false);
+
+            // 关注新歌要逐位歌手查(近 50 次请求),**不** await:上面三块已经上屏,
+            // 它自己在后台补充,完成后单独刷新自己的区块。
+            _followedCts?.Cancel();
+            _followedCts = new CancellationTokenSource();
+            _ = LoadFollowedAsync(force, _followedCts.Token);
         }
         catch (Exception)
         {
@@ -445,6 +499,73 @@ public sealed partial class BrowseViewModel : ViewModelBase
             _loading = false;
             await _dispatcher.InvokeAsync(() => IsLoading = false).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>关注新歌:独立于前三块加载。未登录任一平台时直接返回(区块保持隐藏)。</summary>
+    private async Task LoadFollowedAsync(bool force, CancellationToken ct)
+    {
+        if (!_followedFeed.Enabled) return;
+
+        await _dispatcher.InvokeAsync(() => FollowedSection.IsBusy = true).ConfigureAwait(false);
+        try
+        {
+            var result = await _followedFeed.GetAsync(force, ct).ConfigureAwait(false);
+            if (ct.IsCancellationRequested) return;
+
+            await _dispatcher.InvokeAsync(() =>
+            {
+                _followedQueue = result.Songs;
+                _followed = result.Songs.Select(ToFollowedCard).ToList();
+                ApplySection(FollowedSection, _followed);
+                FollowedSection.Caption = BuildFollowedCaption(result);
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // 刷新时被新的一轮顶掉:保持现状即可
+        }
+        catch
+        {
+            await _dispatcher.InvokeAsync(() =>
+            {
+                FollowedSection.Caption = $"最近 {FollowedNewSongService.LookbackMonths} 个月 · 加载失败";
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            await _dispatcher.InvokeAsync(() => FollowedSection.IsBusy = false).ConfigureAwait(false);
+        }
+    }
+
+    private static string BuildFollowedCaption(FollowedNewSongResult result)
+    {
+        var window = $"最近 {FollowedNewSongService.LookbackMonths} 个月";
+        if (result.Songs.Count > 0) return $"{window} · {result.Songs.Count} 首";
+        if (result.NetEaseFailed && result.QqFailed) return $"{window} · 加载失败";
+        // 拿到了名单却一首都没命中,和"一个歌手都没关注"是两件事,文案要分开。
+        return result.HasArtists ? $"{window} · 这段时间没发新歌" : window;
+    }
+
+    private BrowseCardViewModel ToFollowedCard(Song song)
+        => new(song.Name, song.Artist, song.CoverUrl, song.Source, 0,
+            () => _player.PlayFromList(song, _followedQueue, "关注新歌"),
+            badge: RelativeDate(song.PublishDate));
+
+    /// <summary>徽章文案:新歌的时间感比"发行日期"更重要,超过一个月才退回月数。</summary>
+    private static string RelativeDate(string publishDate)
+    {
+        if (!DateOnly.TryParseExact(publishDate, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var date))
+            return "";
+        var days = DateOnly.FromDateTime(DateTime.Today).DayNumber - date.DayNumber;
+        return days switch
+        {
+            <= 0 => "今天",
+            1 => "昨天",
+            < 7 => $"{days} 天前",
+            < 30 => $"{days / 7} 周前",
+            _ => $"{days / 30} 个月前",
+        };
     }
 
     /// <summary>失败位:bit0=网易云,bit1=QQ。有没有内容才决定提示口径 ——
@@ -507,8 +628,11 @@ public sealed partial class BrowseViewModel : ViewModelBase
 
         var ne = await neTask.ConfigureAwait(false);
         var qq = await qqTask.ConfigureAwait(false);
+        // 两边都是"新歌榜",重叠很常见(同一首新歌两个平台都会上架)。同一个录音只留网易云那条,
+        // 判据复用搜索页的保守匹配(歌名归一化相等 + 歌手吻合 + 时长差 ≤5s),证据不足时宁可留两条。
+        var qqOnly = SongSearchMerger.KeepUnmatched(ne.Items, qq.Items);
         // 播放队列用**和界面一致**的交错顺序:下一首切到的就是右边那张卡片,不是"先放完网易云再放 QQ"。
-        var queue = Interleave(ne.Items, qq.Items);
+        var queue = Interleave(ne.Items, qqOnly);
         var cards = queue.Select(song => ToSongCard(song, queue)).ToList();
         return (cards, queue, (ne.Failed ? 1 : 0) | (qq.Failed ? 2 : 0));
     }
@@ -530,6 +654,7 @@ public sealed partial class BrowseViewModel : ViewModelBase
         ApplySection(ToplistsSection, _toplists);
         ApplySection(RecommendedSection, _recommended);
         ApplySection(NewSongsSection, _newSongs);
+        ApplySection(FollowedSection, _followed);
         RebuildHero();
         RebuildPromos();
     }

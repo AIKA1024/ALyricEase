@@ -31,6 +31,7 @@
 | 要改曲目行的样式 | [original-track-row-styles.md](original-track-row-styles.md)(改完对照 [TrackRow.axaml](../src/ALyricEase/Views/TrackRow.axaml)) |
 | 用户页 / 关注·粉丝名单(点行看对方用户页) | [user-page.md](user-page.md)(QQ 侧没有名单协议;`--user-relations`) |
 | 要改浏览页(双平台混排 / 平台筛选 / 点 QQ 榜单进歌单页) | [avalonia-tips.md](avalonia-tips.md)「浏览页:两个音源装进同一页」(`--browse`) |
+| 浏览页「关注新歌」没内容 / 想知道两家怎么拼出来的 | [followed-new-songs.md](followed-new-songs.md)(无聚合接口,关注列表+每位歌手按时间取最新;`--followed-new-songs` / `--browse-followed`) |
 | 要加或改图标码位 | [icon-fonts.md](icon-fonts.md) |
 | 登录相关(代理登录 / MUSIC_U / eapi 两种格式) | [netease-login.md](netease-login.md) |
 | 菜单点"分享"没反应(Windows;JIT 正常、装了包就不行) | [windows-share.md](windows-share.md)(两个静默失败:AOT 无内置 COM、owner 非前台;判据 `--sharetest`) |

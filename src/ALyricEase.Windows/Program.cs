@@ -277,6 +277,7 @@ class Program
     services.AddSingleton<SearchViewModel>();
     services.AddSingleton<PlaylistViewModel>();
     services.AddSingleton<RecommendViewModel>();
+    services.AddSingleton<FollowedNewSongService>();
     services.AddSingleton<BrowseViewModel>();
     services.AddSingleton<ArtistViewModel>();
     services.AddSingleton<AlbumViewModel>();

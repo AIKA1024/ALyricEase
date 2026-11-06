@@ -42,6 +42,20 @@ internal static class BrowseProbe
         Check(ne > 0, "排行榜应含网易云榜单");
         Check(qq > 0, "排行榜应含 QQ 榜单");
         Check(vm.NewSongsSection.Items.Count > 0, "新歌速递应有内容");
+
+        // 同一首歌两源都推时只留网易云那条:两边都是新歌榜,重叠是常态(用户报过"同一首并排两次")。
+        // 判据用搜索合并那套归一化:标题 + 歌手归一化后相等才算同一首,不同歌手的同名曲不会误判。
+        var newSongs = vm.NewSongsSection.Items.ToList();
+        Console.WriteLine($"[browse] 新歌速递 {newSongs.Count} 张:"
+                          + string.Join("，", newSongs.Select(card => $"{card.Source}:{card.Title}")));
+        var crossDuplicates = newSongs
+            .GroupBy(card => SongSearchMerger.NormalizeText(card.Title) + "|"
+                             + SongSearchMerger.NormalizeText(card.Subtitle))
+            .Where(group => group.Select(card => card.Source).Distinct().Count() > 1)
+            .Select(group => string.Join(" / ", group.Select(card => $"{card.Source}:{card.Title}")))
+            .ToList();
+        Check(crossDuplicates.Count == 0,
+            $"新歌速递里两源推了同一首歌（{string.Join("；", crossDuplicates)}）");
         // 推荐歌单两个源都要有:QQ 侧走"你的私荐歌单"(推荐流),不够由歌单广场补位
         var nePlaylists = vm.RecommendedSection.Items.Count(card => card.Source == MusicSource.NetEase);
         var qqPlaylists = vm.RecommendedSection.Items.Count(card => card.Source == MusicSource.QQ);
@@ -374,7 +388,8 @@ internal static class BrowseProbe
             ServiceLocator.Get<NetEaseApiClient>(),
             ServiceLocator.Get<QQMusicApiClient>(),
             ServiceLocator.Get<DispatcherService>(),
-            ServiceLocator.Get<PlayerViewModel>());
+            ServiceLocator.Get<PlayerViewModel>(),
+            ServiceLocator.Get<FollowedNewSongService>());
         var view = new BrowseView { DataContext = empty };
         var window = new Window { Width = 900, Height = 620, Content = view };
         window.Bind(Window.BackgroundProperty, new DynamicResourceExtension("AppBackground"));

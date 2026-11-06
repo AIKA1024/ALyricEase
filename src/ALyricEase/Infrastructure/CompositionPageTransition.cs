@@ -19,9 +19,18 @@ public sealed class CompositionPageTransition : IPageTransition
 {
     // 与壳层抽屉一致的缓出曲线：起步快，接近目标时逐渐减速。
     private static readonly SplineEasing EaseOut = new(0.215, 0.61, 0.355, 1);
+    // 轮播口径:起步更急、尾巴更长 —— 商店翻图那种"唰一下冲进来、慢慢站定"。
+    private static readonly SplineEasing StrongEaseOut = new(0.08, 0.82, 0.16, 1);
     private readonly Dictionary<CompositionVisual, AnimationLease> _active = new();
 
     public TimeSpan Duration { get; set; } = TimeSpan.FromMilliseconds(300);
+
+    /// <summary>退场页最后停在不透明度多少。0=完全淡出(页面导航要的干净利落);
+    /// 大于 0 则是"被顶走之前先慢慢变暗"—— 轮播用,商店的旧图就是这样退场的。</summary>
+    public double ExitOpacity { get; set; }
+
+    /// <summary>起步更急的缓出曲线(轮播用)。页面导航保持标准缓出。</summary>
+    public bool StrongEaseOutCurve { get; set; }
 
     public async Task Start(Visual? from, Visual? to, bool forward, CancellationToken cancellationToken)
     {
@@ -82,19 +91,30 @@ public sealed class CompositionPageTransition : IPageTransition
         // 合成平移不参与 UI 命中测试；过渡期间禁止点到尚未到位或已经退场的页。
         lease.Input?.SetCurrentValue(InputElement.IsHitTestVisibleProperty, false);
 
+        var ease = StrongEaseOutCurve ? StrongEaseOut : EaseOut;
         // 基值留在末帧；UI 线程迟迟不能执行完成回调时，退场页也不会闪回。
         visual.Translation = lease.Translation + to;
         visual.Opacity = lease.Opacity * toOpacity;
         var slide = visual.Compositor.CreateVector3KeyFrameAnimation();
         slide.Duration = duration;
         slide.InsertKeyFrame(0f, lease.Translation + from);
-        slide.InsertKeyFrame(1f, lease.Translation + to, EaseOut);
+        slide.InsertKeyFrame(1f, lease.Translation + to, ease);
         visual.StartAnimation("Translation", slide);
 
         var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
         fade.Duration = duration;
         fade.InsertKeyFrame(0f, lease.Opacity * fromOpacity);
-        fade.InsertKeyFrame(1f, lease.Opacity * toOpacity, EaseOut);
+        if (toOpacity == 0f && ExitOpacity > 0d)
+        {
+            // 慢慢变暗:前 60% 压到最暗,剩下的时间维持 —— 被顶出去时是一张暗图,而不是凭空消失
+            var dimmed = lease.Opacity * (float)Math.Clamp(ExitOpacity, 0d, 1d);
+            fade.InsertKeyFrame(0.6f, dimmed, EaseOut);
+            fade.InsertKeyFrame(1f, dimmed);
+        }
+        else
+        {
+            fade.InsertKeyFrame(1f, lease.Opacity * toOpacity, ease);
+        }
         visual.StartAnimation("Opacity", fade);
         return lease;
     }

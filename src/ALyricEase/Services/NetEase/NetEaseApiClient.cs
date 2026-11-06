@@ -1615,17 +1615,32 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>歌手全量歌曲分页(/api/v1/artist/songs,limit/offset)。"查看更多"歌曲页流式加载用;
-    /// 该接口回 legacy 结构(artists/album/duration),用 MapLegacySong 映射。more=false 或空页即无下一页。</summary>
+    /// 该接口回 legacy 结构(artists/album/duration),用 MapLegacySong 映射。more=false 或空页即无下一页。
+    /// <paramref name="order"/> 非空时透传(关注歌手新歌用 <c>time</c>,按发行时间倒序)。</summary>
     public async Task<(IReadOnlyList<Song> Songs, int Total, bool More)> GetArtistSongPageAsync(
-        long id, int limit, int offset, CancellationToken ct = default)
+        long id, int limit, int offset, CancellationToken ct = default, string order = "")
     {
+        var orderQuery = string.IsNullOrEmpty(order) ? "" : $"&order={Uri.EscapeDataString(order)}";
         var resp = await GetJsonAsync(
-            $"{BaseUrl}/api/v1/artist/songs?id={id}&limit={limit}&offset={offset}",
+            $"{BaseUrl}/api/v1/artist/songs?id={id}&limit={limit}&offset={offset}{orderQuery}",
             NetEaseJsonContext.Default.ArtistSongsPageResponse, ct).ConfigureAwait(false);
         if (resp is null || resp.Code != 200 || resp.Songs is null)
             return (Array.Empty<Song>(), 0, false);
         var songs = resp.Songs.Select(MapLegacySong).ToList();
         return (songs, resp.Total, resp.More && songs.Count > 0);
+    }
+
+    /// <summary>收藏(关注)的歌手列表。/api/artist/sublist。
+    /// ⚠ 必须带 <c>total=true</c>:漏掉这个参数时即使登录态有效也回 301(未登录),
+    /// 曾被误判成"cookie 失效"。</summary>
+    public async Task<List<ArtistSublistItem>> GetArtistSublistAsync(
+        int limit = 200, int offset = 0, CancellationToken ct = default)
+    {
+        var resp = await GetJsonAsync(
+            $"{BaseUrl}/api/artist/sublist?limit={limit}&offset={offset}&total=true",
+            NetEaseJsonContext.Default.ArtistSublistResponse, ct).ConfigureAwait(false);
+        if (resp is null || resp.Code != 200 || resp.Data is null) return new();
+        return resp.Data;
     }
 
     /// <summary>歌手专辑单页(/api/artist/albums/{id},offset/limit)。more=true 时可继续翻页。</summary>
@@ -1990,6 +2005,11 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         Name = s.Name,
         Artist = s.Artists is { Count: > 0 } ? string.Join("/", s.Artists.Select(a => a.Name)) : "",
         Album = s.Album?.Name ?? "",
+        // 发行日期在 album.publishTime(毫秒)。关注歌手新歌按它筛时间窗口,
+        // 缺了就只能靠服务端顺序,不可靠 —— 该字段原本漏映射(歌手页用不到)。
+        PublishDate = s.Album?.PublishTimeMs > 0
+            ? DateTimeOffset.FromUnixTimeMilliseconds(s.Album.PublishTimeMs).UtcDateTime.ToString("yyyy-MM-dd")
+            : "",
         CoverUrl = s.Album?.PicUrl ?? "",
         DurationMs = s.Duration,
         Fee = s.Fee,

@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:b="using:ALyricEase.Infrastructure.Behaviors"
+             xmlns:controls="using:ALyricEase.Controls"
              xmlns:i="using:Avalonia.Xaml.Interactivity"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:BrowseViewModel"
@@ -77,6 +78,11 @@
                              FontSize="11" Foreground="White" />
                   <TextBlock Text="{Binding PlayCountText}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
                 </StackPanel>
+              </Border>
+              <!-- 发行时间徽章(关注新歌):新歌没有播放量,右上角给"3 天前" -->
+              <Border Classes="release-badge" IsVisible="{Binding HasBadge}"
+                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6">
+                <TextBlock Text="{Binding Badge}" FontSize="10" FontWeight="SemiBold" Foreground="White" />
               </Border>
               <Border Classes="source-chip" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6">
                 <StackPanel Orientation="Horizontal" Spacing="4">
@@ -381,6 +387,12 @@
       <Setter Property="CornerRadius" Value="4" />
       <Setter Property="Padding" Value="4,2" />
     </Style>
+    <!-- 关注新歌的发行时间徽章:和 source-chip 同色系,但只承载一个短文本 -->
+    <Style Selector="Border.release-badge">
+      <Setter Property="Background" Value="#73000000" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="5,2" />
+    </Style>
 
     <!-- 区块标题用全局 section-title(24 Bold):和个性推荐同一档,两页来回不用重新适应字号 -->
     <Style Selector="TextBlock.browse-section-source">
@@ -522,7 +534,8 @@
 
           <!-- 左:轮播 + 圆点(圆点在卡片外,和商店一致),填满剩余宽度 -->
           <Grid RowDefinitions="Auto,Auto">
-            <Border Classes="hero-frame">
+            <Border Classes="hero-frame" PointerEntered="OnHeroPointerOver" PointerMoved="OnHeroPointerOver"
+                    PointerExited="OnHeroPointerOut">
               <Grid>
                 <!-- 真 Carousel:翻页走合成线程的横移(CompositionPageTransition),
                      不依赖 UI 帧时钟;滑动留给触屏。 -->
@@ -530,7 +543,7 @@
                           SelectedIndex="{Binding HeroIndex, Mode=TwoWay}"
                           IsSwipeEnabled="True">
                   <Carousel.PageTransition>
-                    <infra:CompositionPageTransition Duration="0:0:0.26" />
+                    <infra:CompositionPageTransition Duration="0:0:0.6" ExitOpacity="0.22" StrongEaseOutCurve="True" />
                   </Carousel.PageTransition>
                   <Carousel.ItemTemplate>
                     <DataTemplate x:DataType="vm:BrowseHeroViewModel">
@@ -620,11 +633,24 @@
                         StrokeLineCap="Round" StrokeJoin="Round"
                         HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
+
+                <!-- 左下角"还有多久换下一张"的转圈(微软商店轮播同款):半透明圆盘 + 半透明白扇形,
+                     一圈走完自动切下一张;指针压在海报上时冻住,离开继续。只有一张海报时整块淡出,
+                     所以这里绑 HasMultipleHeroes 而不是 HasHero。18px 是压在海报上"看得见但不抢正文"的尺寸。 -->
+                <controls:HeroAdvanceRing x:Name="HeroRing" Width="18" Height="18" Margin="16,0,0,13"
+                                          HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                          IsActive="{Binding HasMultipleHeroes}"
+                                          RestartOn="{Binding HeroIndex}"
+                                          Completed="OnHeroRingCompleted" />
               </Grid>
             </Border>
 
+            <!-- ⚠ AutoScrollToSelectedItem 必须关:轮播自动切图时圆点 ListBox 换了选中项,它会
+                 ScrollIntoView → 请求冒泡到整页 ScrollViewer,正在看下面内容的人就被拽回海报位
+                 (实测滚到 600 会被拉到 354)。这条只在"选中项不在视野里"时才需要,圆点永远全可见。 -->
             <ListBox Grid.Row="1" Classes="hero-dots" ItemsSource="{Binding HeroItems}"
                      SelectedIndex="{Binding HeroIndex, Mode=TwoWay}"
+                     AutoScrollToSelectedItem="False"
                      HorizontalAlignment="Center" Margin="0,10,0,0"
                      AutomationProperties.Name="切换推荐榜单">
               <ListBox.ItemsPanel>
@@ -642,8 +668,10 @@
         </DockPanel>
 
         <!-- ===== 平台筛选:居中胶囊,筛的是下面所有内容(海报位跟着换) ===== -->
+        <!-- 同一个坑:切平台筛选换了选中项也会 ScrollIntoView(胶囊永远全可见,不需要它帮忙) -->
         <ListBox Classes="source-chips" ItemsSource="{Binding SourceFilters}"
                  SelectedIndex="{Binding SourceIndex, Mode=TwoWay}"
+                 AutoScrollToSelectedItem="False"
                  HorizontalAlignment="Center" Margin="0,22,0,30" IsVisible="{Binding !IsEmpty}"
                  AutomationProperties.Name="筛选音乐平台">
           <ListBox.ItemsPanel>
@@ -678,11 +706,14 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:BrowseSectionViewModel">
-              <!-- 区块常驻:Sections 从不增删,筛选只换 Items 的内容,所以切回"全部"不重新解码封面 -->
-              <StackPanel Margin="0,0,0,44" IsVisible="{Binding HasItems}">
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="0,0,0,16">
+              <!-- 区块常驻:Sections 从不增删,筛选只换 Items 的内容,所以切回"全部"不重新解码封面。
+                   「关注新歌」在逐位歌手查完前没有内容,靠 IsBusy 撑住区块并显示一行进度。 -->
+              <StackPanel Margin="0,0,0,44" IsVisible="{Binding IsSectionVisible}">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" Margin="0,0,0,16">
                   <TextBlock Classes="section-title" Text="{Binding Title}" VerticalAlignment="Center" />
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                  <TextBlock Grid.Column="1" Classes="browse-section-source" Text="{Binding Caption}"
+                             IsVisible="{Binding HasCaption}" VerticalAlignment="Bottom" Margin="0,0,0,5" />
+                  <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                     <!-- 和海报位翻页钮同一份几何:16×16 盒子 + 居中,见上面的 ⚠ -->
                     <Button Classes="shelf-nav" Tag="prev" Click="OnShelfScroll" AutomationProperties.Name="向左滚动">
                       <Path Width="16" Height="16" Stretch="None" Data="M11,3 L5,8 L11,13" StrokeThickness="1.6"
@@ -696,6 +727,16 @@
                     </Button>
                   </StackPanel>
                 </Grid>
+                <!-- 关注新歌要逐位歌手查(近 50 次请求),先给一行进度,别让区块空着 -->
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,16"
+                            IsVisible="{Binding ShowBusy}">
+                  <Ellipse Classes="spinner" Width="16" Height="16" StrokeThickness="2"
+                           Stroke="{DynamicResource LyricEaseTeal}" StrokeDashArray="8,14"
+                           VerticalAlignment="Center"
+                           infra:SpinnerRotation.IsActive="{Binding IsBusy}" />
+                  <TextBlock Classes="browse-subtitle" Text="正在汇总关注歌手的新歌…"
+                             VerticalAlignment="Center" />
+                </StackPanel>
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                               Padding="0,0,0,14">
                   <i:Interaction.Behaviors>

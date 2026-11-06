@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
@@ -22,6 +23,20 @@ public partial class BrowseView : UserControl
     {
         if (e.Container.DataContext is BrowseCardViewModel card)
             card.PrepareCoverForTransition();
+    }
+
+    /// <summary>指针压在海报上就把倒计时冻住(微软商店同款:想让这一张多停一会儿,不用去点箭头)。
+    /// 用 Moved 一起兜住"进页面时指针本来就在海报上"的情况 —— 那种情况不会有 Entered。</summary>
+    private void OnHeroPointerOver(object? sender, PointerEventArgs e) => HeroRing.IsPaused = true;
+
+    private void OnHeroPointerOut(object? sender, PointerEventArgs e) => HeroRing.IsPaused = false;
+
+    /// <summary>转圈走满一圈 ⇒ 切下一张。<see cref="HeroAdvanceRing.RestartOn"/> 绑着 HeroIndex,
+    /// 换页后进度自动归零,不用在这里重开。</summary>
+    private void OnHeroRingCompleted(object? sender, EventArgs e)
+    {
+        if (DataContext is BrowseViewModel vm && vm.NextHeroCommand.CanExecute(null))
+            vm.NextHeroCommand.Execute(null);
     }
 
     /// <summary>货架左右箭头:按视口的 80% 平移,留一点重叠 —— 读者能接上刚才看到的那张卡。

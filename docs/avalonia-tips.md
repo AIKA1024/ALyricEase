@@ -1906,8 +1906,10 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
 
 **页面顺序**(`Views/BrowseView.axaml` + `ViewModels/BrowseViewModel.cs`):
 页头(标题 + 一句说明 + 刷新,固定)→ **海报位:真 Carousel(2/3)+ 右侧三宫格(1/3)** →
-**居中胶囊筛选**(带平台角标)→ 三个货架(排行榜 / 推荐歌单 / 新歌速递)。这就是 WinUI 商店首页的
+**居中胶囊筛选**(带平台角标)→ 四个货架(排行榜 / 推荐歌单 / 关注新歌 / 新歌速递)。这就是 WinUI 商店首页的
 "大图 → 分类 → 货架"顺序;筛选同时也作用于海报位(切到 QQ 就换成 QQ 榜单的海报)。
+「关注新歌」排在「新歌速递」之前(用户口径:自己关注的人的动态比全站榜单更重要),但它要逐位歌手查
+(近 50 次请求),所以**独立异步**加载、不阻塞前三个货架。
 
 ### 轮播用控件,不要手搓
 
@@ -1915,7 +1917,12 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
 `infra:CompositionPageTransition`:翻页是合成线程的横移,不吃 UI 帧时钟(手搓"换 DataContext"
 是硬切,而且 `UI 线程静息 ~79ms` 时自带 `PageSlide` 会卡)。`--browse` 里有一条断言:点右箭头后
 40ms 读 `ElementComposition.GetElementVisual(...).Translation.X`,必须 ≠ 0 —— 只在数据层验证
-"SelectedIndex 变了"是过不了关的(那正是硬切也会通过的检查)。
+"SelectedIndex 变了"是过不了关的。⚠ 但它**证明不了曲线**:`CompositionVisual` 的 getter 读的是"基值",
+而 `CompositionPageTransition` 起动画前就把基值写成终值了 —— 所以这条只说明"走了合成层"。
+
+**轮播的节奏是单独调过的**(`BrowseView` 上的三个属性,页面导航仍用默认):`Duration=0.6s`(原来 0.26s,
+用户嫌快)、`StrongEaseOutCurve=True`(起步更急、尾巴更长,商店那种"唰一下冲进来再慢慢站定")、
+`ExitOpacity=0.22`(被顶走的旧图压到 22% 再滑出去,而不是透明消失)。三条都用 `--hero-ring` 钉住。
 
 ### 海报位的三个坑
 
@@ -1926,6 +1933,36 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
   两张图都用 `ManagedCoverImage.DecodeSize`,只有一张在屏(轮播虚拟化只实现当前页)。
 - **翻页钮压在卡片两侧中间**,所以正文左边距要给到 64(钮占 10..44);否则圆钮会正好压在
   第一行导语上,看着像文字前面多了个"‹"。
+
+### 海报位左下角的自动切图倒计时(`Controls/HeroAdvanceRing`)
+
+微软商店轮播同款:18px 半透明圆盘 + 半透明白扇形从 12 点方向顺时针长满**一圈**(6s),走完自动切下一张;
+指针压在海报上就冻住,移开继续。
+
+- **尺寸/透明度调过两轮**:30px + 扇形 90% 白 → 用户说"太大、应该半透明" → 22px/60% 白 → 还是嫌大 → **18px**。
+  终稿盘 20% 白、扇形 60% 白,压在海报上"看得见但不抢正文"(探针钉住 14..21,再放大会 FAIL)。
+- **切图时先淡出、等翻页动画落定再淡回**(160ms 进出,`ResumeDelay` 620ms = 600ms 翻页动画 + 一点余量)。
+  只把进度归零是不行的:扇形一清零,那点白肉眼就没了,要等它重新长出来才看得见,读起来像"圈消失了 1 秒"。
+- **等待那 620ms 里表也要停**(`_resuming` 既挡 `Opacity` 抢回、也挡 `DispatcherTimer` 重启)。
+  不挡的话圆虽然看不见,进度已经悄悄走了十分之一,淡回来那一下就像"切图时圈还在跑"。
+- **归零推迟到"淡回来那一刻"**:`OnTick` 走满时把进度**停在满圈**再触发 `Completed`,
+  否则退场那 160ms 里能看见扇形从满圈"啪"跳到空;真正的清零在 resume 回调里做(那会儿还是透明的)。
+- **别用样式动画**:需求是"中途暂停、之后接着走",声明式动画停不住也接不上。这里用
+  `DispatcherTimer`(40ms)自己累计 `Stopwatch` 时间,每 tick 只 `InvalidateVisual()` 这个 22px 的控件
+  —— 不碰整页,也不占 `UiFramePacer` 的 60Hz 租约。
+- **暂停判据走视图的 `PointerEntered` / `Moved` / `Exited`**(`Border.hero-frame` 上),不是直接改属性:
+  要验的是"真的悬停",探针 `window.MouseMove()` 注进去能把它打回原形。用 `Moved` 是因为
+  "进页面时指针本来就压在海报上"不会再有 `Entered`。
+- **`RestartOn` 绑 `HeroIndex`**:手动翻页/点圆点/触屏滑动之后进度必须归零,否则刚切过去半圈就没了。
+- **`IsActive` 绑 `HasMultipleHeroes`**(不是 `HasHero`):只有一张海报时没有"下一张"可等,圆整块淡出。
+- ❌ 别拿 `Window.IsActive` 当停止条件:headless 里它**恒为 false**,加了探针就永远跑不起来;
+  最小化时 Avalonia 本来就不出帧,多出来的只是每 40ms 一次极小的失效。真停表靠 tick 里复查
+  `IsEffectivelyVisible`(祖先 `IsVisible=False` 不会通知到子控件)。
+- 回归 `--hero-ring`:尺寸 14..21、位置(左 16 / 底 13)、进度会走、悬停冻结、移开继续、走完切图
+  (切的那一下最低不透明度必须 ≤0.5,否则说明是硬清零)、落定后淡回、关闭时读到中间值;
+  切图期间进度必须**冻住**(读 `Progress` 前后一致),淡回后才重新从 0 走;
+  另外钉住翻页动画的三项配置(600ms / 退场停在 0.22 / 强缓出)—— **曲线形状本身在 headless 里量不了**,
+  `CompositionVisual.Translation/Opacity` 的 getter 返回的是"基值"(起动画前写进去的终值),不是跑动画时的实时值。
 
 ### 右侧三宫格
 
@@ -1985,6 +2022,18 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
   "只有轮播有内容"误判成整源不可用(提示会说反)。
 - `--browse` 断言:货架卡片的 `(源, 标题)` 不得与 `HeroItems` 重复,且筛选后仍成立。
 
+### 新歌速递:两源推同一首歌,只留网易云那条
+
+两边取的都是"新歌榜"前 5 首,重叠是常态(同一首新歌两个平台都会上架)。用户报过一屏里
+"Hong Kong (feat. 王菲)" 并排出现两次、左右只是角标不同 —— 现在 `LoadNewSongsAsync` 里
+`SongSearchMerger.KeepUnmatched(ne.Items, qq.Items)` 把 QQ 侧与网易云"同一段录音"的条目剔掉,
+再交错。判据直接复用搜索页那套保守匹配(**歌名归一化相等 + 歌手互相吻合 + 时长差 ≤5s,
+置信度 ≥0.84**),一对一折叠,证据不足时宁可留两条 —— 误合并(把 Live 版吞掉)比重复更糟。
+
+- 剔除后播放队列跟着变短:队列由 `Interleave(ne.Items, qqOnly)` 生成,和界面逐张对应。
+- `--browse` 新增断言:按 `归一化(标题)|归一化(副标题=歌手)` 分组,不得出现两个源同时有同一组。
+  实测那是 10 张 → 9 张(只吃掉一条,没有连带误伤)。
+
 ### 图标符号为什么不在按钮正中(Avalonia 的 Shape 尺寸)
 
 `Path` 的期望尺寸取自几何的 **Right/Bottom,不是 Bounds 的宽高**。几何不从 (0,0) 起画时,
@@ -2010,6 +2059,10 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
   再给 item 写 Padding 会被一起吃掉 —— 上一版就是这么变成 6px 间距、点几乎连成一条线、
   选中胶囊和第一个点几乎粘在一起。另外 `:selected` / `:pointerover` 的 ContentPresenter 底色
   要显式设 Transparent,否则 item 底色会在圆点后面透出一块方块。
+- **⚠ 轮播切图会把页面拽回去**:自动换图时圆点 `ListBox` 的选中项变了,`SelectingItemsControl`
+  默认会 `ScrollIntoView` 选中的 item,那个请求一路冒泡到整页的 `ScrollViewer` —— 用户正滚在下面
+  看内容,图一换就被拉回海报位(实测 `Offset.Y` 600 → 354)。圆点永远全可见,根本不需要这个行为 ⇒
+  `AutoScrollToSelectedItem="False"`(平台筛选胶囊同理)。`--hero-ring` 钉住:滚到 600 → 切一次图 → 仍是 600。
 - **胶囊筛选**:未选中透明、选中才铺 `AppSurface`,三个白胶囊并排根本看不出选中;图标用
   `SourceBadges.For(...)`(平台)与字形 ``(全部)。自定义 ItemTemplate 里的 `TextBlock`
   **不继承** `ListBoxItem.Foreground`,得单独写样式(含 `:selected`)。

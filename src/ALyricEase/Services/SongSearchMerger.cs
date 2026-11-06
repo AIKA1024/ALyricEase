@@ -93,6 +93,45 @@ public static partial class SongSearchMerger
             .ToList();
     }
 
+    /// <summary>
+    /// 从 <paramref name="candidates"/> 里剔掉与 <paramref name="primary"/> 中任一条是"同一段录音"的项，
+    /// 用于货架类区块（如浏览页"新歌速递"）：同一首歌两边都推时只留主源那条，否则一屏里同一张封面出现两次。
+    /// 一对一折叠：一条主源条目最多吃掉一条候选，不会把两个不同版本互相吞掉；
+    /// 判据与搜索合并完全一致（歌名归一化相等 + 歌手吻合 + 时长差 ≤5s），证据不足时宁可保留。
+    /// </summary>
+    public static List<Song> KeepUnmatched(IReadOnlyList<Song> primary, IReadOnlyList<Song> candidates)
+    {
+        if (primary.Count == 0 || candidates.Count == 0) return [.. candidates];
+
+        var used = new bool[primary.Count];
+        var kept = new List<Song>(candidates.Count);
+        foreach (var song in candidates)
+        {
+            var match = -1;
+            var bestScore = 0d;
+            for (var i = 0; i < primary.Count; i++)
+            {
+                if (used[i]) continue;
+                var score = GetMatchConfidence(primary[i], song);
+                if (score > bestScore)
+                {
+                    match = i;
+                    bestScore = score;
+                }
+            }
+
+            if (match >= 0 && bestScore >= MatchThreshold)
+            {
+                used[match] = true;
+                continue;
+            }
+
+            kept.Add(song);
+        }
+
+        return kept;
+    }
+
     /// <summary>返回 0..1 的匹配置信度；0 表示存在明确冲突，不应合并。</summary>
     public static double GetMatchConfidence(Song left, Song right)
     {
@@ -189,7 +228,9 @@ public static partial class SongSearchMerger
     private static string NormalizeTitle(string value)
         => NormalizeText(VersionTokenRegex().Replace(value.Normalize(NormalizationForm.FormKC), " "));
 
-    private static string NormalizeText(string value)
+    /// <summary>跨平台比较用的文本归一化（FormKC + 小写 + 只保留字母/数字/汉字）。
+    /// 探针也用它判"两源是不是同一首"，别在别处另写一套。</summary>
+    public static string NormalizeText(string value)
     {
         if (string.IsNullOrWhiteSpace(value)) return "";
         var normalized = value.Normalize(NormalizationForm.FormKC).ToLowerInvariant();

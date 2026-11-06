@@ -27,29 +27,42 @@ QQ 自己走账号摘要、他人走 `encrypt_uin`。
 
 ## 2. 关注 / 粉丝名单（2026-11 新增）
 
-**入口**：英雄卡里的两个计数是 `Button.hero-link`（外观等同文字，悬停浮出 `#22FFFFFF`）。
-`Padding="6,2"` 配容器 `Margin="-6,0,0,0"`，让按钮的视觉位置与原来的纯文字一致 ——
-直接给按钮加内边距会把"关注 12 粉丝 34"整体推右、且行高多 4px。
+**入口**：英雄卡里"关注 N · 粉丝 M"是**一个** `Button.hero-link`（外观等同文字，
+悬停浮出 `#22FFFFFF`，`Padding="6,2"` + `Margin="-6,0,0,0"` 保持原纯文字位置）。
+点击进入名单页，默认落在"关注"Tab，页内再切换到"粉丝"。
 
-**页面**：`UserRelationsPageViewModel` 一个 VM 服务两个入口，`UserRelationKind` 决定拉哪一份。
-页键 `"UserRelations"`，`DetailPageKind` 用 `UserFollowing` / `UserFollowers` 两个值
-（快照要知道回来时该复原哪一份名单）。
+**页面**：`UserRelationsPageViewModel` 一个 VM 同时承载两份名单：
+顶部是 Fluent 2 TabList（`ListBox.relation-tabs`：文字 + 计数徽标、选中项半粗字重 +
+2px 强调下划线、整条 1px 分隔线）。页键 `"UserRelations"`，`DetailPageKind` 仍用
+`UserFollowing` / `UserFollowers` 两个值（快照要知道回来时停在哪个 Tab）。
+
+**Tab 切换**：两份名单在 VM 内各自保留 `RelationState`（行数据、offset、QQ stage、
+`HasMore`、空态文案）。切到未加载过的 Tab 才联网拉首页；切回已加载 Tab 直接复用，
+不重复请求。切换时 `RestorePageScrollState(0)` 回到顶部。
+⚠ `ResetContent` 必须先把 `SelectedTabIndex` 置 -1、填完 `Tabs` 再写目标值：
+页面视图可能早于数据创建，目标值若与旧值相同就不会触发通知，ListBox 不会选中后到的条目
+（表现为"内容是关注、关注 Tab 却没选中"）。
+⚠ `ListBox` 必须设 `AutoScrollToSelectedItem="False"`，否则新视图恢复时 ListBox 会把
+选中 Tab `BringIntoView`、冒泡到页面 `ScrollViewer`，把返回后的滚动位置从 240 拽回 ~95。
 
 **分页**：`PageSize=30`，滚动近底部（剩余 < 500px）由视图调 `LoadMoreAsync`（单飞）；
 服务端 `more` 驱动 `HasMore`，请求失败也把 `HasMore` 置 false（否则滚到底会无限重试）。
 `DetailPageScrollController` 与其它详情页同款。⚠ QQ 的"关注"是两段（先用户后歌手），
-快照里要存 `RelationStage` 才能从正确的一段续拉。
+快照里要存 `RelationStage` 才能从正确的一段续拉；分页 offset/stage 只在请求确认仍属于
+当前 Tab 后提交，避免切 Tab 取消请求时把位置推进到没有行数据的地方。
 
 **点行**：`Tapped` → `MainViewModel.OpenUserCommand.Execute(userId)`（与搜索结果同一入口），
 所以对方页是普通 `UserProfile.LoadAsync(uid)`，不是 `uid=0` 的"自己"。
 
 **返回**：名单整页进一次性内存快照（`DetailPageCacheData.RelationUsers`），
-返回时不再联网、滚动位置一并还原。⚠ 名单为空时**不写** `RelationUsers`
-（`null` 而不是空数组）—— restore 侧看到 null 会重新拉首页，避免"网络失败后返回是一片空白且永不重试"。
+返回时不再联网、滚动位置与当前 Tab 一并还原；另一份名单未加载时保持未加载，
+切过去再拉。`DetailNavigationSnapshot` 额外存两份名单的计数，用于恢复 Tab 徽标。
+⚠ 名单为空时**不写** `RelationUsers`（`null` 而不是空数组）—— restore 侧看到 null
+会重新拉首页，避免"网络失败后返回是一片空白且永不重试"。
 
-**标题**：`Title` 在 `LoadAsync` 里才定（"关注"/"粉丝"），顶部横幅经
-`MainViewModel.OnUserRelationsTitleChanged` 跟随；只在 `OnActivePageChanged` 里刷新会慢一拍，
-落到 fallback 文案"关注与粉丝"。
+**标题**：`Title` 在 `LoadAsync` 里定为"关注与粉丝"（两份名单共用一个页面），顶部横幅经
+`MainViewModel.OnUserRelationsTitleChanged` 跟随；页内人数看 Tab 徽标，
+副标题只显示"来自 {昵称}"。
 
 ## 3. 加载态
 
@@ -157,10 +170,11 @@ dotnet run --project src/ALyricEase.Headless/ALyricEase.Headless.csproj -c Debug
 ```
 
 假 JSON 走真实客户端路径，覆盖：加载态转圈可见且盖住内容（`profile-loading.png` /
-`profile-loading-dark.png`）→ 解析 → 首屏 30 条 → 滚到底补到 45 → 窄屏无溢出 →
-点行进对方用户页 → 返回恢复 45 条 + 滚动 240 → 再返回恢复原用户页 →
-QQ 登录后英雄卡可点、关注名单 2 用户 + 1 歌手拼成一份、点歌手进歌手页、点用户进用户页；
-自己的 QQ 页计数非 0（`hero-qq-self.png`）且不继承上一个人的 euin。
+`profile-loading-dark.png`）→ 解析 → 合并入口进入「关注与粉丝」→ 首屏 30 条 →
+切到粉丝 Tab 拉到 8 条并切回保留 30 条（`relations-followers.png`）→ 滚到底补到 45 →
+窄屏无溢出 → 点行进对方用户页 → 返回恢复 45 条 + 当前 Tab + 滚动 240 → 再返回恢复原用户页 →
+QQ 登录后合并入口可点、关注名单 2 用户 + 1 歌手拼成一份、切粉丝 Tab、点歌手进歌手页、
+点用户进用户页；自己的 QQ 页计数非 0（`hero-qq-self.png`）且不继承上一个人的 euin。
 截图落在临时目录（末尾会打印路径）。
 
 ```powershell

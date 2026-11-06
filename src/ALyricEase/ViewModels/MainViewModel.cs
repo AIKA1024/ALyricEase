@@ -69,7 +69,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist.PropertyChanged += OnPlaylistLoginChanged;
         // 歌单页标题跟着"当前打开的歌单"走(顶部横幅),不走导航项文案
         Playlist.PropertyChanged += OnPlaylistTitleChanged;
-        // 关注/粉丝名单页的标题(关注 / 粉丝)在 LoadAsync 里才定,横幅要跟着变
+        // 关注/粉丝名单页的标题在 LoadAsync 里才定,横幅要跟着变
         UserRelations.PropertyChanged += OnUserRelationsTitleChanged;
         // 设置里的渲染开关改了要立刻反映到正在显示的详情页背景上(见 NowPlayingMotionEnabled)
         appState.VisualEffectsChanged += () =>
@@ -438,7 +438,7 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(CurrentPageTitle));
     }
 
-    /// <summary>名单页标题("关注"/"粉丝")在 LoadAsync 里才定 → 顶部横幅跟着刷新。</summary>
+    /// <summary>名单页标题在 LoadAsync 里才定 → 顶部横幅跟着刷新。</summary>
     private void OnUserRelationsTitleChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(UserRelationsPageViewModel.Title))
@@ -1024,14 +1024,16 @@ public sealed partial class MainViewModel : ViewModelBase
             await UserProfile.LoadQqUserAsync(euin);
     }
 
-    /// <summary>用户页"关注 / 粉丝" → 名单页。网易云按 uid 拉,QQ 按 encrypt_uin(空 = 自己),
-    /// QQ 的关系名单接口需登录。快照由 OnActivePageChanging 统一保留(页面键会从 User 换走)。</summary>
+    /// <summary>用户页"关注 · 粉丝" → 名单页(页内 Tabs 切换两份名单)。网易云按 uid 拉,
+    /// QQ 按 encrypt_uin(空 = 自己),QQ 的关系名单接口需登录。
+    /// 快照由 OnActivePageChanging 统一保留(页面键会从 User 换走)。</summary>
     public void OpenUserRelations(MusicSource source, long userId, string encryptUin,
-        UserRelationKind kind, string ownerName, int total)
+        UserRelationKind kind, string ownerName, int followingTotal, int followersTotal)
     {
         if (source == MusicSource.NetEase && userId == 0) return;
         ActivePage = "UserRelations";
-        _ = UserRelations.LoadAsync(source, userId, encryptUin, kind, ownerName, total);
+        _ = UserRelations.LoadAsync(
+            source, userId, encryptUin, kind, ownerName, followingTotal, followersTotal);
     }
 
     /// <summary>QQ 音乐曲目点击歌手 → 歌手页(按 singer mid)。</summary>

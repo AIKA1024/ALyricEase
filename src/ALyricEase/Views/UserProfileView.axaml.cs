@@ -23,21 +23,13 @@ public partial class UserProfileView : UserControl
         // 勿改回 SizeChanged 回写方案:回写的"卡片尺寸"正是被图片撑大的值,正反馈冻结。
     }
 
-    /// <summary>英雄卡"关注" → 关注名单页(点行再进对方用户页)。</summary>
-    private void OnFollowingClick(object? sender, RoutedEventArgs e)
-        => OpenRelations(UserRelationKind.Following);
-
-    /// <summary>英雄卡"粉丝" → 粉丝名单页。</summary>
-    private void OnFollowersClick(object? sender, RoutedEventArgs e)
-        => OpenRelations(UserRelationKind.Followers);
-
-    /// <summary>计数用页面上已展示的值(名单可能被隐私裁掉一部分,仍按用户看到的数字做副标题)。</summary>
-    private void OpenRelations(UserRelationKind kind)
+    /// <summary>英雄卡"关注 · 粉丝" → 名单页,默认落在"关注"Tab,页内可切换到"粉丝"。</summary>
+    private void OnRelationsClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not UserProfileViewModel vm || !vm.CanOpenRelations) return;
-        var total = kind == UserRelationKind.Following ? vm.Follows : vm.Followeds;
         ServiceLocator.Get<MainViewModel>().OpenUserRelations(
-            vm.RelationSource, vm.UserId, vm.EncryptUin, kind, vm.Nickname, total);
+            vm.RelationSource, vm.UserId, vm.EncryptUin, UserRelationKind.Following,
+            vm.Nickname, vm.Follows, vm.Followeds);
     }
 
     /// <summary>Tapped 命中是否来自行内操作按钮(▶/•••):它们的 Click 已自处理,

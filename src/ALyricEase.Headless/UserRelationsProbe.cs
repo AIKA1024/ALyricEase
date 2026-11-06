@@ -89,12 +89,12 @@ internal static class UserRelationsProbe
         Check(SpinnerRotation.IsSpinning(spinner!), "加载中转圈由合成动画驱动");
         Check(UiFramePacer.Demand == pacerBase, "合成动画不占用帧泵(UI 线程可继续睡)");
         Console.WriteLine("[user-relations] pacer " + UiFramePacer.Describe());
-        Capture(loadingWindow, root, "profile-loading");
+        await CaptureAsync(loadingWindow, root, "profile-loading");
         // ⚠ 合成动画的结果不会出现在 RenderTargetBitmap 里(两帧逐像素相同),headless 拍不到旋转;
         // "真的在转"由真窗口抓屏探针 --spinner-motion-real 验证。
         Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
         await Task.Delay(100);
-        Capture(loadingWindow, root, "profile-loading-dark");
+        await CaptureAsync(loadingWindow, root, "profile-loading-dark");
         Application.Current.RequestedThemeVariant = ThemeVariant.Light;
         await Task.Delay(60);
         // 加载结束后必须真的停:合成动画在隐藏元素上照旧推进时钟
@@ -127,17 +127,26 @@ internal static class UserRelationsProbe
         fadeWindow.Close();
         await Task.Delay(60);
 
-        // —— 英雄卡:点"关注"进名单页 ——
+        // —— 英雄卡:关注/粉丝合并成一个入口,点进名单页后在页内切换 ——
         var heroView = new UserProfileView { DataContext = profile };
         var window = NewWindow(heroView, 1000, 800);
         var links = window.GetVisualDescendants().OfType<Button>()
             .Where(button => button.Classes.Contains("hero-link")).ToArray();
-        Check(links.Length == 2 && links.All(button => button.IsEffectivelyEnabled), "两个计数按钮都可点");
-        Capture(window, root, "hero-card");
+        Check(links.Length == 1 && links[0].IsEffectivelyEnabled, "关注/粉丝是一个可点的合并入口");
+        Check(window.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == "关注")
+              && window.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == "粉丝"),
+            "合并入口同时展示关注和粉丝");
+        await CaptureAsync(window, root, "hero-card");
         Click(window, links[0]);
         await Task.Delay(120);
-        Check(main.ActivePage == "UserRelations" && main.UserRelations.Title == "关注", "点关注进入关注名单页");
-        Check(main.CurrentPageTitle == "关注", "顶部标题栏跟随名单页标题");
+        Check(main.ActivePage == "UserRelations" && main.UserRelations.Title == "关注与粉丝",
+            "点合并入口进入关注/粉丝名单页");
+        Check(main.CurrentPageTitle == "关注与粉丝", "顶部标题栏跟随名单页标题");
+        Check(main.UserRelations.Tabs.Count == 2
+              && main.UserRelations.Tabs[0].Count == FollowingTotal
+              && main.UserRelations.Tabs[1].Count == FollowerTotal,
+            "名单页 Tabs 带关注/粉丝计数");
+        Check(main.UserRelations.SelectedTabIndex == 0, "默认选中「关注」Tab");
         Check(!profile.HasRetainedPageData, "离开用户页后重数据已释放");
         window.Close();
 
@@ -157,12 +166,28 @@ internal static class UserRelationsProbe
             .Any(text => text.Text is { } nick && nick.StartsWith("听众", StringComparison.Ordinal)), "昵称按服务端字段渲染");
         var scroller = view.FindControl<ScrollViewer>("PageScroller")!;
         Check(scroller.Extent.Width <= scroller.Viewport.Width + 1, "宽屏无横向溢出");
-        Capture(window, root, "relations-wide");
+        await CaptureAsync(window, root, "relations-wide");
         Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
         await Task.Delay(100);
-        Capture(window, root, "relations-dark");
+        await CaptureAsync(window, root, "relations-dark");
         Application.Current.RequestedThemeVariant = ThemeVariant.Light;
         await Task.Delay(60);
+
+        // —— 页内 Tabs:切到粉丝再切回关注,两份名单各自保留 ——
+        var tabs = view.FindControl<ListBox>("RelationTabs")!;
+        Check(tabs.ItemCount == 2, "关系页顶部有两个 Tab");
+        tabs.SelectedIndex = 1;
+        await Task.Delay(200);
+        Check(relations.SelectedTabIndex == 1 && relations.Users.Count == FollowerTotal,
+            "切到「粉丝」Tab 拉到粉丝名单");
+        Check(window.GetVisualDescendants().OfType<TextBlock>()
+            .Any(text => text.Text is { } fan && fan.StartsWith("听众", StringComparison.Ordinal)),
+            "粉丝名单行已渲染");
+        await CaptureAsync(window, root, "relations-followers");
+        tabs.SelectedIndex = 0;
+        await Task.Delay(120);
+        Check(relations.SelectedTabIndex == 0 && relations.Users.Count == 30,
+            "切回「关注」Tab 保留已加载内容");
 
         scroller.Offset = new Vector(0, scroller.Extent.Height);
         await Task.Delay(200);
@@ -174,7 +199,7 @@ internal static class UserRelationsProbe
         Check(scroller.Extent.Width <= scroller.Viewport.Width + 1, "窄屏无横向溢出");
         scroller.Offset = new Vector(0, 0);
         await Task.Delay(80);
-        Capture(window, root, "relations-narrow");
+        await CaptureAsync(window, root, "relations-narrow");
         window.Width = 1000;
         await Task.Delay(100);
 
@@ -194,6 +219,9 @@ internal static class UserRelationsProbe
         await Task.Delay(200);
         Check(main.ActivePage == "UserRelations" && relations.Users.Count == FollowingTotal,
             "返回名单页恢复全部行");
+        Check(relations.SelectedTabIndex == 0 && relations.Tabs.Count == 2
+              && relations.Tabs[0].Count == FollowingTotal && relations.Tabs[1].Count == FollowerTotal,
+            "返回后仍在「关注」Tab 且计数保留");
         var restored = new UserRelationsPageView { DataContext = relations };
         window = NewWindow(restored, 1000, 700);
         await Task.Delay(200);
@@ -227,7 +255,7 @@ internal static class UserRelationsProbe
         Check(profile.Follows == 3 && profile.Followeds == 5, "QQ 自己页显示真实关注/粉丝(不再 0)");
         Check(profile.EncryptUin.Length == 0, "回自己页清掉上一个人的 euin");
         var qqSelfWindow = NewWindow(new UserProfileView { DataContext = profile }, 1000, 360);
-        Capture(qqSelfWindow, root, "hero-qq-self");
+        await CaptureAsync(qqSelfWindow, root, "hero-qq-self");
         qqSelfWindow.Close();
 
         await profile.LoadQqUserAsync(QqOwnerEuin);
@@ -237,11 +265,14 @@ internal static class UserRelationsProbe
         var qqWindow = NewWindow(qqHeroView, 1000, 360);
         var qqLinks = qqWindow.GetVisualDescendants().OfType<Button>()
             .Where(button => button.Classes.Contains("hero-link")).ToArray();
-        Check(qqLinks.Length == 2 && qqLinks.All(button => button.IsEffectivelyEnabled), "QQ 页两个计数按钮可点");
-        Capture(qqWindow, root, "hero-qq");
+        Check(qqLinks.Length == 1 && qqLinks[0].IsEffectivelyEnabled, "QQ 页关注/粉丝合并入口可点");
+        await CaptureAsync(qqWindow, root, "hero-qq");
         Click(qqWindow, qqLinks[0]);
         await Task.Delay(150);
-        Check(main.ActivePage == "UserRelations" && main.UserRelations.Title == "关注", "QQ 点关注进入名单页");
+        Check(main.ActivePage == "UserRelations" && main.UserRelations.Title == "关注与粉丝",
+            "QQ 点合并入口进入名单页");
+        Check(main.UserRelations.Tabs[0].Count == 3 && main.UserRelations.Tabs[1].Count == 5,
+            "QQ 名单页 Tabs 显示主页计数");
         qqWindow.Close();
 
         var qqRelations = main.UserRelations;
@@ -252,7 +283,22 @@ internal static class UserRelationsProbe
         Check(qqRelations.Users.Count(item => item.IsSinger) == 1, "歌手条目单独标记");
         Check(qqRelations.Users.First(item => item.IsSinger).MetaText.StartsWith("歌手", StringComparison.Ordinal),
             "歌手条目右侧标注歌手");
-        Capture(qqWindow, root, "relations-qq");
+        await CaptureAsync(qqWindow, root, "relations-qq");
+
+        // QQ 页内切换:粉丝名单只用 GetFansList 单源,不带歌手条目;切回关注保留用户+歌手
+        var qqTabs = qqView.FindControl<ListBox>("RelationTabs")!;
+        qqTabs.SelectedIndex = 1;
+        await Task.Delay(200);
+        Check(qqRelations.SelectedTabIndex == 1 && qqRelations.Users.Count == 3
+              && qqRelations.Users.All(item => !item.IsSinger),
+            "QQ 切到「粉丝」Tab 拉到粉丝名单");
+        Check(qqRelations.Users.Any(item => item.Nickname == "QQ粉丝甲"), "QQ 粉丝名单内容正确");
+        await CaptureAsync(qqWindow, root, "relations-qq-followers");
+        qqTabs.SelectedIndex = 0;
+        await Task.Delay(120);
+        Check(qqRelations.SelectedTabIndex == 0 && qqRelations.Users.Count == 3,
+            "QQ 切回「关注」Tab 保留用户+歌手");
+
         var singerRow = Rows(qqWindow).First(button => ((UserRelationItemViewModel)button.DataContext!).IsSinger);
         Click(qqWindow, singerRow);
         await Task.Delay(200);
@@ -270,6 +316,25 @@ internal static class UserRelationsProbe
         Check(main.ActivePage == "User" && profile.Nickname == qqUserVm.Nickname,
             $"点 QQ 用户行进对方用户页({qqUserVm.Nickname})");
         qqWindow.Close();
+
+        // —— 真实进入顺序:页面视图先创建(此时 Tabs 为空),加载数据后才填充 Tabs ——
+        // 只靠 SelectedIndex 绑定的初始取值时,ListBox 在条目后到时不会自动补选中,
+        // 会出现"内容是关注、Tab 却没选中"的状态。
+        relations.ReleaseCurrentPageData();
+        var earlyView = new UserRelationsPageView { DataContext = relations };
+        var earlyWindow = NewWindow(earlyView, 1000, 700);
+        var earlyTabs = earlyView.FindControl<ListBox>("RelationTabs")!;
+        var earlyLoad = relations.LoadAsync(
+            MusicSource.NetEase, 10001, "", UserRelationKind.Following,
+            "关系测试", FollowingTotal, FollowerTotal);
+        await Task.Delay(180);
+        Check(relations.SelectedTabIndex == 0 && earlyTabs.SelectedIndex == 0,
+            "先建视图后加载:默认选中「关注」Tab");
+        Check(earlyTabs.ContainerFromIndex(0) is ListBoxItem { IsSelected: true },
+            "「关注」Tab 容器处于选中态");
+        await earlyLoad;
+        await CaptureAsync(earlyWindow, root, "relations-fresh-entry");
+        earlyWindow.Close();
 
         Console.WriteLine("[user-relations] PASS 关注/粉丝名单:网易云+QQ 解析/分页/点行导航/返回快照");
         Console.WriteLine("[user-relations] capture " + root);
@@ -354,8 +419,12 @@ internal static class UserRelationsProbe
         window.MouseUp(point, MouseButton.Left);
     }
 
-    private static void Capture(Window window, string root, string state)
+    private static async Task CaptureAsync(Window window, string root, string state)
     {
+        // FadeInWhenShown 的淡入收尾(180ms + 32ms)是用 UI 线程计时器落地的:
+        // 切换 Tab 后立刻截图会拍到 opacity 仍为 0 的空白内容(粉丝 Tab 曾整块消失)。
+        // 截图前让出 UI 线程等淡入完成,保证抓到的是稳定画面。
+        await Task.Delay(260);
         using var bitmap = new RenderTargetBitmap(
             new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height), new Vector(96, 96));
         bitmap.Render(window);

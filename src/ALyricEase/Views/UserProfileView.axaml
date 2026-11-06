@@ -48,8 +48,8 @@
     <Style Selector="TextBlock.hero-sub">
       <Setter Property="Foreground" Value="#B3FFFFFF" />
     </Style>
-    <!-- "关注 / 粉丝"计数按钮:外观等同文字,悬停才浮出半透明白底。
-         Padding 6,2 + 容器 -6 左边距 = 视觉位置与纯文字一致;禁用时不画底(QQ 侧没有名单协议) -->
+    <!-- "关注 · 粉丝"合并入口:外观等同文字,悬停才浮出半透明白底。
+         Padding 6,2 + 容器 -6 左边距 = 视觉位置与纯文字一致;禁用时不画底(QQ 未登录无名单) -->
     <Style Selector="Button.hero-link">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -258,25 +258,21 @@
                       <TextBlock Text="{Binding LevelText}" FontSize="12" Classes="hero-text" />
                     </Border>
                   </StackPanel>
-                  <!-- 关注/粉丝:点进名单页(只有网易云有名单协议,QQ 用户按钮禁用) -->
-                  <StackPanel Orientation="Horizontal" Spacing="2" Margin="-6,0,0,0">
-                    <Button Classes="hero-link" Click="OnFollowingClick"
-                            IsEnabled="{Binding CanOpenRelations}" ToolTip.Tip="查看关注的人">
-                      <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Classes="hero-sub" Text="关注" VerticalAlignment="Center" />
-                        <TextBlock Classes="hero-text" Text="{Binding Follows}" FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                      </StackPanel>
-                    </Button>
-                    <Button Classes="hero-link" Click="OnFollowersClick"
-                            IsEnabled="{Binding CanOpenRelations}" ToolTip.Tip="查看粉丝">
-                      <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Classes="hero-sub" Text="粉丝" VerticalAlignment="Center" />
-                        <TextBlock Classes="hero-text" Text="{Binding Followeds}" FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                      </StackPanel>
-                    </Button>
-                  </StackPanel>
+                  <!-- 关注/粉丝合并为一个入口:点进名单页后用顶部 Tabs 切换。
+                       跟随文字形态,悬停浮出浅底(hero-link 样式);网易云按 uid 拉,
+                       QQ 的关系名单要登录态,未登录时禁用。 -->
+                  <Button Classes="hero-link" Click="OnRelationsClick" Margin="-6,0,0,0"
+                          IsEnabled="{Binding CanOpenRelations}" ToolTip.Tip="查看关注与粉丝">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <TextBlock Classes="hero-sub" Text="关注" VerticalAlignment="Center" />
+                      <TextBlock Classes="hero-text" Text="{Binding Follows}" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" />
+                      <TextBlock Classes="hero-sub" Text="·" VerticalAlignment="Center" Opacity="0.7" />
+                      <TextBlock Classes="hero-sub" Text="粉丝" VerticalAlignment="Center" />
+                      <TextBlock Classes="hero-text" Text="{Binding Followeds}" FontWeight="SemiBold"
+                                 VerticalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
                 </StackPanel>
               </StackPanel>
               <TextBlock Classes="hero-sub" Text="{Binding Signature}" FontSize="13" TextWrapping="Wrap" MaxLines="2"

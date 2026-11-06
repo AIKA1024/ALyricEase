@@ -26,4 +26,7 @@ internal sealed record DetailNavigationSnapshot(
     int SelectedSortIndex,
     string SearchText,
     bool IsFilterExpanded,
-    double ScrollOffset);
+    double ScrollOffset,
+    // 用户关系页:两份名单的计数(返回时恢复 Tab 上的数字;其它页为 0)。
+    int RelationFollowingTotal = 0,
+    int RelationFollowersTotal = 0);

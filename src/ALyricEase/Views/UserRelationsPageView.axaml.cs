@@ -8,7 +8,8 @@ using ALyricEase.ViewModels;
 
 namespace ALyricEase.Views;
 
-/// <summary>用户页"关注 / 粉丝"名单页:滚动近底部流式补页,点行进入对方用户页。</summary>
+/// <summary>用户页"关注 · 粉丝"点进来的名单页:顶部 Tab 切换两份名单,滚动近底部流式补页,
+/// 点行进入对方用户页。</summary>
 public partial class UserRelationsPageView : UserControl
 {
     private readonly DetailPageScrollController _scrollController;

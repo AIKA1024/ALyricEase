@@ -31,6 +31,61 @@
       <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
+    <!-- Fluent 2 Tabs:文字标签 + 计数徽标,选中项半粗字重 + 底部 2px 强调线。
+         整条 Tab 下方是一条 1px 分隔线(与 Fluent 2 TabList 的分隔线一致)。 -->
+    <Style Selector="ListBox.relation-tabs">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="40" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="4,4,0,0" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem TextBlock.tab-label">
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem:selected TextBlock.tab-label">
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem Border.tab-count">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceSelected}" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="7,1" />
+      <Setter Property="MinWidth" Value="22" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem Border.tab-count TextBlock">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem:selected Border.tab-count">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem:selected Border.tab-count TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem Border.tab-indicator">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.relation-tabs > ListBoxItem:selected Border.tab-indicator">
+      <Setter Property="Background" Value="{DynamicResource LyricEaseTeal}" />
+    </Style>
     <!-- 名单行:44px 圆头像 + 昵称/签名 + 右侧关注粉丝数。
          行是 Button,激活走 Tapped(触屏长按不补发激活);悬停/按下画在内容之下的独立
          Border(TrackRow row-hover-bg 同构),避免画刷过渡拖着整个行子树重绘 -->
@@ -85,6 +140,38 @@
         <TextBlock Classes="page-title" Text="{Binding Title}" />
         <TextBlock Classes="page-sub" Text="{Binding Subtitle}"
                    IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
+
+      <!-- 关注 / 粉丝切换:Fluent 2 TabList(下方 1px 分隔线 + 选中项 2px 强调线)。
+           两个 Tab 的计数来自用户页英雄卡;切换只替换列表,不跳页。 -->
+      <StackPanel Spacing="0">
+        <!-- AutoScrollToSelectedItem 必须关闭:ListBox 默认会在选中项就位时把它 BringIntoView,
+             冒泡到页面 ScrollViewer → 返回名单页时把滚动位置从 240 拽回 ~95(实测)。 -->
+        <ListBox x:Name="RelationTabs" Classes="relation-tabs" ItemsSource="{Binding Tabs}"
+                 SelectedIndex="{Binding SelectedTabIndex}" AutoScrollToSelectedItem="False"
+                 AutomationProperties.Name="关注与粉丝">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:UserRelationTabViewModel">
+              <Panel MinWidth="88">
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,0"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <TextBlock Classes="tab-label" Text="{Binding Label}" FontSize="14" />
+                  <Border Classes="tab-count" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding CountText}" />
+                  </Border>
+                </StackPanel>
+                <Border Classes="tab-indicator" Height="2" CornerRadius="1"
+                        VerticalAlignment="Bottom" />
+              </Panel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <Border Height="1" Background="{DynamicResource AppBorder}" />
       </StackPanel>
 
       <!-- 首屏加载(名单为空且还在拉第一页):转圈与用户页同一套 -->

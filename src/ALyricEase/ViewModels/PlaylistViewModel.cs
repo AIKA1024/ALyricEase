@@ -82,6 +82,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     [ObservableProperty] private string _musicUInput = "";
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _message;
+
+    /// <summary>曲目列表为空时卡片中央的说明(隐私歌单/加载失败/真空歌单)。歌单页原本没有空态文案,
+    /// 读不到歌与"这个歌单是空的"在界面上完全一样。</summary>
+    [ObservableProperty] private string? _emptyTracksHint;
     [ObservableProperty] private bool _isLoggedIn;
     [ObservableProperty] private string _userName = "";
     [ObservableProperty] private string _avatarUrl = "";
@@ -2007,6 +2011,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 AttachRemoveCommandIfNeeded(row);
                 return row;
             });
+            if (songs.Count == 0)
+                EmptyTracksHint = playlist.Playlist.IsPrivate
+                    ? "该歌单被主人设为隐私，仅本人可见"
+                    : "这个歌单还没有可显示的曲目";
             await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, songs);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2015,9 +2023,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
         {
             if (generation == _loadGeneration)
+            {
                 Message = hasCachedTracks
                     ? "当前网络不可用，正在使用离线缓存"
                     : $"加载歌单失败:{ex.Message}";
+                if (!hasCachedTracks) EmptyTracksHint = ex.Message;
+            }
         }
         finally
         {
@@ -2593,6 +2604,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         _allTrackRows.Clear();
         Tracks.Clear();
+        EmptyTracksHint = null;
     }
 
     private void RefreshVisibleTracks()

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ALyricEase.Models;
@@ -463,6 +464,88 @@ public static class QqApiProbe
             Console.WriteLine($"[qqplaylist][FAIL] {ex.GetType().Name}: {ex.Message}");
             Console.WriteLine(ex.StackTrace);
             exit = 1;
+        }
+        return exit;
+    }
+
+    /// <summary>指定用户主页歌单逐个试读(--qq-user-pl [昵称|euin]):省略/给昵称时在本账号粉丝名单里
+    /// 找人。打印主页三段歌单(喜欢 / 自建 / 收藏)的 id+dirId+标称曲数,再对每个歌单读首页,
+    /// 逐个打印成败与服务端错误码 —— 用于定位"某个歌单点进去加载不出歌曲"。
+    /// 末尾 dump 主页原始响应与首个疑似隐私歌单的详情,确认 mydiss 是否自带隐私标记。</summary>
+    public static async Task<int> RunUserPlaylistsProbeAsync(string? who)
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var api = new QQMusicApiClient(new CookieStore());
+        if (!api.IsLoggedIn)
+        {
+            Console.WriteLine("[qq-user-pl][FAIL] 本机无有效 QQ Cookie");
+            return 1;
+        }
+
+        var euin = "";
+        if (!string.IsNullOrWhiteSpace(who))
+        {
+            // 先当昵称：在自己粉丝名单里找（粉丝总数一般很小，一页足够）
+            var fans = await api.GetFansAsync("", 0, 100);
+            Console.WriteLine($"[qq-user-pl] 自己的粉丝 n={fans.Users.Count} total={fans.Total}");
+            var hit = fans.Users.FirstOrDefault(u =>
+                u.Nickname.Contains(who, StringComparison.OrdinalIgnoreCase));
+            euin = hit?.EncryptUin ?? (who.Length >= 10 ? who : "");
+            if (hit is null && euin.Length == 0)
+            {
+                Console.WriteLine($"[qq-user-pl][FAIL] 粉丝名单里没找到昵称含 \"{who}\" 的用户");
+                return 1;
+            }
+        }
+
+        var homeRaw = await api.DumpUserHomepageRawAsync(euin);
+        var homePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "qq-user-home.json");
+        System.IO.File.WriteAllText(homePath, homeRaw);
+        Console.WriteLine($"[qq-user-pl] 主页原始响应 {homeRaw.Length}B → {homePath}");
+
+        var home = await api.GetUserHomepageAsync(euin);
+        Console.WriteLine($"[qq-user-pl] 用户={home.Nickname} 关注={home.Follows} 粉丝={home.Followeds}");
+
+        var all = new List<(string Group, Playlist P)>();
+        if (home.Liked is { } liked) all.Add(("喜欢", liked));
+        all.AddRange(home.Created.Select(p => ("自建", p)));
+        all.AddRange(home.Collected.Select(p => ("收藏", p)));
+
+        Console.WriteLine($"[qq-user-pl] 歌单 {all.Count} 个:");
+        var exit = 0;
+        foreach (var (group, p) in all)
+        {
+            // 直接看服务端 dirinfo 的可见性标记(dir_show=2 即隐私),与曲目读取结果对照
+            var raw = await api.DumpSonglistDetailRawAsync(p.Id);
+            var flag = "?";
+            using (var doc = System.Text.Json.JsonDocument.Parse(raw))
+            {
+                if (doc.RootElement.TryGetProperty("req_0", out var req)
+                    && req.TryGetProperty("data", out var data)
+                    && data.TryGetProperty("dirinfo", out var dir))
+                {
+                    var show = dir.TryGetProperty("dir_show", out var s) ? s.GetInt32() : 0;
+                    var title = dir.TryGetProperty("title", out var t) ? t.GetString() : null;
+                    var songNum = dir.TryGetProperty("songnum", out var n) ? n.GetInt64() : 0;
+                    var list = data.TryGetProperty("songlist", out var l) ? l.GetArrayLength() : -1;
+                    var total = data.TryGetProperty("total_song_num", out var ts) ? ts.GetInt64() : 0;
+                    flag = $"dir_show={show} songnum={songNum} list={list} total={total}" +
+                           (title is { Length: > 0 } ? $" title=[{title}]" : "");
+                }
+            }
+
+            try
+            {
+                var page = await api.GetPlaylistTrackPageAsync(p.Id, 0, 5);
+                Console.WriteLine($"[qq-user-pl]   [{group}] 名=[{p.Name}] id={p.Id} dirId={p.DirId} " +
+                                  $"标称{p.TrackCount}首 {flag} → OK 首页{page.Songs.Count}首");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[qq-user-pl]   [{group}] 名=[{p.Name}] id={p.Id} dirId={p.DirId} " +
+                                  $"标称{p.TrackCount}首 {flag} → FAIL {ex.Message}");
+                exit = 1;
+            }
         }
         return exit;
     }

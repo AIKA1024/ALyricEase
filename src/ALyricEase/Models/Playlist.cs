@@ -35,4 +35,8 @@ public sealed class Playlist
 
     /// <summary>累计播放次数(用户页卡片播放量角标用;仅部分接口返回,默认 0)。</summary>
     public double PlayCount { get; init; }
+
+    /// <summary>歌单被创建者设为隐私(仅本人可见)。QQ 用户页列表的 <c>dir_show=2</c> 即此状态:
+    /// 他人仍看得到标题与标称曲数,但曲目接口只回空 songlist,点进去取不到歌。</summary>
+    public bool IsPrivate { get; init; }
 }

@@ -43,6 +43,7 @@ public static class QqOpenProbe
                 $"行数={vm.RetainedTrackRowCount} Tracks={vm.Tracks.Count} 标题=[{vm.PlaylistTitle}] " +
                 $"创建者=[{vm.CreatorName}] IsBusy终态={timedOut}(起初={busySeen})");
             Console.WriteLine($"[qqopen] [{name}] Message=[{vm.Message ?? "(无)"}]");
+            Console.WriteLine($"[qqopen] [{name}] 空态提示=[{vm.EmptyTracksHint ?? "(无)"}]");
             return timedOut || (vm.RetainedTrackRowCount == 0 && (vm.Message ?? "").Length == 0) ? 1 : 0;
         }
         catch (Exception ex)

@@ -2128,6 +2128,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             CoverUrl = FirstNonEmpty(item.Picurl ?? "", item.Logo ?? ""),
             TrackCount = count,
             CanAddTracks = false,
+            IsPrivate = item.DirShow == 2,
         };
     }
 
@@ -2314,6 +2315,27 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return doc.RootElement.Clone().GetRawText();
     }
 
+    /// <summary>探针专用(--qq-user-pl):dump 他人主页原始响应,确认 mydiss.list 条目是否带隐私标记。</summary>
+    internal async Task<string> DumpUserHomepageRawAsync(string euin, CancellationToken ct = default)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["_"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+            ["cv"] = "4747474",
+            ["ct"] = "24",
+            ["inCharset"] = "utf-8",
+            ["uin"] = _uin,
+            ["userid"] = euin,
+            ["reqfrom"] = "1",
+            ["reqtype"] = "0",
+            ["loginUin"] = _uin,
+            ["cid"] = "205360838",
+        };
+        using var doc = await GetCAsync("/rsc/fcgi-bin/fcg_get_profile_homepage.fcg", query, ct,
+            HomepageBase, $"https://y.qq.com/n/ryqq_v2/profile?uin={euin}").ConfigureAwait(false);
+        return doc.RootElement.GetRawText();
+    }
+
     /// <summary>回落:老主页通道 mydiss.list(字段随版本漂移取兜底;可能缺名,置占位文案)。</summary>
     private async Task<List<Playlist>> GetUserPlaylistsViaHomepageAsync(CancellationToken ct)
     {
@@ -2336,7 +2358,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// TotalCount 供逻辑全量播放队列定位未物化歌曲。</summary>
     internal sealed record PlaylistTrackPage(IReadOnlyList<Song> Songs, bool HasMore, int TotalCount);
 
-    /// <summary>读取 QQ 歌单的一页曲目。聚合歌单用它逐页上屏，普通 QQ 歌单仍可在外层拉齐全量。</summary>
+    /// <summary>读取 QQ 歌单的一页曲目。聚合歌单用它逐页上屏，普通 QQ 歌单仍可在外层拉齐全量。
+    /// ⚠ 歌单被主人设为隐私时服务端照旧回 code=0 + total_song_num,但 songlist 为空、
+    /// dirinfo 换成"歌单被主人设为隐私"(dir_show=2)——不识别就会呈现成"空歌单"。</summary>
     internal async Task<PlaylistTrackPage> GetPlaylistTrackPageAsync(
         long id, int begin, int pageSize = 300, CancellationToken ct = default)
     {
@@ -2364,6 +2388,15 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 PickErrorCode(req?.Code, req?.Data?.Code));
 
         var pageSonglist = req.Data.Songlist ?? [];
+        // 隐私歌单:code 仍是 0、total_song_num 仍是列表接口给的标称数(如 204),
+        // 但 dirinfo 被服务端整份替换成"歌单被主人设为隐私"(dir_show=2)、songlist 恒空。
+        // 不识别就会被当成"加载成功但 0 首",用户看到的是空歌单而不是原因。
+        if (req.Data.DirInfo is { DirShow: 2 })
+            throw new ApiException("该歌单被主人设为隐私，仅本人可见", -1);
+        if (pageSonglist.Count == 0 && begin == 0 && req.Data.TotalSongNum > 0)
+            throw new ApiException(
+                $"歌单中的 {req.Data.TotalSongNum} 首暂不可见，可能已被设为隐私或全部下架", -1);
+
         var songs = new List<Song>(pageSonglist.Count);
         foreach (var t in pageSonglist)
         {

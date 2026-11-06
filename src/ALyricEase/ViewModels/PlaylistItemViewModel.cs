@@ -40,7 +40,9 @@ public sealed partial class PlaylistItemViewModel : ViewModelBase
 
     public int TrackCount => _trackCount;
 
-    public string TrackCountText => $"{TrackCount} 首";
+    /// <summary>曲目数文案。隐私歌单(QQ 用户页 dir_show=2)对他人只下发标称曲数、取不到歌，
+    /// 写"隐私歌单"比写"N 首"诚实 —— 否则点进去是空列表，像加载失败。</summary>
+    public string TrackCountText => Playlist.IsPrivate ? "隐私歌单" : $"{TrackCount} 首";
 
     /// <summary>累计播放次数格式化文本(用户页角标用;0 显示 "0")。
     /// QQ 列表接口不下发(恒 0),用户页后台补拉后经 <see cref="UpdatePlayCount"/> 原地更新。</summary>

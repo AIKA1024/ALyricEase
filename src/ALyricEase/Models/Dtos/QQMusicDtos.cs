@@ -318,6 +318,9 @@ public sealed record QQDissItem
 
     [JsonPropertyName("songcount")] public int SongcountAlt { get; init; }
 
+    /// <summary>可见性:1=公开;2=被主人设为隐私(标题与标称曲数照旧下发,曲目接口返回空)。</summary>
+    [JsonPropertyName("dir_show")] public int DirShow { get; init; }
+
     public string? Intro { get; init; }
 }
 
@@ -651,6 +654,10 @@ public sealed record QQDirInfoDto
     [JsonPropertyName("picurl")] public string? PicUrl { get; init; }
 
     [JsonPropertyName("host_nick")] public string? HostNick { get; init; }
+
+    /// <summary>可见性:1=正常;2=被主人设为隐私。隐私态下服务端把 title 换成
+    /// "歌单被主人设为隐私"、songnum 归 0、songlist 恒空,但 total_song_num 仍照旧下发。</summary>
+    [JsonPropertyName("dir_show")] public int DirShow { get; init; }
 }
 
 // ---------- 用户歌单(music.musicasset.PlaylistBaseRead/GetPlaylistByUin 自建 +

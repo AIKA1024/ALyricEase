@@ -1041,6 +1041,15 @@ public static class Program
             return;
         }
 
+        // QQ 用户主页歌单逐个试读:定位"某个歌单点进去加载不出歌曲"
+        if (args.Length > 0 && args[0] == "--qq-user-pl")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task
+                .Run(() => QqApiProbe.RunUserPlaylistsProbeAsync(args.Length > 1 ? args[1] : null))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 用户歌单原始响应 dump:确认服务端字段名(播放量等)后补 DTO 映射
         if (args.Length > 0 && args[0] == "--qqdumppl")
         {

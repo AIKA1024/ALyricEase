@@ -298,7 +298,7 @@
           <Border Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource ListCardBorder}"
                   BorderThickness="1" CornerRadius="8" Padding="8,6">
             <!-- 外层 ScrollViewer(仿 UWP ListView 模板)直接包裹 ItemsControl + VirtualizingStackPanel -->
-            <Grid RowDefinitions="Auto,Auto">
+            <Grid RowDefinitions="Auto,Auto,Auto">
               <!-- 底部留白由 detail-shell 的底部 margin 提供(仿 UWP ScrollViewer 内容末尾留白) -->
               <ItemsControl x:Name="TracksList" Classes="tracks" ItemsSource="{Binding Tracks}"
                             ContainerPrepared="OnTrackContainerPreparing">
@@ -320,6 +320,13 @@
                 <TextBlock Text="{Binding LoadingMoreText}" HorizontalAlignment="Center" FontSize="12"
                            Foreground="{DynamicResource TextTertiary}" />
               </StackPanel>
+              <!-- 空态:原本 0 首就是一片空白,隐私歌单/读取失败看起来和"歌单本来就空"一模一样 -->
+              <TextBlock Grid.Row="2" Text="{Binding EmptyTracksHint}" Margin="16,32" MaxWidth="480"
+                         HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                         FontSize="14" LineHeight="22"
+                         Foreground="{DynamicResource TextTertiary}"
+                         IsVisible="{Binding EmptyTracksHint,
+                                     Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </Grid>
           </Border>
           <!-- 卡片顶部内阴影:覆盖卡片内侧顶边(圆角贴合,Margin 1px 避开边框),不拦截点击 -->

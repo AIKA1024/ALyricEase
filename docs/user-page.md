@@ -163,7 +163,39 @@ PC 端的"关注"页就是上面那条混排接口，粉丝只能在 App / 网�
 粉丝名单单源。`CanOpenRelations` 对 QQ 要求 `IsLoggedIn`（匿名读不到）；禁用态特意把模板背景
 清成透明，否则会多出一块灰底。
 
-## 5. 回归
+## 5. QQ 隐私歌单（dir_show=2，2026-11 实测）
+
+**现象**：他人主页能列出对方设为私密的歌单（标题、标称曲数、播放量都在），点进去一首歌都没有，
+且没有任何提示 —— 看起来像"这个歌单是空的"或"加载失败"。同一用户的其他歌单正常。
+
+**服务端行为**（`uniform_get_Dissinfo`，2026-11-06 用 Elilia 真机验证）：
+
+| 字段 | 公开歌单 | 隐私歌单 |
+|---|---|---|
+| `req_0.code` / `data.code` | 0 / 0 | **0 / 0**（不报错）|
+| `data.songlist` | N 首 | **空数组** |
+| `data.total_song_num` | 真实曲数 | **照旧下发标称数**（如 204）|
+| `dirinfo.dir_show` | 1 | **2** |
+| `dirinfo.show` / `songnum` | 1 / 真实 | 0 / **0** |
+| `dirinfo.title` | 歌单名 | **"歌单被主人设为隐私"**（服务端本地化文案，不可靠）|
+
+`enc_host_uin` 传歌单主人的 encrypt_uin **没有用**（实测同样返回空 songlist）—— 非本人就是读不到，
+这是权限而不是参数问题。老接口 `CgiGetDiss` 回 code=0 但 songlist 空，同样白屏。
+
+**修法**（三处，缺一处用户就看不懂发生了什么）：
+
+1. `QQMusicApiClient.GetPlaylistTrackPageAsync`：`dirinfo.dir_show == 2` → 抛
+   `ApiException("该歌单被主人设为隐私，仅本人可见")`；再加一条兜底 —— 首页 `songlist` 空而
+   `total_song_num > 0` 时抛"这 N 首暂不可见"（全下架也是这个形态）。
+2. 主页 `mydiss.list` 的条目**自带 `dir_show`**（和详情接口一致）→ `Playlist.IsPrivate` →
+   `PlaylistItemViewModel.TrackCountText` 显示"隐私歌单"而不是"N 首"，卡片与歌单页 hero 都跟着变。
+3. 歌单页原本没有空态文案（`Message` 在 `PlaylistView` 里根本没绑定），失败=空白 →
+   `PlaylistViewModel.EmptyTracksHint` + 卡片第三行居中提示；`ClearTrackRows()` 里清空，
+   QQ 路径加载完/失败时填。
+
+⚠ 不要用 `dirinfo.title` 判断：那是界面文案，随语言/版本变；`dir_show` 才是标记位。
+
+## 6. 回归
 
 ```powershell
 dotnet run --project src/ALyricEase.Headless/ALyricEase.Headless.csproj -c Debug -- --user-relations
@@ -180,4 +212,12 @@ QQ 登录后合并入口可点、关注名单 2 用户 + 1 歌手拼成一份、
 ```powershell
 # 联网冒烟（只读）：网易云两个端点 + QQ 三个 method + 两种用户页计数（QQ 未登录会跳过）
 dotnet run --project src/ALyricEase.Headless/ALyricEase.Headless.csproj -c Debug -- --user-relations-live [uid]
+```
+
+```powershell
+# 他人主页歌单逐个试读：列出喜欢/自建/收藏每个歌单的 dir_show 与首页读取结果
+# （参数可给昵称，会在自己的粉丝名单里找；也可直接给 encrypt_uin）
+dotnet run --project src/ALyricEase.Headless/ALyricEase.Headless.csproj -c Debug -- --qq-user-pl Elilia
+# 单个歌单走生产打开路径：打印行数 / Message / 空态提示
+dotnet run --project src/ALyricEase.Headless/ALyricEase.Headless.csproj -c Debug -- --qqopen 9160613043 13 BGM
 ```

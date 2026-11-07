@@ -1262,6 +1262,13 @@ public static class Program
             return;
         }
 
+        // 回归:详情页的歌词/播放列表面板不许吃掉返回(桌面侧键 vs Android 手势两种语义)
+        if (args.Length > 0 && args[0] == "--npback")
+        {
+            NpBackProbe.Run();
+            return;
+        }
+
         // TEMP-DIAG:搜索页导航行为验证(返回/重进/下钻三场景)
         if (args.Length > 0 && args[0] == "--searchnav")
         {

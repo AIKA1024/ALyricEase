@@ -681,10 +681,16 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>系统返回的统一入口(Android 返回手势/三大金刚键返回键;桌面端 Esc、鼠标返回键也可复用)。
     /// 一次调用只消费层级最上的一项,顺序与宿主 XAML 的声明顺序相反(声明靠后者盖在上层):
-    /// 对话框 → 正在播放页右侧子面板 → 正在播放覆盖层 → 导航抽屉 → 页面栈。
+    /// 对话框 → [正在播放页右侧子面板] → 正在播放覆盖层 → 导航抽屉 → 页面栈。
     /// </summary>
+    /// <param name="includeNowPlayingPanels">
+    /// 详情页的歌词/播放列表面板要不要先吃一次返回。桌面鼠标侧键传 false:这两个面板是**页面内的开关**,
+    /// 不是独立一层页面,侧键在用户心里就是"退一层页面";先去关面板会让侧键看起来"按了没反应"
+    /// (整个详情页还盖在上面),与同一台机器上的 Esc 也不一致(Esc 直接收起详情页,见 NowPlayingView 的 HotKey)。
+    /// Android 返回手势保持 true:那里面板是抽拉层,手势先收层才符合移动端习惯。
+    /// </param>
     /// <returns>true 表示本次返回已被应用消费,宿主应阻止系统默认行为(结束 Activity / 关闭窗口)。</returns>
-    public bool TryHandleBack()
+    public bool TryHandleBack(bool includeNowPlayingPanels = true)
     {
         if (IsErrorDialogOpen)
         {
@@ -781,8 +787,10 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
-        // 正在播放页的歌词/播放列表面板先于覆盖层本身收起,与桌面端 Esc 的语义一致
-        if (NowPlayingPanel != NowPlayingPanel.None)
+        // 正在播放页的歌词/播放列表面板先于覆盖层本身收起(Android 抽拉层的习惯)。
+        // ⚠ 必须同时判 ShowNowPlaying:面板状态**跟着详情页保留**(覆盖层收起只是移出窗外,面板不清空,
+        // 下次进来还是上次的样子)⇒ 少了这一条,残留的 Lyrics/Queue 会在别的页面把第一次返回吃掉。
+        if (includeNowPlayingPanels && ShowNowPlaying && NowPlayingPanel != NowPlayingPanel.None)
         {
             NowPlayingPanel = NowPlayingPanel.None;
             return true;

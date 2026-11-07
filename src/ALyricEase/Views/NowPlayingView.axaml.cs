@@ -239,6 +239,10 @@ public partial class NowPlayingView : UserControl
       _progressVisual.SetActive(vm.ShowNowPlaying && vm.Player.HasProgress);
       if (vm.ShowNowPlaying)
       {
+        // 面板状态跟着详情页保留(收起不清空),而离屏期间本视图**不跟着重排**(见下面的面板分支)⇒
+        // 每次打开都按 VM 真相同步一次,保证看到的是"按面板状态排好的版面"。
+        UpdateDesktopLayout();
+        UpdatePanelPresentation(vm.NowPlayingPanel, animate: false);
         Dispatcher.UIThread.Post(() => Focus(), DispatcherPriority.Background);
         // 进页面时补一次歌词列表的定位与实化自愈:此刻列表面板刚重新可见,
         // 定位请求最容易被"面板还没拿到视口"吃掉(用户机上表现为实化区间塌成 0..0)。
@@ -255,6 +259,10 @@ public partial class NowPlayingView : UserControl
     }
     else if (e.PropertyName is nameof(MainViewModel.NowPlayingPanel))
     {
+      // 详情页已收起(离屏):面板状态照记,但不重排。此时窗口里看不见这块,
+      // 重排纯属白算;而且退出滑动只有 0.45s,此刻改版面会让封面/控制条在滑动途中跳位。
+      // 重新打开时统一按 VM 真相同步(见 ShowNowPlaying 分支)。
+      if (!vm.ShowNowPlaying) return;
       UpdateDesktopLayout(); // 面板开关 → 重算布局(控件漂移过去)
       UpdatePanelPresentation(vm.NowPlayingPanel, animate: _transitionsAttached);
       DiagWrite($"{Snapshot()} [面板切到 {vm.NowPlayingPanel}]"); // 临时诊断

@@ -369,7 +369,8 @@ public partial class MainWindow : Window
         // 即使当前没有可返回内容也消费该专用按键，避免它落到列表项等普通控件上触发交互。
         e.Handled = true;
         if (CloseDialogPresenter.IsVisible) return;
-        _vm?.TryHandleBack();
+        // 详情页里的歌词/播放列表面板不吃侧键:侧键 = 退一层页面,先把面板关掉会让人以为返回失灵。
+        _vm?.TryHandleBack(includeNowPlayingPanels: false);
     }
 
     private void OnMinimizeClick(object? sender, RoutedEventArgs e)

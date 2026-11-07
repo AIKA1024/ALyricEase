@@ -199,6 +199,9 @@ public sealed record RecommendItemDto
 
     public int TrackCount { get; init; }
 
+    /// <summary>歌单创建者(personalized/playlist 有;newsong 无此字段,为 null)。</summary>
+    [JsonPropertyName("creator")] public SearchCreatorDto? Creator { get; init; }
+
     /// <summary>newsong 的真实曲目嵌套在 song 下(artists 数组)。</summary>
     public RecommendSongDto? Song { get; init; }
 }

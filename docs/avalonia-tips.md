@@ -1724,6 +1724,37 @@ OnDetachedFromVisualTree 清理(虚拟化回收防残留按下态带进复用行
 `:pointerover` 之后、末尾触屏 `.touch` 覆盖之前。一处覆盖全部 ControlTheme 变体
 (Search/PlaylistWide/Album)。⚠ `VisualTreeAttachmentEventArgs` 在 Avalonia 根命名空间。
 
+### 卡片封面上的 ▶/••• 圆钮:写探针时要知道的两件事(2026-11-07)
+
+结构本身照抄用户页/个人主页(`Button.card` 里放 `Button.card-op`,按 `:pointerover` 切 Opacity,
+右键走 `ContextRequested`)。两个只影响**探针**、不影响真实窗口的事实:
+
+1. **卡片里这颗嵌套 Button,无头合成的指针抬起不会变成 Click**:按下能进 `IsPressed`、`Tapped`
+   也发,但随后 tap 手势释放捕获 → Button 的 `OnPointerCaptureLost` 把 `IsPressed` 复位 →
+   `OnPointerReleased` 整段跳过。裸按钮、裸嵌套按钮(外层也是 Button)都能正常点,
+   只有卡片里这颗如此。⇒ 探针只断言"按下命中圆钮、外层卡片不进入按下态",
+   处理函数本体用反射直调(`--recommend-ops`)。**外层卡片不进入按下态**才是"点圆钮不会顺带
+   打开详情页"的证明:Button 的 Click 只能由它自己的按下-释放序列触发,命令不来自冒泡事件。
+2. **菜单呈现器不一定在 `OverlayLayer` 上**:本例 `MenuFlyout.ShowAt` 之后
+   `MenuFlyoutPresenter` 是**窗口视觉树**的后代(`window.GetVisualDescendants()` 数得到),
+   按 `OverlayLayer.GetVisualDescendants()` 数恒 0(PageLoopMemoryProbe 的注释只适用于 AppShell 那条路径)。
+   另:无头里 Esc 关不掉 Transient 菜单(焦点落在弹出层),要验"另一种卡不弹菜单"就把顺序排在
+   打开菜单之前,别指望先开再关。
+
+**加到浏览页时的两处连带**(2026-11-07,`--browse-ops`):
+
+- **卡片封面不挂音源角标**(2026-11-07 定稿):这一页两个源混排,曾经在封面角上放平台 favicon
+  (左下 / 左上 / 带文字 / 只留图标,试了个遍)。问题始终是**左下角要留给 ▶**:角标和 32px 的
+  播放钮放一起,横向要么重叠、要么把 ▶ 挤到 34 的位置跟其他页对不上;放右上又和播放量徽章抢
+  (168 时间距 13px、156 只剩 1px、148 重叠 7px)。结论:**封面不放平台标记**,平台信息由页面
+  上方的筛选胶囊承担(胶囊选中态就在那儿),左下/右下只留 ▶ 与 •••,和其他页的位置完全一致。
+  探针断言"卡片里不存在 `source-chip`"——别再往封面角上加东西。
+- **菜单/链接必须按音源分流**:`PlaylistContextMenu` 以前写死 `music.163.com`、且"收藏"走
+  `SubscribePlaylistAsync` —— 浏览页两个源混排,QQ 卡片会拼出假链接、点了必然失败。
+  现在链接走 `PlaylistShareLinks.For`(QQ 榜单还是 `/toplist/{TopId}`,不是 `/playlist/{Id}`),
+  "收藏"只对网易云出现。QQ 榜单要能 ▶ 播,`PlayPlaylistCommand` 加了 `TopId > 0` 分支
+  (拿 Id 当 disstid 会查到别人的歌单)。
+
 ## ComboBox 下拉层:模板里写死的值,外面用 Style 压不过(2026-10-19)
 
 **现象**:项目里的 ComboBox 和 WinUI 3 Gallery 差得远 —— 弹出层的条目贴着左右边缘、
@@ -1943,6 +1974,10 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
   终稿盘 20% 白、扇形 60% 白,压在海报上"看得见但不抢正文"(探针钉住 14..21,再放大会 FAIL)。
 - **切图时先淡出、等翻页动画落定再淡回**(160ms 进出,`ResumeDelay` 620ms = 600ms 翻页动画 + 一点余量)。
   只把进度归零是不行的:扇形一清零,那点白肉眼就没了,要等它重新长出来才看得见,读起来像"圈消失了 1 秒"。
+- **最小化 / 隐藏 / 失活时必须整块停**(`IsHostAsleep`)。最小化时 `Window.IsVisible` 仍是 `true`,
+  只看可见性 ⇒ 缩到任务栏还每 40ms 一次 `InvalidateVisual`,白烧 CPU(用户实测报上来的)。
+  激活状态走 `WindowBase.Activated` / `Deactivated` 事件,**不读 `Window.IsActive`** ——
+  headless 里它恒为 false,直接读会让探针永远跑不起来;事件在 headless 只是不触发而已。
 - **等待那 620ms 里表也要停**(`_resuming` 既挡 `Opacity` 抢回、也挡 `DispatcherTimer` 重启)。
   不挡的话圆虽然看不见,进度已经悄悄走了十分之一,淡回来那一下就像"切图时圈还在跑"。
 - **归零推迟到"淡回来那一刻"**:`OnTick` 走满时把进度**停在满圈**再触发 `Completed`,
@@ -1960,7 +1995,7 @@ VM 侧另加一条:`OnPositionChanged` 里小于 `BackwardNoiseMs`(1500ms)的回
   `IsEffectivelyVisible`(祖先 `IsVisible=False` 不会通知到子控件)。
 - 回归 `--hero-ring`:尺寸 14..21、位置(左 16 / 底 13)、进度会走、悬停冻结、移开继续、走完切图
   (切的那一下最低不透明度必须 ≤0.5,否则说明是硬清零)、落定后淡回、关闭时读到中间值;
-  切图期间进度必须**冻住**(读 `Progress` 前后一致),淡回后才重新从 0 走;
+  切图期间进度必须**冻住**(读 `Progress` 前后一致),淡回后才重新从 0 走;最小化后 0.8s 进度不变、还原后继续走;
   另外钉住翻页动画的三项配置(600ms / 退场停在 0.22 / 强缓出)—— **曲线形状本身在 headless 里量不了**,
   `CompositionVisual.Translation/Opacity` 的 getter 返回的是"基值"(起动画前写进去的终值),不是跑动画时的实时值。
 

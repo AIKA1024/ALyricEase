@@ -25,6 +25,32 @@ public partial class BrowseView : UserControl
             card.PrepareCoverForTransition();
     }
 
+    /// <summary>歌单/榜单卡封面上的 ▶:播放整张歌单(榜单走 TopId 分支)。Handled 阻止 Click
+    /// 继续冒泡,避免顺带触发卡片的打开命令;歌曲卡没有这个圆钮(点击即播放)。</summary>
+    private void OnCardPlayClick(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is Button { DataContext: BrowseCardViewModel { Playlist: { } playlist } })
+            ServiceLocator.Get<PlayerViewModel>().PlayPlaylistCommand.Execute(playlist);
+    }
+
+    /// <summary>歌单/榜单卡封面上的 •••:歌单 more 菜单(播放/收藏/创建者/分享/复制链接),贴按钮弹出。</summary>
+    private void OnCardMoreClick(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is Button { DataContext: BrowseCardViewModel { Playlist: { } playlist } } button)
+            PlaylistContextMenu.Create(button, playlist).ShowAt(button);
+    }
+
+    /// <summary>歌单/榜单卡右键(桌面)或长按(触摸):与 ••• 同一份即时构造的菜单,贴指针弹出。
+    /// 歌曲卡没有歌单数据,不弹菜单。</summary>
+    private void OnCardContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (sender is not Button { DataContext: BrowseCardViewModel { Playlist: { } playlist } } button) return;
+        e.Handled = true;
+        PlaylistContextMenu.Create(button, playlist).ShowAt(button, true);
+    }
+
     /// <summary>指针压在海报上就把倒计时冻住(微软商店同款:想让这一张多停一会儿,不用去点箭头)。
     /// 用 Moved 一起兜住"进页面时指针本来就在海报上"的情况 —— 那种情况不会有 Entered。</summary>
     private void OnHeroPointerOver(object? sender, PointerEventArgs e) => HeroRing.IsPaused = true;

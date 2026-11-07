@@ -1843,7 +1843,8 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
     private static RecommendItem MapPlaylistCard(RecommendItemDto d)
     {
         var subtitle = string.IsNullOrEmpty(d.Copywriter) ? FormatPlayCount(d.PlayCount) : d.Copywriter;
-        return new RecommendItem(d.Id, d.Name, subtitle, d.PicUrl, (long)d.PlayCount, d.TrackCount);
+        return new RecommendItem(d.Id, d.Name, subtitle, d.PicUrl, (long)d.PlayCount, d.TrackCount,
+            Services.MusicSource.NetEase, d.Creator?.Nickname ?? "", d.Creator?.UserId ?? 0);
     }
 
     private static RecommendItem MapSongCard(RecommendItemDto d)

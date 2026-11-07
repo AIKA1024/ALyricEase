@@ -41,7 +41,7 @@ public static class Program
             SongDownloadProbe.RunAsync().GetAwaiter().GetResult();
             return;
         }
-        if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close" or "--personal-home" or "--home-refresh" or "--playback-list-refresh" or "--login-idle-close" or "--page-refresh")
+        if (args.Length > 0 && args[0] is "--qq-user-failure" or "--login-close" or "--personal-home" or "--home-refresh" or "--playback-list-refresh" or "--login-idle-close" or "--page-refresh" or "--recommend-ops" or "--browse-ops")
         {
             AppBuilder.Configure<HeadlessApp>().UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
@@ -55,6 +55,8 @@ public static class Program
                     else if (args[0] == "--playback-list-refresh") await PlaybackListRefreshProbe.RunAsync();
                     else if (args[0] == "--home-refresh") await PersonalHomeProbe.RunAsync(refreshOnly: true);
                     else if (args[0] == "--personal-home") await PersonalHomeProbe.RunAsync();
+                    else if (args[0] == "--recommend-ops") await RecommendCardOpsProbe.RunAsync();
+                    else if (args[0] == "--browse-ops") await BrowseCardOpsProbe.RunAsync();
                     else if (args[0] == "--login-close") await LoginCloseProbe.RunAsync();
                     else await QqUserFailureProbe.RunAsync();
                 }

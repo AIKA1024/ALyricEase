@@ -25,7 +25,7 @@ public sealed partial class BrowseCardViewModel : ViewModelBase
     private bool _coverRequestScheduled;
 
     public BrowseCardViewModel(string title, string subtitle, string coverUrl, MusicSource source,
-        long playCount = 0, Func<Task>? activate = null, string badge = "")
+        long playCount = 0, Func<Task>? activate = null, string badge = "", PlaylistItemViewModel? playlist = null)
     {
         Title = title;
         Subtitle = subtitle;
@@ -34,11 +34,19 @@ public sealed partial class BrowseCardViewModel : ViewModelBase
         PlayCount = playCount;
         Badge = badge;
         _activate = activate;
+        Playlist = playlist;
     }
 
     public string Title { get; }
 
     public string Subtitle { get; }
+
+    /// <summary>歌单/榜单卡片携带的数据(封面上的 ▶ 播放、••• 与右键菜单共用);歌曲卡片为 null。
+    /// 卡片的点击行为另由 <see cref="_activate"/> 承担 —— 点封面进歌单页,点 ▶ 才播。</summary>
+    public PlaylistItemViewModel? Playlist { get; }
+
+    /// <summary>是否歌单卡(含榜单):只有这两类长操作圆钮,歌曲卡点击即播放,没有"整张歌单"语义。</summary>
+    public bool IsPlaylist => Playlist is not null;
 
     public string CoverUrl { get; }
 
@@ -685,11 +693,12 @@ public sealed partial class BrowseViewModel : ViewModelBase
 
     // ---------- 卡片工厂 ----------
 
-    private BrowseCardViewModel ToToplistCard(ToplistItem item) => item.Source == MusicSource.QQ
-        ? new BrowseCardViewModel(item.Name, item.Summary, item.CoverUrl, MusicSource.QQ,
-            item.PlayCount, () => OpenQqToplistAsync(item))
-        : new BrowseCardViewModel(item.Name, item.Summary, item.CoverUrl, MusicSource.NetEase,
-            item.PlayCount, () => OpenNetEasePlaylistAsync(item.Id, item.Name, item.CoverUrl, item.TrackCount, item.PlayCount));
+    private BrowseCardViewModel ToToplistCard(ToplistItem item)
+    {
+        var playlist = NewToplistPlaylist(item);
+        return new BrowseCardViewModel(item.Name, item.Summary, item.CoverUrl, item.Source,
+            item.PlayCount, () => OpenPlaylistAsync(playlist), playlist: playlist);
+    }
 
     private BrowseHeroViewModel ToHero(ToplistItem item) => item.Source == MusicSource.QQ
         ? new BrowseHeroViewModel(item, () => OpenQqToplistAsync(item))
@@ -700,11 +709,12 @@ public sealed partial class BrowseViewModel : ViewModelBase
         // 副标题用曲数:播放量已经占了角标,再写一遍「6万播放」只是把同一件事说两次。
         // QQ 歌单拿不到曲目数(推荐流/广场都只有播放量),那里退回上一层的文案(推荐理由 / 创建者)。
         var subtitle = item.TrackCount > 0 ? $"{item.TrackCount} 首" : item.Subtitle;
-        return item.Source == MusicSource.QQ
-            ? new(item.Title, subtitle, item.CoverUrl, MusicSource.QQ, item.PlayCount,
-                () => OpenQqPlaylistAsync(item.Id, item.Title, item.CoverUrl, item.PlayCount))
-            : new(item.Title, subtitle, item.CoverUrl, MusicSource.NetEase, item.PlayCount,
-                () => OpenNetEasePlaylistAsync(item.Id, item.Title, item.CoverUrl, item.TrackCount, (long)item.PlayCount));
+        var playlist = item.Source == MusicSource.QQ
+            ? NewQqPlaylist(item.Id, item.Title, item.CoverUrl, item.PlayCount)
+            : NewNetEasePlaylist(item.Id, item.Title, item.CoverUrl, item.TrackCount, item.PlayCount,
+                item.CreatorName, item.CreatorId);
+        return new BrowseCardViewModel(item.Title, subtitle, item.CoverUrl, item.Source, item.PlayCount,
+            () => OpenPlaylistAsync(playlist), playlist: playlist);
     }
 
     private BrowseCardViewModel ToSongCard(Song song, IReadOnlyList<Song> queue)
@@ -713,9 +723,26 @@ public sealed partial class BrowseViewModel : ViewModelBase
 
     // ---------- 打开 ----------
 
-    private Task OpenNetEasePlaylistAsync(long id, string name, string cover, int trackCount, long playCount)
+    /// <summary>歌单页的统一入口(卡片点击、▶ 播放、more 菜单都拿同一份 VM)。</summary>
+    private Task OpenPlaylistAsync(PlaylistItemViewModel playlist)
     {
-        var playlist = new PlaylistItemViewModel(new Playlist
+        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(playlist);
+        return Task.CompletedTask;
+    }
+
+    private Task OpenNetEasePlaylistAsync(long id, string name, string cover, int trackCount, long playCount)
+        => OpenPlaylistAsync(NewNetEasePlaylist(id, name, cover, trackCount, playCount));
+
+    /// <summary>QQ 普通歌单(推荐歌单):TopId 留 0,歌单页走 uniform_get_Dissinfo 取曲目。</summary>
+    private Task OpenQqPlaylistAsync(long dissId, string name, string cover, long playCount)
+        => OpenPlaylistAsync(NewQqPlaylist(dissId, name, cover, playCount));
+
+    /// <summary>QQ 榜单不是歌单:Id 只当缓存键,TopId 决定歌单页从榜单接口取曲目。</summary>
+    private Task OpenQqToplistAsync(ToplistItem item) => OpenPlaylistAsync(NewToplistPlaylist(item));
+
+    private static PlaylistItemViewModel NewNetEasePlaylist(long id, string name, string cover, int trackCount,
+        long playCount, string creatorName = "", long creatorId = 0)
+        => new(new Playlist
         {
             Id = id,
             Name = name,
@@ -723,15 +750,15 @@ public sealed partial class BrowseViewModel : ViewModelBase
             TrackCount = trackCount,
             PlayCount = playCount,
             Source = MusicSource.NetEase,
-        });
-        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(playlist);
-        return Task.CompletedTask;
-    }
+            CreatorName = creatorName,
+        })
+        {
+            CreatorName = creatorName,
+            CreatorId = creatorId,
+        };
 
-    /// <summary>QQ 普通歌单(推荐歌单):TopId 留 0,歌单页走 uniform_get_Dissinfo 取曲目。</summary>
-    private Task OpenQqPlaylistAsync(long dissId, string name, string cover, long playCount)
-    {
-        var playlist = new PlaylistItemViewModel(new Playlist
+    private static PlaylistItemViewModel NewQqPlaylist(long dissId, string name, string cover, long playCount)
+        => new(new Playlist
         {
             Id = dissId,
             Name = name,
@@ -739,28 +766,28 @@ public sealed partial class BrowseViewModel : ViewModelBase
             PlayCount = playCount,
             Source = MusicSource.QQ,
             CreatorName = "QQ音乐",
-        });
-        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(playlist);
-        return Task.CompletedTask;
-    }
-
-    /// <summary>QQ 榜单不是歌单:Id 只当缓存键,TopId 决定歌单页从榜单接口取曲目。</summary>
-    private Task OpenQqToplistAsync(ToplistItem item)
-    {
-        var playlist = new PlaylistItemViewModel(new Playlist
+        })
         {
-            Id = item.Id,
-            TopId = (int)item.Id,
-            Name = item.Name,
-            CoverUrl = item.CoverUrl,
-            TrackCount = item.TrackCount,
-            PlayCount = item.PlayCount,
-            Source = MusicSource.QQ,
             CreatorName = "QQ音乐",
-        });
-        ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(playlist);
-        return Task.CompletedTask;
-    }
+        };
+
+    private static PlaylistItemViewModel NewToplistPlaylist(ToplistItem item)
+        => item.Source == MusicSource.QQ
+            ? new PlaylistItemViewModel(new Playlist
+            {
+                Id = item.Id,
+                TopId = (int)item.Id,
+                Name = item.Name,
+                CoverUrl = item.CoverUrl,
+                TrackCount = item.TrackCount,
+                PlayCount = item.PlayCount,
+                Source = MusicSource.QQ,
+                CreatorName = "QQ音乐",
+            })
+            {
+                CreatorName = "QQ音乐",
+            }
+            : NewNetEasePlaylist(item.Id, item.Name, item.CoverUrl, item.TrackCount, item.PlayCount);
 
     // ---------- 工具 ----------
 

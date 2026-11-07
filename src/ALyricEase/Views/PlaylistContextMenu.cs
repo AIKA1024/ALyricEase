@@ -11,11 +11,13 @@ using Avalonia.VisualTree;
 
 namespace ALyricEase.Views;
 
-/// <summary>歌单 more 菜单(用户页窄屏行内"•••"弹出;对齐原版 UWP 歌单菜单结构):
+/// <summary>歌单 more 菜单(用户页/个人主页/个性推荐/浏览页的"•••"与右键共用;对齐原版 UWP 歌单菜单结构):
 /// 歌单名(灰) / 播放 / 收藏 / 创建者:XXX(可跳创建者用户页) / ─ / 分享 / 复制链接,
 /// 尾部再按"是否本人歌单"追加 ─ / 重命名 / 删除(见 AppendManageItems)。
 /// 与 SongContextMenu 同款即时构造 + 原版字体码位(E912 PlayFilled / E92B Add /
-/// E910 Person / E918 Share / E902 CopyLink,docs/icon-fonts.md)。anchor 仅用于点击时找 TopLevel。</summary>
+/// E910 Person / E918 Share / E902 CopyLink,docs/icon-fonts.md)。anchor 仅用于点击时找 TopLevel。
+/// ⚠ 分享链接与"收藏"都分音源:QQ 歌单走 y.qq.com 路由,且没有"收藏他人歌单"的写接口 ⇒ 干脆不出现该项
+/// (浏览页两个源混排,以前写死 music.163.com 会把 QQ 歌单拼成假链接)。</summary>
 internal static class PlaylistContextMenu
 {
     private static readonly FontFamily MenuIconFont =
@@ -44,9 +46,13 @@ internal static class PlaylistContextMenu
         };
         menu.Items.Add(play);
 
-        var subscribe = MenuItemWithIcon("收藏", IconGlyphs.Add);
-        subscribe.Click += async (_, _) => await SubscribeAsync(playlist);
-        menu.Items.Add(subscribe);
+        // 收藏(订阅他人歌单)只有网易云有接口;QQ 侧没有对应写通道,不给点了必然失败的入口。
+        if (playlist.Playlist.Source == MusicSource.NetEase)
+        {
+            var subscribe = MenuItemWithIcon("收藏", IconGlyphs.Add);
+            subscribe.Click += async (_, _) => await SubscribeAsync(playlist);
+            menu.Items.Add(subscribe);
+        }
 
         var creator = MenuItemWithIcon($"创建者： {playlist.CreatorName ?? "未知"}", IconGlyphs.Person);
         creator.IsEnabled = playlist.CreatorId > 0;
@@ -98,7 +104,9 @@ internal static class PlaylistContextMenu
 
         var own = main.ShellNavItems.Any(n => n.Playlist is { } p
             && p.Playlist.Id == playlist.Playlist.Id
-            && p.Playlist.Source == playlist.Playlist.Source);
+            && p.Playlist.Source == playlist.Playlist.Source
+            // 浏览页的 QQ 榜单 Id 是个小序号,撞上自建歌单不奇怪 —— TopId 也得一致才算本人歌单
+            && p.Playlist.TopId == playlist.Playlist.TopId);
         if (!own) return;
 
         try
@@ -135,7 +143,7 @@ internal static class PlaylistContextMenu
     };
 
     private static string PlaylistLink(PlaylistItemViewModel playlist)
-        => $"https://music.163.com/playlist?id={playlist.Id}";
+        => PlaylistShareLinks.For(playlist.Playlist);
 
     private static async Task SubscribeAsync(PlaylistItemViewModel playlist)
     {

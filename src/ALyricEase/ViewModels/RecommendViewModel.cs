@@ -20,7 +20,8 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
     private Func<Task>? _activate;
     private bool _coverRequestScheduled;
 
-    public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0, long id = 0, Func<Task>? activate = null)
+    public RecommendCardViewModel(string title, string subtitle, string coverUrl = "", long playCount = 0, long id = 0,
+        Func<Task>? activate = null, PlaylistItemViewModel? playlist = null)
     {
         Title = title;
         Subtitle = subtitle;
@@ -28,7 +29,15 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
         PlayCount = playCount;
         Id = id;
         _activate = activate;
+        Playlist = playlist;
     }
+
+    /// <summary>歌单卡片携带的歌单数据(封面上 ▶ 播放 / ••• 与右键菜单共用);歌曲卡片为 null。
+    /// 卡片点击行为另由 <see cref="_activate"/> 承担,两者刻意分开 —— 歌单卡点封面进详情页,点 ▶ 才播。</summary>
+    public PlaylistItemViewModel? Playlist { get; private set; }
+
+    /// <summary>是否歌单卡:只有歌单卡显示封面上的两个操作圆钮(歌曲卡点击即播放,没有菜单语义)。</summary>
+    public bool IsPlaylist => Playlist is not null;
 
     [ObservableProperty] private string _title = "";
 
@@ -64,6 +73,8 @@ public sealed partial class RecommendCardViewModel : ViewModelBase
         CoverUrl = fresh.CoverUrl;
         PlayCount = fresh.PlayCount;
         _activate = fresh._activate;
+        if (IsPlaylist != fresh.IsPlaylist) OnPropertyChanged(nameof(IsPlaylist));
+        Playlist = fresh.Playlist;
     }
 
     public bool HasPlayCount => PlayCount > 0;
@@ -337,24 +348,34 @@ public sealed class RecommendViewModel : ViewModelBase
             .ToList();
     }
 
-    /// <summary>推荐歌单卡片:点击打开歌单详情(临时构造 PlaylistItemViewModel,复用"我的收藏"页的歌单加载)。</summary>
-    private object ToPlaylistCard(RecommendItem i)
-        => new RecommendCardViewModel(i.Title, i.Subtitle, i.CoverUrl, i.PlayCount, i.Id, () => OpenPlaylistAsync(i));
+    /// <summary>推荐歌单卡片:点击打开歌单详情;卡片同时携带 PlaylistItemViewModel,
+    /// 供封面上 ▶(播放歌单)、••• 与右键菜单复用同一份数据(以前只在点击时临时构造)。</summary>
+    internal object ToPlaylistCard(RecommendItem i)
+    {
+        var playlist = new PlaylistItemViewModel(new Playlist
+        {
+            Id = i.Id,
+            Name = i.Title,
+            CoverUrl = i.CoverUrl,
+            TrackCount = i.TrackCount,
+            PlayCount = i.PlayCount,
+            CreatorName = i.CreatorName,
+        })
+        {
+            CreatorName = i.CreatorName,
+            CreatorId = i.CreatorId,
+        };
+        return new RecommendCardViewModel(i.Title, i.Subtitle, i.CoverUrl, i.PlayCount, i.Id,
+            () => OpenPlaylistAsync(playlist), playlist);
+    }
 
     /// <summary>歌曲卡片(热门歌曲/猜你喜欢):点击播放该歌,队列 = 本区块全部歌(上一曲/下一曲在区块内切换)。</summary>
     private List<object> ToSongCards(List<Song> songs, string source)
         => songs.Select(s => (object)new RecommendCardViewModel(s.Name, s.Artist, s.CoverUrl, 0, s.Id,
             () => _player.PlayFromList(s, songs, source))).ToList();
 
-    private Task OpenPlaylistAsync(RecommendItem item)
+    private Task OpenPlaylistAsync(PlaylistItemViewModel playlist)
     {
-        var playlist = new PlaylistItemViewModel(new Playlist
-        {
-            Id = item.Id,
-            Name = item.Title,
-            CoverUrl = item.CoverUrl,
-            TrackCount = item.TrackCount,
-        });
         ServiceLocator.Get<MainViewModel>().OpenShellPlaylistAuto(playlist);
         return Task.CompletedTask;
     }

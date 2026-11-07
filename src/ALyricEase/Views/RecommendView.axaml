@@ -17,6 +17,7 @@
          整卡为按钮(RowButtonTheme,同歌手页专辑卡):歌单卡点击进歌单页,歌曲卡点击播放 -->
     <DataTemplate x:DataType="vm:RecommendCardViewModel">
       <Button Classes="card" Theme="{StaticResource RowButtonTheme}" Command="{Binding OpenCommand}"
+              ContextRequested="OnCardContextRequested"
               CornerRadius="8" ClipToBounds="True">
         <Grid RowDefinitions="Auto,50">
           <Border Classes="card-art" Grid.Row="0" CornerRadius="8" Background="{DynamicResource ArtFallback}"
@@ -43,6 +44,23 @@
                        TextTrimming="CharacterEllipsis" MaxLines="1" />
           </StackPanel>
           <Border Classes="card-mask" Grid.RowSpan="2" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+          <!-- 歌单卡悬停浮现:左下 ▶ 播放歌单、右下 ••• more 菜单(用户页/个人主页同款)。
+               独占一层 Panel 而不是塞进封面 Grid:遮罩声明在这之前,塞进去会被 20% 黑遮罩压一层。
+               只覆盖封面行(row 0),故按钮贴的是封面底边而不是整卡底边。歌曲卡不显示(IsPlaylist=false)。 -->
+          <Panel Grid.Row="0">
+            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" IsVisible="{Binding IsPlaylist}"
+                    Click="OnCardPlayClick" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8"
+                    ToolTip.Tip="播放歌单" AutomationProperties.Name="{Binding Title, StringFormat='播放 {0}'}">
+              <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                         FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+            </Button>
+            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" IsVisible="{Binding IsPlaylist}"
+                    Click="OnCardMoreClick" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8"
+                    ToolTip.Tip="更多操作" AutomationProperties.Name="{Binding Title, StringFormat='{}{0}的更多操作'}">
+              <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                         FontFamily="{DynamicResource LyricEaseIcons}" />
+            </Button>
+          </Panel>
         </Grid>
       </Button>
     </DataTemplate>
@@ -80,6 +98,35 @@
     <!-- 播放量角标:原版 acrylic chip(右上,圆角4,深色半透明) -->
     <Style Selector="Border.play-count-badge">
       <Setter Property="Background" Value="#59000000" />
+    </Style>
+    <!-- 卡片悬停浮现的操作按钮(左下 ▶ / 右下 •••):用户页同款 CardOverlayButton scrim 色系 + 白图标。
+         不复用 row-action —— 那套三态是"叠在行背景上的半透明叠层",直接盖封面上观感反直觉(实测)。
+         显隐用 Opacity(不做布局反馈,不触发 over 链重算的闪烁循环,见 docs/avalonia-tips.md)。 -->
+    <Style Selector="Button.card-op">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButton}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.card-op:pointerover">
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButtonHover}" />
+    </Style>
+    <Style Selector="Button.card-op:pressed">
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButtonPressed}" />
+    </Style>
+    <Style Selector="Button.card:pointerover Button.card-op">
+      <Setter Property="Opacity" Value="1" />
     </Style>
     <!-- 音源角标:仅本页(每日歌曲推荐混排网易云+QQ)悬停行时浮现;基础隐藏/过渡在 TrackRow.axaml -->
     <Style Selector="views|TrackRow:pointerover Panel.source-badge">

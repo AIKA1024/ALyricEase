@@ -1047,6 +1047,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         if (pvm is null || pvm.Id == 0) return;
         try
         {
+            // QQ 榜单不是歌单:TopId 才是曲目入口,拿 Id 当 disstid 会查到别人的歌单/空列表。
+            // (浏览页榜单货架上的 ▶ 走的正是这里;榜单最多 100 首,不值得再铺一套懒队列。)
+            if (pvm.Playlist.TopId > 0)
+            {
+                if (_sources.Resolve(MusicSource.QQ) is not QQMusicApiClient toplistApi) return;
+                var songs = await toplistApi.GetToplistSongsAsync(pvm.Playlist.TopId).ConfigureAwait(true);
+                var first = songs.FirstOrDefault(CanAttemptPlayback);
+                if (first is not null)
+                    await PlayFromList(first, songs, pvm.Name).ConfigureAwait(true);
+                return;
+            }
+
             if (pvm.Playlist.Source == MusicSource.QQ)
             {
                 if (_sources.Resolve(MusicSource.QQ) is not QQMusicApiClient qqApi) return;

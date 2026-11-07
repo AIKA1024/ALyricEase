@@ -832,7 +832,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         try
         {
             var qualityLevel = AudioQualityMapper.GetRequestLevel(song.Source, _appState.AudioQuality);
-            if (_musicCache.TryAcquire(song, qualityLevel) is { } cached)
+            // 服务端上次明确把这首歌降到过更低档 ⇒ 这次直接按那一档请求。
+            // 不夹这一层的话:设置 Hi-Res 而歌只有 320k 时,每次播放都要 hires→lossless→exhigh
+            // 串行问三遍(实测 500-900ms),问完还因为"不如已有缓存"改播本地文件。
+            var effectiveLevel = _musicCache.ClampToServedQualityCeiling(song, qualityLevel);
+            if (!string.Equals(effectiveLevel, qualityLevel, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug(
+                    "Playback quality clamped by remembered ceiling. Source={Source} SongId={SongId} Requested={Requested} Effective={Effective}",
+                    song.Source, song.Id, qualityLevel, effectiveLevel);
+            }
+
+            if (_musicCache.TryAcquire(song, effectiveLevel) is { } cached)
             {
                 song.IsPlaybackUnavailable = false;
                 PrepareSongPlayback(song);
@@ -853,7 +864,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             }
 
             var api = _sources.Resolve(song);
-            var item = await api.GetPlayUrlAsync(song, qualityLevel);
+            var item = await api.GetPlayUrlAsync(song, effectiveLevel);
             if (item is null || string.IsNullOrEmpty(item.Url))
             {
                 if (offlineFallback is not null)
@@ -884,6 +895,24 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             var servedRank = Math.Max(
                 MusicCacheService.GetQualityRank(song.Source, item.Level),
                 MusicCacheService.GetQualityRankFromBr(item.Br));
+
+            // 记账:服务端把请求档降下来了 ⇒ 这就是"这首歌的上限"。试听段不记(档位不可信)。
+            // 服务端没给 level 也不给 br 时(旧明文端点的极端情况)档位未知,记成"降到标准"会误伤。
+            // 记下来时打一条 Information:自动降档必须可见,否则用户会以为设置没生效。
+            if (item.IsTrial != true
+                && (!string.IsNullOrWhiteSpace(item.Level) || item.Br > 0))
+            {
+                var servedLevel = string.IsNullOrWhiteSpace(item.Level)
+                    ? MusicCacheService.GetQualityLevelForRank(song.Source, servedRank)
+                    : item.Level;
+                if (_musicCache.NoteServedQualityCeiling(song, effectiveLevel, servedLevel))
+                {
+                    _logger.LogInformation(
+                        "Playback quality ceiling learned. Source={Source} SongId={SongId} Requested={Requested} Served={Served}",
+                        song.Source, song.Id, effectiveLevel, servedLevel);
+                }
+            }
+
             if (offlineFallback is not null && servedRank <= offlineFallback.QualityRank)
             {
                 await StartPlayerAsync(offlineFallback.FilePath, offlineFallback, allowCrossfade);
@@ -900,7 +929,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
                 _playbackCache.Begin(
                     token => _musicCache.CacheAsync(
                         song,
-                        string.IsNullOrWhiteSpace(item.Level) ? qualityLevel : item.Level,
+                        string.IsNullOrWhiteSpace(item.Level) ? effectiveLevel : item.Level,
                         item.Url, token),
                     _player.State == PlaybackState.Playing);
             return PlayAttemptResult.Started;

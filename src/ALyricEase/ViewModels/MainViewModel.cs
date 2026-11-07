@@ -451,6 +451,11 @@ public sealed partial class MainViewModel : ViewModelBase
         if (e.PropertyName == nameof(PlaylistViewModel.LibraryOverviewVersion)) QueueShellNavigationRebuild();
         if (e.PropertyName is nameof(PlaylistViewModel.IsLoggedIn) or nameof(PlaylistViewModel.IsQqLoggedIn))
         {
+            // 权益按账号算:登录态一变就丢掉上一账号探到的音质上限,否则 SVIP 的 hires 记忆
+            // 会被免费账号继承(反过来也一样,免费账号的低上限会让换回来的会员永远提不上去)。
+            try { ServiceLocator.Get<MusicCacheService>().ClearServedQualityCeilings(); }
+            catch { /* 无宿主环境(Headless/SelfTest)没有注册缓存服务 */ }
+
             // 登录态变化后刷新各页歌曲行；明确的 VIP/购买权益提前判定，未知状态仍由播放地址兜底。
             Search.RefreshPlayability();
             Playlist.RefreshPlayability();

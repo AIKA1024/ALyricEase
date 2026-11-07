@@ -37,6 +37,7 @@
 | 菜单点"分享"没反应(Windows;JIT 正常、装了包就不行) | [windows-share.md](windows-share.md)(两个静默失败:AOT 无内置 COM、owner 非前台;判据 `--sharetest`) |
 | 要发新版本 / 自更新不工作 / delta 没生成 | [updates.md](updates.md)(vpk pack 流程、tag=版本号约定、验证清单) |
 | 开机后冒出两个窗口 / 双击图标又开一个 / 更新完起不来 | [updates.md](updates.md) §五(单实例闸;根因是缺 Mutex,不是更新;更新前必须先让锁) |
+| 点播放要等将近一秒才出声 / 设了 Hi-Res 却在放 320k | [playback-quality.md](playback-quality.md)(降级链串行 + 档位上限记忆;`--quality-ceiling`) |
 | 要加网易云端点 / 排查 400 空响应 / 防封号 | [netease-api/](netease-api/)(先读它的 README,再过 [03-antiban.md](netease-api/03-antiban.md) 的检查清单) |
 | 自问"原版 UWP 为什么占用更低" | [original-uwp-notes.md](original-uwp-notes.md)(账记在 `dwm.exe` 里,别承诺做到同读数) |
 | 要写或改性能探针 | [perf-notes.md](perf-notes.md) §四「写性能探针的坑」+ §七探针清单 |
@@ -88,6 +89,10 @@
 
 ## 六、第三方 API 逆向
 
+- [**`playback-quality.md`**](playback-quality.md) —— **起播那一秒**的归因:设置档高于歌曲实际档 ⇒
+  逐档串行取址(网易对无权益档位回 `code=200` + `url=null`),问完还因为"不如已有缓存"改播本地文件。
+  修法是**档位上限记忆**(`q-{songKey}.probe`,`level|expires`,7 天 TTL,换号清);
+  记了"为什么不能从缓存文件名反推上限""为什么裁剪只能按 TTL 清"。探针 `--quality-ceiling`。
 - [**`netease-login.md`**](netease-login.md) —— 项目侧登录链路:扫码 / 手机验证码 / MUSIC_U 粘贴 / 代理登录(**仅 Windows**,走 NuGet `ProjectCirrus.Copycat`)、
   为什么能 MITM 与"登录成功后必须提醒关客户端代理"、eapi 私有变体 ≠ 标准客户端格式。
 - [**`netease-api/`**](netease-api/) —— 网易云 Web API 全集(**子目录自带 [README](netease-api/README.md) 索引**):

@@ -529,6 +529,7 @@ vs 位图填充 9.02% ⇒ +0.32%」。两次**互换了哪个是"现状"**、绝
 | `--shell-cpu-real` | 真实 `AppShell` 下的 CPU 对照 | — |
 | `--cache-write-cost` | 缓存写盘代价（含全目录扫描回归） | — |
 | `--cache-read-gate` | 读路径不加 `_mutationGate` 的回归线 | — |
+| `--quality-ceiling` | **起播延迟**:档位上限记忆的落盘/夹档/TTL/换号清空;核心断言是"夹档后零取址直接命中本地缓存"(见 [playback-quality.md](playback-quality.md)) | — |
 | `--memloop[-real]` | 页面往返的内存/分配回归 | — |
 | `--pl-return-real` | 歌单页返回耗时（快照恢复） | — |
 | `--pl-cover-flash` | 行封面"闪一下"（量**本该有封面却没有的行数**） | — |

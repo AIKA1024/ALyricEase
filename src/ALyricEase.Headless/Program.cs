@@ -835,6 +835,14 @@ public static class Program
             return;
         }
 
+        // 档位上限记忆：服务端降级证据的落盘、夹档、TTL、换号清空与孤儿清理。
+        if (args.Length > 0 && args[0] == "--quality-ceiling")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(QualityCeilingProbe.RunAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 最近播放回归：去重置顶、容量上限、元数据持久化与清空。
         if (args.Length > 0 && args[0] == "--recent-history")
         {

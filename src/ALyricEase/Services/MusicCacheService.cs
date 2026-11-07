@@ -73,6 +73,23 @@ public sealed class MusicCacheService
     private long _evictionScanCount;
     private MusicCacheIndexFile _offlineIndex;
 
+    // ---- 档位上限记忆 ----
+    // 每首歌"服务端最多只肯给到哪一档"的探测结果,落成 q-{songKey}.probe(内容 `level|过期Unix秒`)。
+    //
+    // 为什么不能从音频文件名反推:缓存里的 -03 只说明"曾经下到过 320k",
+    // 用户当时把设置放在 HQ,请求的就是 320k,缓存自然只有 320k —— 而服务端可能给无损。
+    // 所以只有观察到"请求更高档、返回更低档"才算上限证据(见 NoteServedQualityCeiling)。
+    //
+    // 收益:设置 Hi-Res 而歌只有 320k 时,原本每次播放都要 hires→lossless→exhigh 串行问三遍
+    // (本机实测 500-900ms),有记忆后直接按 320k 请求,通常一次命中本地缓存、零请求起播。
+    private const string QualityCeilingFilePrefix = "q-";
+    private const int QualityCeilingTtlDays = 7;
+    private readonly ConcurrentDictionary<string, QualityCeiling> _qualityCeilings =
+        new(StringComparer.Ordinal);
+
+    /// <summary>已探测到的服务端档位上限。Level 为空串表示"查过但没有"(负缓存,避免反复读盘)。</summary>
+    private readonly record struct QualityCeiling(string Level, int Rank, long ExpiresUnix);
+
     public MusicCacheService(AppStateStore state)
         : this(state.MusicCacheMaximumSizeMb, GetDefaultCacheDirectory(), SharedHttp)
     {
@@ -111,6 +128,178 @@ public sealed class MusicCacheService
 
     /// <summary>只检查歌曲是否存在任意完整音频缓存，不创建播放租约。</summary>
     public bool IsAudioCached(Song song) => GetAudioCacheAvailability([song])[0];
+
+    // ---- 档位上限记忆(读) ----
+
+    /// <summary>这首歌上次被服务端明确降到的档位;null = 没有记忆/已过期/从未被降级过。
+    /// 只在服务端主动降档时才有值,所以可以直接当作本次请求的档位上限。</summary>
+    public string? GetServedQualityCeiling(Song song)
+    {
+        var ceiling = ReadServedQualityCeiling(song);
+        return ceiling.Level.Length == 0 ? null : ceiling.Level;
+    }
+
+    /// <summary>把请求档位夹到已知上限:没有记忆、或记忆档位不低于请求档位时原样返回。</summary>
+    public string ClampToServedQualityCeiling(Song song, string requestedLevel)
+    {
+        var ceiling = ReadServedQualityCeiling(song);
+        if (ceiling.Level.Length == 0) return requestedLevel;
+        return GetQualityRank(song.Source, requestedLevel) <= ceiling.Rank
+            ? requestedLevel
+            : ceiling.Level;
+    }
+
+    /// <summary>读磁盘 + 负缓存。命中的结果进内存,同一首歌一个进程只读一次盘。
+    /// 内存条目也带过期时间:进程跑过 7 天不重启时,过期的记忆同样要自然失效。</summary>
+    private QualityCeiling ReadServedQualityCeiling(Song song)
+    {
+        var songKey = BuildSongKey(song);
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (_qualityCeilings.TryGetValue(songKey, out var cached))
+            return cached.ExpiresUnix > now ? cached : new QualityCeiling("", 0, 0);
+
+        var ceiling = new QualityCeiling("", 0, 0);
+        try
+        {
+            var path = Path.Combine(_cacheDirectory, QualityCeilingFilePrefix + songKey + ".probe");
+            if (File.Exists(path)
+                && TryParseQualityCeiling(File.ReadAllText(path), out var level, out var expires)
+                && expires > now)
+                ceiling = new QualityCeiling(level, GetQualityRank(song.Source, level), expires);
+        }
+        catch
+        {
+            // 记忆读失败按"没有"处理:只影响这次起播快慢,不影响能不能播。
+        }
+
+        _qualityCeilings[songKey] = ceiling;
+        return ceiling;
+    }
+
+    /// <summary>解析 `level|expiresUnix`。容忍缺时间戳的旧值(按已过期处理,下次播放重新探测)。</summary>
+    private static bool TryParseQualityCeiling(string text, out string level, out long expiresUnix)
+    {
+        level = "";
+        expiresUnix = 0;
+        text = text.Trim();
+        if (text.Length == 0) return false;
+        var separator = text.LastIndexOf('|');
+        level = (separator > 0 ? text[..separator] : text).Trim();
+        if (level.Length == 0) return false;
+        return separator > 0
+               && long.TryParse(text[(separator + 1)..], NumberStyles.Integer,
+                   CultureInfo.InvariantCulture, out expiresUnix);
+    }
+
+    /// <summary>记账。**只有"请求更高档、服务端给了更低档"才写** —— 那是上限的唯一硬证据。
+    /// 请求档 == 返回档时什么都证明不了(可能还有更高档),写下去会让用户调高设置也提不上去。
+    /// 返回 true = 这次真的记下了新上限(调用方据此打一次可见日志,别让自动降档变成静默行为)。</summary>
+    internal bool NoteServedQualityCeiling(Song song, string requestedLevel, string servedLevel)
+    {
+        if (string.IsNullOrWhiteSpace(servedLevel)) return false;
+        var requestedRank = GetQualityRank(song.Source, requestedLevel);
+        var servedRank = GetQualityRank(song.Source, servedLevel);
+        if (servedRank <= 0 || requestedRank <= servedRank) return false;
+
+        var songKey = BuildSongKey(song);
+        var expires = DateTimeOffset.UtcNow.AddDays(QualityCeilingTtlDays).ToUnixTimeSeconds();
+        if (_qualityCeilings.TryGetValue(songKey, out var known)
+            && known.Rank == servedRank
+            && known.ExpiresUnix > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + QualityCeilingTtlDays * 86400L / 2)
+            return false; // 同一档位、没过半程:不必重写盘,也不必重复打日志
+
+        var ceiling = new QualityCeiling(servedLevel, servedRank, expires);
+        _qualityCeilings[songKey] = ceiling;
+        _ = WriteServedQualityCeilingAsync(songKey, ceiling);
+        return true;
+    }
+
+    /// <summary>清掉全部档位记忆。登录态变化(换号/登出)必须调:权益按账号算,
+    /// 把 SVIP 的档位带到免费账号上会让人以为降级卡死了。</summary>
+    public void ClearServedQualityCeilings()
+    {
+        _qualityCeilings.Clear();
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(
+                         _cacheDirectory, QualityCeilingFilePrefix + "*.probe"))
+                DeleteTracked(path);
+        }
+        catch
+        {
+            // 删不掉也不影响正确性:下次读会按 TTL/账号重新探测覆盖。
+        }
+    }
+
+    private async Task WriteServedQualityCeilingAsync(string songKey, QualityCeiling ceiling)
+    {
+        var fileName = QualityCeilingFilePrefix + songKey + ".probe";
+        var payload = Encoding.UTF8.GetBytes(string.Format(
+            CultureInfo.InvariantCulture,
+            "{0}|{1}",
+            ceiling.Level,
+            ceiling.ExpiresUnix));
+        var generation = Volatile.Read(ref _clearGeneration);
+        try
+        {
+            await _mutationGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (generation != Volatile.Read(ref _clearGeneration)) return;
+                Directory.CreateDirectory(_cacheDirectory);
+                var path = Path.Combine(_cacheDirectory, fileName);
+                // ⚠ 不能走 StoreBytesAsync:它对已存在的文件只 touch mtime 不覆盖内容,
+                // 档位变了会写成旧的(而且它会被 EnsureSpaceFor 当成新文件重复计字节)。
+                var previous = TryGetLength(path);
+                await File.WriteAllBytesAsync(path, payload).ConfigureAwait(false);
+                AddKnownCacheBytes(payload.LongLength - previous);
+            }
+            finally
+            {
+                _mutationGate.Release();
+            }
+        }
+        catch
+        {
+            // 记忆写不进去只影响下次起播快慢,不能影响本次播放
+        }
+    }
+
+    /// <summary>借容量裁剪已经枚举好的目录列表,顺手删掉过期的记忆文件。
+    /// 单独再扫一遍目录在上万文件的缓存上要几百毫秒,这里零额外 I/O。
+    ///
+    /// ⚠ 判据只能是 TTL,**不能**是"有没有对应的音频文件":记忆的价值场景之一正是
+    /// "歌没缓存过、但已知上限",按音频存在与否删会让这种记忆写下就消失(探针实测过)。
+    /// 数量上限由 TTL 兜住 —— 每条 72 字节,十万首也才 7MB。返回释放的字节数。</summary>
+    private long PruneExpiredQualityCeilings(IReadOnlyList<FileInfo> files)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        long released = 0;
+        foreach (var file in files)
+        {
+            var name = file.Name;
+            if (name.Length != QualityCeilingFilePrefix.Length + 64 + ".probe".Length
+                || !name.StartsWith(QualityCeilingFilePrefix, StringComparison.Ordinal)
+                || !name.EndsWith(".probe", StringComparison.Ordinal))
+                continue;
+            try
+            {
+                if (TryParseQualityCeiling(File.ReadAllText(file.FullName), out _, out var expires)
+                    && expires > now)
+                {
+                    continue;
+                }
+            }
+            catch
+            {
+                // 读不出来(被占用/权限)就留着,下次裁剪再试
+                continue;
+            }
+
+            if (DeleteTracked(file.FullName)) released += file.Length;
+        }
+        return released;
+    }
 
     /// <summary>一次目录扫描返回整批歌曲的缓存状态，避免离线大歌单逐行枚举目录。
     /// 只读,不占 <see cref="_mutationGate"/>:读了它做不了任何分配/淘汰决定(唯一用处是
@@ -455,6 +644,34 @@ public sealed class MusicCacheService
         > 0 => 1,
         _ => 0,
     };
+
+    /// <summary>等级 → 该音源的规范档位名(GetQualityRank 的逆)。用于服务端只回 br 不回 level 时
+    /// 给记忆补一个可再次请求的档位串。
+    /// ⚠ 必须落在取址降级链认识的档位里:网易云的 QualityFallbacks 没有 "jymaster",
+    /// 请求它会掉进 `_ =&gt; ["standard"]` 只问标准档,比不夹还糟。rank 6 一律回落 hires。</summary>
+    internal static string GetQualityLevelForRank(MusicSource source, int rank)
+    {
+        if (source == MusicSource.QQ)
+        {
+            return rank switch
+            {
+                >= 5 => "RS01",
+                4 => "F000",
+                3 => "M800",
+                2 => "TL01",
+                _ => "M500",
+            };
+        }
+
+        return rank switch
+        {
+            >= 5 => "hires",
+            4 => "lossless",
+            3 => "exhigh",
+            2 => "higher",
+            _ => "standard",
+        };
+    }
 
     private async Task DownloadAndStoreAudioAsync(
         string downloadKey,
@@ -805,7 +1022,7 @@ public sealed class MusicCacheService
         try
         {
             var files = GetEvictionCandidates();
-            var total = files.Sum(file => file.Length);
+            var total = files.Sum(file => file.Length) - PruneExpiredQualityCeilings(files);
             var maximum = GetMaximumBytes();
             foreach (var file in files)
             {

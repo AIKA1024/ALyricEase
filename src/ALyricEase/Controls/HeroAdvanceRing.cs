@@ -52,6 +52,8 @@ public sealed class HeroAdvanceRing : Control
     private long _lastTick;
     private double _elapsedMs;
     private bool _resuming;
+    private TopLevel? _topLevel;
+    private bool _hostDeactivated;
 
     public HeroAdvanceRing()
     {
@@ -172,16 +174,77 @@ public sealed class HeroAdvanceRing : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        SubscribeHost();
         UpdateClock();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        UnsubscribeHost();
         _timer.Stop();
         _resumeTimer.Stop();
         _resuming = false;
         _lastTick = 0;
         base.OnDetachedFromVisualTree(e);
+    }
+
+    /// <summary>盯住窗口:最小化 / 隐藏 / 失活(切到别的窗口)时整块表要停。
+    /// 最小化时 <c>Window.IsVisible</c> 仍是 true,只看可见性不够 —— 这也是"缩到任务栏还在耗 CPU"的由来。
+    /// 激活状态走 <see cref="WindowBase.Activated"/> / <see cref="WindowBase.Deactivated"/> 事件而不是读
+    /// <c>IsActive</c>:headless 里它恒为 false,直接读会让探针永远跑不起来;事件在 headless 只是不触发。</summary>
+    private void SubscribeHost()
+    {
+        if (_topLevel is not null) return;
+        _topLevel = TopLevel.GetTopLevel(this);
+        if (_topLevel is null) return;
+
+        _topLevel.PropertyChanged += OnHostPropertyChanged;
+        if (_topLevel is WindowBase window)
+        {
+            window.Activated += OnHostActivated;
+            window.Deactivated += OnHostDeactivated;
+        }
+    }
+
+    private void UnsubscribeHost()
+    {
+        if (_topLevel is null) return;
+        _topLevel.PropertyChanged -= OnHostPropertyChanged;
+        if (_topLevel is WindowBase window)
+        {
+            window.Activated -= OnHostActivated;
+            window.Deactivated -= OnHostDeactivated;
+        }
+
+        _topLevel = null;
+    }
+
+    private void OnHostPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == Visual.IsVisibleProperty || e.Property == Window.WindowStateProperty)
+            UpdateClock();
+    }
+
+    private void OnHostActivated(object? sender, EventArgs e)
+    {
+        _hostDeactivated = false;
+        UpdateClock();
+    }
+
+    private void OnHostDeactivated(object? sender, EventArgs e)
+    {
+        _hostDeactivated = true;
+        UpdateClock();
+    }
+
+    /// <summary>窗口现在"不该干活"吗:隐藏 / 最小化 / 失活。</summary>
+    private bool IsHostAsleep()
+    {
+        var top = _topLevel ?? TopLevel.GetTopLevel(this);
+        if (top is null) return false;
+        if (!top.IsVisible) return true;
+        if (top is Window { WindowState: WindowState.Minimized }) return true;
+        return _hostDeactivated;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -204,15 +267,15 @@ public sealed class HeroAdvanceRing : Control
     private void UpdateClock()
     {
         var duration = Duration;
-        // 不判窗口是否在前台:headless 里 Window.IsActive 恒为 false,一加这条探针就永远跑不起来。
-        // 最小化/被折叠时 Avalonia 本来就不出帧,多出来的只是每 40ms 一次极小的 InvalidateVisual;
-        // 真停表靠 tick 里的 IsEffectivelyVisible 复查(祖先 IsVisible=False 不会通知到本控件)。
+        // 最小化/隐藏/失活 ⇒ 整块表停:否则每 40ms 一次 InvalidateVisual,缩到任务栏也照样耗着。
+        // 刻意不读 Window.IsActive(headless 里恒 false,读了探针就永远跑不起来),失活靠事件跟踪。
         var shouldRun = IsActive
                         && !IsPaused
                         && !_resuming // 切图那段等待里表也得停着,不然淡回来时已经走了十分之一
                         && duration > TimeSpan.Zero
                         && VisualRoot is not null
-                        && IsEffectivelyVisible;
+                        && IsEffectivelyVisible
+                        && !IsHostAsleep();
 
         if (shouldRun)
         {

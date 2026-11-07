@@ -180,6 +180,20 @@ internal static class HeroRingProbe
         pageScroller.Offset = new Vector(0, 0);
         await SettleAsync(300).ConfigureAwait(true);
 
+        // ⑧ 最小化 / 切后台要休眠:缩到任务栏还每 40ms 刷一次,那是纯烧 CPU
+        ring.Restart();
+        await SettleAsync(800).ConfigureAwait(true); // 等它淡回来,拿到干净的起点
+        window.WindowState = WindowState.Minimized;
+        await SettleAsync(200).ConfigureAwait(true);
+        var atMinimize = ring.Progress;
+        await SettleAsync(800).ConfigureAwait(true);
+        Console.WriteLine($"[hero-ring] 最小化 0.8s:进度 {atMinimize:0.000} → {ring.Progress:0.000}");
+        Check(Math.Abs(ring.Progress - atMinimize) < 0.01, "最小化后计时必须停住(否则缩到任务栏还在耗 CPU)");
+        window.WindowState = WindowState.Normal;
+        await SettleAsync(600).ConfigureAwait(true);
+        Console.WriteLine($"[hero-ring] 还原 0.6s:进度 {atMinimize:0.000} → {ring.Progress:0.000}");
+        Check(ring.Progress > atMinimize, "还原后计时应当继续走");
+
         // 截图:让圆停在 40% 左右,能看出"扇形长了一半"
         ring.Restart();
         await SettleAsync(2400).ConfigureAwait(true);

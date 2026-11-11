@@ -8,8 +8,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationId>com.aika1024.alyricease</ApplicationId>
-    <ApplicationVersion>18</ApplicationVersion>
-    <ApplicationDisplayVersion>0.0.18</ApplicationDisplayVersion>
+    <ApplicationVersion>19</ApplicationVersion>
+    <ApplicationDisplayVersion>0.0.19</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <!-- .NET 11 的 Android 只剩 CoreCLR:Release 默认 PublishReadyToRun(composite)+ 打包 PGO。
          原先的 <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot> 只对 MonoVM 生效,

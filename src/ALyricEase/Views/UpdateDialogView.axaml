@@ -28,7 +28,7 @@
             <Border MaxWidth="460" MinWidth="380" Margin="24" Padding="24" CornerRadius="8"
                     Background="{DynamicResource AppSurface}"
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
-                    BoxShadow="0 32 64 #66000000">
+                    x:Name="DialogCard" BoxShadow="0 32 64 #66000000">
                 <Panel>
                     <!-- 确认态:新版本 + 更新说明 -->
                     <StackPanel Classes="dialog-state" Spacing="12"

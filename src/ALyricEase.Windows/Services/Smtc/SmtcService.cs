@@ -6,6 +6,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services.Audio;
+using ALyricEase.Services.Network;
 using Windows.Media;
 using Windows.Storage.Streams;
 
@@ -25,7 +26,10 @@ public sealed class SmtcService : ISmtcService, IDisposable
     // ISystemMediaTransportControls — Windows SDK IDL 稳定契约(投影 ABI 接口 GuidAttribute 一致)
     private static readonly Guid SmtcInterfaceIid = new("99FA3FF4-1742-42A6-902E-087D41F965EC");
 
-    private static readonly HttpClient CoverHttp = new() { Timeout = TimeSpan.FromSeconds(8) };
+    private static readonly HttpClient CoverHttp = new(new HttpClientHandler { Proxy = NetworkProxy.Instance })
+    {
+        Timeout = TimeSpan.FromSeconds(8),
+    };
 
     private readonly IAudioPlayer _player;
     private readonly DispatcherService _dispatcher;

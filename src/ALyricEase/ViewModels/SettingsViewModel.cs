@@ -1,8 +1,11 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Net;
 using System.Reflection;
 using ALyricEase.Infrastructure;
 using ALyricEase.Services;
 using ALyricEase.Services.Audio;
+using ALyricEase.Services.Network;
 using ALyricEase.Services.Update;
 using Avalonia;
 using Avalonia.Styling;
@@ -251,21 +254,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(AudioQualityIndex));
         }
     }
-
-    /// <summary>传统播放控制。</summary>
-    public bool LegacyPlaybackControl
-    {
-        get => _state.LegacyPlaybackControl;
-        set
-        {
-            _state.LegacyPlaybackControl = value;
-            _state.Save();
-            OnPropertyChanged(nameof(LegacyPlaybackControl));
-            OnPropertyChanged(nameof(LegacyPlaybackControlText));
-        }
-    }
-
-    public string LegacyPlaybackControlText => LegacyPlaybackControl ? "已启用" : "未启用";
 
     /// <summary>音频交叉淡化开关。</summary>
     public bool Crossfade
@@ -567,9 +555,230 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>应用网络代理设置。</summary>
+    // ---- 网络代理(弹窗内为草稿态:打开时载入,保存才落盘并切换全局出口) ----
+
+    /// <summary>草稿里选中的模式(0=跟随系统 1=直连 2=手动),与 <see cref="ProxyMode"/> 同序。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsManualProxy))]
+    private int _proxyModeIndex;
+
+    /// <summary>草稿:代理主机。</summary>
+    [ObservableProperty] private string _proxyHost = "";
+
+    /// <summary>草稿:端口(文本,便于留空/半输入,保存时才校验)。</summary>
+    [ObservableProperty] private string _proxyPortText = "";
+
+    /// <summary>草稿:认证用户名。</summary>
+    [ObservableProperty] private string _proxyUsername = "";
+
+    /// <summary>草稿:认证密码。</summary>
+    [ObservableProperty] private string _proxyPassword = "";
+
+    /// <summary>弹窗内的校验/测试结果提示(空 = 不显示)。</summary>
+    [ObservableProperty] private string? _proxyStatusText;
+
+    /// <summary>测试连接进行中:按钮置灰,避免连点。</summary>
+    [ObservableProperty] private bool _isProxyTesting;
+
+    /// <summary>是否显示手动配置区。</summary>
+    public bool IsManualProxy => ProxyModeIndex == 2;
+
+    /// <summary>模式下拉的选项(顺序与 <see cref="ProxyMode"/> 一致,SelectedIndex 直接当模式用)。
+    /// 只放名称:Fluent 的 ComboBox 下拉项固定 32px 单行,两行说明塞不进去
+    /// (硬塞会让项高不齐、长文被截断)。详见 docs/network-proxy.md §六的取舍记录。</summary>
+    public IReadOnlyList<string> ProxyModeOptions { get; } = ["跟随系统", "不使用代理", "手动配置"];
+
+    /// <summary>设置页卡片上的当前生效状态。</summary>
+    public string ProxySummary => _state.Proxy.DisplayText;
+
+    /// <summary>打开代理设置弹窗:先把落盘配置载入草稿,再交给 MainViewModel 显示模态层。</summary>
     [RelayCommand]
-    private void OpenProxySettings() => Status = "网络代理设置即将支持,当前使用系统代理";
+    private void OpenProxySettings()
+    {
+        LoadProxyDraft();
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().IsProxySettingsDialogOpen = true;
+        }
+        catch
+        {
+            // 无宿主上下文(部分无头探针):不开弹窗
+            Status = "代理设置需要在桌面窗口中配置";
+        }
+    }
+
+    /// <summary>保存草稿:校验 → 落盘 → 切换全局代理出口 → 关弹窗。失败时把原因留在弹窗里。</summary>
+    [RelayCommand]
+    private void SaveProxySettings()
+    {
+        if (!TryBuildProxySnapshot(out var snapshot, out var error))
+        {
+            ProxyStatusText = error;
+            return;
+        }
+
+        _state.Proxy = snapshot;
+        _state.Save();
+        NetworkProxy.Apply(snapshot);
+        ProxyStatusText = null;
+        OnPropertyChanged(nameof(ProxySummary));
+        Status = $"网络代理已切换为{snapshot.DisplayText}";
+        CloseProxySettingsDialog();
+    }
+
+    /// <summary>用草稿配置试连一次(不改动当前设置),结果写在弹窗里。</summary>
+    [RelayCommand]
+    private async Task TestProxyAsync()
+    {
+        if (IsProxyTesting) return;
+        if (!TryBuildProxySnapshot(out var snapshot, out var error))
+        {
+            ProxyStatusText = error;
+            return;
+        }
+
+        IsProxyTesting = true;
+        ProxyStatusText = "正在测试连接…";
+        var timer = Stopwatch.StartNew();
+        try
+        {
+            using var handler = new HttpClientHandler
+            {
+                Proxy = NetworkProxy.CreateFixed(snapshot),
+                UseProxy = true,
+                AutomaticDecompression = DecompressionMethods.All,
+            };
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
+            using var request = new HttpRequestMessage(HttpMethod.Head, ProxyProbeUrl);
+            using var response = await client
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead)
+                .ConfigureAwait(true);
+            timer.Stop();
+            ProxyStatusText = $"连接成功 · {timer.ElapsedMilliseconds} ms(HTTP {(int)response.StatusCode})";
+        }
+        catch (Exception ex)
+        {
+            timer.Stop();
+            _logger.LogInformation(ex, "Proxy connectivity probe failed. Mode={Mode}", snapshot.Mode);
+            ProxyStatusText = $"连接失败 · {DescribeProxyFailure(ex)}";
+        }
+        finally
+        {
+            IsProxyTesting = false;
+        }
+    }
+
+    /// <summary>测试连接打的目标:业务域名本身通,说明接口也能走这条代理。</summary>
+    private const string ProxyProbeUrl = "https://music.163.com/";
+
+    private void LoadProxyDraft()
+    {
+        var saved = _state.Proxy;
+        ProxyModeIndex = (int)saved.Mode;
+        ProxyHost = saved.Host;
+        ProxyPortText = saved.Port > 0
+            ? saved.Port.ToString(CultureInfo.InvariantCulture)
+            : "";
+        ProxyUsername = saved.Username;
+        ProxyPassword = saved.Password;
+        ProxyStatusText = null;
+    }
+
+    /// <summary>把草稿校验并转成快照;失败时 <paramref name="error"/> 是给用户看的一句话。</summary>
+    private bool TryBuildProxySnapshot(out ProxySnapshot snapshot, out string? error)
+    {
+        error = null;
+        var mode = ProxyModeIndex switch
+        {
+            1 => ProxyMode.Direct,
+            2 => ProxyMode.Manual,
+            _ => ProxyMode.System,
+        };
+
+        if (mode != ProxyMode.Manual)
+        {
+            snapshot = new ProxySnapshot(mode);
+            return true;
+        }
+
+        var (host, inlinePort) = NormalizeProxyHost(ProxyHost);
+        if (host.Length == 0)
+        {
+            snapshot = ProxySnapshot.SystemDefault; // out 参数必须赋值;调用方先看返回值
+            error = "请填写代理服务器地址(例如 127.0.0.1)";
+            return false;
+        }
+
+        // 允许直接把 "127.0.0.1:7890" 粘进地址框:端口框留空时用地址里的端口。
+        var portText = ProxyPortText.Trim();
+        if (portText.Length == 0 && inlinePort > 0) portText = inlinePort.ToString(CultureInfo.InvariantCulture);
+        if (!int.TryParse(portText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port)
+            || port is < 1 or > 65535)
+        {
+            snapshot = ProxySnapshot.SystemDefault;
+            error = "端口需为 1-65535 之间的数字";
+            return false;
+        }
+
+        snapshot = new ProxySnapshot(mode, host, port, ProxyUsername.Trim(), ProxyPassword);
+        return true;
+    }
+
+    /// <summary>剥掉粘贴时常见的协议前缀/路径/尾部斜杠,并拆出 <c>host:port</c> 里内嵌的端口。</summary>
+    private static (string Host, int Port) NormalizeProxyHost(string raw)
+    {
+        var text = (raw ?? "").Trim();
+        if (text.Length == 0) return ("", 0);
+
+        foreach (var prefix in (string[])["http://", "https://", "socks5://", "socks5h://"])
+        {
+            if (text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[prefix.Length..];
+                break;
+            }
+        }
+
+        var slash = text.IndexOf('/');
+        if (slash >= 0) text = text[..slash];
+
+        var port = 0;
+        var colon = text.LastIndexOf(':');
+        // 只处理 "host:port" 单冒号形式;IPv6 字面量(带方括号)原样保留,端口走端口框。
+        if (colon > 0 && text.IndexOf(':') == colon)
+        {
+            if (int.TryParse(text[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                port = parsed;
+                text = text[..colon];
+            }
+        }
+
+        return (text.Trim(), port is >= 1 and <= 65535 ? port : 0);
+    }
+
+    /// <summary>把底层异常翻译成用户能理解的一句话。</summary>
+    private static string DescribeProxyFailure(Exception ex) => ex switch
+    {
+        TaskCanceledException or OperationCanceledException => "连接超时,代理无响应",
+        HttpRequestException { InnerException: System.Security.Authentication.AuthenticationException } =>
+            "TLS 握手失败,该代理可能不支持 HTTPS CONNECT",
+        HttpRequestException http => http.InnerException?.Message ?? http.Message,
+        _ => ex.Message,
+    };
+
+    /// <summary>关闭代理弹窗(取消/Esc)。草稿丢弃,下次打开重新载入落盘配置。</summary>
+    private static void CloseProxySettingsDialog()
+    {
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().IsProxySettingsDialogOpen = false;
+        }
+        catch
+        {
+            // 无宿主上下文:忽略
+        }
+    }
 
     // ---- 存储 ----
 

@@ -20,6 +20,7 @@ using Android.Support.V4.Media;
 using Android.Support.V4.Media.Session;
 using AndroidX.Media.Session;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services.Network;
 using Microsoft.Extensions.DependencyInjection;
 using CoreNotificationCompat = AndroidX.Core.App.NotificationCompat;
 using MediaNotificationCompat = AndroidX.Media.App.NotificationCompat;
@@ -77,7 +78,10 @@ public sealed class MediaPlaybackService : Service
     public static Action? OnPreviousRequested;
     public static Action<long>? OnSeekRequested;
 
-    private static readonly HttpClient CoverHttp = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private static readonly HttpClient CoverHttp = new(new HttpClientHandler { Proxy = NetworkProxy.Instance })
+    {
+        Timeout = TimeSpan.FromSeconds(10),
+    };
 
     private readonly Handler _mainHandler = new(Looper.MainLooper!);
 

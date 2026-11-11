@@ -1,3 +1,4 @@
+using ALyricEase.Services.Network;
 using ALyricEase.Services.Update;
 using Android.Content;
 using Android.OS;
@@ -118,7 +119,7 @@ public sealed class AndroidUpdateService : IAppUpdateService
             stale.Delete(); // 清掉上一轮没装完的旧包(含旧版本标记),防 CacheDir 被堆积撑爆
 
         var dest = new Java.IO.File(dir, apk.Name);
-        using var client = new HttpClient();
+        using var client = new HttpClient(new HttpClientHandler { Proxy = NetworkProxy.Instance });
         using var resp = await client.GetAsync(apk.Url, HttpCompletionOption.ResponseHeadersRead)
             .ConfigureAwait(false);
         _logger.LogInformation("Android update download response. Version={Version} StatusCode={StatusCode}",

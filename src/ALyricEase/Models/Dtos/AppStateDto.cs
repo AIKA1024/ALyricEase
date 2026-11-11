@@ -86,9 +86,6 @@ public sealed class AppStateFile
     /// <summary>统一音频质量档位(0=标准 / 1=极高 / 2=无损 / 3=Hi-Res,从低到高)。</summary>
     public int? AudioQuality { get; set; }
 
-    /// <summary>传统播放控制(点击行直接播放/双击入队等老式行为,当前仅存储偏好)。</summary>
-    public bool? LegacyPlaybackControl { get; set; }
-
     /// <summary>歌曲行的播放/喜欢按钮位置互换(播放钮盖封面、喜欢钮在行中列)。</summary>
     public bool? SwapPlayAndLikeOnRows { get; set; }
 
@@ -115,6 +112,21 @@ public sealed class AppStateFile
 
     /// <summary>音乐、封面和歌词的统一磁盘缓存容量上限(MB)。</summary>
     public int? MusicCacheMaximumSizeMb { get; set; }
+
+    /// <summary>应用网络代理模式(0=跟随系统 / 1=直连 / 2=手动;null = 跟随系统)。</summary>
+    public int? ProxyMode { get; set; }
+
+    /// <summary>手动代理主机(IP 或域名;仅手动模式有意义)。</summary>
+    public string? ProxyHost { get; set; }
+
+    /// <summary>手动代理端口(仅手动模式有意义)。</summary>
+    public int? ProxyPort { get; set; }
+
+    /// <summary>代理认证用户名(空 = 不认证)。</summary>
+    public string? ProxyUsername { get; set; }
+
+    /// <summary>代理认证密码。⚠ 与 Cookie 等同级明文落盘:本机个人配置文件,不做额外加密。</summary>
+    public string? ProxyPassword { get; set; }
 
     /// <summary>用户改过的快捷键(动作 Id → 手势文本,如 <c>Control+Shift+Left</c>)。
     /// null = 从未改过(全部走出厂默认);值 "" = 用户显式清空该动作。</summary>

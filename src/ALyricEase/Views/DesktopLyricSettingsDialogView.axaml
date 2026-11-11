@@ -7,7 +7,7 @@
     <Border MaxWidth="460" MaxHeight="640" Margin="16" Padding="24" CornerRadius="8"
             HorizontalAlignment="Stretch" VerticalAlignment="Center"
             Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorderStrong}"
-            BorderThickness="1" BoxShadow="0 32 64 #66000000">
+            BorderThickness="1" x:Name="DialogCard" BoxShadow="0 32 64 #66000000">
       <Grid RowDefinitions="Auto,*,Auto" RowSpacing="20">
         <StackPanel Spacing="6">
           <TextBlock Text="歌词设置" FontSize="20" FontWeight="SemiBold" />

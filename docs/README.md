@@ -26,6 +26,7 @@
 | 某个动画/循环最小化后还在烧 CPU | [avalonia-tips.md](avalonia-tips.md)「自续订的 RequestAnimationFrame 循环」「先分清三类"一直在动"」 |
 | 进度条/动画"卡卡的,鼠标一动就顺" | [avalonia-tips.md](avalonia-tips.md) 文末「UI 线程静息时长睡 ~79ms」 |
 | 弹层/过渡"定住一秒后瞬间消失、没动画"(UI 线程没死) | [perf-notes.md](perf-notes.md) §九「UI 线程动画必须自己持帧泵」 |
+| 弹窗动效要和 WinUI 3 一致(卡片缩放 + 淡入淡出) | [avalonia-tips.md](avalonia-tips.md)「模态弹层的动效」(Animation/Transitions 两条路都不通;`--modalanim`) |
 | 详情页点全屏后鼠标整窗失灵(键盘还好、窗口不卡) | [avalonia-tips.md](avalonia-tips.md)「Win32 `WM_NCHITTEST` hook:全屏后整窗鼠标失灵」(`work/fullscreen_probe.py`) |
 | Release 包冷启动就崩 / 构建期 IL2072 | [avalonia-tips.md](avalonia-tips.md)「Release 包的裁剪会删掉…」;[android-notes.md](android-notes.md) §6 |
 | Android 返回键 / 清单改了不生效 / 图片内存预算 | [android-notes.md](android-notes.md) |
@@ -35,6 +36,7 @@
 | 浏览页「关注新歌」没内容 / 想知道两家怎么拼出来的 | [followed-new-songs.md](followed-new-songs.md)(无聚合接口,关注列表+每位歌手按时间取最新;`--followed-new-songs` / `--browse-followed`) |
 | 要加或改图标码位 | [icon-fonts.md](icon-fonts.md) |
 | 登录相关(代理登录 / MUSIC_U / eapi 两种格式) | [netease-login.md](netease-login.md) |
+| 应用走不走代理 / 改了代理要重启吗 / 新加网络请求忘了挂代理 | [network-proxy.md](network-proxy.md)(handler 拿恒定 `IWebProxy`,改设置即时生效;`--proxy` / `--proxydialog`) |
 | 菜单点"分享"没反应(Windows;JIT 正常、装了包就不行) | [windows-share.md](windows-share.md)(两个静默失败:AOT 无内置 COM、owner 非前台;判据 `--sharetest`) |
 | 要发新版本 / 自更新不工作 / delta 没生成 | [updates.md](updates.md)(vpk pack 流程、tag=版本号约定、验证清单) |
 | 开机后冒出两个窗口 / 双击图标又开一个 / 更新完起不来 | [updates.md](updates.md) §五(单实例闸;根因是缺 Mutex,不是更新;更新前必须先让锁) |

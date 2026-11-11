@@ -4,6 +4,7 @@ using System.Text.Json;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
 using ALyricEase.Services.Hotkeys;
+using ALyricEase.Services.Network;
 using Avalonia.Threading;
 
 namespace ALyricEase.Services;
@@ -139,9 +140,6 @@ public sealed class AppStateStore
     /// 两个音源按同一档位的真实含义各自映射;缺省 3 = 最高档,没会员时由降级链回落。</summary>
     public int AudioQuality { get; set; } = 3;
 
-    /// <summary>传统播放控制。</summary>
-    public bool LegacyPlaybackControl { get; set; }
-
     /// <summary>歌曲行的播放/喜欢按钮位置互换(播放钮盖封面、喜欢钮在行中列)。改动经
     /// VisualEffectsChanged 通知现有行即时切换。</summary>
     public bool SwapPlayAndLikeOnRows { get; set; }
@@ -179,6 +177,10 @@ public sealed class AppStateStore
 
     /// <summary>音乐、封面和歌词的统一磁盘缓存容量上限(MB)。</summary>
     public int MusicCacheMaximumSizeMb { get; set; } = MusicCacheService.DefaultMaximumSizeMb;
+
+    /// <summary>应用网络代理。五个字段互为整体(模式 + 端点 + 可选认证),故整体存取,
+    /// 避免出现"模式已是手动但主机还是空"的中间态。</summary>
+    public ProxySnapshot Proxy { get; set; } = ProxySnapshot.SystemDefault;
 
     // ---- 快捷键(动作 Id → 落盘手势文本;只记"用户改过的",出厂默认不在文件里) ----
 
@@ -270,6 +272,9 @@ public sealed class AppStateStore
         _path = path;
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         Load();
+        // 启动即把落盘的代理配置装进全局出口:此后任何 HttpClient(含先于本类构造的)
+        // 都因为 handler 指向 NetworkProxy.Instance 而立刻用上新配置。
+        NetworkProxy.Apply(Proxy);
     }
 
     private static string GetDefaultPath()
@@ -322,7 +327,6 @@ public sealed class AppStateStore
             AndroidLyricY = dto.AndroidLyricY;
             CompatibilityVisual = dto.CompatibilityVisual ?? true;
             AudioQuality = AudioQualityMapper.NormalizeIndex(dto.AudioQuality ?? 3);
-            LegacyPlaybackControl = dto.LegacyPlaybackControl ?? false;
             SwapPlayAndLikeOnRows = dto.SwapPlayAndLikeOnRows ?? false;
             PreferredCombinedLikeSource = dto.PreferredCombinedLikeSource is (int)MusicSource.NetEase
                 or (int)MusicSource.QQ
@@ -336,6 +340,14 @@ public sealed class AppStateStore
             Volume = Math.Clamp(dto.Volume ?? 80, 0, 100);
             MusicCacheMaximumSizeMb = MusicCacheService.NormalizeMaximumSizeMb(
                 dto.MusicCacheMaximumSizeMb ?? MusicCacheService.DefaultMaximumSizeMb);
+            // 认不出来的模式值(旧版本写的/手改的)一律回落到跟随系统,不要静默变成直连。
+            // 用区间判断而非 Enum.IsDefined:后者走反射,发布版 NativeAOT 下得不偿失。
+            Proxy = new ProxySnapshot(
+                dto.ProxyMode is >= 0 and <= 2 ? (ProxyMode)(dto.ProxyMode ?? 0) : ProxyMode.System,
+                dto.ProxyHost ?? "",
+                dto.ProxyPort is > 0 and <= 65535 ? dto.ProxyPort.Value : 0,
+                dto.ProxyUsername ?? "",
+                dto.ProxyPassword ?? "");
 
             _hotkeys.Clear();
             foreach (var pair in dto.Hotkeys ?? new Dictionary<string, string>())
@@ -484,7 +496,6 @@ public sealed class AppStateStore
                 AndroidLyricY = AndroidLyricY,
                 CompatibilityVisual = CompatibilityVisual,
                 AudioQuality = AudioQuality,
-                LegacyPlaybackControl = LegacyPlaybackControl,
                 SwapPlayAndLikeOnRows = SwapPlayAndLikeOnRows,
                 PreferredCombinedLikeSource = PreferredCombinedLikeSource is { } likeSource
                     ? (int)likeSource
@@ -496,6 +507,11 @@ public sealed class AppStateStore
                 PlaybackMode = PlaybackMode,
                 Volume = Volume,
                 MusicCacheMaximumSizeMb = MusicCacheMaximumSizeMb,
+                ProxyMode = (int)Proxy.Mode,
+                ProxyHost = Proxy.Host,
+                ProxyPort = Proxy.Port,
+                ProxyUsername = Proxy.Username,
+                ProxyPassword = Proxy.Password,
                 Hotkeys = _hotkeys.Count == 0
                     ? null
                     : new Dictionary<string, string>(_hotkeys, StringComparer.Ordinal),

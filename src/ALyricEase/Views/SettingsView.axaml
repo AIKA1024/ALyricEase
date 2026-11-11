@@ -319,20 +319,6 @@
       </Border>
 
       <Border Classes="setting-card" Margin="0,0,0,8">
-        <Grid ColumnDefinitions="Auto,*,Auto">
-          <TextBlock Classes="setting-icon" Text="{DynamicResource IconArrowSwap}" />
-          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-            <TextBlock Classes="setting-title" Text="传统播放控制" />
-            <TextBlock Classes="about-link" Text="关于该选项"
-                       ToolTip.Tip="启用后单击列表行立即播放并清空队列,双击追加到队列(旧版播放器行为);关闭时保持当前行为。" />
-          </StackPanel>
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <ToggleSwitch IsChecked="{Binding LegacyPlaybackControl}" OnContent="" OffContent="" />
-          </StackPanel>
-        </Grid>
-      </Border>
-
-      <Border Classes="setting-card" Margin="0,0,0,8">
         <!-- VerticalAlignment=Center 在这里而不是内层行上:StackPanel 给子元素的槽位就是
              其期望高度,子元素自己的对齐不生效。头部行 MinHeight=44 = 卡片内容区高
              (MinHeight 64 - 上下 padding 10):收起时它撑满内容区、内容居中(上下对称);
@@ -380,7 +366,11 @@
       <Border Classes="setting-card" Margin="0,0,0,8">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconGlobe}" />
-          <TextBlock Grid.Column="1" Classes="setting-title" Text="应用网络代理" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+            <TextBlock Classes="setting-title" Text="应用网络代理" />
+            <TextBlock Text="{CompiledBinding ProxySummary}" FontSize="12"
+                       Foreground="{DynamicResource TextSecondary}" Margin="0,2,0,0" />
+          </StackPanel>
           <Button Grid.Column="2" Classes="setting-action" Content="代理设置"
                   Command="{Binding OpenProxySettingsCommand}" />
         </Grid>

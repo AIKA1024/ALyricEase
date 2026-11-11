@@ -750,6 +750,13 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
+        // 代理设置弹层与设备弹层同层(声明在其后),返回链紧跟其后消费
+        if (IsProxySettingsDialogOpen)
+        {
+            CloseProxySettingsDialogCommand.Execute(null);
+            return true;
+        }
+
         if (IsAddSongToPlaylistDialogOpen)
         {
             CloseAddSongToPlaylistDialogCommand.Execute(null);
@@ -1468,6 +1475,16 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>关闭输出设备选择弹窗(关闭按钮/Esc)。</summary>
     [RelayCommand] private void CloseAudioDeviceDialog() => IsAudioDeviceDialogOpen = false;
 
+    // ---- 网络代理设置弹窗 ----
+
+    /// <summary>应用网络代理弹窗(WinUI3 ContentDialog 式窗口内弹层):true=显示。
+    /// 三种模式与手动端点的手稿都在 SettingsViewModel(弹层内层 DataContext 绑 Settings)。</summary>
+    [ObservableProperty] private bool _isProxySettingsDialogOpen;
+
+    /// <summary>关闭代理弹窗(取消/保存后/Esc):草稿丢弃,下次打开重新载入落盘配置。</summary>
+    [RelayCommand] private void CloseProxySettingsDialog() => IsProxySettingsDialogOpen = false;
+    partial void OnIsProxySettingsDialogOpenChanged(bool value) => OnPropertyChanged(nameof(IsAnyModalOpen));
+
     // ---- 键盘快捷键设置弹窗 ----
 
     /// <summary>键盘快捷键设置弹窗(WinUI3 ContentDialog 式窗口内弹层):true=显示。</summary>
@@ -1498,6 +1515,7 @@ public sealed partial class MainViewModel : ViewModelBase
         IsLoginDialogOpen || IsAggregateDialogOpen || IsCreatePlaylistDialogOpen ||
         IsAddSongToPlaylistDialogOpen || IsLikeSourceDialogOpen || IsRenamePlaylistDialogOpen ||
         IsDeletePlaylistDialogOpen || IsLocalPlaylistSettingsDialogOpen || IsAudioDeviceDialogOpen || IsDesktopLyricDialogOpen ||
+        IsProxySettingsDialogOpen ||
         IsClearCacheDialogOpen || IsUpdateDialogOpen || IsAggregateSettingsDialogOpen ||
         IsHotkeyDialogOpen || IsDownloadSongDialogOpen || IsErrorDialogOpen;
 

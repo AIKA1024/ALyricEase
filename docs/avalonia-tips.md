@@ -2170,3 +2170,65 @@ if (msg == WM_NCHITTEST && (WindowState == WindowState.FullScreen || CloseDialog
 往返时延、`click`/`move`/`key` 注输入、`shot` 落 24 位 BMP、`hit` 问 `WindowFromPoint` 归属。
 流程:进详情页 → 点全屏 → 点歌词按钮(面板应打开)→ 点全屏按钮(应恢复窗口)→ 全屏下拖顶部
 (窗口不应移动)。
+
+## 模态弹层的动效:对齐 Fluent 2 的 ContentDialog
+
+WinUI 3 的 ContentDialog 是两段动效并发:**淡入淡出 83ms 线性**(遮罩与卡片同一时长)+
+**卡片 `scale 1.05 → 1` 250ms 减速入场 / `1 → 1.05` 167ms 加速退场**。退场 167ms > 淡出 83ms ⇒
+观感是"已经透明还在继续放大",两者要并发、等最长的那个收尾。
+几何部分(MinWidth 320~548 / 内边距 24 / 圆角 8 / 标题下 12 / 按钮间距 8)见 `network-proxy.md` §六。
+
+落点是 `Infrastructure/ModalVisibilityTransition`(壳层里每个弹窗都用它的 `IsOpen` 附加属性)。
+两个决定容易踩错:
+
+**① 缩放只作用卡片,不能作用整个弹窗视图。** 视图根节点含烟雾层(`#99000000` 全屏 Panel),
+整层 scale 会把窗口四边透出来。所以按项目既有约定取名为 `DialogCard` 的子元素
+(`FindControl` 解析;多数弹窗的卡片本来就叫这个名字,几个 code-behind 还在用它算尺寸),
+找不到就退化成纯淡入淡出,不报错。
+
+**② 卡片缩放只能逐帧插值,`Animation` 与 `Transitions` 两条路都不通:**
+
+- `Animation` 动 `RenderTransform` 需要 `TransformAnimator`,它在 Avalonia 12 里是 **internal**(CS0122);
+  换成"把动画目标设成 `ScaleTransform` 对象"更糟 —— `TransformAnimator.Apply` 会把目标强转 `Visual`,
+  直接 `InvalidCastException: Unable to cast ScaleTransform to Visual`。
+- `Transitions`(`TransformOperationsTransition`)是隐式触发的:拿不到完成时机,而且同一帧内
+  "先置起点、再置终点"会被合并成一次变化,起点(1.05)直接丢掉 —— 等于没有缩放。
+
+所以用 16ms 一帧的手动插值(与 `HeroAdvanceRing` 同路数):`Stopwatch` 算进度 → `Easing.Ease(progress)`
+→ 写 `RenderTransform`。`RenderTransform` 不参与布局,每帧只重绘,代价可控;
+取值用 `TransformOperations`(`TransformOperations.CreateBuilder(1).AppendScale(v, v).Build()`),
+动画结束后必须把基值写回 1 —— 否则下一次打开会带着上次的 1.05。
+注意 `TransformOperations` 在 `Avalonia.Media.Transformation` 命名空间,且**没有**接受 `ITransform[]` 的构造函数。
+
+**③ 退场别照抄 Fluent 的 accelerate 曲线 —— 照抄的结果是"看不见缩放"。**
+
+Fluent 的退场是 `opacity 1→0`(83ms) + `scale 1→1.05`(167ms, accelerate)。这里有个物理矛盾:
+83ms 的淡出会在 accelerate 的"起步极慢"段就结束。第一版照抄(退场用 `CubicEaseIn`),实测:
+
+| 时刻 | scale 放大幅度 | 不透明度 |
+|---|---|---|
+| 40ms | **0.13%** | 0.43 |
+| 80ms | 0.58% | 0.00 |
+
+也就是放大全发生在"已经透明"之后,用户只会看到纯淡出。
+换成 **减速曲线**(`ExponentialEaseOut`,与入场同一条)后:
+
+| 时刻 | 放大幅度 | 不透明度 |
+|---|---|---|
+| 40ms | **3.70%** | 0.40 |
+| 80ms | 4.84% | 0.00 |
+
+40ms 就能看出卡片胀开消失。**结论:退场也要用 decelerate** —— Fluent 的 accelerate 前提是
+"167ms 全程可见",那条前提在 83ms 淡出下不成立。
+
+**回归**:`--modalanim`(首帧 1.05、入场 120ms 处于区间内、播完收敛到 1、退场 40ms 放大 ≥2%、关闭后折叠并复位)。
+读实时缩放要取 `card.RenderTransform?.Value.M11`(矩阵),别断言 `RenderTransform is ScaleTransform`
+—— 动画值是 `TransformOperations`,不是 `ScaleTransform`。
+
+**④ 动画收尾别用 `DispatcherTimer`。** 它由 dispatcher 主循环驱动;无头回归里
+`Dispatcher.UIThread.RunJobs()` 不推进它,状态会永远停在"动画中"(`--proxydialog` 实测卡在
+386ms 不复位,内容一直是透明的)。用 `Task.Delay(时长)` + `Dispatcher.UIThread.Post(复位)`,
+并带一个代次号 —— 中途重启动画时,旧任务不能把新动画清掉。
+
+**卡片尺寸变化**(如切"手动配置"展开/收起)不在这一节:它走的是
+`DialogSurface` 的合成 Scale 反推 + 内容前半段隐藏,见 `network-proxy.md` §七。

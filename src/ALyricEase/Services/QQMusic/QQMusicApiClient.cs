@@ -7,6 +7,7 @@ using System.Text.Json;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.Network;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -124,6 +125,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         {
             AutomaticDecompression = DecompressionMethods.All,
             UseCookies = false, // 手动管理 Cookie 头(跨域域不匹配,自动容器不可靠)
+            Proxy = NetworkProxy.Instance, // 恒定实例,内部每次请求读当前设置
         });
         _http.Timeout = TimeSpan.FromSeconds(20);
         _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", UserAgent);

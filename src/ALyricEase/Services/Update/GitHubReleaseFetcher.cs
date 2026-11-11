@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using ALyricEase.Services.Network;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -33,7 +34,8 @@ public static partial class GitHubReleaseFetcher
         logger.LogInformation("GitHub release metadata request started. Lookup={Lookup}", lookup);
         try
         {
-            using var client = new HttpClient();
+            // 更新检查也走用户的代理设置(此前 new HttpClient() 等于永远跟随系统)。
+            using var client = new HttpClient(new HttpClientHandler { Proxy = NetworkProxy.Instance });
             client.DefaultRequestHeaders.UserAgent.ParseAdd("ALyricEase-UpdateCheck");
             client.Timeout = TimeSpan.FromSeconds(15);
             using var resp = await client.GetAsync(url).ConfigureAwait(false);

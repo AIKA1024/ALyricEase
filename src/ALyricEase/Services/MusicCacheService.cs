@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
+using ALyricEase.Services.Network;
 
 namespace ALyricEase.Services;
 
@@ -24,7 +25,11 @@ public sealed class MusicCacheService
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
     private const string OfflineIndexFileName = "offline-index.json";
 
-    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromMinutes(10) };
+    // 音频流同样走用户设置的代理:恒定实例,改设置后新连接即时切换。
+    private static readonly HttpClient SharedHttp = new(new HttpClientHandler { Proxy = NetworkProxy.Instance })
+    {
+        Timeout = TimeSpan.FromMinutes(10),
+    };
 
     private readonly string _cacheDirectory;
     private readonly HttpClient _http;

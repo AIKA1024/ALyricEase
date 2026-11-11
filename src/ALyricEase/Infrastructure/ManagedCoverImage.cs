@@ -6,6 +6,7 @@ using AsyncImageLoader.Core.Pipeline;
 using Avalonia;
 using Avalonia.Controls;
 using ALyricEase.Services;
+using ALyricEase.Services.Network;
 
 namespace ALyricEase.Infrastructure;
 
@@ -97,6 +98,8 @@ public static class CoverImagePipeline
             {
                 // 首页会同时实化多个横向区块，限制同站连接数，避免封面挤占音乐 API。
                 MaxConnectionsPerServer = 6,
+                // 封面同样走用户设置的代理:恒定的动态实例,改设置后新连接即时切换。
+                Proxy = NetworkProxy.Instance,
             })
             {
                 Timeout = TimeSpan.FromSeconds(10),

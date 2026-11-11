@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Services;
+using ALyricEase.Services.Network;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 
@@ -31,7 +32,10 @@ public static class CoverLoader
     /// 拖慢同批 API 请求与封面填图速度(实测 30 并发 vs 6 并发,填满时间差不大但整体稳定)。</summary>
     private const int MaxConcurrentDownloads = 6;
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private static readonly HttpClient Http = new(new HttpClientHandler { Proxy = NetworkProxy.Instance })
+    {
+        Timeout = TimeSpan.FromSeconds(10),
+    };
     private static readonly object CacheGate = new();
     private static readonly Dictionary<string, CacheEntry> Cache = new();
     private static readonly LinkedList<string> LruOrder = new();

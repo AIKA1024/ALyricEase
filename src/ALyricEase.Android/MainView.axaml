@@ -70,6 +70,9 @@
         <!-- 音频输出设备选择弹窗(设置页;同层最末 → 同时可见时盖在最上) -->
         <views:AudioDeviceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAudioDeviceDialogOpen}"
                                      Grid.Row="1" ZIndex="200" />
+        <!-- 应用网络代理弹窗(设置页;紧随设备弹层 → 同时可见时盖在其上) -->
+        <views:ProxySettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsProxySettingsDialogOpen}"
+                                       Grid.Row="1" ZIndex="200" />
         <views:DesktopLyricSettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsDesktopLyricDialogOpen}"
                                      Grid.Row="1" ZIndex="200" />
 

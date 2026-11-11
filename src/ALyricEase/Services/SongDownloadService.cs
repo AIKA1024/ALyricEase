@@ -1,5 +1,6 @@
 using System.Net.Http;
 using ALyricEase.Models;
+using ALyricEase.Services.Network;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -11,7 +12,10 @@ public sealed record SongDownloadResult(string Location, bool FromCache);
 
 public sealed class SongDownloadService
 {
-    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromMinutes(30) };
+    private static readonly HttpClient SharedHttp = new(new HttpClientHandler { Proxy = NetworkProxy.Instance })
+    {
+        Timeout = TimeSpan.FromMinutes(30),
+    };
     private readonly MusicApiProvider _apis;
     private readonly MusicCacheService _cache;
     private readonly ISongDownloadStorage _storage;

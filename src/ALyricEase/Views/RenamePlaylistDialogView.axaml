@@ -19,7 +19,7 @@
             <Border MaxWidth="440" MinWidth="340" Margin="24" Padding="24" CornerRadius="8"
                     Background="{DynamicResource AppSurface}"
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
-                    BoxShadow="0 32 64 #66000000">
+                    x:Name="DialogCard" BoxShadow="0 32 64 #66000000">
                 <StackPanel Spacing="12">
                     <TextBlock Text="{Binding SourceLabel, StringFormat='重命名{0}歌单'}"
                                FontSize="20" FontWeight="SemiBold" />

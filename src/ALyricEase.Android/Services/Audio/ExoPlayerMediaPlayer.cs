@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
+using ALyricEase.Services.Network;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,7 +34,10 @@ public sealed class ExoPlayerMediaPlayer : IAudioPlayer
   private readonly ExoPlayerType _player;
   private readonly PlayerListener _listener;
   private readonly DispatcherTimer _progressTimer;
-  private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+  private readonly HttpClient _http = new(new HttpClientHandler { Proxy = NetworkProxy.Instance })
+  {
+    Timeout = TimeSpan.FromSeconds(30),
+  };
   private CancellationTokenSource? _downloadCancellation;
 
   private PlaybackState _state = PlaybackState.Idle;

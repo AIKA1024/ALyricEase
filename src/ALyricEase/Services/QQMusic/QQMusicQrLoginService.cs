@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.NetEase;
+using ALyricEase.Services.Network;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -85,6 +86,7 @@ internal sealed class QQMusicQrLoginService : IDisposable
         {
             AutomaticDecompression = DecompressionMethods.All,
             UseCookies = false,
+            Proxy = NetworkProxy.Instance,
         })
         {
             Timeout = TimeSpan.FromSeconds(25),

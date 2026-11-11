@@ -17,7 +17,7 @@
             <Border MaxWidth="440" MinWidth="380" Margin="24" Padding="24" CornerRadius="8"
                     Background="{DynamicResource AppSurface}"
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
-                    BoxShadow="0 32 64 #66000000">
+                    x:Name="DialogCard" BoxShadow="0 32 64 #66000000">
                 <StackPanel Spacing="12">
                     <TextBlock Text="选择音频输出设备" FontSize="20" FontWeight="SemiBold" />
                     <TextBlock Text="选择用哪个设备播放声音,选中立即生效并记住;设备拔掉后自动回到系统默认设备。"

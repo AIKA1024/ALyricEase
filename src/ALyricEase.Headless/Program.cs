@@ -939,6 +939,14 @@ public static class Program
             return;
         }
 
+        // 应用网络代理回归(不碰真实用户配置、不触网):三态解析、动态出口、草稿校验与拒绝、
+        // 保存落盘、重载恢复、旧配置回落
+        if (args.Length > 0 && args[0] == "--proxy")
+        {
+            Environment.ExitCode = ProxySettingsProbe.Run();
+            return;
+        }
+
         // 交叉淡化包装层语义探针:双 Stub 驱动 CrossfadeAudioPlayer,验证切换/斜坡/停旧/转发
         if (args.Length > 0 && args[0] == "--crossfade")
         {
@@ -1373,6 +1381,26 @@ public static class Program
         if (args.Length > 0 && args[0] == "--accountview")
         {
             AccountViewProbe.Run();
+            return;
+        }
+
+        // 应用网络代理弹窗渲染自查(跟随系统 / 手动展开 / 最小窗口高度)
+        if (args.Length > 0 && args[0] == "--proxydialog")
+        {
+            ProxySettingsDialogProbe.Run();
+            return;
+        }
+
+        // 模态弹层动效回归:Fluent 2 ContentDialog 曲线(卡片 1.05 起跳/退场放大,淡入淡出 83ms)
+        if (args.Length > 0 && args[0] == "--modalanim")
+        {
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { Environment.ExitCode = await ModalAnimationProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
             return;
         }
 

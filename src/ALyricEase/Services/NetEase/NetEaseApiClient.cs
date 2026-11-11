@@ -7,6 +7,7 @@ using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
 using ALyricEase.Services.Auth;
 using ALyricEase.Services.Crypto;
+using ALyricEase.Services.Network;
 
 namespace ALyricEase.Services.NetEase;
 
@@ -93,6 +94,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
             AutomaticDecompression = DecompressionMethods.All,
             CookieContainer = _cookieContainer,
             UseCookies = true,
+            Proxy = NetworkProxy.Instance, // 恒定实例,内部每次请求读当前设置(改代理无需重建 client)
         });
         _http.Timeout = TimeSpan.FromSeconds(20);
 
@@ -385,6 +387,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
             AutomaticDecompression = DecompressionMethods.All,
             CookieContainer = anonCookies,
             UseCookies = true,
+            Proxy = NetworkProxy.Instance,
         };
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
         using var req = new HttpRequestMessage(HttpMethod.Post, BaseUrl + "/api/register/anonimous")

@@ -24,7 +24,8 @@
     <x:String x:Key="IconRecents">&#xF2DE;</x:String>
     <x:String x:Key="IconPerson">&#xE910;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconSettings">&#xE917;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
-    <x:String x:Key="IconAdd">&#xE92B;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconAdd">&#xE92B;</x:String> <!-- 原版字形 Add,须配 LyricEaseIconsOriginal -->
+    <x:String x:Key="IconCheck">&#xE92C;</x:String> <!-- 原版字形 Check,须配 LyricEaseIconsOriginal;歌手页关注按钮已关注态 -->
     <x:String x:Key="IconShare">&#xE918;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconCopyLink">&#xE902;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->
     <x:String x:Key="IconOpenInBrowser">&#xE94F;</x:String> <!-- 原版字形,须配 LyricEaseIconsOriginal -->

@@ -154,6 +154,63 @@
         <Setter Property="Background" Value="{DynamicResource SystemBaseMediumLow}" />
     </Style>
 
+    <!-- Fluent 2 关注/已关注双态按钮(歌手页头部)。未关注 = Accent 填充(与播放全部同色阶),
+         已关注 = Subtle 填充 + 1px 控件描边;明暗主题全部走 Colors.axaml 的语义资源。
+         hover/pressed 必须经 /template/ ContentPresenter 才压得过主题模板内的背景赋值。
+         宽度完全跟随内容(= Fluent 2 Button 的自然行为):图标 16 + 6 + 文案 + 左右各 12 内边距。
+         不设 MinWidth、也不给文案固定盒子:那两者都会让短文案态右侧凭空多出空白
+         ("关注"塞进 50px 盒 + MinWidth 100 ⇒ 右空 22px)。现在右留白与左留白严格对称,
+         两态切换只有按钮整体变宽;右对齐时只左边缘伸缩,"更多"按钮间距不受影响。 -->
+    <Style Selector="Button.follow-button">
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackground}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.follow-button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackgroundHover}" />
+    </Style>
+    <Style Selector="Button.follow-button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackgroundPressed}" />
+    </Style>
+    <Style Selector="Button.follow-button.followed">
+        <Setter Property="Background" Value="{DynamicResource AppControlFill}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+    </Style>
+    <Style Selector="Button.follow-button.followed:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppControlFillHover}" />
+    </Style>
+    <Style Selector="Button.follow-button.followed:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppControlFillPressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AppControlStrokePressed}" />
+    </Style>
+    <!-- 图标 = 原版 FluentUISystemIcons 的 Add(E92B) / Check(E92C) 字形,必须配 LyricEaseIconsOriginal。
+         该字体行盒恰为 1em、图标墨迹在 em 盒内居中(水平偏差 <0.3px、垂直 <0.35px @16px),
+         所以 16px 字号 + 16x16 容器即可稳稳居中;文字圆点/自画 Path 都没这个保证。 -->
+    <Style Selector="Button.follow-button TextBlock.follow-glyph">
+        <Setter Property="FontFamily" Value="{DynamicResource LyricEaseIconsOriginal}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.follow-button.followed TextBlock.follow-glyph">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <!-- 写请求在飞:不加进度环,只靠 :disabled 降透明度 + 禁点,图标保持显示乐观更新后的状态。 -->
+    <Style Selector="Button.follow-button:disabled">
+        <Setter Property="Opacity" Value="0.6" />
+    </Style>
+
     <!-- 每日行歌手/专辑菜单项:在 Flyout 弹层里,必须全局样式才能命中(弹层不在行的视觉树)。
          高 32、圆角 8、左内边距 12、图标16+间距8+文本;横向撑满菜单宽度,悬停整项高亮 -->
     <Style Selector="Button.track-menu-item">

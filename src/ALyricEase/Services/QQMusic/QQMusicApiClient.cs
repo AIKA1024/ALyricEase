@@ -2029,6 +2029,91 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     public Task<QQRelationPage> GetFansAsync(string euin, int from, int size, CancellationToken ct = default)
         => GetRelationPageAsync("GetFansList", euin, from, size, ct);
 
+    /// <summary>当前账号是否已关注该歌手:在 GetFollowSingerList 里按 singerMid 翻页查找。
+    /// 未登录 / 查询失败返回 false(与网易云同)。HostUin 留空即查自己。</summary>
+    public async Task<bool> IsSingerFollowedAsync(string singerMid, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn || string.IsNullOrEmpty(singerMid)) return false;
+        const int size = 200;
+        for (var from = 0; from < 2000; from += size)
+        {
+            var page = await GetFollowSingersAsync("", from, size, ct).ConfigureAwait(false);
+            foreach (var user in page.Users)
+                if (string.Equals(user.SingerMid, singerMid, StringComparison.OrdinalIgnoreCase)) return true;
+            if (!page.HasMore || page.Users.Count < size || (page.Total > 0 && from + size >= page.Total)) break;
+        }
+        return false;
+    }
+
+    /// <summary>关注/取消关注歌手。协议 = ConcernSystem / cgi_concern_user_v2:
+    /// opertype 0 关注 / 1 取消;userinfo.usertype=1 表示歌手,userid 传 singerMid。
+    /// 参考 multiPlatformMusicApi 与 wow-origin 的 platforms/qqmusic/module/artist_sub.js,
+    /// 并用本机 QQMusic_Protocol.dll 里的 cgi_concern_user、usertype/userid/userinfo/opertype
+    /// 字段串做过交叉验证。新模块(music.concern.ConcernSystem)业务码非零时回退老模块
+    /// (Concern.ConcernSystemServer);关注/取关幂等,重复同一操作无害。</summary>
+    public async Task SetSingerFollowedAsync(string singerMid, bool follow, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn) throw new ApiException("未登录,无法关注歌手", -1);
+        if (string.IsNullOrWhiteSpace(singerMid)) throw new ApiException("歌手 mid 无效", -1);
+
+        using (var doc = await PostMusicuAsync(
+                   w => WriteSingerConcernReq(w, modernModule: true, singerMid, follow), ct).ConfigureAwait(false))
+        {
+            if (IsSingerConcernOk(doc.RootElement)) return;
+        }
+        using (var doc = await PostMusicuAsync(
+                   w => WriteSingerConcernReq(w, modernModule: false, singerMid, follow), ct).ConfigureAwait(false))
+        {
+            if (IsSingerConcernOk(doc.RootElement)) return;
+        }
+        throw new ApiException("QQ 关注歌手失败(新旧协议均未返回成功)", -1);
+    }
+
+    private static void WriteSingerConcernReq(
+        Utf8JsonWriter w, bool modernModule, string singerMid, bool follow)
+    {
+        WriteModuleReq(w,
+            modernModule ? "music.concern.ConcernSystem" : "Concern.ConcernSystemServer",
+            "cgi_concern_user_v2", p =>
+            {
+                if (modernModule)
+                {
+                    p.WriteString("bussinesstype", "");
+                    p.WriteNumber("source", 137);
+                    p.WriteString("bussinessid", "");
+                }
+                else
+                {
+                    p.WriteNumber("source", 0);
+                }
+                p.WriteNumber("opertype", follow ? 0 : 1);
+                p.WriteStartObject("userinfo");
+                p.WriteNumber("usertype", 1);
+                p.WriteString("userid", singerMid);
+                p.WriteEndObject();
+                if (!modernModule) p.WriteNumber("encrypt_singerid", 1);
+            });
+    }
+
+    private static bool IsSingerConcernOk(System.Text.Json.JsonElement root)
+    {
+        // 成功:顶层 code=0、req_0.code=0、data 里的 retCode/RetCode/code 若存在必须为 0
+        if (!root.TryGetProperty("code", out var top) ||
+            top.ValueKind != System.Text.Json.JsonValueKind.Number || top.GetInt32() != 0) return false;
+        if (!root.TryGetProperty("req_0", out var req) ||
+            req.ValueKind != System.Text.Json.JsonValueKind.Object) return false;
+        if (!req.TryGetProperty("code", out var reqCode) ||
+            reqCode.ValueKind != System.Text.Json.JsonValueKind.Number || reqCode.GetInt32() != 0) return false;
+        if (req.TryGetProperty("data", out var data) &&
+            data.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var key in new[] { "retCode", "RetCode", "code" })
+                if (data.TryGetProperty(key, out var v) &&
+                    v.ValueKind == System.Text.Json.JsonValueKind.Number && v.GetInt32() != 0) return false;
+        }
+        return true;
+    }
+
     /// <summary>关系名单通用查询。<c>HostUin</c> 留空 = 自己;非空 = 对方的 encrypt_uin。
     /// ⚠ 三个 method 都需登录(匿名 code=1000 未登录),锁定名单回 LockFlag≠0 + 空 List。</summary>
     private async Task<QQRelationPage> GetRelationPageAsync(

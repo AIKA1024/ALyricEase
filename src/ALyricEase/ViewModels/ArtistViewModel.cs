@@ -31,6 +31,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
     private CancellationTokenSource? _loadCancellation;
     private int _loadGeneration;
     private bool _isLoading;
+    private bool _followOperationInFlight;
 
     public ArtistViewModel(
         NetEaseApiClient api,
@@ -48,6 +49,26 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
     [ObservableProperty] private bool _hasAlbums;
     [ObservableProperty] private bool _hasSingles;
     [ObservableProperty] private string _avatarUrl = "";
+
+    // ---- 关注歌手(两音源统一两态) ----
+    [ObservableProperty] private bool _isFollowed;
+    [ObservableProperty] private bool _isFollowBusy;
+    [ObservableProperty] private bool _isFollowStateLoaded;
+    [ObservableProperty] private bool _hasArtist;
+
+    public string FollowLabel => IsFollowed ? "已关注" : "关注";
+    public string FollowToolTip => IsFollowed ? "取消关注该歌手" : "关注该歌手";
+    /// <summary>有歌手 + 关注态已查完 + 写操作未进行中,才允许点击。</summary>
+    public bool CanFollow => HasArtist && IsFollowStateLoaded && !IsFollowBusy;
+
+    partial void OnIsFollowedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(FollowLabel));
+        OnPropertyChanged(nameof(FollowToolTip));
+    }
+    partial void OnIsFollowBusyChanged(bool value) => OnPropertyChanged(nameof(CanFollow));
+    partial void OnIsFollowStateLoadedChanged(bool value) => OnPropertyChanged(nameof(CanFollow));
+    partial void OnHasArtistChanged(bool value) => OnPropertyChanged(nameof(CanFollow));
 
     /// <summary>歌手公开网页链接(头部"更多"菜单的分享 / 在浏览器中打开 / 复制链接共用):
     /// 网易云按数字 id,QQ 按 singer mid;未加载任何歌手时为 null。</summary>
@@ -77,6 +98,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         ClearContent();
         _artistId = artistId;
         _singerMid = "";
+        StartFollowStateLoad(generation, ct);
         try
         {
             var info = await _api.GetArtistAsync(artistId, ct);
@@ -119,6 +141,85 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
                 IsLoadingSongs = false;
             }
         }
+    }
+
+    /// <summary>进页面后异步拉关注态:不阻塞头像/歌曲/专辑,换歌手用 generation 作废旧结果。</summary>
+    private void StartFollowStateLoad(int generation, CancellationToken ct)
+    {
+        IsFollowed = false;
+        IsFollowStateLoaded = false;
+        HasArtist = true;
+        var isQq = _singerMid.Length > 0;
+        var id = _artistId;
+        var mid = _singerMid;
+        _ = LoadFollowStateAsync(generation, ct, isQq, id, mid);
+    }
+
+    private async Task LoadFollowStateAsync(
+        int generation, CancellationToken ct, bool isQq, long id, string mid)
+    {
+        var followed = false;
+        try
+        {
+            followed = isQq
+                ? await _qqApi.IsSingerFollowedAsync(mid, ct).ConfigureAwait(true)
+                : await _api.IsArtistFollowedAsync(id, ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
+        catch { /* 查询失败保持"未关注",真实结果由写接口给出,不假装已关注 */ }
+        if (generation != _loadGeneration) return;
+        IsFollowed = followed;
+        IsFollowStateLoaded = true;
+    }
+
+    /// <summary>关注/取消关注:乐观更新 + 失败回滚(SongItemViewModel 红心同款);
+    /// 未登录或凭证失效时引导登录,不留下假的"已关注"。</summary>
+    [RelayCommand]
+    private async Task ToggleFollowAsync()
+    {
+        if (!CanFollow || _followOperationInFlight) return;
+        _followOperationInFlight = true;
+        IsFollowBusy = true;
+        var generation = _loadGeneration;
+        var previous = IsFollowed;
+        var isQq = _singerMid.Length > 0;
+        var id = _artistId;
+        var mid = _singerMid;
+        IsFollowed = !previous;
+        try
+        {
+            if (isQq) await _qqApi.SetSingerFollowedAsync(mid, !previous).ConfigureAwait(true);
+            else await _api.SetArtistFollowedAsync(id, !previous).ConfigureAwait(true);
+        }
+        catch (ApiException ex) when (NeedsFollowLoginPrompt(isQq, ex))
+        {
+            if (generation == _loadGeneration) IsFollowed = previous;
+            TryOpenFollowLogin(isQq, ex);
+        }
+        catch
+        {
+            if (generation == _loadGeneration) IsFollowed = previous;
+        }
+        finally
+        {
+            _followOperationInFlight = false;
+            IsFollowBusy = false;
+        }
+    }
+
+    private static bool NeedsFollowLoginPrompt(bool isQq, ApiException ex)
+        => ex.Code == -1 || (isQq && QQMusicApiClient.ShouldPromptRelogin(ex.Code));
+
+    private static void TryOpenFollowLogin(bool isQq, ApiException ex)
+    {
+        try
+        {
+            ServiceLocator.Get<MainViewModel>().OpenLoginDialogFor(
+                isQq ? MusicSource.QQ : MusicSource.NetEase,
+                isQq && QQMusicApiClient.ShouldPromptRelogin(ex.Code)
+                    ? QQMusicApiClient.ReloginHintText : null);
+        }
+        catch { /* Headless / 无宿主环境 */ }
     }
 
     [RelayCommand]
@@ -164,6 +265,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         ClearContent();
         _artistId = 0;
         _singerMid = singerMid;
+        StartFollowStateLoad(generation, ct);
         try
         {
             AvatarUrl = $"https://y.gtimg.cn/music/photo_new/T001R300x300M000{singerMid}.jpg";
@@ -289,6 +391,7 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         ClearContent();
         _artistId = snapshot.Id;
         _singerMid = snapshot.Mid;
+        StartFollowStateLoad(generation, ct);
 
         var cached = await _musicCache.TryTakeDetailPageSnapshotAsync(snapshot.CacheKey);
         if (!IsCurrentLoad(generation, ct)) return;
@@ -393,6 +496,11 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         HasAlbums = false;
         HasSingles = false;
         IsLoadingSongs = true;
+        IsFollowed = false;
+        IsFollowBusy = false;
+        IsFollowStateLoaded = false;
+        HasArtist = false;
+        _followOperationInFlight = false;
     }
 
     /// <summary>从热门歌曲里取该 mid 对应的歌手展示名(取不到退化为第一首的 Artist)。</summary>

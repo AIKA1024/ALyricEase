@@ -980,6 +980,13 @@ public static class Program
             return;
         }
 
+        // 歌手页关注按钮 Fluent 2 两态回归(纯 UI,不发网络请求)
+        if (args.Length > 0 && args[0] == "--artist-follow")
+        {
+            Environment.ExitCode = ArtistFollowProbe.Run();
+            return;
+        }
+
         // page-scroll 预留带不得外溢:页根纵向滚动条抬起 100,嵌套容器的横/纵条必须原样
         if (args.Length > 0 && args[0] == "--pagescroll")
         {

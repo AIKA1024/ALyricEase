@@ -1643,6 +1643,43 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         return resp.Data;
     }
 
+    /// <summary>当前账号是否已关注(收藏)该歌手:按 200 一页翻 sublist,命中即返回。
+    /// 未登录 / 查询失败返回 false —— 按钮仍可点,真实结果由写接口给出,不假装关注成功。</summary>
+    public async Task<bool> IsArtistFollowedAsync(long artistId, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn || artistId == 0) return false;
+        const int limit = 200;
+        for (var offset = 0; offset < 2000; offset += limit)
+        {
+            var page = await GetArtistSublistAsync(limit, offset, ct).ConfigureAwait(false);
+            foreach (var artist in page)
+                if (artist.Id == artistId) return true;
+            if (page.Count < limit) break;
+        }
+        return false;
+    }
+
+    /// <summary>关注/取消关注歌手。协议见 multiPlatformMusicApi/platforms/netease/module/artist_sub.js:
+    /// 两个独立路径 /api/artist/sub 与 /api/artist/unsub,表单 artistId + artistIds='[id]'(不是 t=1/2)。
+    /// 本机 WAF 会静默丢弃 weapi 加密写请求,与创建/收藏歌单一致直接走明文 form 写通道。</summary>
+    public async Task SetArtistFollowedAsync(long artistId, bool follow, CancellationToken ct = default)
+    {
+        if (!IsLoggedIn) throw new ApiException("未登录,无法关注歌手", -1);
+        if (artistId == 0) throw new ApiException("歌手 id 无效", -1);
+
+        var form = new Dictionary<string, string>
+        {
+            ["artistId"] = artistId.ToString(),
+            ["artistIds"] = $"[{artistId}]",
+        };
+        using var doc = await PostPlainWriteAsync(
+            follow ? "/api/artist/sub" : "/api/artist/unsub", form, ct).ConfigureAwait(false);
+        var code = doc.RootElement.TryGetProperty("code", out var c) ? c.GetInt32() : -1;
+        if (code != 200)
+            throw new ApiException(
+                TryMessage(doc.RootElement) is { } msg ? $"关注歌手失败:{msg}" : $"关注歌手失败(code={code})", code);
+    }
+
     /// <summary>歌手专辑单页(/api/artist/albums/{id},offset/limit)。more=true 时可继续翻页。</summary>
     public async Task<(IReadOnlyList<ArtistAlbumItem> Albums, bool More)> GetArtistAlbumPageAsync(
         long id, int limit, int offset, CancellationToken ct = default)

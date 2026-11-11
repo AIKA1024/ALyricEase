@@ -55,7 +55,7 @@
 
 ## 三、Icons.axaml 键的字体归属
 
-- **`LyricEaseIconsOriginal`（原版字体）**：`IconPerson` `IconSettings` `IconCode` `IconChevronDown`（侧边栏与折叠箭头）、`IconSingleArtist` `IconMultiArtists` `IconAlbum`（歌曲行菜单）、`IconBack` `IconWindowMinimize` `IconWindowMaximize` `IconWindowRestore` `IconClose`（标题栏）。导航项图标不经键，直接是 `MainViewModel` 里的字面量（见下）。
+- **`LyricEaseIconsOriginal`（原版字体）**：`IconPerson` `IconSettings` `IconCode` `IconChevronDown`（侧边栏与折叠箭头）、`IconSingleArtist` `IconMultiArtists` `IconAlbum`（歌曲行菜单）、`IconBack` `IconWindowMinimize` `IconWindowMaximize` `IconWindowRestore` `IconClose`（标题栏）、`IconAdd`(`E92B`) `IconCheck`(`E92C`)（歌手页关注按钮两态）。导航项图标不经键，直接是 `MainViewModel` 里的字面量（见下）。
 - **`LyricEaseIconsOutline`（Regular 细线）**：`IconLyrics`（slide_text_24_regular `F6EC`）、`IconPlaylist`（text_bullet_list_square_24_regular `F7A9`）、`IconDismiss`（dismiss_28_regular `F36B`，旧版"pin"本就是 X 形，用于播放队列移除；真正的图钉是 `F602`）、`IconHeartOutline`（空心红心 `F47A`，PlayerBar 未红心态）。
 - **`LyricEaseIcons`（Filled，默认）**：其余全部键。播放控制用 `LyricEaseIconsFilled` 别名引用的 TextBlock 与之等价。
 
@@ -76,6 +76,13 @@
 3. **键换字体时，所有消费方的 `FontFamily` 必须同步切换**。码位是字体私有的：曾出现 `IconChevronDown`（=E901）仍被 Filled 字体渲染成了别的字形（E901 在 Filled 里是另一个图标）。
 4. **字面量与 Icons.axaml 保持同值**。批量替换时替换映射要按"当前值"写，静默 no-op 会留下旧码位（发生过一次导航字面量漏改）。
 5. **`LyricEaseIconsFilled` 与 `LyricEaseIcons` 目前指向同一字体**，保留两个键是为了语义清晰；若将来分化需重查全部消费方。
+6. **原版字体码位在官方 Filled/Regular 全量字体里也存在，但指向完全不同的字形**（E92B/E92C 就是例子）。
+   所以 `IconAdd` / `IconCheck` 必须配 `LyricEaseIconsOriginal`；误配 `LyricEaseIcons` 会静默画出别的图标。
+   另外 `subset-icons.py` 的扫描器不看"哪个 View 用哪套字体"，只要 `Icons.axaml` 出现 `&#xE92C;`
+   就会把它从**官方全量字体**也裁进 Filled/Regular 子集（各 +300B），`--check` 才不报错 —— 这是预期行为，不是漏裁。
+7. **字体子集没有字形名**（`post` 3.0），要认字形得从 `assets/font-sources/` 的全量原件按 `post` 2.0 表名查，
+   或直接解析 `glyf` 轮廓。原版字体行盒 = 1em，图标墨迹在 em 盒内居中，用 `FontSize=N` + `N×N` 容器即可对齐；
+   文字圆点（`•••`）的墨迹偏行盒下方，别拿来当图标。官方 Fluent 字体**没有** spinner / ProgressRing 字形。
 
 ## 六、字体子集化（已落地，2026-10）
 

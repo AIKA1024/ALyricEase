@@ -65,21 +65,42 @@
   <ScrollViewer x:Name="PageScroller" Classes="page-scroll"
                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="48,20,32,120" Spacing="28">
-      <!-- 头部(仿原版 ArtistDetailView):圆形头像水平居中在顶,名字在其下方靠左;右侧仅保留"更多" -->
+      <!-- 头部(仿原版 ArtistDetailView):圆形头像水平居中在顶,名字在其下方靠左;右侧关注 + 更多 -->
       <Grid RowDefinitions="240,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="10">
         <Border Grid.ColumnSpan="2" Width="200" Height="200" CornerRadius="100" ClipToBounds="True"
                 Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center" VerticalAlignment="Center">
-          <Image infra:ManagedCoverImage.DecodeSize="240"
+          <Image infra:ManagedCoverImage.DecodeSize="300"
                  infra:ManagedCoverImage.Source="{Binding AvatarUrl}"
                  Stretch="UniformToFill" />
         </Border>
         <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,12,0,0" VerticalAlignment="Center" HorizontalAlignment="Left">
           <TextBlock Text="{Binding Name}" FontSize="30" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
         </StackPanel>
-        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="5"
+        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="10"
                     HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10,0">
+          <!-- Fluent 2 关注按钮:两态(Accent / Subtle)由 Classes.followed 切换,样式在 Styles/Controls/Buttons.axaml。
+               图标用原版 FluentUISystemIcons 字体的 Add / Check 字形;写请求在飞时不加进度环,
+               只靠按钮禁用 + 0.6 透明度反馈,免得图标位多出一个圈。 -->
+          <Button Classes="follow-button" Classes.followed="{Binding IsFollowed}"
+                  Command="{Binding ToggleFollowCommand}"
+                  IsVisible="{Binding HasArtist}" IsEnabled="{Binding CanFollow}"
+                  ToolTip.Tip="{Binding FollowToolTip}"
+                  AutomationProperties.Name="{Binding FollowLabel}">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <!-- 图标位恒定 16x16,两态只切字形;文案盒宽 = 文本宽,按钮宽度随内容伸缩 ⇒
+                   左右留白都恰为 12px 内边距,不会像固定等宽盒那样在短文案态右侧空出一截。
+                   Spacing=6 与项目其它图标文字按钮(播放全部/心动模式)一致,落在 Fluent 2 sNudge 档。 -->
+              <Grid Width="16" Height="16">
+                <TextBlock Classes="follow-glyph" Text="{DynamicResource IconAdd}"
+                           IsVisible="{Binding !IsFollowed}" />
+                <TextBlock Classes="follow-glyph" Text="{DynamicResource IconCheck}"
+                           IsVisible="{Binding IsFollowed}" />
+              </Grid>
+              <TextBlock Classes="follow-label" Text="{Binding FollowLabel}" />
+            </StackPanel>
+          </Button>
           <Button Classes="more-button" ToolTip.Tip="更多操作" AutomationProperties.Name="更多歌手操作">
-            <TextBlock Text="•••" LetterSpacing="1" />
+            <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
             <Button.Flyout>
               <MenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
                 <MenuItem Header="分享" Click="OnShareArtistClick">

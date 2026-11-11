@@ -72,6 +72,13 @@ QQ 自己走账号摘要、他人走 `encrypt_uin`。
 而不是整窗居中（否则被播放条压着，视觉偏下）。加载层在 `ScrollViewer` 之外、`IsHitTestVisible=False`，
 不随滚动漂移也不吃点击。
 
+⚠ **每个使用点必须自己写 `StrokeDashArray`**：全局 `Ellipse.spinner` 只负责 `RenderTransform`
+和旋转驱动，**不提供弧线**。漏了就是一个闭合整圆环，而整圆旋转对称 ⇒ 合成动画再顺也看不出在转，
+用户只会看到"按钮里凭空多了个空心圈"（2026-11-11 歌手页关注按钮实测踩到；该处最终按设计去掉了进度环，见 §4.1）。
+虚线值按 `StrokeThickness` 的倍数算：14px 圈 + 描边 2 的周长约 17 个单位，`5,39` 得到单段
+约 108° 的短弧（探针逐角度量过），`12,32` 会变成 255° 的大月牙。全项目其它 4 处是
+`8,14`（20px 圈 / 描边 3）。
+
 此前只有内容根 `IsVisible="{Binding !IsLoading}"`：加载期间整页空白，数据到位才突然跳满 ——
 用户页要连拉「资料 + 歌单」（QQ 还多两次），这个空窗最明显。名单页首屏也换成同一套
 （18px 转圈 + `page-sub`），分页加载 `IsLoadingMore` 仍只显示行内小字。
@@ -162,6 +169,68 @@ PC 端的"关注"页就是上面那条混排接口，粉丝只能在 App / 网�
 只靠滚动永远拉不到第二段）；歌手条目点行进**歌手页**，用户条目进用户页。
 粉丝名单单源。`CanOpenRelations` 对 QQ 要求 `IsLoggedIn`（匿名读不到）；禁用态特意把模板背景
 清成透明，否则会多出一块灰底。
+
+### 4.1 关注/取关歌手的写接口（2026-11-11，歌手页关注按钮）
+
+协议坐实路径：README 列的 `L-1124/QQMusicApi` 只有只读名单，写动作在
+`multiPlatformMusicApi` / `Anomi-oo/wow-origin` 的 `platforms/qqmusic/module/artist_sub.js`；
+本机 `D:\Software\QQMusic\QQMusic_Protocol.dll` 里同时能搜到 `Concern.ConcernSystemServer.cgi_concern_user`、
+`music.concern.ConcernSystem.cgi_get_all_concern_list` 和 `usertype / userid / userinfo / opertype`
+字段串，三者互相印证。
+
+**QQ**（`musicu.fcg`，需登录；`SendMusicuMultiAsync` 已在 URL 附 `uin/qm_keyst/g_tk`，
+正好满足参考实现的鉴权要求）：
+
+```json
+{"req_0":{"module":"music.concern.ConcernSystem","method":"cgi_concern_user_v2",
+  "param":{"bussinesstype":"","source":137,"bussinessid":"","opertype":0,
+           "userinfo":{"usertype":1,"userid":"<singerMid>"}}}}
+```
+
+- `opertype` 0 关注 / 1 取消；`usertype=1` 表示歌手（0 是用户）；`userid` 传 **singerMid**。
+- 成功判据：顶层 `code=0`、`req_0.code=0`，`req_0.data.retCode/RetCode/code` 若存在必须为 0。
+- 老模块 `Concern.ConcernSystemServer` 同方法也可用（`source=0` + `encrypt_singerid=1`），
+  实现里作为业务码非零时的回退；关注/取关幂等，重复同操作无害。
+- 关注态读 `GetFollowSingersAsync("")`（`HostUin` 留空 = 自己），按 `SingerMid` 翻页找。
+
+**网易云**：明文 form POST `/api/artist/sub` 与 `/api/artist/unsub`
+（**两个独立路径，不是某些老文档写的 `t=1/2`**），表单 `artistId=<id>` + `artistIds=[<id>]` +
+`csrf_token`（`PostPlainWriteAsync` 统一补）。关注态读 `/api/artist/sublist?limit=200&offset=N&total=true`。
+本机 WAF 丢弃 weapi 加密写请求，与创建/收藏歌单一样直接走明文。
+
+**加载态**：点击瞬间 `ToggleFollowAsync` 置 `IsFollowBusy=true`，乐观翻转 `IsFollowed`
+（文案立刻变成目标态"已关注"）、`CanFollow=false` ⇒ 按钮禁用并整体降到 0.6 透明度。
+**不在图标位放进度环**：2026-11-11 先后试过「单独短弧（漏写 `StrokeDashArray` 被画成整圆环）」
+和「静态淡轨道环 + 旋转短弧（Fluent 2 ProgressRing 的 track + indicator）」，用户最终确认不要，
+改成图标保持显示乐观更新后的 `+` / `✓`，只用禁用 + 变暗反馈。`IsFollowBusy` 仍在 VM 中驱动
+`CanFollow`（防重复点击），只是不再绑到视图。**别再把进度环加回这个按钮。**
+
+⚠ **按钮宽度必须跟随内容，别再给文案固定盒子**（2026-11-11 二次修正）：中间版本为了让两态图标位
+重合，给 `TextBlock.follow-label` 固定 `Width=50` + `MinWidth=100`，结果「关注」(2 字 28px) 塞进
+50px 盒、`TextAlignment=Left` 又把空白全甩到右边 ⇒ **按钮右侧凭空多出 22px 留白**，视觉上像按钮
+没对齐（探针截图一眼看出）。Fluent 2 Button 本身是内容自适应宽度，正解是**三个都不设**
+（`MinWidth` / 文案盒 `Width` / `TextAlignment`）：内容 = 16 图标 + 6 间距 + 文本，左右留白各等于
+12px 内边距 + 1px 描边。实测未关注 `76×36`、已关注 `90×36`，两态 `图标位X=13.0`、`右留白=13.0`
+（`--artist-follow` 直接断言左右对称）。宽度变化 14px 因为按钮组右对齐，只让左边缘伸缩，
+与「更多」按钮的 10px 间距不变；**图标相对按钮左侧恒为 13px，不再是「内容居中后漂移」**。
+
+⚠ **等宽方案里的文字必须左对齐**（历史结论，仅当将来又回到固定盒方案时才需要）：固定宽度 +
+`TextAlignment=Center` 会让短文案「关注」在盒左侧空出 11px，叠加 16px 图标盒侧边 3px 与
+`Spacing=8` ⇒ 加号到文字**墨迹间距 23px**，远超 Fluent 2 图标文字间距档
+（`spacingHorizontalXS=4` / `SNudge=6` / `S=8`）。项目统一 `Spacing=6`（同 play-all / 心动模式）。
+注意 `Spacing` 是**盒到盒**，字形在 16px 图标盒内还有约 3px 侧边距，别拿规范值直接对墨迹。
+
+**图标改用字体字形（2026-11-11）**：原先 `+` / `✓` 是自画 `Path` 几何描边，现换成
+`FluentUISystemIcons.ttf` 原版字体的 `IconAdd`(`E92B`) / `IconCheck`(`E92C`)，
+`FontFamily=LyricEaseIconsOriginal`、`FontSize=16`、图标位 16×16。该字体 `hhea`
+行盒恰好 1em、墨迹在 em 盒内居中（水平偏差 <0.3px、垂直 <0.35px @16px），
+不用补 Margin 就能稳稳居中。三套图标字体都没有 spinner / ProgressRing 字形
+（官方 Fluent 也没有，它是控件不是图标）——这正是当时进度环只能用几何的原因。
+增加 `IconCheck` 后按 `docs/icon-fonts.md` §六重跑了 `scripts/subset-icons.py`（需 fonttools），
+两套子集各 +300B，`--check` 通过。
+
+**未实测项**：两个写接口都没用真实账号跑过（会改动用户关注列表），只做了协议级核对、
+编译和 `--artist-follow` UI 探针。首次实机点击若失败，VM 会乐观回滚，不会留下假的"已关注"。
 
 ## 5. QQ 隐私歌单（dir_show=2，2026-11 实测）
 

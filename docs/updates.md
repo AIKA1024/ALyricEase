@@ -106,6 +106,13 @@
    推完 `git ls-remote` 与本地 `rev-parse` 一致,`git status` 也不显示 ahead。
    顺带:这类排障要先验「空提交能不能推」—— 能推说明凭据/权限都正常,问题在上行通道。
 
+   **连续多个提交一起复刻**(2026-11-11 实测): 逐个提交按 父 → 子 顺序重放,每个提交都校验
+   blob/tree/commit 三个 SHA 与本机一致(不一致立刻停),全部成功后再 PATCH 一次 ref。
+   判定能否走这条路的量化门槛: 直连时 `GIT_CURL_VERBOSE=1` 看到的 `Content-Length` 就是
+   receive-pack 请求体 —— 这次 **4170 字节**立刻 `curl 52`,而当天早些时候 1.2KB 的发布提交能推。
+   一次性脚本落在 `D:/temp/git-replay-0018.py`(读取 `GH_TOK` 环境变量,`COMMITS` 列表换成要推的
+   短 SHA 即可),重放完 `git status` 立刻恢复 `## master...origin/master`。
+
    ```bash
    # ---- TUN 开着:走 mixed-port 代理 ----
    curl -x http://127.0.0.1:7890 -H "Expect:" \

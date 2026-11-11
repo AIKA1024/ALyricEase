@@ -9,11 +9,25 @@
   根目录那份存在时 `Properties/AndroidManifest.xml` 被**完全忽略**（静默无警告）。
   改完必须验进 APK：
   ```
-  "C:\Program Files (x86)\Android\android-sdk\build-tools\36.0.0\aapt2.exe" dump xmltree <apk> --file AndroidManifest.xml
+  "C:\Program Files (x86)\Android\android-sdk\build-tools\37.0.0\aapt2.exe" dump xmltree <apk> --file AndroidManifest.xml
   ```
 - 构建必须显式 `JAVA_HOME="D:\Software\JetBrains Rider 2025.3.2\jbr"`（不在 PATH）。
-- SDK 在 `C:\Program Files (x86)\Android\android-sdk`，build-tools 只有 36.0.0。
-- `targetSdkVersion=36`。
+- SDK 在 `C:\Program Files (x86)\Android\android-sdk`，platform 有 android-35/36/37.0，build-tools 有 36.0.0/37.0.0。
+  装 API 37 那步要管理员权限（`platforms` 目录 Users 只读）：`InstallAndroidDependencies` 普通权限跑会报
+  `XAIAD7019 UnauthorizedAccessException`，提权后才能落盘。
+- `targetSdkVersion=37`、`minSdkVersion=24`（.NET 11 的 Android workload 不再支持 API 23）。
+- **运行时只剩 CoreCLR**（2026-11-11 实测，别再找 Mono 路子）：
+  - `UseMonoRuntime=true` ⇒ `error NETSDK1242: .NET 11.0 及更高版本不支持使用 Mono 运行时生成 Android 项目`。
+  - `RunAOTCompilation=true` 单独用 ⇒ `error XA1044: 与 CoreCLR 运行时不兼容`（是 error，不是警告，构建直接停）。
+  - ⇒ **"full Mono AOT 发布"不存在了**，`lib/libaot-*.so` 再也不会产生。APK 里看到的是
+    `libcoreclr.so`(4.8MB) + `libclrjit.so`(2.8MB) + `libassembly-store.so`(18MB，程序集全塞在这里面，没有独立 `.dll`)。
+  - Release 默认 `PublishReadyToRun=true` + `PublishReadyToRunComposite=true` + 打包 PGO profile
+    （`Microsoft.Android.Sdk.CoreCLR.targets` 里定的；`PublishTrimmed` 不为 true 时 R2R 会被自动关掉）。
+    语义是 **IL 预编译成本机码但保留 IL**，JIT 仍可回退/分层编译 —— 比 Mono AOT"软"，但比纯 JIT 快。
+    Debug 是真 JIT。
+  - 体积对照（arm64 已签名）：.NET 10 Mono AOT **34MB** → .NET 11 CoreCLR+R2R **33MB**，基本持平。
+  - NativeAOT 仍在（`PublishAot=true`），但官方标注 "Experimental on Android"，且与 Avalonia.Android 已知冲突
+    （见 `scripts/publish-aot.ps1` 头部，UnsatisfiedLinkError at Application.OnCreate）。
 
 ## 2. 返回键（2026-08-30 定稿，别退回旧做法）
 
@@ -32,7 +46,7 @@ API ≤32 才走 `OnBackPressed` 覆写。两条路互斥，都汇到 `HandleSys
 
 - 引用 Android 类型要写 `global::` 前缀（项目存在 `ALyricEase.Android` 命名空间，裸写报 CS0234）。
 - **`#if ANDROID` 在核心库是死分支**：该常量只由 Android SDK 对 `net*-android` 工程定义，而核心库只面向
-  `net10.0` ⇒ 分支**永不编译**（不报错、静默走 `#else`）。
+  `net11.0` ⇒ 分支**永不编译**（不报错、静默走 `#else`）。
   验证法：产出的 `ALyricEase.dll` 里搜 `FilesDir` / `Java.Lang.Runtime`，应 **0 命中**。
   平台判定一律用 `OperatingSystem.IsAndroid()`。
   已知后果：Android 上音乐缓存落在 `<私有 files>/.local/share/ALyricEase/cache/music`（功能正常，改路径要迁移缓存）。
@@ -100,21 +114,25 @@ Debug 构建与桌面探针都查不出。
 （`XA3006 ... llc: permission denied` / `APT2000: 数据无效。(13)`）。
 `llc` / `aapt2` **都不检查写入结果**，留下 0 字节/半截文件，下一轮当有效输入。
 
-**最危险**：AOT 失败但后续目标仍跑完 ⇒ 包里混进上一轮 AOT 模块 ⇒ 装机崩溃循环
+> ⚠️ **下面这段 AOT 崩溃形态在 .NET 11 已经不可能复现**：Mono 运行时被 SDK 移除（`NETSDK1242`），
+> 没有 Mono AOT 就没有"上一轮 AOT 模块混进本轮包"这回事。留着是为了将来翻旧账时知道当年怎么挂的。
+
+**最危险（仅 net10.0 及以前的 Mono AOT 时期）**：AOT 失败但后续目标仍跑完 ⇒ 包里混进上一轮 AOT 模块 ⇒ 装机崩溃循环
 （`module 'Avalonia.Android.so' is unusable (GUID of dependent assembly Mono.Android doesn't match)`）。
 **看到这条不要查 Mono 版本**，直接怀疑"AOT 产物与程序集不同源"。
 
-- 判成败看 **exit code + 耗时**：AOT 版约 5 分钟 / 29.3MB；非 AOT 约 1 分钟 / 18.6MB。
+- 判成败看 **exit code + 耗时**：.NET 11 CoreCLR Release 单 ABI 约 4.4 分钟（含 R2R）；
+  .NET 10 时代 Mono AOT 约 5 分钟 / 29.3MB，非 AOT 约 1 分钟 / 18.6MB。
 - 清 `obj\Release` / `bin\Release`：`Remove-Item` 被 safe-delete shim 拦，**`[IO.Directory]::Delete($p,$true)` 可用**；
   `Move-Item` 搬整个 `obj\Release` 会被沙箱**直接杀进程**，别用。
-- 沙箱内只做这一种（关 AOT）：
+- 沙箱内做 Release 构建（**别再传 `RunAOTCompilation=false`**，CoreCLR 下那会刷 XA1044 警告）：
   ```
-  dotnet build src/ALyricEase.Android/ALyricEase.Android.csproj -c Release -f net10.0-android \
-    -p:AndroidTargetAbi=arm64-v8a -p:RunAOTCompilation=false -p:EmbedAssembliesIntoApk=true
+  dotnet build src/ALyricEase.Android/ALyricEase.Android.csproj -c Release -f net11.0-android \
+    -p:AndroidTargetAbi=arm64-v8a -p:EmbedAssembliesIntoApk=true
   ```
-  验包看 `lib/libaot-*.so` = **0 条**（程序集仍在 `lib/<abi>/libassembly-store.so`；
-  裁剪照常执行 ⇒ IL2072 照样暴露）。
-- 要出 full Mono AOT 发布包，**在 Rider / 普通终端做**（`scripts/publish-aot.ps1`）。
+  验包看 `lib/<abi>/` 是 `libcoreclr.so` + `libclrjit.so` + `libassembly-store.so`，
+  **没有** `libmonosgen-2.0.so`；裁剪照常执行 ⇒ IL2072 照样暴露。
+- 要出发布包，**在 Rider / 普通终端做**（`scripts/publish-aot.ps1`）。
 
 ## 8. 播放后端:Media3/ExoPlayer(2026-10-26 替换 android.media.MediaPlayer)
 
@@ -210,8 +228,8 @@ aapt2 dump xmltree --file AndroidManifest.xml <apk> | grep -i icon
 不用清整个 obj，还原很慢）：
 
 ```
-src\ALyricEase.Android\obj\Release\net10.0-android
-src\ALyricEase.Android\bin\Release\net10.0-android
+src\ALyricEase.Android\obj\Release\net11.0-android
+src\ALyricEase.Android\bin\Release\net11.0-android
 ```
 
 不清理会依次撞上这些误导性错误：
@@ -232,8 +250,8 @@ src\ALyricEase.Android\bin\Release\net10.0-android
 **症状**:安卓 16(64 位-only)上"无法安装",没有别的线索。
 
 **缘由**:`scripts/publish-aot.ps1` 按 ABI 分别构建,产物在
-`artifacts/aot-android-per-abi/<abi>/`(文件名带 ABI);但**最后一次构建**同样会在
-`src/ALyricEase.Android/bin/Release/net10.0-android/` 留下同名
+`artifacts/coreclr-android-per-abi/<abi>/`(文件名带 ABI);但**最后一次构建**同样会在
+`src/ALyricEase.Android/bin/Release/net11.0-android/` 留下同名
 `com.aika1024.alyricease-Signed.apk` —— 那是最后跑的那个 ABI(2026-10-28 那次是
 armeabi-v7a)。把这份发给 64 位-only 设备就是 `INSTALL_FAILED_NO_MATCHING_ABIS`
 (系统提示"应用与设备不兼容")。
@@ -246,14 +264,14 @@ aapt2 dump badging <apk> | grep native-code
 ```
 
 **怎么出包**:
-- 发布用单 ABI:走发布脚本,只发 `artifacts/aot-android-per-abi/<abi>/ALyricEase-<abi>-Signed.apk`
+- 发布用单 ABI:走发布脚本,只发 `artifacts/coreclr-android-per-abi/<abi>/ALyricEase-<abi>-Signed.apk`
   (别拿 bin 里的那份,它没有 ABI 标识,还会被下一次构建覆盖);
 - 通用包(arm64 + v7a):`dotnet build src/ALyricEase.Android/ALyricEase.Android.csproj -c Release
-  -f net10.0-android` —— 不传 `AndroidTargetAbi` 时 csproj 走
+  -f net11.0-android` —— 不传 `AndroidTargetAbi` 时 csproj 走
   `RuntimeIdentifiers=android-arm;android-arm64`,产物含两套 `.so`。
 
 **顺带核过(2026-10-31)**:arm64 包的 `.so` 都是 `p_align=0x4000`(16KB 页),
-`zipalign -c -P 16 4` 通过 ⇒ 安卓 15/16 的 16KB 页要求不是拦路虎;targetSdk 36、minSdk 23
+`zipalign -c -P 16 4` 通过 ⇒ 安卓 15/16 的 16KB 页要求不是拦路虎;targetSdk 37、minSdk 24
 也都合规。另外仓库只出 ARM 包:x86_64 模拟器(没有 ARM 翻译)装不了,要另加 `android-x64`。
 
 ## 11. 启动页图标为什么有锯齿,以及怎么修(2026-11-02)

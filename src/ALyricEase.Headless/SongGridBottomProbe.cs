@@ -242,7 +242,7 @@ public static class SongGridBottomProbe
         var path = Path.Combine(Path.GetTempPath(), name + ".png");
         // Save(string) 在 12.1 已过时且是静默空操作(0 字节),必须走流
         using (var fs = File.Create(path))
-            rtb.Save(fs);
+            rtb.Save(fs, PngBitmapEncoderOptions.Default);
         return path;
     }
 

@@ -62,7 +62,7 @@ public sealed partial class LocalPlaylistSettingsDialogViewModel : ViewModelBase
                 : null;
             var source = scaled ?? decoded;
             var temp = Path.Combine(Path.GetTempPath(), $"aly-local-cover-{Guid.NewGuid():N}.png");
-            using (var file = File.Create(temp)) source.Save(file);
+            using (var file = File.Create(temp)) source.Save(file, PngBitmapEncoderOptions.Default);
             TryDelete(_pendingCoverTempPath);
             _pendingCoverTempPath = temp;
             _pendingCoverClear = false;

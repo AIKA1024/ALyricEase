@@ -13,13 +13,21 @@
         TrimmerRoots). First run downloads the ILCompiler packs, so it takes a while.
 
     Android:
-        Also publishes per-ABI Android APKs under artifacts\aot-android-per-abi
-        (or artifacts\android-per-abi when -AndroidNoAot).
-        Default mode uses the Mono toolchain: RunAOTCompilation=true compiles all
-        IL to native ahead of time (full Mono AOT) -- this is NOT .NET NativeAOT.
-        It builds arm64-v8a and armeabi-v7a separately so each APK contains only
-        the native libraries needed by its target Android userspace. Final APK
-        names include the ABI, for example ALyricEase-arm64-v8a-Signed.apk.
+        Also publishes per-ABI Android APKs under artifacts\coreclr-android-per-abi
+        (or artifacts\jit-android-per-abi when -AndroidNoAot).
+        .NET 11 dropped Mono for Android outright: the SDK fails the build with
+        NETSDK1242 ("Mono runtime is not supported for Android projects targeting
+        .NET 11.0+"), and RunAOTCompilation alone now raises XA1044 ("not
+        compatible with the CoreCLR runtime"). UseMonoRuntime=true cannot rescue
+        it either -- NETSDK1242 fires on that too. So the old "full Mono AOT"
+        publish path is gone, and CoreCLR is the only runtime.
+        Default mode therefore ships CoreCLR and lets the SDK apply its own
+        Release defaults: PublishReadyToRun=true + PublishReadyToRunComposite=true
+        + the packaged PGO profile. R2R precompiles IL to native code but keeps
+        the IL around so the JIT can still fall back / tier up. Builds arm64-v8a
+        and armeabi-v7a separately so each APK contains only the native libraries
+        needed by its target Android userspace. Final APK names include the ABI,
+        for example ALyricEase-arm64-v8a-Signed.apk.
         With -AndroidNativeAot the script passes PublishAot=true targeting
         android-arm64. KNOWN BROKEN WITH AVALONIA (tested 2026-08): the build
         succeeds but the app dies on the splash screen with UnsatisfiedLinkError
@@ -28,7 +36,7 @@
         library assemblies like Avalonia.Android. Microsoft also documents
         Android NativeAOT as "Experimental, no built-in Java interop". Kept only
         for future retries (dotnet/android or Avalonia may fix this); use the
-        default Mono full-AOT path for real deployments.
+        default CoreCLR path for real deployments.
         Requires a JDK 17+ (JAVA_HOME, or a JDK found in the usual locations;
         Rider's bundled JBR under D:\Software\JetBrains* works).
 #>
@@ -151,18 +159,22 @@ if (-not $SkipAndroid) {
         Write-Host "   (UnsatisfiedLinkError at Application.OnCreate). Building anyway..." -ForegroundColor Red
     }
     elseif ($AndroidNoAot) {
-        $androidOutputRoot = Join-Path $repoRoot "artifacts\android-per-abi"
-        Write-Host "   AOT: off (per-ABI JIT APKs)" -ForegroundColor DarkGray
-    }
-    else {
-        # Best available production mode: one full Mono AOT APK per ARM ABI.
-        $androidOutputRoot = Join-Path $repoRoot "artifacts\aot-android-per-abi"
+        $androidOutputRoot = Join-Path $repoRoot "artifacts\jit-android-per-abi"
+        # Pure JIT: turn the SDK's R2R default off. Only for A/B comparison or
+        # when chasing a suspected R2R codegen bug -- JIT APKs start slower.
         $aotArgs = @(
             "--self-contained", "true",
-            "-p:RunAOTCompilation=true",
-            "-p:AndroidStripILAfterAOT=true"
+            "-p:PublishReadyToRun=false"
         )
-        Write-Host "   AOT: on (per-ABI Mono full AOT, IL stripped)" -ForegroundColor DarkGray
+        Write-Host "   Compile: CoreCLR + JIT only (ReadyToRun off)" -ForegroundColor DarkGray
+    }
+    else {
+        # CoreCLR is the ONLY runtime on .NET 11 Android (see header). Release
+        # already defaults to PublishReadyToRun + Composite + packaged PGO, so
+        # the right move is to pass nothing and let the SDK do it.
+        $androidOutputRoot = Join-Path $repoRoot "artifacts\coreclr-android-per-abi"
+        $aotArgs = @("--self-contained", "true")
+        Write-Host "   Compile: CoreCLR + ReadyToRun (composite) + PGO" -ForegroundColor DarkGray
     }
 
     $jdk = Resolve-Jdk
@@ -205,7 +217,7 @@ if (-not $SkipAndroid) {
 
         dotnet publish $androidProject `
             -c $Configuration `
-            -f net10.0-android `
+            -f net11.0-android `
             @targetArgs `
             @aotArgs `
             -o $androidOutput

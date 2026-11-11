@@ -219,7 +219,7 @@ public static class LyricSwitchProbe
         using var rtb = new RenderTargetBitmap(px, new Vector(96, 96));
         rtb.Render(window);
         var path = Path.Combine(Path.GetTempPath(), name + ".png");
-        rtb.Save(path);
+        rtb.Save(path, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"    截图: {path}");
     }
 

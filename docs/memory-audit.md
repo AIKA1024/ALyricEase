@@ -49,7 +49,7 @@ adb logcat -d -s ALyricEaseProbe:I
 两者共用一个磁盘字节缓存（`MusicCoverByteCache` → `MusicCacheService`），所以"同一封面"不会重复存两份**文件**。
 
 > 预算取值集中在 `ImageMemoryBudget`（单一来源），两个缓存不再各自硬编码。
-> ⚠️ 平台判定用 `OperatingSystem.IsAndroid()`：核心库只面向 `net10.0`，**`#if ANDROID` 在本程序集里是死分支**
+> ⚠️ 平台判定用 `OperatingSystem.IsAndroid()`：核心库只面向 `net11.0`，**`#if ANDROID` 在本程序集里是死分支**
 > （ANDROID 常量只由 Android SDK 对 `net*-android` 工程定义，实测产出的 `ALyricEase.dll` 里没有任何 Android 类型名）。
 > 同一陷阱适用于项目里其它写在核心库中的平台分支，相关位置已加警示注释。
 
@@ -397,7 +397,7 @@ GC 懒回收"形成的阶梯式水位，不是泄漏。
 
 `scripts/memwatch.ps1` —— 不改应用、不重新构建，从外部按固定间隔采样工作集/私有字节/句柄/线程/GDI/USER，
 末尾给**块最小值地板序列**与判定（地板单调抬升=真泄漏；来回摆=GC 没来）。
-⚠ 进程名是 `ALyricEase.Windows`（产物在 `src\ALyricEase.Windows\bin\Debug\net10.0-windows10.0.19041.0\`），
+⚠ 进程名是 `ALyricEase.Windows`（产物在 `src\ALyricEase.Windows\bin\Debug\net11.0-windows10.0.19041.0\`），
 默认参数用通配符 `ALyricEase*` 兼容。
 
 ## 六、个人主页封面内存治理（2026-10-08）

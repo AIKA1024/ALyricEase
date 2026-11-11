@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
@@ -136,7 +137,7 @@ internal static class DesktopLyricProbe
             new Avalonia.PixelSize((int)Math.Ceiling(content.Bounds.Width), (int)Math.Ceiling(content.Bounds.Height))))
         {
             bitmap.Render(content);
-            bitmap.Save(Path.Combine(Path.GetTempPath(), "aly-desktop-lyrics-preview.png"));
+            bitmap.Save(Path.Combine(Path.GetTempPath(), "aly-desktop-lyrics-preview.png"), PngBitmapEncoderOptions.Default);
         }
         var lyricText = window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "新歌曲");
         var lyricOrigin = lyricText.PointToScreen(default);
@@ -185,7 +186,7 @@ internal static class DesktopLyricProbe
         using (var preview = new Avalonia.Media.Imaging.RenderTargetBitmap(new Avalonia.PixelSize(360, 560)))
         {
             preview.Render(dialog);
-            preview.Save(Path.Combine(Path.GetTempPath(), "aly-lyric-dialog-preview.png"));
+            preview.Save(Path.Combine(Path.GetTempPath(), "aly-lyric-dialog-preview.png"), PngBitmapEncoderOptions.Default);
         }
         dialog.RaiseEvent(new Avalonia.Input.KeyEventArgs { RoutedEvent = Avalonia.Input.InputElement.KeyDownEvent, Key = Avalonia.Input.Key.Escape });
         Check(!main.IsDesktopLyricDialogOpen, "Esc 关闭模态框");

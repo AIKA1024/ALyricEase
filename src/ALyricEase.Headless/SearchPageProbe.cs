@@ -239,7 +239,7 @@ public static class SearchPageProbe
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), name + ".png");
         // Save(string) 重载在 12.1 已过时且为静默空操作(0 字节文件),必须走流
         using (var fs = System.IO.File.Create(path))
-            rtb.Save(fs);
+            rtb.Save(fs, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[sp] 截图 {name}: {path}");
     }
 }

@@ -52,7 +52,7 @@ internal static class IconSubsetProbe
 
         using var bitmap = new RenderTargetBitmap(new PixelSize(420, 260), new Vector(96, 96));
         bitmap.Render(window);
-        bitmap.Save(outputPath);
+        bitmap.Save(outputPath, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[iconsubset] {outputPath}");
     }
 }

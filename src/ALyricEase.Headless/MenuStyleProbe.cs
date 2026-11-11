@@ -40,7 +40,7 @@ public static class MenuStyleProbe
         using var rtb = new RenderTargetBitmap(px, new Vector(96, 96));
         rtb.Render(win);
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tmpandroid", "menustyle.png");
-        rtb.Save(Path.GetFullPath(path));
+        rtb.Save(Path.GetFullPath(path), PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[menustyle] 菜单默认观感渲染完成: {Path.GetFullPath(path)}");
     }
 }

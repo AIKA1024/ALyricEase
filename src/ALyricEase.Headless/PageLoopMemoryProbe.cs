@@ -785,7 +785,7 @@ internal static class PageLoopMemoryProbe
             using var bitmap = new RenderTargetBitmap(size);
             bitmap.Render(shell);
             var path = Path.Combine(directory, $"memloop-{tag}.png");
-            bitmap.Save(path);
+            bitmap.Save(path, PngBitmapEncoderOptions.Default);
             Log($"[memloop] 首页截图: {path}");
         }
         catch (Exception ex)

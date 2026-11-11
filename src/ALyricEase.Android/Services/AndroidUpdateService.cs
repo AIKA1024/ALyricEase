@@ -162,9 +162,11 @@ public sealed class AndroidUpdateService : IAppUpdateService
             throw new InvalidOperationException("尚未下载更新安装包");
 
         var context = AApplication.Context;
-        // Android 8.0+ 装非市场 APK 需要"安装未知应用"授权;没授权先跳系统设置页,
-        // 返回后 _downloadedApkPath 仍在,再点一次「立即安装」即可
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.O &&
+        // Android 8.0(API 26)起装非市场 APK 需要"安装未知应用"授权;没授权先跳系统设置页,
+        // 返回后 _downloadedApkPath 仍在,再点一次「立即安装」即可。
+        // 必须用 OperatingSystem.IsAndroidVersionAtLeast 而不是 Build.VERSION.SdkInt:
+        // 前者带 SupportedOSPlatformGuard 标注,CA1416 分析器才认得出下面两个 API 已被版本守卫保护。
+        if (OperatingSystem.IsAndroidVersionAtLeast(26) &&
             context.PackageManager!.CanRequestPackageInstalls() == false)
         {
             _logger.LogInformation("Android update requires permission to install unknown applications. Version={Version}", _pendingVersion);
@@ -194,7 +196,7 @@ public sealed class AndroidUpdateService : IAppUpdateService
 
     /// <summary>装完即删:系统安装器不回调应用,无法在安装成功那一刻感知,退而求其次在
     /// 启动时清理 —— 下载完成时记下包版本,启动时当前版本已 ≥ 包版本(= 装过了)就整目录清空。
-    /// 用户下载了却没装的包(当前版本 < 包版本)保留,回来还能继续点「立即安装」。</summary>
+    /// 用户下载了却没装的包(当前版本 &lt; 包版本)保留,回来还能继续点「立即安装」。</summary>
     private void CleanupStaleDownloads()
     {
         try

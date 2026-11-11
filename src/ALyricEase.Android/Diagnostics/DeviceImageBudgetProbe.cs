@@ -8,7 +8,7 @@ namespace ALyricEase.Diagnostics;
 /// <summary>
 /// Android 真机自检:把「图片内存预算的实际生效值」与「生产缓存实例的真正上限」打到 logcat。
 ///
-/// 存在的理由:核心库只面向 net10.0,<c>#if ANDROID</c> 在那边是死分支,平台判定必须走
+/// 存在的理由:核心库只面向 net11.0,<c>#if ANDROID</c> 在那边是死分支,平台判定必须走
 /// <see cref="OperatingSystem.IsAndroid"/>(见 ImageMemoryBudget 的注释)。桌面只能验证
 /// "desktop 分支取值正确",Android 分支的输入是 GC/ART 在真机上的上报值 —— 那是推断不出来的,
 /// 只能实测。本探针同时核对预算有没有退化成固定上限(若 TotalAvailableMemoryBytes 报的是

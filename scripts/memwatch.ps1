@@ -9,7 +9,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\memwatch.ps1 -ProcessName 'ALyricEase*' -IntervalSec 3 -Minutes 4
 #
 # 桌面应用产物在:
-#   src\ALyricEase.Windows\bin\Debug\net10.0-windows10.0.19041.0\ALyricEase.Windows.exe
+#   src\ALyricEase.Windows\bin\Debug\net11.0-windows10.0.19041.0\ALyricEase.Windows.exe
 # ⚠ 进程名是 ALyricEase.Windows,不是 ALyricEase —— 默认值用通配符 ALyricEase* 兼容两者。
 #
 # 读法(重要):
@@ -36,7 +36,7 @@ Add-Type -Namespace Win32 -Name Gui -MemberDefinition @'
 $proc = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($null -eq $proc) {
     Write-Host "找不到进程 $ProcessName。请先把应用跑起来:"
-    Write-Host '  src\ALyricEase.Windows\bin\Debug\net10.0-windows10.0.19041.0\ALyricEase.Windows.exe'
+    Write-Host '  src\ALyricEase.Windows\bin\Debug\net11.0-windows10.0.19041.0\ALyricEase.Windows.exe'
     exit 1
 }
 

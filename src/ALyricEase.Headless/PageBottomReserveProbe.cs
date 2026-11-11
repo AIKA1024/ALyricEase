@@ -268,7 +268,7 @@ public static class PageBottomReserveProbe
         rtb.Render(window);
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), name + ".png");
         using (var fs = System.IO.File.Create(path))
-            rtb.Save(fs);
+            rtb.Save(fs, PngBitmapEncoderOptions.Default);
         return path;
     }
 

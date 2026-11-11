@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <RootNamespace>ALyricEase.Headless</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -16,8 +16,8 @@
     <!-- 同上：歌词窗口的显示/收起逻辑只此一份，探针直接编真实控制器。 -->
     <Compile Include="..\ALyricEase.Windows\Services\DesktopLyricController.cs" Link="DesktopLyricController.cs" />
     <ProjectReference Include="..\ALyricEase\ALyricEase.csproj" />
-    <PackageReference Include="Avalonia.Headless" Version="12.1.5" />
-    <PackageReference Include="Avalonia.Skia" Version="12.1.5" /><!-- TEMP-DIAG:真实渲染截图 -->
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.5" /><!-- TEMP-DIAG:真窗口探针 UsePlatformDetect -->
+    <PackageReference Include="Avalonia.Headless" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.6" /><!-- TEMP-DIAG:真实渲染截图 -->
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.6" /><!-- TEMP-DIAG:真窗口探针 UsePlatformDetect -->
   </ItemGroup>
 </Project>

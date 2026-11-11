@@ -63,7 +63,7 @@ public static class RenameDialogProbe
         using var rtb = new RenderTargetBitmap(px, new Vector(96, 96));
         rtb.Render(win);
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tmpandroid", fileName);
-        rtb.Save(Path.GetFullPath(path));
+        rtb.Save(Path.GetFullPath(path), PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[renamedlg] 截图: {Path.GetFullPath(path)}");
     }
 }

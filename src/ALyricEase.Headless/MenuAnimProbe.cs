@@ -299,7 +299,7 @@ public static class MenuAnimProbe
         using var rtb = new RenderTargetBitmap(px, new Vector(96, 96));
         rtb.Render(win);
         var path = System.IO.Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "tmpandroid", "menuanim.png");
-        rtb.Save(System.IO.Path.GetFullPath(path));
+        rtb.Save(System.IO.Path.GetFullPath(path), PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[menuanim] 主窗口截图: {System.IO.Path.GetFullPath(path)}");
 
         Console.WriteLine(_failCount == 0 ? "[menuanim] 全部断言通过" : $"[menuanim] 失败断言数: {_failCount}");

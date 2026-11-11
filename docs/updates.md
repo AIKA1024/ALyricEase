@@ -167,7 +167,7 @@
   exported=false)+ `@xml/file_paths`(只暴露 `cache-path update/`)。
   ⚠ 改动清单后必须按 android-notes 的方法用 aapt2 验证真进了包 ——
   构建不报错 ≠ 生效(这次就先撞了"看错旧 APK"的坑:per-ABI 目录下躺着 9-26 的旧包,
-  Debug 的真产物在 `bin/Debug/net10.0-android/` 根)。
+  Debug 的真产物在 `bin/Debug/net11.0-android/` 根)。
 - **发布要求**:GitHub release 资产里要有 APK(命名含 ABI,如 `*-arm64-v8a.apk`),
   tag 仍须是版本号(与桌面同一套约定);release body 为两端的更新说明来源。
 - **首次接入注意**:现有安装的 `versionName=1.0`;发布新版本时记得同步
@@ -212,7 +212,7 @@
 **验证方式**(无需探针,直接起两次即可):
 
 ```bash
-EXE=bin/Debug/net10.0-windows10.0.19041.0/ALyricEase.Windows.exe
+EXE=bin/Debug/net11.0-windows10.0.19041.0/ALyricEase.Windows.exe
 "$EXE" & sleep 7; "$EXE" & sleep 5
 tasklist //FI "IMAGENAME eq ALyricEase.Windows.exe" //FO CSV   # 只应有 1 个
 ```

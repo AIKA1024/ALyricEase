@@ -163,7 +163,7 @@ internal static class QqUserFailureProbe
             new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height), new Vector(96, 96));
         bitmap.Render(window);
         var path = Path.Combine(dir, $"{name}.png");
-        bitmap.Save(path);
+        bitmap.Save(path, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[qq-user-failure] preview: {path}");
     }
 

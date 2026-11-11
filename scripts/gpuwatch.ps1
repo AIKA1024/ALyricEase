@@ -35,7 +35,7 @@ $ErrorActionPreference = 'Stop'
 $proc = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($null -eq $proc) {
     Write-Host "找不到进程 $ProcessName。请先把应用跑起来:"
-    Write-Host '  src\ALyricEase.Windows\bin\Debug\net10.0-windows10.0.19041.0\ALyricEase.Windows.exe'
+    Write-Host '  src\ALyricEase.Windows\bin\Debug\net11.0-windows10.0.19041.0\ALyricEase.Windows.exe'
     exit 1
 }
 

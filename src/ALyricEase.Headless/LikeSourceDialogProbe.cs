@@ -54,7 +54,7 @@ public static class LikeSourceDialogProbe
         var outputDirectory = Path.Combine(Directory.GetCurrentDirectory(), "tmpandroid");
         Directory.CreateDirectory(outputDirectory);
         var path = Path.Combine(outputDirectory, fileName);
-        bitmap.Save(path);
+        bitmap.Save(path, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[likesourcedlg] 截图: {path}");
 
         var selectedChoice = view.FindControl<Button>("NetEaseChoice");
@@ -69,7 +69,7 @@ public static class LikeSourceDialogProbe
             var hoverPath = Path.Combine(
                 outputDirectory,
                 Path.GetFileNameWithoutExtension(fileName) + "_hover.png");
-            hoverBitmap.Save(hoverPath);
+            hoverBitmap.Save(hoverPath, PngBitmapEncoderOptions.Default);
             Console.WriteLine($"[likesourcedlg] Hover 截图: {hoverPath}");
         }
         window.Close();

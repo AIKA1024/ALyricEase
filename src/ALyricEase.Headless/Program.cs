@@ -1499,7 +1499,7 @@ public static class Program
         using var rtb = new RenderTargetBitmap(px, new Vector(96, 96));
         rtb.Render(_window);
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), name + ".png");
-        rtb.Save(path);
+        rtb.Save(path, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[diag:{name}] 截图: {path}");
     }
 

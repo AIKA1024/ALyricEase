@@ -17,7 +17,7 @@ public class Application : AvaloniaAndroidApplication<App>
 
     public override void OnCreate()
     {
-        // 图片内存预算的分母:核心库只面向 net10.0、引用不到 Android 类型,ART 堆上限只能由这里注入。
+        // 图片内存预算的分母:核心库只面向 net11.0、引用不到 Android 类型,ART 堆上限只能由这里注入。
         // 必须早于首次读取预算(CoverImagePipeline.Configure 在 Avalonia 的 App 初始化里,
         // 而那发生在 MainActivity.OnCreate);Application.OnCreate 早于 Activity 创建,满足约束。
         InjectImageMemoryBudget();

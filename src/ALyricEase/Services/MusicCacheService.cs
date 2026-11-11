@@ -693,7 +693,7 @@ public sealed class MusicCacheService
             if (GetAudioFiles(songKey).Any(file => file.Rank >= rank)) return;
 
             var requestUrl = url;
-            // ⚠️ #if ANDROID 在本程序集里是死分支(核心库只面向 net10.0),这段升级到 https
+            // ⚠️ #if ANDROID 在本程序集里是死分支(核心库只面向 net11.0),这段升级到 https
             // 从未生效。目前无害:AndroidManifest 里 usesCleartextTraffic="true" 允许明文。
             // 若哪天关掉明文,这里必须换成 OperatingSystem.IsAndroid() 才能真的起作用。
 #if ANDROID

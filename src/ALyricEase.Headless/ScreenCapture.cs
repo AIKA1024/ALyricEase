@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media.Imaging;
 
 namespace ALyricEase.Headless;
 
@@ -140,7 +141,7 @@ internal static class ScreenCapture
                 new PixelSize(frame.Width, frame.Height),
                 new Vector(96, 96),
                 frame.Stride);
-            image.Save(path);
+            image.Save(path, PngBitmapEncoderOptions.Default);
         }
         finally
         {

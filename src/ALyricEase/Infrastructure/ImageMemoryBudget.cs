@@ -14,7 +14,7 @@ namespace ALyricEase.Infrastructure;
 /// 真正反映设备档位、也是 Android 官方给应用的内存指导值,是 `ActivityManager.MemoryClass`
 /// (等价于 `Runtime.maxMemory()`,即 ART 堆上限:低端机常见 96/128MB,中端 192/256MB,大内存 512MB)。
 ///
-/// 核心库只面向 `net10.0`、引用不到 Android 类型,所以这个分母由宿主**注入** ——
+/// 核心库只面向 `net11.0`、引用不到 Android 类型,所以这个分母由宿主**注入** ——
 /// 见 <see cref="SetAndroidHeapLimit"/>,Android 侧在 `Application.OnCreate` 里调用。
 /// 未注入时退回 <see cref="AndroidMaxLeaseBytes"/>(等于旧行为),不影响功能正确性。
 ///
@@ -23,7 +23,7 @@ namespace ALyricEase.Infrastructure;
 /// - <see cref="DirectCacheBytes"/>:CoverLoader 的直接位图缓存,只服务播放器等低频大图。
 ///
 /// ⚠️ 平台判定必须用 <see cref="OperatingSystem.IsAndroid"/> 而不是 `#if ANDROID`:
-/// 核心库只面向 net10.0,而 ANDROID 常量由 Android SDK 只对 net*-android 工程定义,
+/// 核心库只面向 net11.0,而 ANDROID 常量由 Android SDK 只对 net*-android 工程定义,
 /// 所以本程序集里的 `#if ANDROID` 分支**永远不会被编译**(实测:产出的 ALyricEase.dll
 /// 里查不到任何 Android 类型名)。同一规则适用于其它写在核心库里的平台分支。
 /// </summary>

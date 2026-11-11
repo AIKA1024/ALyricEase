@@ -421,7 +421,7 @@ AppShell 里把首页模板换成了它。
 
 写 `MusicCacheService` 的缓存目录、`AppStateStore`、`CookieStore` 时踩到:
 `#if ANDROID` 在**核心库**里是**死分支** —— ANDROID 常量由 Android SDK 只对 `net*-android` 工程定义,
-而核心库只面向 `net10.0`。实测产出的 `ALyricEase.dll` 里查不到任何 Android 类型名
+而核心库只面向 `net11.0`。实测产出的 `ALyricEase.dll` 里查不到任何 Android 类型名
 (`FilesDir`/`Java.Lang.Runtime` 全部为 0 命中),即这些分支永远不会被编译,
 编译不报错、运行时静默走 `#else`。平台判定一律用 `OperatingSystem.IsAndroid()`
 (见 `Infrastructure/ImageMemoryBudget.cs`,项目里 5 处历史 `#if ANDROID` 已加警示注释)。
@@ -510,7 +510,7 @@ Release 默认就是内嵌的,不需要这个参数。
 ```
 tools\Xamarin.Android.Common.targets(2219,3): error XA3006: 无法编译本机程序集文件: marshal_methods.arm64-v8a.ll
   [llc.EXE stderr] llc: error: permission denied
-obj\Release\net10.0-android\lp\69\jl\res\..\flat\69.flata : error APT2000: 数据无效。 (13).
+obj\Release\net11.0-android\lp\69\jl\res\..\flat\69.flata : error APT2000: 数据无效。 (13).
 ```
 
 **根因**:WorkBuddy 的文件系统保护层**允许新建文件、拦截覆盖既有文件**
@@ -695,7 +695,7 @@ private bool IsHostPresentable()
 2. **改动生效性要看符号,不要看"构建成功"**。Debug 构建保留方法名,直接查二进制:
 
    ```python
-   b = open(r'src/ALyricEase/bin/Debug/net10.0/ALyricEase.dll','rb').read()
+   b = open(r'src/ALyricEase/bin/Debug/net11.0/ALyricEase.dll','rb').read()
    print(b'IsHostPresentable' in b)   # 新增的私有方法名应能搜到
    ```
 

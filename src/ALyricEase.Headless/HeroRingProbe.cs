@@ -244,7 +244,7 @@ internal static class HeroRingProbe
             (int)window.ClientSize.Height), new Vector(96, 96));
         bitmap.Render(window);
         var path = Path.Combine(root, name + ".png");
-        bitmap.Save(path);
+        bitmap.Save(path, PngBitmapEncoderOptions.Default);
         Console.WriteLine($"[hero-ring] 截图 {name} -> {path}");
     }
 }

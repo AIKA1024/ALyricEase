@@ -1,6 +1,6 @@
 # ALyricEase
 
-**ALyricEase** 是 [LyricEase](https://www.microsoft.com/store/productId/9N1MKDF0F4GT) 的 Avalonia 跨平台复刻版：以原版 UWP 应用的交互与视觉为参照，用 **Avalonia 12 + .NET 10（C#）** 从零重写，运行于 **Windows 与 Android**。
+**ALyricEase** 是 [LyricEase](https://www.microsoft.com/store/productId/9N1MKDF0F4GT) 的 Avalonia 跨平台复刻版：以原版 UWP 应用的交互与视觉为参照，用 **Avalonia 12.1 + .NET 11（C#）** 从零重写，运行于 **Windows 与 Android**。
 
 > LyricEase 是 Windows 上一款广受好评的第三方网易云音乐客户端（UWP / Fluent Design）。本项目是个人学习性质的复刻实践，并非官方移植，也与原版作者无关。
 
@@ -18,16 +18,16 @@
 | 平台 | 入口项目 | 说明 |
 |---|---|---|
 | Windows | `src/ALyricEase.Windows` | 支持发布态 NativeAOT 裁剪 |
-| Android | `src/ALyricEase.Android` | Android 6.0+（API 23） |
+| Android | `src/ALyricEase.Android` | Android 7.0+（API 24） |
 
-前置要求：[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。
+前置要求：[.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0)。
 
 ```bash
 # Windows 桌面端
 dotnet run --project src/ALyricEase.Windows
 
 # Android（需要先安装 android workload 与 JDK 17+）
-dotnet publish src/ALyricEase.Android -f net10.0-android -c Release
+dotnet publish src/ALyricEase.Android -f net11.0-android -c Release
 ```
 
 核心 UI 与业务逻辑集中在 `src/ALyricEase`，各平台入口项目只做宿主适配。

@@ -189,9 +189,28 @@ PC 端的"关注"页就是上面那条混排接口，粉丝只能在 App / 网�
 
 - `opertype` 0 关注 / 1 取消；`usertype=1` 表示歌手（0 是用户）；`userid` 传 **singerMid**。
 - 成功判据：顶层 `code=0`、`req_0.code=0`，`req_0.data.retCode/RetCode/code` 若存在必须为 0。
-- 老模块 `Concern.ConcernSystemServer` 同方法也可用（`source=0` + `encrypt_singerid=1`），
-  实现里作为业务码非零时的回退；关注/取关幂等，重复同操作无害。
+- ⚠ **必须用 Android 客户端身份 comm，且走 ag-1 加密写通道**（2026-11-11 真机定论，`--qqconcern`）：
+  拿自己已关注的歌手重发一次关注（幂等）对比四条通道 ——
+
+  | 通道 | 返回 |
+  |---|---|
+  | 明文 `musicu.fcg` + web comm（`uin`+`g_tk`）/ 新模块 | `req_0.code=10018` |
+  | 明文 `musicu.fcg` + web comm / 老模块 | `10018` |
+  | ag-1 加密 + web comm | `10018` |
+  | **ag-1 加密 + Android comm（`ct=11`/`authst`/`tmeLoginType`）** | **`code=0` ✅** |
+
+  即 `10018` 是"这套客户端身份不许写"，与模块新旧、明文/加密都无关（`opertype=9` 时回 `10000` 参数错误，
+  说明鉴权确实先过了）。与红心 `AddSonglist` 同病，因此实现上复用
+  `SecureAssetWriteAsync(..., writeComm: WriteAndroidClientComm)`；老模块只作为业务失败回退。
 - 关注态读 `GetFollowSingersAsync("")`（`HostUin` 留空 = 自己），按 `SingerMid` 翻页找。
+- ⚠ **写失败不许弹登录窗**：`SetSingerFollowedAsync` 过去无论什么原因失败都抛 `-1`，
+  而 `ArtistViewModel.NeedsFollowLoginPrompt` 把 `-1` 当"该登录了" ⇒ 每次关注失败都弹登录框
+  （用户 2026-11-11 实测："一关注歌手就弹登录，但高音质下载正常"）。现在未登录抛 `104401`，
+  UI 只按 `ShouldPromptRelogin`（1000/104400/104401/20279/80105）判定；其它业务码只回滚 + 记日志。
+
+诊断探针 `--qqconcern`（真机、需登录）：取关注列表里的一位歌手重发一次关注（幂等，不改状态），
+逐条打上表四条通道并打印真实码；`--qqconcern prod` 直接走生产方法验证修复。
+`--artist-follow` 仍是纯 UI 回归（两态按钮、宽度对称、不弹窗）。
 
 **网易云**：明文 form POST `/api/artist/sub` 与 `/api/artist/unsub`
 （**两个独立路径，不是某些老文档写的 `t=1/2`**），表单 `artistId=<id>` + `artistIds=[<id>]` +

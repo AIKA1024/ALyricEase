@@ -2049,69 +2049,78 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// opertype 0 关注 / 1 取消;userinfo.usertype=1 表示歌手,userid 传 singerMid。
     /// 参考 multiPlatformMusicApi 与 wow-origin 的 platforms/qqmusic/module/artist_sub.js,
     /// 并用本机 QQMusic_Protocol.dll 里的 cgi_concern_user、usertype/userid/userinfo/opertype
-    /// 字段串做过交叉验证。新模块(music.concern.ConcernSystem)业务码非零时回退老模块
-    /// (Concern.ConcernSystemServer);关注/取关幂等,重复同一操作无害。</summary>
+    /// 字段串做过交叉验证。
+    /// <para>2026-11-11 真机定论(<c>--qqconcern</c>)：这是**写**接口，web comm(uin+g_tk) 一律回
+    /// <c>10018</c>——明文 musicu 与 ag-1 加密都一样，与模块新旧无关；只有 Android 客户端身份
+    /// comm(ct=11/authst/tmeLoginType) 才放行（同一变体立刻 code=0）。与红心 AddSonglist 同病，
+    /// 所以同样走 <see cref="SecureAssetWriteAsync"/> + <see cref="WriteAndroidClientComm"/>。
+    /// 老模块只作为新模块业务失败时的回退；关注/取关幂等，重复同一操作无害。</para></summary>
     public async Task SetSingerFollowedAsync(string singerMid, bool follow, CancellationToken ct = default)
     {
-        if (!IsLoggedIn) throw new ApiException("未登录,无法关注歌手", -1);
+        // 未登录用 104401 而不是 -1：-1 是通用失败码，UI 若拿它当"该登录了"，
+        // 任何写失败都会弹登录窗（2026-11-11 用户实测踩到）。
+        if (!IsLoggedIn) throw new ApiException("QQ 音乐尚未登录,无法关注歌手", 104401);
         if (string.IsNullOrWhiteSpace(singerMid)) throw new ApiException("歌手 mid 无效", -1);
+        // ag-1 通道不经过 PostMusicuAsync，凭证校验要自己做：长会话里 key 失效时先续签再写。
+        await EnsureCredentialValidAsync(ct).ConfigureAwait(false);
 
-        using (var doc = await PostMusicuAsync(
-                   w => WriteSingerConcernReq(w, modernModule: true, singerMid, follow), ct).ConfigureAwait(false))
+        try
         {
-            if (IsSingerConcernOk(doc.RootElement)) return;
+            using var doc = await SecureAssetWriteAsync("music.concern.ConcernSystem", "cgi_concern_user_v2",
+                    p => WriteSingerConcernParam(p, modernModule: true, singerMid, follow),
+                    follow ? "关注歌手" : "取消关注歌手", ct,
+                    writeComm: WriteAndroidClientComm).ConfigureAwait(false);
+            return;
         }
-        using (var doc = await PostMusicuAsync(
-                   w => WriteSingerConcernReq(w, modernModule: false, singerMid, follow), ct).ConfigureAwait(false))
+        catch (ApiException ex) when (ex.Code is not (1000 or 104400 or 104401))
         {
-            if (IsSingerConcernOk(doc.RootElement)) return;
+            _logger.LogWarning("QQ concern modern module failed; falling back to legacy. Code={Code}", ex.Code);
         }
-        throw new ApiException("QQ 关注歌手失败(新旧协议均未返回成功)", -1);
+        using var legacy = await SecureAssetWriteAsync("Concern.ConcernSystemServer", "cgi_concern_user_v2",
+            p => WriteSingerConcernParam(p, modernModule: false, singerMid, follow),
+            follow ? "关注歌手" : "取消关注歌手", ct,
+            writeComm: WriteAndroidClientComm).ConfigureAwait(false);
     }
 
     private static void WriteSingerConcernReq(
-        Utf8JsonWriter w, bool modernModule, string singerMid, bool follow)
-    {
-        WriteModuleReq(w,
+        Utf8JsonWriter w, bool modernModule, string singerMid, bool follow, int? operTypeOverride = null)
+        => WriteModuleReq(w,
             modernModule ? "music.concern.ConcernSystem" : "Concern.ConcernSystemServer",
-            "cgi_concern_user_v2", p =>
-            {
-                if (modernModule)
-                {
-                    p.WriteString("bussinesstype", "");
-                    p.WriteNumber("source", 137);
-                    p.WriteString("bussinessid", "");
-                }
-                else
-                {
-                    p.WriteNumber("source", 0);
-                }
-                p.WriteNumber("opertype", follow ? 0 : 1);
-                p.WriteStartObject("userinfo");
-                p.WriteNumber("usertype", 1);
-                p.WriteString("userid", singerMid);
-                p.WriteEndObject();
-                if (!modernModule) p.WriteNumber("encrypt_singerid", 1);
-            });
+            "cgi_concern_user_v2", p => WriteSingerConcernParam(p, modernModule, singerMid, follow, operTypeOverride));
+
+    private static void WriteSingerConcernParam(
+        Utf8JsonWriter p, bool modernModule, string singerMid, bool follow, int? operTypeOverride = null)
+    {
+        if (modernModule)
+        {
+            p.WriteString("bussinesstype", "");
+            p.WriteNumber("source", 137);
+            p.WriteString("bussinessid", "");
+        }
+        else
+        {
+            p.WriteNumber("source", 0);
+        }
+        p.WriteNumber("opertype", operTypeOverride ?? (follow ? 0 : 1));
+        p.WriteStartObject("userinfo");
+        p.WriteNumber("usertype", 1);
+        p.WriteString("userid", singerMid);
+        p.WriteEndObject();
+        if (!modernModule) p.WriteNumber("encrypt_singerid", 1);
     }
 
-    private static bool IsSingerConcernOk(System.Text.Json.JsonElement root)
+    /// <summary>诊断用(<c>--qqconcern</c>)：把关注/取关请求原样发出去并返回响应，不做成功判定。
+    /// 对"已经关注"的歌手再发一次关注是幂等的，可用来探测通道/参数而不改动关注状态。</summary>
+    internal Task<JsonDocument> ProbeSingerConcernAsync(string singerMid, bool follow, bool modernModule,
+        bool secureChannel, bool androidComm, int? operTypeOverride, CancellationToken ct)
     {
-        // 成功:顶层 code=0、req_0.code=0、data 里的 retCode/RetCode/code 若存在必须为 0
-        if (!root.TryGetProperty("code", out var top) ||
-            top.ValueKind != System.Text.Json.JsonValueKind.Number || top.GetInt32() != 0) return false;
-        if (!root.TryGetProperty("req_0", out var req) ||
-            req.ValueKind != System.Text.Json.JsonValueKind.Object) return false;
-        if (!req.TryGetProperty("code", out var reqCode) ||
-            reqCode.ValueKind != System.Text.Json.JsonValueKind.Number || reqCode.GetInt32() != 0) return false;
-        if (req.TryGetProperty("data", out var data) &&
-            data.ValueKind == System.Text.Json.JsonValueKind.Object)
-        {
-            foreach (var key in new[] { "retCode", "RetCode", "code" })
-                if (data.TryGetProperty(key, out var v) &&
-                    v.ValueKind == System.Text.Json.JsonValueKind.Number && v.GetInt32() != 0) return false;
-        }
-        return true;
+        var module = modernModule ? "music.concern.ConcernSystem" : "Concern.ConcernSystemServer";
+        // ag-1 加密写通道：与红心/歌单写同一个传输层（明文 musicu 对这些模块可能直接回 80105）。
+        if (secureChannel)
+            return SecureAssetWriteAsync(module, "cgi_concern_user_v2",
+                p => WriteSingerConcernParam(p, modernModule, singerMid, follow, operTypeOverride),
+                "关注歌手", ct, writeComm: androidComm ? WriteAndroidClientComm : null);
+        return PostMusicuAsync(w => WriteSingerConcernReq(w, modernModule, singerMid, follow, operTypeOverride), ct);
     }
 
     /// <summary>关系名单通用查询。<c>HostUin</c> 留空 = 自己;非空 = 对方的 encrypt_uin。

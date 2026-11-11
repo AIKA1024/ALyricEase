@@ -207,8 +207,11 @@ public sealed partial class ArtistViewModel : NavigationDetailViewModelBase
         }
     }
 
+    /// <summary>只有"真的需要登录"才弹登录窗。QQ 侧写失败过去统一抛 <c>-1</c>（通用失败码），
+    /// 结果任何一次写被拒都弹登录框（2026-11-11 用户实测：关注歌手立刻弹窗，但下载/播放都正常）。
+    /// 现在 QQ 按 <see cref="QQMusicApiClient.ShouldPromptRelogin"/> 判定，网易云维持原 <c>-1</c> 语义。</summary>
     private static bool NeedsFollowLoginPrompt(bool isQq, ApiException ex)
-        => ex.Code == -1 || (isQq && QQMusicApiClient.ShouldPromptRelogin(ex.Code));
+        => isQq ? QQMusicApiClient.ShouldPromptRelogin(ex.Code) : ex.Code == -1;
 
     private static void TryOpenFollowLogin(bool isQq, ApiException ex)
     {

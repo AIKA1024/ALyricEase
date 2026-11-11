@@ -1152,6 +1152,14 @@ public static class Program
             return;
         }
 
+        // QQ 关注歌手写接口诊断:对已关注歌手重发一次关注(幂等),比较明文/加密与两种 comm 的真实返回码
+        if (args.Length > 0 && args[0] == "--qqconcern")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(() => QqConcernDiagProbe.RunAsync(args))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // QQ 音乐歌单重命名逆向:盲试 PlaylistBaseWrite 下的候选 method(建→改名→复检→删除还原)
         if (args.Length > 0 && args[0] == "--qqrename")
         {

@@ -2124,3 +2124,49 @@ disstid;`GetDetail` 分页只回 `songId/标题/歌手`,播放要的 `songmid` �
 且圆点同步、三宫格 3 张且随筛选换源、货架箭头真的滚动、三档断点无横向溢出、卡片 168/156/148、
 海报位 340/300/230、点 QQ 榜单进歌单页拿到带 mid 的 100 首;顺带出明/暗/空态/整壳截图。
 底部预留由 `--pagereserve` 覆盖。
+
+## Win32 `WM_NCHITTEST` hook:全屏后整窗鼠标失灵(2026-11-11)
+
+**症状**:播放详情页点"全屏"后,软件立刻不再响应鼠标 —— 点按钮、hover 全无反应;键盘照常
+(`Ctrl+F` 能切页),窗口本身不卡(`IsHungAppWindow=False`、`WM_NULL` 往返 0ms)。
+
+**元凶**:`MainWindow` 用 `Win32Properties.AddWndProcHookCallback` 覆盖 `WM_NCHITTEST`:
+
+```csharp
+if (msg == WM_NCHITTEST && (WindowState == WindowState.FullScreen || CloseDialogPresenter.IsVisible))
+{
+    handled = true;
+    return new IntPtr(1); // HTCLIENT
+}
+```
+
+**实测证据**(`%TEMP%\aly-input-diag.log`,在 hook 里打点):
+
+```
+15:36:39.874 lbuttondown state=Normal pt=740,965   ← 点全屏按钮,成功
+15:36:39.951 nchittest(fullscreen)                  ← 进入全屏
+15:36:39.963 mouseleave                             ← 立刻 LeaveWindow
+15:36:43.394 nchittest(fullscreen)                  ← 之后鼠标移动只有 NCHITTEST
+                                                   ← 没有 mousemove、没有 lbuttondown
+```
+
+同一份代码加环境变量跳过该分支(`ALY_NO_NCHITTEST=1`)后立刻恢复:
+
+```
+15:37:19.630 lbuttondown state=FullScreen pt=960,1030
+```
+
+**机制**:`handled=true` 时 Avalonia 的 `WndProcMessageHandler` 直接 `return ret` 给系统,
+而这个返回值被系统当成"非客户区/无效命中"处理(观测行为等价于 `HTNOWHERE`),于是窗口再也收不到
+客户区鼠标消息;Avalonia 的 `CustomCaptionProc` 又只把 `WM_NCMOUSEMOVE` 里命中 caption 按钮的
+那部分重定向成指针事件(hint 对照 `HitTestVisual`),普通区域一律丢弃 ⇒ 整窗失灵。
+需要 Win32 层结论时:先 A/B 掉 hook 再谈别的,`WM_MOUSEMOVE` 有没有到窗口是最硬的分界线。
+
+**修法**:别覆盖 `WM_NCHITTEST`。本来也不需要 —— Avalonia 的 `HitTestNCA` 在
+`WindowState.FullScreen` 时把标题栏命中区直接判成 `HTNOWHERE`,系统级拖动根本不存在;
+应用内拖动由 `OnTitleBarPointerPressed` 拦(全屏 / `CloseDialogPresenter.IsVisible` 直接 return)。
+
+**回归**:`work/fullscreen_probe.py`(ctypes,纯 stdlib):`info` 看几何/风格位/`IsHungAppWindow`
+往返时延、`click`/`move`/`key` 注输入、`shot` 落 24 位 BMP、`hit` 问 `WindowFromPoint` 归属。
+流程:进详情页 → 点全屏 → 点歌词按钮(面板应打开)→ 点全屏按钮(应恢复窗口)→ 全屏下拖顶部
+(窗口不应移动)。

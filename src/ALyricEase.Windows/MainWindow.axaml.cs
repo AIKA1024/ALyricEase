@@ -24,9 +24,6 @@ namespace ALyricEase;
 
 public partial class MainWindow : Window
 {
-#if WINDOWS
-    private Win32Properties.CustomWndProcHookCallback? _wndProcHook;
-#endif
     private NowPlayingOverlayController? _nowPlayingController;
     private MainViewModel? _vm;
 
@@ -55,8 +52,6 @@ public partial class MainWindow : Window
         MarkClientHitTest(MinGlyph);
         MarkClientHitTest(MaxGlyph);
         MarkClientHitTest(CloseGlyph);
-        _wndProcHook = OnWndProc;
-        Win32Properties.AddWndProcHookCallback(this, _wndProcHook);
 #endif
         SizeChanged += OnSizeChanged;
         Opened += OnOpened;
@@ -293,14 +288,15 @@ public partial class MainWindow : Window
     private void OnWindowPositionChanged(object? sender, PixelPointEventArgs e)
         => TrackNormalBounds();
 
-    /// <summary>全屏时隐藏右上角窗口控制按钮,并禁止标题栏拖拽。</summary>
+    /// <summary>全屏时隐藏右上角窗口控制按钮。</summary>
     private void UpdateFullScreenChrome()
     {
         var isFullScreen = WindowState == WindowState.FullScreen;
         if (WindowControls is not null)
             WindowControls.IsVisible = !isFullScreen;
-        // 全屏禁用拖动由 OnWndProc 的 WM_NCHITTEST 处理,这里不再改动 TitleBar 的命中结果,
-        // 避免影响正常状态下右上角按钮的点击。
+        // 全屏不许拖窗口由 OnTitleBarPointerPressed 拦。
+        // ⚠ 别再回到 Win32 的 WM_NCHITTEST hook 上:handled=true + HTCLIENT 会让全屏后的窗口
+        // 只收到 WM_NCHITTEST,连 WM_MOUSEMOVE 都没有 ⇒ 整窗鼠标失灵(见 OnTitleBarPointerPressed)。
     }
 
     /// <summary>根据窗口状态切换最大化/还原图标。</summary>
@@ -311,19 +307,6 @@ public partial class MainWindow : Window
     }
 
 #if WINDOWS
-    /// <summary>全屏或关闭模态层打开时使用 HTCLIENT，阻止烟雾层穿透到标题栏拖动。</summary>
-    private IntPtr OnWndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        const int WM_NCHITTEST = 0x0084;
-        if (msg == WM_NCHITTEST && (WindowState == WindowState.FullScreen || CloseDialogPresenter.IsVisible))
-        {
-            handled = true;
-            return new IntPtr(1); // HTCLIENT
-        }
-
-        return IntPtr.Zero;
-    }
-
     /// <summary>把 HTCAPTION 拖拽带内的元素标记为 HTClient(可点击)。
     /// AOT 下用 DynamicDependency 保留 Win32Properties(类型可 typeof);
     /// HitTestValues 枚举在 Avalonia.Win32 程序集,由 TrimmerRoots.xml 保留(字符串 DynamicDependency 无法解析)。</summary>
@@ -352,6 +335,12 @@ public partial class MainWindow : Window
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         if (WindowState == WindowState.FullScreen) return; // 全屏下不允许拖标题栏移动窗口
+        // 模态层(关闭决策等)打开时同样不许拖:它在 ZIndex 400 盖住标题栏,拖起来会带着弹窗一起挪。
+        // ⚠ 这两条早先是用 Win32 的 WM_NCHITTEST hook(handled=true → HTCLIENT)实现的,
+        // 代价是**全屏后整窗鼠标失灵**:进入全屏只收到 WM_NCHITTEST,连 WM_MOUSEMOVE 都没有,
+        // 点击也到不了 —— 用户看到的就是"点全屏后软件不再响应鼠标"。Avalonia 自己的 HitTestNCA
+        // 在全屏时已把标题栏命中区判成 HTNOWHERE,系统级拖拽本就不存在,所以只需在这里拦应用内拖拽。
+        if (CloseDialogPresenter.IsVisible) return;
 
         // 按钮(返回/最小化/最大化/关闭)自己处理点击,冒泡到此不做窗口拖拽
         if (e.Source is Visual v && v.FindAncestorOfType<Button>() is not null) return;

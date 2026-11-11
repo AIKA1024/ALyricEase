@@ -26,6 +26,7 @@
 | 某个动画/循环最小化后还在烧 CPU | [avalonia-tips.md](avalonia-tips.md)「自续订的 RequestAnimationFrame 循环」「先分清三类"一直在动"」 |
 | 进度条/动画"卡卡的,鼠标一动就顺" | [avalonia-tips.md](avalonia-tips.md) 文末「UI 线程静息时长睡 ~79ms」 |
 | 弹层/过渡"定住一秒后瞬间消失、没动画"(UI 线程没死) | [perf-notes.md](perf-notes.md) §九「UI 线程动画必须自己持帧泵」 |
+| 详情页点全屏后鼠标整窗失灵(键盘还好、窗口不卡) | [avalonia-tips.md](avalonia-tips.md)「Win32 `WM_NCHITTEST` hook:全屏后整窗鼠标失灵」(`work/fullscreen_probe.py`) |
 | Release 包冷启动就崩 / 构建期 IL2072 | [avalonia-tips.md](avalonia-tips.md)「Release 包的裁剪会删掉…」;[android-notes.md](android-notes.md) §6 |
 | Android 返回键 / 清单改了不生效 / 图片内存预算 | [android-notes.md](android-notes.md) |
 | 要改曲目行的样式 | [original-track-row-styles.md](original-track-row-styles.md)(改完对照 [TrackRow.axaml](../src/ALyricEase/Views/TrackRow.axaml)) |

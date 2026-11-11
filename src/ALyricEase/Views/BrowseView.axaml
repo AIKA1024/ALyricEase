@@ -20,7 +20,7 @@
               AutomationProperties.Name="{Binding Title}">
         <Border Classes="promo-art" Background="{DynamicResource ArtFallback}">
           <Grid>
-            <Image infra:ManagedCoverImage.DecodeSize="360"
+            <Image infra:ManagedCoverImage.DecodeSize="300"
                    infra:ManagedCoverImage.Source="{Binding CoverUrl}"
                    Stretch="UniformToFill" />
             <Border IsHitTestVisible="False">
@@ -62,7 +62,7 @@
                          FontSize="32" Foreground="{DynamicResource TextTertiary}"
                          HorizontalAlignment="Center" VerticalAlignment="Center" />
               <!-- 过渡结束才提交 URL:可见 Image 自己持有位图租约,离树即释放 -->
-              <Image infra:ManagedCoverImage.DecodeSize="240"
+              <Image infra:ManagedCoverImage.DecodeSize="300"
                      infra:ManagedCoverImage.Source="{Binding DisplayCoverUrl}"
                      Stretch="UniformToFill" />
               <!-- 播放量角标(榜单/歌单才有):右上,深色半透明 chip -->
@@ -592,7 +592,7 @@
                             <!-- 用 OpacityMask 把方图左缘化开:alpha 从 0 渐到 1,像素直接透出下面的
                                  环境图(同一张封面),所以接缝处只有"清晰←→虚化"的过渡,没有明暗台阶。
                                  之前用一条渐变 Border 压,边界会从紫色环境一步跨到近黑,反而更明显。 -->
-                            <Image infra:ManagedCoverImage.DecodeSize="520"
+                            <Image infra:ManagedCoverImage.DecodeSize="500"
                                    infra:ManagedCoverImage.Source="{Binding CoverUrl}"
                                    Stretch="UniformToFill">
                               <Image.OpacityMask>

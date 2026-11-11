@@ -211,7 +211,7 @@
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    IsVisible="{Binding !HasAvatar}" />
                         <Image Stretch="UniformToFill"
-                               infra:ManagedCoverImage.DecodeSize="96"
+                               infra:ManagedCoverImage.DecodeSize="100"
                                infra:ManagedCoverImage.Source="{Binding AvatarUrl}" />
                       </Panel>
                     </Border>

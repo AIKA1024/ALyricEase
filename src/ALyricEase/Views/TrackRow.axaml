@@ -45,7 +45,7 @@
               <Border Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
-                  <Image infra:ManagedCoverImage.DecodeSize="50"
+                  <Image infra:ManagedCoverImage.DecodeSize="100"
                          infra:ManagedCoverImage.FallbackSource="{x:Static infra:CoverImageConverter.PlaceholderUri}"
                          infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
                          Stretch="UniformToFill" />
@@ -183,7 +183,7 @@
               <Border Grid.Column="1" Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
                       Background="{DynamicResource ArtFallback}">
                 <Grid>
-                  <Image infra:ManagedCoverImage.DecodeSize="50"
+                  <Image infra:ManagedCoverImage.DecodeSize="100"
                          infra:ManagedCoverImage.FallbackSource="{x:Static infra:CoverImageConverter.PlaceholderUri}"
                          infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
                          Stretch="UniformToFill" />

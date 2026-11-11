@@ -168,7 +168,7 @@
                 <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
                         IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                   <Image Stretch="UniformToFill"
-                         infra:ManagedCoverImage.DecodeSize="96"
+                         infra:ManagedCoverImage.DecodeSize="100"
                          infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">

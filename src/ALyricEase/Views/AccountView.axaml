@@ -125,7 +125,7 @@
                                     <TextBlock Text="{Binding NetEase.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondary}" />
-                                    <Image infra:ManagedCoverImage.DecodeSize="144"
+                                    <Image infra:ManagedCoverImage.DecodeSize="150"
                                            infra:ManagedCoverImage.Source="{Binding NetEase.AvatarUrl}"
                                            Stretch="UniformToFill" />
                                 </Grid>
@@ -220,7 +220,7 @@
                                     <TextBlock Text="{Binding Qq.AvatarLetter}" FontSize="26" FontWeight="SemiBold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondary}" />
-                                    <Image infra:ManagedCoverImage.DecodeSize="144"
+                                    <Image infra:ManagedCoverImage.DecodeSize="150"
                                            infra:ManagedCoverImage.Source="{Binding Qq.AvatarUrl}"
                                            Stretch="UniformToFill" />
                                 </Grid>

@@ -24,12 +24,13 @@ public static class ManagedCoverImage
     public static readonly AttachedProperty<string?> FallbackSourceProperty =
         AvaloniaProperty.RegisterAttached<Image, string?>("FallbackSource", typeof(ManagedCoverImage));
 
-    /// <summary>默认 360 = 个人主页歌单卡封面的常规解码尺寸。
+    /// <summary>默认 300 = 卡片级封面的唯一常规档（个人主页歌单卡 200px 显示）。
     /// 该页的解码尺寸由样式供给（taste 小卡/窄屏单列走更小的值），而 Source 绑定的求值
     /// 可能早于样式应用 —— 默认值与常规卡一致可保证首帧请求不打错规格
-    /// （其余所有使用点都显式设置 DecodeSize，不受默认值影响）。</summary>
+    /// （其余所有使用点都显式设置 DecodeSize，不受默认值影响）。
+    /// 全应用只保留 100/150/300/400/500/640 六档，新增使用点请就近归入其中一档。</summary>
     public static readonly AttachedProperty<int> DecodeSizeProperty =
-        AvaloniaProperty.RegisterAttached<Image, int>("DecodeSize", typeof(ManagedCoverImage), 360);
+        AvaloniaProperty.RegisterAttached<Image, int>("DecodeSize", typeof(ManagedCoverImage), 300);
 
     static ManagedCoverImage()
     {

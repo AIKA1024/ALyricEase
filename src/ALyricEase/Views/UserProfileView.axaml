@@ -232,7 +232,7 @@
         <Panel>
           <infra:OverlayPanel>
             <Image x:Name="HeroBackground" Stretch="UniformToFill"
-                   infra:ManagedCoverImage.DecodeSize="240"
+                   infra:ManagedCoverImage.DecodeSize="300"
                    infra:ManagedCoverImage.Source="{Binding AvatarUrl}"
                    IsVisible="{Binding AvatarUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
               <Image.Effect>
@@ -245,7 +245,7 @@
               <StackPanel Orientation="Horizontal" Spacing="18">
                 <Border Width="88" Height="88" CornerRadius="100" ClipToBounds="True"
                         Background="{DynamicResource ArtFallback}">
-                  <Image infra:ManagedCoverImage.DecodeSize="240"
+                  <Image infra:ManagedCoverImage.DecodeSize="300"
                          infra:ManagedCoverImage.Source="{Binding AvatarUrl}" Stretch="UniformToFill" />
                 </Border>
                 <StackPanel VerticalAlignment="Center" Spacing="8">
@@ -305,7 +305,7 @@
                             <Border Width="9" Height="38" CornerRadius="4" Background="White" VerticalAlignment="Center" />
                             <Border Width="9" Height="18" CornerRadius="4" Background="White" VerticalAlignment="Bottom" />
                           </StackPanel>
-                          <Image infra:ManagedCoverImage.DecodeSize="240"
+                          <Image infra:ManagedCoverImage.DecodeSize="300"
                                  infra:ManagedCoverImage.Source="{Binding Playlist.CoverUrl}"
                                  Stretch="UniformToFill" />
                           <!-- 喜欢的音乐:封面 + 大♥ -->
@@ -358,7 +358,7 @@
                     <StackPanel>
                       <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
                         <Grid>
-                          <Image infra:ManagedCoverImage.DecodeSize="240"
+                          <Image infra:ManagedCoverImage.DecodeSize="300"
                                  infra:ManagedCoverImage.Source="{Binding CoverUrl}"
                                  Stretch="UniformToFill" />
                           <Border Classes="play-count-badge">
@@ -407,7 +407,7 @@
                     <StackPanel>
                       <Border Classes="card-art" Background="{DynamicResource ArtFallback}" ClipToBounds="True">
                         <Grid>
-                          <Image infra:ManagedCoverImage.DecodeSize="240"
+                          <Image infra:ManagedCoverImage.DecodeSize="300"
                                  infra:ManagedCoverImage.Source="{Binding CoverUrl}"
                                  Stretch="UniformToFill" />
                           <Border Classes="play-count-badge">
@@ -463,7 +463,7 @@
                               IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                         <Panel>
                           <Image Stretch="UniformToFill"
-                                 infra:ManagedCoverImage.DecodeSize="96"
+                                 infra:ManagedCoverImage.DecodeSize="100"
                                  infra:ManagedCoverImage.Source="{Binding Playlist.CoverUrl}" />
                           <TextBlock Text="♥" FontSize="20" Foreground="White"
                                      HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -508,7 +508,7 @@
                       <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
                               IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                         <Image Stretch="UniformToFill"
-                               infra:ManagedCoverImage.DecodeSize="96"
+                               infra:ManagedCoverImage.DecodeSize="100"
                                infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
                       </Border>
                       <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
@@ -549,7 +549,7 @@
                       <Border Grid.Column="0" Width="48" Height="48" CornerRadius="6" ClipToBounds="True"
                               IsHitTestVisible="False" Background="{DynamicResource ArtFallback}">
                         <Image Stretch="UniformToFill"
-                               infra:ManagedCoverImage.DecodeSize="96"
+                               infra:ManagedCoverImage.DecodeSize="100"
                                infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
                       </Border>
                       <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">

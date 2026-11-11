@@ -23,7 +23,7 @@
                 <TextBlock Text="{Binding AvatarLetter}" FontSize="24" FontWeight="SemiBold"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                 <Image infra:ManagedCoverImage.Source="{Binding AvatarUrl}"
-                       infra:ManagedCoverImage.DecodeSize="128" Stretch="UniformToFill" />
+                       infra:ManagedCoverImage.DecodeSize="150" Stretch="UniformToFill" />
               </Grid>
             </Border>
             <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
@@ -109,7 +109,7 @@
             <Border Width="48" Height="48" CornerRadius="6" ClipToBounds="True" IsHitTestVisible="False"
                     Background="{DynamicResource ArtFallback}">
               <Image Stretch="UniformToFill"
-                     infra:ManagedCoverImage.DecodeSize="96"
+                     infra:ManagedCoverImage.DecodeSize="100"
                      infra:ManagedCoverImage.Source="{Binding CoverUrl}" />
             </Border>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" IsHitTestVisible="False">
@@ -159,7 +159,7 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                 <!-- DecodeSize=144:72px 显示的 2×;taste 卡不走 playlist-art 的 360 样式 -->
                 <Image infra:ManagedCoverImage.Source="{Binding CoverUrl}"
-                       infra:ManagedCoverImage.DecodeSize="144" Stretch="UniformToFill" />
+                       infra:ManagedCoverImage.DecodeSize="150" Stretch="UniformToFill" />
               </Panel>
             </Border>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
@@ -309,10 +309,10 @@
     </Style>
     <Style Selector="TextBlock.art-glyph"><Setter Property="Text" Value="{DynamicResource IconMusicNote}" /></Style>
     <!-- 解码尺寸由样式供给而非局部值：taste 小卡（72px）与列表行（48px）用小得多的图。
-         360² 解码 0.5MB/张（QQ 图床向上取档 500² 是 1MB），144² 只有 84KB。
+         300² 解码 0.36MB/张（QQ 图床 360→300 就近向下不向上取 500，两家落同一档），150² 只有 90KB。
          ⚠ 同优先级"后声明者生效"：taste 覆盖必须写在基础规则之后，容器查询块在其后才会赢。 -->
     <Style Selector="Border.playlist-art Image">
-      <Setter Property="infra:ManagedCoverImage.DecodeSize" Value="360" />
+      <Setter Property="infra:ManagedCoverImage.DecodeSize" Value="300" />
     </Style>
     <!-- 喜欢区小卡:整卡按钮。hover/pressed 不挂主题模板件(实测 :pointerover 只动了边框、
          背景没变),而是在内容底下垫自绘 Border(列表行 row-hover 同款模式),三态直接换它的背景,

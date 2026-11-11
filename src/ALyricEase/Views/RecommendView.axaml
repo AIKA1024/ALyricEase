@@ -24,7 +24,7 @@
                   ClipToBounds="True">
             <Grid>
               <!-- 过渡结束才提交 URL；可见 Image 自己持有位图租约，离树即释放。 -->
-              <Image infra:ManagedCoverImage.DecodeSize="240"
+              <Image infra:ManagedCoverImage.DecodeSize="300"
                      infra:ManagedCoverImage.Source="{Binding DisplayCoverUrl}"
                      Stretch="UniformToFill" />
               <Border Classes="play-count-badge" IsVisible="{Binding HasPlayCount}"

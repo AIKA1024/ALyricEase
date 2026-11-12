@@ -88,6 +88,13 @@ adb logcat -d -s ALyricEaseProbe:I
   adb logcat -s ALyricEaseProbe:I
   ```
 - `MainActivity` 的 `OnCreate` / `OnNewIntent` **两条路都接**（SingleTop，已在前台时只走后者）。
+- 第三个入口 `--es aly_probe scroll`（`Diagnostics/DeviceScrollProbe`）：在**当前页面就地**跑
+  滚动 A/B 与 jitter 判别（不导航，先手动进到有长列表的页面），结论见 §12。
+  ```
+  adb shell am start -n com.aika1024.alyricease/crc64ea7453dff8e094fe.MainActivity --es aly_probe scroll
+  adb logcat -d -s ALyricEaseProbe:I
+  ```
+- activity 全名若又变了，用 `adb shell cmd package resolve-activity --brief com.aika1024.alyricease` 取。
 - 真机是 MuMu 模拟器（`127.0.0.1:5555`，Android 12 / x86_64 宿主 + arm64 翻译，伪装 HUAWEI HBN-AL00）。
 - 签名：**Release 自 2026-10-01 起用自有密钥**（`~/.android/alyricease-release.keystore`，见 csproj），
   与 debug.keystore 不同 ⇒ 覆盖安装本机构建的 Release 包会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`。
@@ -318,3 +325,171 @@ unzip -l <apk> | grep splash_icon           # res/drawable-nodpi-v4/splash_icon.
 
 **遗留**:源图 `src/ALyricEase/Assets/icon_256.png` 只有 256px,放到 616px 显示时是"软"的
 (但不再有台阶)。要真正锐利得换更大的原图(≥1024)或改矢量;换图后重跑脚本即可。
+
+## 12. 滚动性能:CacheLength 是负收益,瓶颈在容器实化(2026-11-12 真机实测)
+
+背景:用户报安卓滚动卡,怀疑 `CacheLength`(虚拟化缓冲)能救。实测结论是**反的** ——
+调大更卡。判别方法:`DeviceScrollProbe` 在一加 7 Pro(GM1911 / 1440×3120 @560dpi / arm64)
+的「我喜欢的音乐」(1104 首)上,用固定 14px/帧的 rAF 脚本复现滚动,每轮同起点同距离。
+
+```
+baseline   61.9fps  p95=16.6  max=17.0   >50ms=0                空转 rAF
+jitter     59.0fps  p95=17.1  max=67.3   >50ms=1/336            同区域往返,不新建容器
+CL=0       54.7 / 55.9fps  max 70.7 / 83.7   >50ms=7 / 7   分配 61.6 / 59.3MB
+CL=0.5     52.3 / 52.2fps  max 168 / 139     >50ms=11 / 11 分配 57.9 / 57.5MB
+```
+
+**三条结论**:
+
+1. **`CacheLength=0.5` 是负收益**:帧率 −3.1fps、>50ms 掉帧从 7 涨到 11、max 从 70 涨到 168。
+   分配确实降了 4MB/轮(回收变少是真的),但每帧要 Arrange 的元素翻倍,代价更大。
+   ⇒ **歌曲列表保持默认 0**,别照抄 `ArtistView`/`BrowseView` 的 0.5(那是横向卡片区,行数少)。
+2. **jitter 59.0 vs baseline 61.9**:稳态 Arrange(视口 13 行)只值 2.9fps(~5%),可接受。
+3. **滚动 55.3 vs jitter 59.0**:再掉 3.7fps,且 >50ms 从 1 涨到 7 ——
+   **毛刺主要来自"容器实化/回收"这一刻的一次性成本**,不是每帧布局。
+
+**尖峰不是 GC**:同轮 logcat 里 ART 的并发复制 GC `paused` 只有 28~70µs
+(total 8~26ms 走后台线程),与 67~168ms 的尖峰对不上。也不是封面解码(四轮都从 y=0 起滚,
+第 2~4 轮命中缓存,尖峰没有下降)。
+
+**机制**:Avalonia 的滚动是**布局驱动**的 —— `ScrollContentPresenter.OnPropertyChanged(Offset)`
+直接 `InvalidateArrange()`,下一帧 `ArrangeOverrideImpl(size, -Offset)` 重摆子元素,不走合成层平移。
+所以帧成本 ∝ 每帧参与 Arrange 的元素数;一行 `TrackRow` 约 40 个 visual,实化一行就是
+40 次样式匹配 + 绑定求值 + 5 个 TextBlock 的 TextLayout。
+
+**已做:触屏精简模板(2026-11-12,同机同页复跑)**
+
+三套 `*TouchTheme`(`TrackRowSearchTouchTheme` / `TrackRowPlaylistWideTouchTheme` /
+`TrackRowAlbumTouchTheme`)去掉触屏下恒隐的播放·更多·红心·音源角标、两个 hover 层,
+标题也不再需要 ColumnSpan 让位(触屏没有 hover)。
+
+接入的两个坑:
+- **样式必须比原规则多一个 `.touch` 类**。页面级规则特异性更高(歌单页 `.narrow ItemsControl.tracks
+  views|TrackRow` 是 2 类 2 型),单在 `TrackRow.axaml` 加 `views|TrackRow.touch` 覆盖不到;
+  `PlaylistView` / `RecentPlaybackView` / `SearchView` 各补一条 `.touch` 变体。
+- **专辑页原来是 DataTemplate 内联 `Theme=`**,那是 LocalValue,样式改不动 ⇒ 已改成
+  `Classes="album-row"` + 页面样式两条。
+
+| 指标 | 原模板 | 精简模板 |
+|---|---|---|
+| CacheLength=0 帧率 | 55.3 | **58.3**(+3.0) |
+| >50ms 掉帧 | 7 / 7 | **1 / 4** |
+| 最长帧 | 70.7 / 83.7ms | **50.2 / 50.5ms** |
+| 分配/轮 | 61.6 / 59.3MB | **27.7 / 25.8MB**(−57%) |
+| jitter(不建容器) | 59.0 | 59.9 |
+| baseline(空转) | 61.9 | 61.2 |
+
+滚动已到 baseline 的 95%(58.3 / 61.2),容器实化的代价从 3.7fps 降到 1.6fps。
+分配腰斩是最硬的证据:那一半 Button/Border 确实在被逐行创建。
+`CacheLength=0.5` 在新模板下依然更差(55.9 vs 58.3),**结论不变,别加**。
+
+⚠ 精简模板**不复用** `row-title` / `row-duration` / `row-ops` / `row-heart` 这些类,
+它们绑着"桌面 hover 让位"的样式(标题 ColumnSpan 2↔1、时长 IsVisible 切换),放进去会串味;
+歌名只用 `fileMissing`(删除线)一个类。
+
+**附带修正**:精简模板里没有播放/喜欢按钮(整行单击播放)⇒ 设置页「歌曲行的播放与喜欢按钮互换位置」
+在触屏下改了没有任何效果,已按 `InteractionDefaults.IsTouchPrimary` 隐藏
+(`SettingsViewModel.RowHoverActionsSupported`,不用平台 API,与行内实现同源)。
+
+**试过但无效的(2026-11-12,同一台机同一探针,别重复踩)**
+
+- **`AndroidPlatformOptions.RenderingMode = [Vulkan]` → 更差**。58.3 → 51.5fps,
+  最长帧 50 → 200ms(一加 7 Pro / 骁龙 855 / Adreno 640)。Vulkan 驱动的管线/shader
+  创建开销压过了提交开销的收益。⇒ 留默认 Egl。`Application.CustomizeAppBuilder` 里有注释留存。
+- **`IRecyclingDataTemplate`(容器内容回收)** → 无差异。58.3 → 58.6fps(噪声内),
+  分配只降 4%。它绕开的是 #20259 说的"每次重建模板内容",但**重建本来不是大头**:
+  每轮滚 78 行,一行 15 个 visual ≈ 5KB,合计 ~400KB,只占 26MB/轮的 1.5%。
+  大头是每帧布局的临时分配(≈78KB/帧),而 Gen0 GC 很快,不构成卡顿。⇒ 已撤销。
+- **`CacheLength`**(官方文档把它叫 `BufferFactor`,12.1.6 里只有 `CacheLength`)→ 负收益,见上。
+- **`ItemsRepeater`** → 12.0 已退役(官方 performance 文档写明),社区反馈比 VSP 更慢(FluentAvalonia #445),
+  不用考虑。
+- **`SkiaOptions.MaxGpuResourceSizeBytes`**(默认 28MB)→ 未试:瓶颈在 UI 线程布局,
+  不在 GPU 纹理回收,预期无效。
+
+**天花板**:精简模板下滚动 58.3 / 空转 61.8 = **94%**。剩下的 ~3.5fps 是 Avalonia 布局引擎的固定成本
+(每帧 `Offset` ⇒ 整屏 Arrange),不换架构拿不回来。再往下只能砍功能(去封面、合并文本行),
+或者等上游 #20259 那个"内容级虚拟化"落地。
+
+**复跑**:
+```
+adb shell am start -n com.aika1024.alyricease/crc64ea7453dff8e094fe.MainActivity --es aly_probe scroll
+adb logcat -d -s ALyricEaseProbe:I
+```
+⚠ 必须用 **Release** 包测(Debug 是 JIT,帧率没有参考价值),先手动进歌单页再发 intent。
+横屏(TrackRowPlaylistWideTouchTheme)与专辑页(TrackRowAlbumTouchTheme)已用截图确认
+列顺序/对齐无回归。
+
+## 13. 悬浮歌词去掉按钮行，改成纯歌词窗口(2026-11-12)
+
+**症状**：手机上桌面歌词拖到最上面，也总比屏幕顶差一行，看着像"移不高"。
+
+**根因**：`AndroidDesktopLyricService.CreateWindow()` 的窗口根是垂直 `LinearLayout`，
+**第一个子 View 是 48dp 工具栏**（A− / A+ / 译 / 背景 / 穿透 / ×），歌词在它下面；
+`ClampPosition()` 把 `_layout.Y` 钳到 `[0, …]`，而窗口 0 点是**工具栏的顶部**，不是歌词的顶部。
+唯一例外是开穿透（工具栏 `Gone` + `Y` 补偿 48dp），但那时窗口不能拖也不能点。
+
+**做法**：整行删掉，窗口只装歌词本体。六项功能在设置页「桌面歌词」弹窗里全都有
+（总开关 / 显示翻译 / 暂停隐藏 / 穿透 / 字号 / 背景不透明度），悬浮条只是快捷入口。
+
+- 删 `_toolbar` / `_translationButton` / `_collapsedToolbarHeight` 三个字段，
+  以及 `Render()` 里那段 `heightDelta` 的 `Y` 补偿与 `Visibility` / `Checked` 同步；
+- `ClampPosition()` 去掉 `expectedHeight` 参数（原先靠它预估工具栏收起后的高度），
+  窗口高度即歌词高度，`Y` 下限 0 就能贴顶；底部仍留 48dp 避开手势条；
+- 左右 padding 改为对称 12dp（原来右侧只有 4dp，是为了贴 × 按钮）；
+- `Hint` 文案改为「拖动可调整位置，字号/翻译/背景/穿透在应用设置里调整」。
+
+⚠ **连带约束**：穿透开启后窗口不接收触摸，而 Android 没有桌面那套全局快捷键，
+唯一出口是设置页歌词弹窗里的 `ClickThrough` 开关 ⇒ 那个开关不能按平台隐藏，
+`IsEnabled` 也必须继续绑 `Enabled`。
+
+窗口最小高度仍有保障：`RefreshText()` 保证 `Original` 永不为空（无歌时是 `ALyricEase`，
+无词时是歌名），一行文字 + 16dp 内边距足够拖动。
+
+**真机验证**（一加 7 Pro，1440×3120）：`dumpsys window` 读到的悬浮窗 `frame` 顶边 = 128px，
+正好等于状态栏高度 ⇒ `Y=0` 已贴到系统允许的最上沿，歌词到状态栏只差 8dp 内边距；
+窗口高 253px（≈72dp，两行 24sp）。拖到中部再拖回，`frame` 正确回到 128。
+设置弹窗里总开关能关能开：关闭后卡片显示「已关闭」、悬浮窗消失，再开时原地重建。
+
+⚠ 贴顶时窗口会盖住应用自己的顶部按钮（汉堡菜单等）。这是悬浮层的固有行为（用户拖开即可），
+不是本次改动的回归 —— 原先带 48dp 工具栏时盖得更多。
+
+⚠ `adb shell input tap` 点 Avalonia `ToggleSwitch` 要落在轨道中心，点边缘可能不触发
+（本次排查中踩过一次，误判成"关不掉"）。
+
+### 13.1 左右拖不动 = 窗口宽度被写死成屏宽
+
+**症状**：歌词只能水平居中，左右几乎拖不动。
+
+**根因**：`ClampPosition()` 里有一句
+`_layout.Width = Math.Min(Dp(480), Math.Max(Dp(120), WidthPixels - Dp(16)))`。
+1440px / 3.5 密度下算出来 1384px ⇒ X 的活动范围只剩 `1440-1384 = 56px`（16dp），
+两个端点看起来就是"左右各差一点点"，等同居中。
+
+**修法**：窗口宽度按文字实测宽度算，用**显式像素值**（不是 `WrapContent`）。
+
+- `FitWindowWidth()`：`width = max(原文宽, 翻译宽) + 左右 padding(24dp)`，
+  再 `Clamp(…, 120dp, min(480dp, 屏宽))` 写进 `_layout.Width`；`Render()` 每次更新文字后调用；
+- 文字宽度用 `TextView.Paint.MeasureText` 量（与渲染同一份字体/字号，不会对不上）；
+- `text` / `_original` / `_translation` 的 `LayoutParams` 用 `MatchParent`：文字永远填满窗口内容区，
+  居中交给 `TextView.Gravity = Center`；
+- `ClampPosition()` 只钳位置，宽度读 `_layout.Width`（`>0` 才用）；
+- 保留 `_root.LayoutChange`：换行导致高度变化时重钳 `Y`；X/Y 没变就不 `UpdateViewLayout`，防死循环。
+
+⚠ **为什么不用 `WrapContent`**（第一版就是，已回退）：实测一加 7 Pro 会把 `WrapContent` 的
+悬浮窗**钳到 320dp**（`frame=[0,260][1120,643]`）。13~14 字的日文歌词（14×24sp≈1176px）因此
+被挤成两行，用户看到的就是"明明屏幕一行放得下却换行"。显式像素宽度不受这个限制。
+
+**真机结果**：窗口从 1384px 降到 580~1131px（随文字变化），X 活动范围 0~859px（245dp），
+左右拖动恢复正常。宽度与公式精确吻合：11 字 → 1008px、7 字 → 668px（= 字数×84 + 84 padding）。
+
+### 13.2 翻译不居中（同日修）
+
+两行字号不同（翻译 = 原文 × 0.7），宽度都是填满窗口内容区，居中靠 `TextView.Gravity = Center`。
+⚠ 如果改回 `WrapContent`，较窄的那行会被父 `LinearLayout` 的默认 `Gravity=Left` 顶到左边
+（第一版就是这样）。文字容器上的 `text.SetGravity(CenterHorizontal)` 作为兜底一并保留。
+
+真机实测两行中心 117/117，完全对齐。
+
+**关于"一行放得下却换行"**：第一版当成"宽度上限多扣了 16dp"，那只占 56px；真正的限制是上面
+那条 320dp 的 `WrapContent` 钳制。改成显式宽度后 14 字句能拿到 1176px，不再换行。
+

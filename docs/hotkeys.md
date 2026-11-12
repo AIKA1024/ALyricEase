@@ -15,7 +15,7 @@
 | 显示 / 隐藏翻译 | Ctrl + Shift + T |
 | 切换鼠标穿透 | Ctrl + Shift + P |
 
-桌面歌词三条动作直接改 `DesktopLyricViewModel` 的 `Enabled` / `ShowTranslation` / `ClickThrough`，与设置弹窗、悬浮窗按钮共用同一份状态，改完立即落盘。约定：**穿透只在有歌词窗口时才有意义**，所以歌词未显示时按穿透键会先显示歌词再进入穿透；关闭桌面歌词时 `ClickThrough` 会被一并复位（`OnEnabledChanged`），避免下次打开就点不动。
+桌面歌词三条动作直接改 `DesktopLyricViewModel` 的 `Enabled` / `ShowTranslation` / `ClickThrough`，与设置弹窗（以及 Windows 悬浮窗上的按钮）共用同一份状态，改完立即落盘。Android 悬浮窗没有按钮行，只剩设置弹窗这一条入口。约定：**穿透只在有歌词窗口时才有意义**，所以歌词未显示时按穿透键会先显示歌词再进入穿透；关闭桌面歌词时 `ClickThrough` 会被一并复位（`OnEnabledChanged`），避免下次打开就点不动。
 
 桌面歌词是独立 `TopLevel`（`ShowActivated="False"`、可穿透），焦点落在它上面时主窗口的隧道处理器收不到按键 —— 一旦开了穿透就再也解不开。因此 `DesktopLyricController` 把同一个 `HotkeyService` 实例也挂到歌词窗口的 `KeyDown` 隧道阶段；新增窗口级快捷键入口时要保持"一份 service、多个 TopLevel"。
 

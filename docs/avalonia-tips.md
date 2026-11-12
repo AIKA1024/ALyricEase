@@ -390,6 +390,33 @@ AppShell 里把首页模板换成了它。
 **探针**:`--pl-return-real`(`src/ALyricEase.Headless/PlaylistReturnLatencyProbe.cs`),
 真窗口 + 真合成器,量"返回→有歌曲""返回→滚动到位"与 UI 冻结峰值。
 
+## 浏览页返回为什么回到顶部
+
+**症状**:浏览页往下滚几屏 → 点进歌手/歌单 → 返回,页面回到顶部。
+
+**根因**:内容区 `TransitioningContentControl` 按 VM 类型选模板,**每次返回都新建一个 `BrowseView`**
+(`AppShell.axaml` 的模板表里只有 `RecommendViewModel` 走 `ReusablePageViewTemplate`,其余都是普通
+`DataTemplate`)。新视图里那层 `ScrollViewer` 是全新的,`Offset` 从 0 开始 —— 视图对象本身记不住上次滚到哪。
+同时 `BrowseViewModel` 当时不继承 `NavigationDetailViewModelBase`,也没有别处保存滚动位置,
+于是"数据还在(VM 单例、`EnsureLoadedAsync` 幂等)"但"位置丢了"。
+
+**修法**:把浏览页接进详情页那套轻量快照机制(不新增机制):
+
+1. `BrowseViewModel : NavigationDetailViewModelBase`,加
+   `internal void RestoreScrollPosition() => RestorePageScrollState(PageScrollOffset);`
+2. `BrowseView` 的根 `ScrollViewer` 命名为 `PageScroller`,构造里
+   `new DetailPageScrollController(this, PageScroller)`(滚动时写回 VM,挂树时应用快照);
+3. `MainViewModel.OnActivePageChanged("Browse")` 里先 `Browse.RestoreScrollPosition()` 再
+   `EnsureLoadedAsync()`。时序上两种都覆盖:视图先 attach 就由 `ScrollRestoreRequested` 事件触发,
+   视图后 attach(过渡 300ms)则由 controller 的 `OnAttached` 读到 pending。
+
+**规则**:页面 VM 是单例 ≠ 滚动位置会自动保留。只要视图是按模板新建的,滚动状态就必须存在 VM(或别的
+非视觉载体)里,由视图挂树时主动恢复;视图自己存的东西随旧树一起丢。判断某页会不会"回顶部",先看
+它在 `AppShell.axaml` 里是 `ReusablePageViewTemplate` 还是普通 `DataTemplate`。
+
+**探针**:`--browse-ops` 末段 —— 把页面撑到可滚,滚到 320,替换窗口内容模拟离开/返回,
+断言新视图 `PageScroller.Offset.Y` 仍是 320;再断言 `ActivePage` 切回 "Browse" 会产生待恢复快照。
+
 - `ALY_PL_ROWS` 曲目规模(默认 600)、`ALY_PL_ROUNDS` 轮数
 - `ALY_PL_DWELL` 每轮"在详情页停留"毫秒数(逗号分隔,默认 `0,400,2000`)——
   **这是关键变量**,它决定返回时落盘是否已完成
@@ -445,6 +472,24 @@ Avalonia(WPF 不同)的 `TemplatedControl.HorizontalContentAlignment` 默认值�
 - 强调色按钮不要自写(曾有 7 份重复的 dialog-primary:硬编码 SystemAccentColor+White,
   且没处理 :disabled):FluentTheme 自带 `Classes="accent"`(AccentButton* 资源色板,
   hover/pressed/disabled 齐全),直接用。2026-09-16 已全项目替换并删除全部本地副本。
+
+### 头部主操作按钮:"胶囊"与"方角"是两条全局类,不要在页面里写局部圆角
+
+- `Button.play-all` = **胶囊**主操作(18px 圆角,个性推荐/最近播放/歌手歌曲页那一排)。
+- 歌单页与专辑页头部要**方角**:`Classes="play-all play-all-square"` ——
+  `play-all-square` 只改 `CornerRadius=4 / Padding=18,0`,且声明在 `play-all` **之后**
+  (Avalonia 同样长选择器看的还是声明顺序),所以自然压住胶囊值,不用碰基样式。
+- 「更多」按钮 `Button.hero-action-more`:36×36、1px `AppBorder` 描边、4px 方角,
+  悬停/按下浮起表面色。描边必须写 `/template/ ContentPresenter#PART_ContentPresenter`,
+  主题模板的默认态会覆盖 Button 自带的 `BorderBrush`。图标用 `IconMore` 字形(16px),
+  不要用「•••」文字:字形与文字的基线/字宽不同,和旁边的播放全部对不齐。
+- ⚠ 这两条样式原先只写在 `PlaylistView.UserControl.Styles` 里。专辑页照着做出来时出现了三个偏差:
+  局部 `CornerRadius="18"` 压掉样式(仍是胶囊)、手写「•••」文字、ToolTip 写着
+  「更多操作(后续接入)」但根本没有菜单。现在统一定义在 `Styles/Controls/Buttons.axaml`,
+  两页共用一份;菜单也统一成歌单页那套 **分享 / 复制链接**(同一份 `IPlatformShareService`
+  与 `AlbumShareLinks`/`PlaylistShareLinks`)。
+- 回归:`--albumpage` 断言专辑页两套头部(横/竖)的圆角 4、高度 36、间距 8、菜单两项带图标;
+  `--collection-filter` 守歌单页那对按钮仍是方角 36。
 
 ## Release 包的裁剪会删掉"反射创建的页面视图"的构造函数(构建期 IL2072 就是预告)
 

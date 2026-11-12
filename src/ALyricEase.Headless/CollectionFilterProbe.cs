@@ -125,6 +125,10 @@ public static class CollectionFilterProbe
         Assert(play.Bounds.Height == 36 && heart.Bounds.Height == 36
                && more.Bounds.Height == 36 && toggle.Bounds.Height == 36,
             $"头部按钮高度不统一：播放={play.Bounds.Height}, 心动={heart.Bounds.Height}, 更多={more.Bounds.Height}, 展开={toggle.Bounds.Height}");
+        // 方角外观由全局 play-all-square / hero-action-more 提供(专辑页头部共用同一份),
+        // 这里顺带守住:胶囊圆角回来就说明全局样式被页面局部值压掉了。
+        Assert(Math.Abs(play.CornerRadius.TopLeft - 4) < 0.01 && Math.Abs(more.CornerRadius.TopLeft - 4) < 0.01,
+            $"歌单头部按钮不是方角：播放={play.CornerRadius.TopLeft}, 更多={more.CornerRadius.TopLeft}");
         var morePosition = more.TranslatePoint(new Point(0, 0), hero)!.Value;
         var togglePosition = toggle.TranslatePoint(new Point(0, 0), hero)!.Value;
         Assert(togglePosition.X > morePosition.X + more.Bounds.Width,

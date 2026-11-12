@@ -100,6 +100,15 @@
     <Style Selector="Button.artist-link:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
+    <!-- 专辑行主题按输入形态选(触屏走精简版,去掉恒隐的播放/红心/更多)。
+         原先在 DataTemplate 里内联 Theme=,那是 LocalValue,样式改不动 —— 必须改成类 + 样式。
+         见 TrackRow.axaml 顶部注释与 docs/android-notes.md §12。 -->
+    <Style Selector="views|TrackRow.album-row">
+      <Setter Property="Theme" Value="{StaticResource TrackRowAlbumTheme}" />
+    </Style>
+    <Style Selector="views|TrackRow.album-row.touch">
+      <Setter Property="Theme" Value="{StaticResource TrackRowAlbumTouchTheme}" />
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="96,*">
@@ -151,19 +160,28 @@
                            Foreground="{DynamicResource TextTertiary}"
                            MaxLines="3" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                            IsVisible="{Binding HasDescription}" />
-                <StackPanel x:Name="HeroHorizontalActions" Orientation="Horizontal" Spacing="6" Margin="0,4,0,0"
+                <StackPanel x:Name="HeroHorizontalActions" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0"
                             HorizontalAlignment="Left" VerticalAlignment="Center">
-                  <Button Classes="play-all" Command="{Binding PlayAllCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <TextBlock Text="▶" FontSize="13" />
-                      <TextBlock Text="播放全部" FontSize="14" />
-                    </StackPanel>
-                  </Button>
-                  <Button Width="36" Height="36" Padding="0" Background="{DynamicResource AppSurface}"
-                          BorderThickness="1" BorderBrush="{DynamicResource AppBorder}" CornerRadius="18"
-                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                          ToolTip.Tip="更多操作(后续接入)">
-                    <TextBlock Text="•••" LetterSpacing="1" />
+                  <Button Classes="play-all play-all-square" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" />
+                  <!-- 更多:与歌单页头部同一套 hero-action-more 方按钮 + 同一份菜单(分享/复制链接)。
+                       图标用字体字形而不是「•••」文字:字号/垂直位置才和旁边的播放全部对得齐。 -->
+                  <Button x:Name="HeroHorizontalMore" Classes="hero-action-more" IsVisible="{Binding CanShare}"
+                          ToolTip.Tip="更多操作" AutomationProperties.Name="更多专辑操作">
+                    <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                    <Button.Flyout>
+                      <MenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
+                        <MenuItem Header="分享" Click="OnShareAlbumClick">
+                          <MenuItem.Icon>
+                            <TextBlock Text="{DynamicResource IconShare}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                          </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="复制链接" Click="OnCopyAlbumLinkClick">
+                          <MenuItem.Icon>
+                            <TextBlock Text="{DynamicResource IconCopyLink}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                          </MenuItem.Icon>
+                        </MenuItem>
+                      </MenuFlyout>
+                    </Button.Flyout>
                   </Button>
                 </StackPanel>
               </StackPanel>
@@ -208,19 +226,26 @@
                          Foreground="{DynamicResource TextTertiary}" TextAlignment="Center"
                          MaxLines="3" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                          IsVisible="{Binding HasDescription}" />
-              <StackPanel x:Name="HeroVerticalActions" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0"
+              <StackPanel x:Name="HeroVerticalActions" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0"
                           HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Button Classes="play-all" Command="{Binding PlayAllCommand}">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="▶" FontSize="13" />
-                    <TextBlock Text="播放全部" FontSize="14" />
-                  </StackPanel>
-                </Button>
-                <Button Width="36" Height="36" Padding="0" Background="{DynamicResource AppSurface}"
-                        BorderThickness="1" BorderBrush="{DynamicResource AppBorder}" CornerRadius="18"
-                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                        ToolTip.Tip="更多操作(后续接入)">
-                  <TextBlock Text="•••" LetterSpacing="1" />
+                <Button Classes="play-all play-all-square" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" />
+                <Button x:Name="HeroVerticalMore" Classes="hero-action-more" IsVisible="{Binding CanShare}"
+                        ToolTip.Tip="更多操作" AutomationProperties.Name="更多专辑操作">
+                  <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+                  <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
+                      <MenuItem Header="分享" Click="OnShareAlbumClick">
+                        <MenuItem.Icon>
+                          <TextBlock Text="{DynamicResource IconShare}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <MenuItem Header="复制链接" Click="OnCopyAlbumLinkClick">
+                        <MenuItem.Icon>
+                          <TextBlock Text="{DynamicResource IconCopyLink}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                    </MenuFlyout>
+                  </Button.Flyout>
                 </Button>
               </StackPanel>
             </StackPanel>
@@ -237,7 +262,7 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:SongItemViewModel">
-                <views:TrackRow Theme="{StaticResource TrackRowAlbumTheme}" />
+                <views:TrackRow Classes="album-row" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

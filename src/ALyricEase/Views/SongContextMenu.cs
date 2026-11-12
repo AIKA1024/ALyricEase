@@ -252,7 +252,9 @@ internal static class SongContextMenu
         },
     };
 
-    private static void AddArtistItem(MenuFlyout menu, Song song)
+    /// <summary>表演者项（单个直接跳、多个给子菜单）。专辑卡菜单也复用它 —— 专辑的"表演者"
+    /// 就是歌单菜单里的"创建者"。</summary>
+    internal static void AddArtistItem(MenuFlyout menu, Song song)
     {
         var artists = ArtistTargets(song);
         if (artists.Count <= 1)
@@ -311,17 +313,24 @@ internal static class SongContextMenu
 
     private static async Task ShareSongAsync(Visual anchor, Song song, string link)
     {
+        var description = string.IsNullOrWhiteSpace(song.Artist)
+            ? song.Name
+            : $"{song.Name} - {song.Artist}";
+        await ShareUriAsync(anchor, link, $"分享歌曲：{song.Name}", description);
+    }
+
+    /// <summary>系统分享入口（歌曲/专辑菜单共用）。Windows 的 ShowShareUIForWindow 要求前台窗口，
+    /// 否则静默返回 True；这里只负责把 TopLevel 句柄和文案递过去，诊断走 ShareDiag。</summary>
+    internal static async Task ShareUriAsync(Visual anchor, string link, string title, string description)
+    {
         try
         {
             var topLevel = TopLevel.GetTopLevel(anchor);
             var ownerHandle = topLevel?.TryGetPlatformHandle()?.Handle ?? 0;
-            ShareDiag($"菜单分享点击: song={song.Source}#{song.Id}/{song.Mid} link={link} " +
-                $"topLevel={(topLevel is null ? "null(anchor 已脱离)" : "ok")} ownerHandle=0x{ownerHandle:X}");
-            var description = string.IsNullOrWhiteSpace(song.Artist)
-                ? song.Name
-                : $"{song.Name} - {song.Artist}";
+            ShareDiag($"菜单分享点击: title={title} link={link} " +
+                      $"topLevel={(topLevel is null ? "null(anchor 已脱离)" : "ok")} ownerHandle=0x{ownerHandle:X}");
             await ServiceLocator.Get<IPlatformShareService>().ShareUriAsync(
-                ownerHandle, $"分享歌曲：{song.Name}", description, new Uri(link));
+                ownerHandle, title, description, new Uri(link));
         }
         catch (Exception ex)
         {

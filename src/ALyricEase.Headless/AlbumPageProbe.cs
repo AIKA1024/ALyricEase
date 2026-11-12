@@ -28,6 +28,8 @@ internal static class AlbumPageProbe
         vm.ArtistName = "测试歌手与另一位测试歌手";
         vm.Artists = [new ArtistNavItem(1, "测试歌手")];
         vm.PublishTimeMs = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+        // 「更多」按钮只在能拼出公开链接时出现;探针直接给链接,免得起真网络请求。
+        vm.ShareLink = "https://music.163.com/album?id=1";
         vm.Songs.Add(new SongItemViewModel(
             new Song
             {
@@ -119,15 +121,53 @@ internal static class AlbumPageProbe
                                       hyperlinkVisualOk && defaultArtistBackgroundTransparent &&
                                       hoverArtistBackgroundVisible;
 
+            // 头部两个操作按钮要与歌单页同一套"方角"外观:play-all-square + hero-action-more,
+            // 圆角 4、等高 36、间距 8;「更多」是字体字形而不是「•••」文字,菜单是 分享/复制链接。
+            var playAll = visibleActions.GetVisualDescendants().OfType<Button>()
+                .First(button => button.Classes.Contains("play-all"));
+            var moreButton = vertical.IsVisible
+                ? view.FindControl<Button>("HeroVerticalMore")!
+                : view.FindControl<Button>("HeroHorizontalMore")!;
+            var moreGlyph = moreButton.GetVisualDescendants().OfType<TextBlock>()
+                .Select(textBlock => textBlock.Text ?? "")
+                .FirstOrDefault(text => text.Length == 1 && text[0] >= '\uE000') ?? "";
+            var menuHeaders = moreButton.Flyout is MenuFlyout moreFlyout
+                ? moreFlyout.Items.OfType<MenuItem>().Select(item => item.Header as string).ToArray()
+                : [];
+            var squareActionOk = playAll.Classes.Contains("play-all-square") &&
+                                 moreButton.Classes.Contains("hero-action-more") &&
+                                 Math.Abs(playAll.CornerRadius.TopLeft - 4) < 0.01 &&
+                                 Math.Abs(moreButton.CornerRadius.TopLeft - 4) < 0.01 &&
+                                 Math.Abs(playAll.Bounds.Height - 36) < 0.1 &&
+                                 Math.Abs(moreButton.Bounds.Height - 36) < 0.1 &&
+                                 Math.Abs(visibleActions.Spacing - 8) < 0.01 &&
+                                 Equals(playAll.Content, "▶ 播放全部");
+            var moreMenuOk = moreButton.IsVisible && moreGlyph.Length == 1 &&
+                             menuHeaders.Length == 2 && menuHeaders[0] == "分享" && menuHeaders[1] == "复制链接" &&
+                             moreButton.Flyout is MenuFlyout { Items: var items } &&
+                             items.OfType<MenuItem>().All(item => item.Icon is not null);
+            // 菜单能真的弹出来(和歌单页一样挂在这个按钮上),否则只是"有数据结构"。
+            if (moreButton.Flyout is MenuFlyout albumFlyout)
+            {
+                albumFlyout.ShowAt(moreButton);
+                Drain();
+                moreMenuOk &= albumFlyout.IsOpen;
+                albumFlyout.Hide();
+                Drain();
+            }
+
             Console.WriteLine(
                 $"[albumpage:{width}] classes={string.Join(',', view.Classes)} card={card.Bounds.Width:F0}x{card.Bounds.Height:F0} " +
                 $"horizontal={horizontal.IsVisible} vertical={vertical.IsVisible} art={art.Bounds.Width:F0} " +
                 $"titleWidth={title.Bounds.Width:F0} surfaceRemoved={narrowSurfaceRemoved} " +
                 $"buttonsInside={buttonsInside} albumLinkRemoved={albumLinkRemoved} metadataOk={metadataOk} " +
-                $"fluentArtistStyleOk={fluentArtistStyleOk}");
+                $"fluentArtistStyleOk={fluentArtistStyleOk} squareActionOk={squareActionOk} moreMenuOk={moreMenuOk} " +
+                $"playAll={playAll.Bounds.Width:F0}x{playAll.Bounds.Height:F0} " +
+                $"more={moreButton.Bounds.Width:F0}x{moreButton.Bounds.Height:F0}");
 
             if (actualNarrow != expectNarrow || !narrowSurfaceRemoved ||
-                !buttonsInside || !albumLinkRemoved || !narrowGeometryOk || !metadataOk || !fluentArtistStyleOk)
+                !buttonsInside || !albumLinkRemoved || !narrowGeometryOk || !metadataOk || !fluentArtistStyleOk ||
+                !squareActionOk || !moreMenuOk)
                 failed = true;
 
             var path = Path.Combine(Path.GetTempPath(), $"aly-album-{width}.png");
@@ -145,6 +185,7 @@ internal static class AlbumPageProbe
             window.Close();
         }
 
+        vm.ShareLink = "";
         return failed ? 1 : 0;
     }
 

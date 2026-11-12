@@ -56,6 +56,14 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
 
     [ObservableProperty] private string _coverUrl = "";
 
+    /// <summary>专辑公开网页链接(头部「更多」菜单的分享/复制链接)。只由 id/mid 推出,不等网络。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanShare))]
+    private string _shareLink = "";
+
+    /// <summary>头部「更多」按钮只在能拼出公开链接时出现(与歌单页 CanShareCurrentPlaylist 同口径)。</summary>
+    public bool CanShare => ShareLink.Length > 0;
+
     public bool HasDescription => !string.IsNullOrEmpty(Description);
 
     public bool HasArtist => PrimaryArtist is not null;
@@ -77,8 +85,7 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
     {
         var (generation, ct) = BeginLoad();
         ClearContent();
-        _albumId = albumId;
-        _albumMid = "";
+        SetAlbumIdentity(albumId, "");
         try
         {
             var album = await _api.GetAlbumAsync(albumId, ct);
@@ -135,8 +142,7 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
     {
         var (generation, ct) = BeginLoad();
         ClearContent();
-        _albumId = 0;
-        _albumMid = albumMid;
+        SetAlbumIdentity(0, albumMid);
         try
         {
             var infoTask = _qqApi.GetAlbumInfoByMidAsync(albumMid, ct);
@@ -237,8 +243,6 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
     {
         CancelCurrentLoad();
         ClearContent();
-        _albumId = 0;
-        _albumMid = "";
         ResetPageScrollState();
     }
 
@@ -246,8 +250,7 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
     {
         var (generation, ct) = BeginLoad();
         ClearContent();
-        _albumId = snapshot.Id;
-        _albumMid = snapshot.Mid;
+        SetAlbumIdentity(snapshot.Id, snapshot.Mid);
 
         var cached = await _musicCache.TryTakeDetailPageSnapshotAsync(snapshot.CacheKey);
         if (!IsCurrentLoad(generation, ct)) return;
@@ -347,6 +350,18 @@ public sealed partial class AlbumViewModel : NavigationDetailViewModelBase
         Description = "";
         Artists = [];
         CoverUrl = "";
+        SetAlbumIdentity(0, "");
         Songs.Clear();
+    }
+
+    /// <summary>记录当前专辑身份并同步刷新分享链接。三个入口(网易云/QQ/缓存快照)都走这里,
+    /// 免得漏一处就出现「歌单换了、分享链接还指着上一张」。</summary>
+    private void SetAlbumIdentity(long albumId, string albumMid)
+    {
+        _albumId = albumId;
+        _albumMid = albumMid;
+        ShareLink = albumId > 0
+            ? AlbumShareLinks.ForId(albumId) ?? ""
+            : albumMid.Length > 0 ? AlbumShareLinks.ForMid(albumMid) ?? "" : "";
     }
 }

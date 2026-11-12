@@ -882,6 +882,19 @@ public static class Program
             return;
         }
 
+        // 侧栏"本地音乐歌单"右键菜单回归:菜单分支 + 重命名/删除的本地实体与聚合引用联动。
+        if (args.Length > 0 && args[0] == "--local-pl-menu")
+        {
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { Environment.ExitCode = await LocalPlaylistMenuProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
+            return;
+        }
+
         // 本地音频标签读取回归:FLAC Vorbis/STREAMINFO + MP3 ID3v2 文本帧 + 文件名兜底。
         if (args.Length > 0 && args[0] == "--local-tags")
         {

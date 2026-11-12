@@ -1398,9 +1398,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     // ---------- 创建/删除歌单(musicasset 写类,同样走 ag-1 加密通道) ----------
 
-    /// <summary>创建歌单(需登录):music.musicasset.PlaylistBaseWrite/AddPlaylist(param {dirName})。
-    /// 该模块无隐私参数(参考实现同),isPrivate 仅网易云生效。成功返回新歌单
-    /// (Id=tid,DirId=资产目录 id —— 删除歌单/写曲目接口用它);失败抛 ApiException。</summary>
+    /// <summary>创建歌单(需登录):music.musicasset.PlaylistBaseWrite/AddPlaylist(param {dirName[,dirShow]})。
+    /// 隐私歌单 = param.dirShow=2 —— 与读取端 dirinfo.dir_show=2("被主人设为隐私")是同一语义。
+    /// ⚠ 早期注释写"该模块无隐私参数"是错的:参考实现 L-1124/QQMusicApi 的 songlist.create
+    /// 只传 {dirName},那只是封装没暴露这个选项;官网创建私密歌单的形状是
+    /// {dirName,dirDesc:'',dirPicUrl:'',taglist:'',dirShow:2}
+    /// (simple-music docs/qq-music-api.md §2.6,2026-10-16 实号验收)。
+    /// 成功返回新歌单(Id=tid,DirId=资产目录 id —— 删除歌单/写曲目接口用它);失败抛 ApiException。</summary>
     public async Task<Playlist> CreatePlaylistAsync(string name, bool isPrivate = false, CancellationToken ct = default)
     {
         name = name.Trim();
@@ -1410,7 +1414,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             throw new ApiException("歌单名不能为空", -1);
 
         using var doc = await SecureAssetWriteAsync("music.musicasset.PlaylistBaseWrite", "AddPlaylist",
-            p => p.WriteString("dirName", name), "创建歌单", ct).ConfigureAwait(false);
+            p => WriteCreatePlaylistParam(p, name, isPrivate), "创建歌单", ct).ConfigureAwait(false);
 
         // 创建结果在 req_0.data.result(id/dirId);层级漂移时回退 req_0.data
         var result = TryGetPath(doc.RootElement, "req_0", "data", "result")
@@ -1426,6 +1430,19 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             Name = name,
             CanAddTracks = true,
         };
+    }
+
+    /// <summary>AddPlaylist 的 param:公开歌单只传 dirName(已验证可用);隐私歌单按官网形状
+    /// 补齐四个字段,避免服务端因缺字段忽略 dirShow 而静默建成公开歌单。
+    /// 抽成 internal static 供无头探针离线验参数(不联网、不写真实账号)。</summary>
+    internal static void WriteCreatePlaylistParam(Utf8JsonWriter p, string name, bool isPrivate)
+    {
+        p.WriteString("dirName", name);
+        if (!isPrivate) return;
+        p.WriteString("dirDesc", "");
+        p.WriteString("dirPicUrl", "");
+        p.WriteString("taglist", "");
+        p.WriteNumber("dirShow", 2);
     }
 
     /// <summary>向当前账号拥有的 QQ 音乐资产歌单追加单曲。写目标使用资产目录 dirId，
@@ -2454,8 +2471,20 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// TotalCount 供逻辑全量播放队列定位未物化歌曲。</summary>
     internal sealed record PlaylistTrackPage(IReadOnlyList<Song> Songs, bool HasMore, int TotalCount);
 
+    /// <summary>首页曲目为空时的错误文案:null = 正常(本人私密歌单能读到歌 / 新建的空私密歌单 /
+    /// 真正的空歌单)。⚠ 只在"标称有歌却一首都读不到"时报错,不能只看 dir_show==2 ——
+    /// 自己创建的私密歌单读回同样带 2(见 user-page.md §5.1)。
+    /// 抽成 internal static 供无头探针离线验,不联网、不写账号。</summary>
+    internal static string? ResolveEmptyPageError(int dirShow, int songCount, long totalSongNum, int begin)
+    {
+        if (songCount > 0 || begin != 0 || totalSongNum <= 0) return null;
+        return dirShow == 2
+            ? "该歌单被主人设为隐私，仅本人可见"
+            : $"歌单中的 {totalSongNum} 首暂不可见，可能已被设为隐私或全部下架";
+    }
+
     /// <summary>读取 QQ 歌单的一页曲目。聚合歌单用它逐页上屏，普通 QQ 歌单仍可在外层拉齐全量。
-    /// ⚠ 歌单被主人设为隐私时服务端照旧回 code=0 + total_song_num,但 songlist 为空、
+    /// ⚠ 他人的隐私歌单服务端照旧回 code=0 + total_song_num,但 songlist 为空、
     /// dirinfo 换成"歌单被主人设为隐私"(dir_show=2)——不识别就会呈现成"空歌单"。</summary>
     internal async Task<PlaylistTrackPage> GetPlaylistTrackPageAsync(
         long id, int begin, int pageSize = 300, CancellationToken ct = default)
@@ -2484,14 +2513,16 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 PickErrorCode(req?.Code, req?.Data?.Code));
 
         var pageSonglist = req.Data.Songlist ?? [];
-        // 隐私歌单:code 仍是 0、total_song_num 仍是列表接口给的标称数(如 204),
+        // 他人的隐私歌单:code 仍是 0、total_song_num 仍是列表接口给的标称数(如 204),
         // 但 dirinfo 被服务端整份替换成"歌单被主人设为隐私"(dir_show=2)、songlist 恒空。
-        // 不识别就会被当成"加载成功但 0 首",用户看到的是空歌单而不是原因。
-        if (req.Data.DirInfo is { DirShow: 2 })
-            throw new ApiException("该歌单被主人设为隐私，仅本人可见", -1);
-        if (pageSonglist.Count == 0 && begin == 0 && req.Data.TotalSongNum > 0)
-            throw new ApiException(
-                $"歌单中的 {req.Data.TotalSongNum} 首暂不可见，可能已被设为隐私或全部下架", -1);
+        // ⚠ 判据必须是"标称有歌却一首都读不到",不能只看 dir_show==2:
+        // 自己创建的私密歌单读回同样带 dir_show=2,但本人能正常读到 songlist(见 user-page.md §5.1,
+        // simple-music 实号跑通过加删歌曲);刚建的空私密歌单 total=0,也不该报"被主人设为隐私"。
+        // 早期一律抛会让"创建私密歌单"这个功能自己把自己锁在门外。
+        var emptyError = ResolveEmptyPageError(req.Data.DirInfo?.DirShow ?? 0,
+            pageSonglist.Count, req.Data.TotalSongNum, begin);
+        if (emptyError is not null)
+            throw new ApiException(emptyError, -1);
 
         var songs = new List<Song>(pageSonglist.Count);
         foreach (var t in pageSonglist)

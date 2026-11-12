@@ -20,6 +20,9 @@
 | 页面往返内存一直涨 / 返回后空白一下 | [memory-audit.md](memory-audit.md);[avalonia-tips.md](avalonia-tips.md)「页面往返的内存/生命周期回归」「详情页返回卡顿」 |
 | 个人主页"内存高 / 封面请求尺寸" | [memory-audit.md](memory-audit.md) §六(taste/窄屏小图解码、创建/收藏分页实化、QQ 取档规则;**租约"全部在租时允许超预算"是非虚拟化页面的放大器**) |
 | 打开另一个歌单时行封面"闪一下" | [avalonia-tips.md](avalonia-tips.md)「改集合就会回收行容器」 |
+| 侧栏某一类歌单右键不弹菜单 / 本地音乐歌单要改名·删除·改封面 | [avalonia-tips.md](avalonia-tips.md) 文末「侧栏歌单右键菜单的三类身份」(`--local-pl-menu`;三类身份漏一类即静默无菜单) |
+| 创建歌单弹窗切到本地后还挂着"设为隐私歌单" | [avalonia-tips.md](avalonia-tips.md) 同节「同一个弹窗单例的另一种状态污染」(计算属性依赖的模式字段必须可通知;只验 getter 挡不住绑定不重算) |
+| QQ 音乐能不能在创建时设隐私歌单 | [user-page.md](user-page.md) §5.1(**能**:`AddPlaylist` 带 `dirShow:2`;参考仓库只传 `dirName` 是封装没暴露,不是接口不支持) |
 | 某处 GPU 占用偏高("6% 能降吗") | [perf-notes.md](perf-notes.md)(先读「详情页 GPU 的大头是"在动"」) |
 | 用户说"某页滚动时 GPU 能到 X%" / "滚动歌单页只有 5-6%,主页却 20%" | [perf-notes.md](perf-notes.md) §十(**先对齐窗口尺寸**;每帧开销 ∝ 窗口面积,与内容量无关;任务管理器那列读到的是**峰值**,真窗口实测均值 ≈11% / 峰 20%;**跨页差值是帧数不是画法** §10.7) |
 | 歌词面板太贵 / 逐行模糊该不该留 | [perf-notes.md](perf-notes.md)(先读「把歌词模糊收进『性能与体验』档位」;再读它上面那条已回退的「摘掉远景行的模糊」——**为什么试过又撤**) |

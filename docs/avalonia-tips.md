@@ -2232,3 +2232,57 @@ Fluent 的退场是 `opacity 1→0`(83ms) + `scale 1→1.05`(167ms, accelerate)�
 
 **卡片尺寸变化**(如切"手动配置"展开/收起)不在这一节:它走的是
 `DialogSurface` 的合成 Scale 反推 + 内容前半段隐藏,见 `network-proxy.md` §七。
+
+---
+
+## 侧栏歌单右键菜单的三类身份(2026-11-12)
+
+`NavigationPaneView` 的 `ContextRequested` 挂在 `NavList` 上,命中行后交给
+`BuildContextMenu(nav, vm)` 现建 `MenuFlyout`:只认 `NavItemViewModel.Playlist`(平台)、
+`Aggregate`(聚合)、`LocalPlaylist`(本地音乐)三种身份,**其它一律返回 null**。
+本地音乐歌单由 `MainViewModel.RebuildShellNavigation` 用 `localPlaylist:` 构造,
+前两个属性都是 null —— 早期只写了前两支,右键于是静默无反应(无异常、无日志;
+事件其实到达了 ListBox,只是落到 `else return`)。排查"菜单打不开"先数分支覆盖,
+别去查命中测试/样式/折叠。`NavListPrimaryButtonBehavior` 只吞右键**按下**
+(防"选中即导航"误跳页),`ContextRequested` 由抬起/长按派发,不受影响。
+
+本地歌单是纯本地实体,没有分享链接(`PlaylistShareLinks.For` 只拼网易云/QQ),
+菜单给「重命名 / 歌单设置 / 删除」——**首项与平台/聚合歌单一样是"重命名歌单"**,
+别把「歌单设置」排第一(同一个右键入口在不同分组里第一项含义不能变)。复用
+`RenamePlaylistDialog` / `DeletePlaylistDialog`(两个 VM 各加 `Refresh(LocalPlaylist)` 重载
++ 本地实体委托)。Windows/Android 两个宿主都已挂这两个弹窗,长按走同一入口。
+
+**同一个弹窗单例的另一种状态污染**:`CreatePlaylistDialogViewModel` 由 `MainViewModel` 持有,
+网易云 / QQ / 本地三种创建模式共用。`ShowIsPrivate` / `SourceLabel` 是读 `_isLocal` 的
+**计算属性**,而 `_isLocal` 早先是普通字段 —— `RefreshLocal()` 改了值却没发通知,
+绑定沿用上一次(网易云)求值出的 `ShowIsPrivate=true`,本地创建框里就留着"设为隐私歌单"。
+修法:`_isLocal` 改 `[ObservableProperty]`,在 `OnIsLocalChanged` / `OnIsQqChanged` hook 里
+同时通知 `ShowIsPrivate` 和 `SourceLabel`。**凡是计算属性依赖的普通字段,切模式时必须能通知**,
+只靠 `IsQq` 变化顺带刷新会漏掉"上次也是网易云"这种同值场景。
+
+⚠ 顺带纠正一个更早的误判:`ShowIsPrivate` 原本写成 `!_isLocal && !IsQq`,注释称
+"QQ 音乐该接口无此参数,勾选不生效"——**这是错的**。L-1124/QQMusicApi 的
+`songlist.create` 只传 `{dirName}` 只是封装没暴露该选项,不等于接口不支持;
+QQ 官网创建私密歌单的实际形状是 `{dirName,dirDesc:'',dirPicUrl:'',taglist:'',dirShow:2}`
+(见 `user-page.md` §5 与 `QQMusicApiClient.CreatePlaylistAsync`)。
+现在 `ShowIsPrivate => !IsLocal`:网易云 / QQ 都显示勾选框,只有本地歌单隐藏。
+**读参考仓库别把"封装没写"当成"上游不支持"**,尤其写接口的最小参数集常只是子集。
+
+- `LocalPlaylist.Name` 是 `init-only` ⇒ 改名必须**原位换新实例**(照聚合歌单),否则
+  `RebuildShellNavigation` 的 `ReferenceEquals` 会复用旧 `NavItem`,侧栏标签不刷新。
+  换实例后还要同步:聚合成员的 `PlaylistName` 兜底名(成员属性也 init-only,同样换实例)、
+  `AppState.Save()`、详情页 `ApplyLocalPlaylistRename`(不换引用会把封面/导入写回旧对象)。
+- 删除要摘掉所有 `Source=Local && LocalPlaylistId==Id` 的聚合成员;**成员被摘空的聚合一并移除**
+  —— `AppStateStore` 加载时本就丢弃零成员聚合,与其下次启动凭空消失不如当场一致。
+  封面键 `local-{id}` / `agg-{id}` 一并清,磁盘音频文件本体不动。
+- `PlaylistViewModel.ResetDetailPage()` 必须清 `_currentLocalPlaylist`(曾漏 ⇒ 复位后留悬空引用)。
+- 设置封面保存回调 `OnLocalPlaylistSettingsSaved` 必须 `AppState.Save()`:弹窗只把封面文件落位,
+  `CustomCover` 还在内存里。聚合设置的同名回调本来就写了,本地的曾漏 ⇒ 重启丢自定义封面。
+
+**回归**:`--local-pl-menu`(`LocalPlaylistMenuProbe`)。用 `RaiseEvent(MenuItem.ClickEvent)`
+触发真实菜单项(不绕过菜单直调 VM 命令),验菜单顺序与分支、命令接线、改名换实例与
+state.json 往返、聚合成员/空聚合清理、详情页引用与复位、封面落盘、创建弹窗切本地后
+`ShowIsPrivate` 的值与通知(切 QQ 仍为 true)、离线验 QQ 创建私密歌单的
+`AddPlaylist` 参数(`dirShow=2`),以及自己创建的私密歌单不被"他人隐私"判据误伤;
+后两项都不联网、不写账号。
+探针用反射把 DI 单例 `AppStateStore._path` 改到临时文件,不碰用户 state.json。

@@ -2012,8 +2012,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 return row;
             });
             if (songs.Count == 0)
+                // 自己创建的私密歌单也是 IsPrivate=true,别再说"被主人设为隐私"(那是给他人看的)
                 EmptyTracksHint = playlist.Playlist.IsPrivate
-                    ? "该歌单被主人设为隐私，仅本人可见"
+                    ? "这个隐私歌单还没有可显示的曲目"
                     : "这个歌单还没有可显示的曲目";
             await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, songs);
         }
@@ -3004,7 +3005,30 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         ResetDetailPage();
     }
 
-    /// <summary>详情页整体复位:清曲目与增量加载状态、解除打开的聚合引用,回到"请选择歌单"占位态。</summary>
+    /// <summary>本地音乐歌单在侧栏被重命名(资料库中已换新实例)后:换掉详情页持有的引用,
+    /// 让后续的"导入歌曲/设置封面"都作用于新实例,并同步卡片名与标题(曲目不动)。
+    /// ⚠ 不换引用会写回旧实例,下次保存时新名字/封面都会被旧对象覆盖。</summary>
+    public void ApplyLocalPlaylistRename(Models.LocalPlaylist old, Models.LocalPlaylist fresh)
+    {
+        if (!ReferenceEquals(_currentLocalPlaylist, old)) return;
+        _currentLocalPlaylist = fresh;
+        SelectedPlaylist = new PlaylistItemViewModel(new Playlist
+        {
+            Name = fresh.Name,
+            TrackCount = fresh.Tracks.Count,
+            CoverUrl = ResolveLocalPlaylistCover(fresh) ?? "",
+        });
+        PlaylistTitle = fresh.Name;
+    }
+
+    /// <summary>本地音乐歌单被删除后清空详情页回占位态(自增加载代次使在途加载作废)。</summary>
+    public void CloseLocalPlaylistDetail()
+    {
+        if (_currentLocalPlaylist is null && !IsLocalPlaylist) return;
+        ResetDetailPage();
+    }
+
+    /// <summary>详情页整体复位:清曲目与增量加载状态、解除打开的聚合/本地歌单引用,回到"请选择歌单"占位态。</summary>
     private void ResetDetailPage()
     {
         _loadGeneration++;
@@ -3013,6 +3037,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _loadCancellation = null;
         _isCloud = false;
         _currentAggregate = null;
+        _currentLocalPlaylist = null;
         _aggregateLoad = null;
         IsAggregate = false;
         IsLocalPlaylist = false;

@@ -57,9 +57,9 @@ public sealed partial class MainViewModel : ViewModelBase
         AddSongToPlaylistDialog = new AddSongToPlaylistDialogViewModel(playlist, OnSongAddedToPlaylist);
         LikeSourceDialog = new LikeSourceDialogViewModel(() => IsLikeSourceDialogOpen = false);
         RenamePlaylistDialog = new RenamePlaylistDialogViewModel(playlist, OnRenamePlaylistConfirmed,
-            RenameAggregateAsync, OnAggregateRenamed);
+            RenameAggregateAsync, OnAggregateRenamed, RenameLocalPlaylistAsync, OnLocalPlaylistRenamed);
         DeletePlaylistDialog = new DeletePlaylistDialogViewModel(playlist, OnDeletePlaylistConfirmed,
-            DeleteAggregateAsync, OnAggregateDeleted);
+            DeleteAggregateAsync, OnAggregateDeleted, DeleteLocalPlaylistAsync, OnLocalPlaylistDeleted);
         // 折叠状态必须先于首次 RebuildShellNavigation 恢复(静态分组头实例随即被导航渲染消费)
         NetEasePlaylistsHeader.IsExpanded = appState.IsNetEaseGroupExpanded;
         QqPlaylistsHeader.IsExpanded = appState.IsQqGroupExpanded;
@@ -1440,6 +1440,115 @@ public sealed partial class MainViewModel : ViewModelBase
         Playlist.OpenLocalPlaylistCommand.Execute(local);
     }
 
+    // ---- 本地音乐歌单重命名 / 删除(侧栏右键) ----
+
+    /// <summary>侧栏本地音乐歌单右键:重命名(复用平台/聚合同一弹窗,目标是本地实体)。</summary>
+    [RelayCommand]
+    private void OpenRenameLocalPlaylistDialog(Models.LocalPlaylist? local)
+    {
+        if (local is null) return;
+        RenamePlaylistDialog.Refresh(local);
+        IsRenamePlaylistDialogOpen = true;
+    }
+
+    /// <summary>侧栏本地音乐歌单右键:删除确认(复用同一弹窗)。</summary>
+    [RelayCommand]
+    private void OpenDeleteLocalPlaylistDialog(Models.LocalPlaylist? local)
+    {
+        if (local is null) return;
+        DeletePlaylistDialog.Refresh(local);
+        IsDeletePlaylistDialogOpen = true;
+    }
+
+    /// <summary>本地音乐歌单重命名(本地实体):Name 为 init-only ⇒ 原位换新实例持久化;
+    /// 聚合成员的展示名兜底同步更新,打开中的详情页换引用并改标题,侧栏经重建刷新标签。
+    /// Id/CustomCover/Tracks 原样带走(Tracks 是同一个 List,已导入的曲目不会丢)。</summary>
+    private Task RenameLocalPlaylistAsync(Models.LocalPlaylist local, string newName)
+    {
+        var idx = AppState.LocalPlaylists.FindIndex(l => ReferenceEquals(l, local) || l.Id == local.Id);
+        if (idx >= 0)
+        {
+            var fresh = new Models.LocalPlaylist
+            {
+                Id = local.Id,
+                Name = newName,
+                CustomCover = local.CustomCover,
+                Tracks = local.Tracks,
+            };
+            AppState.LocalPlaylists[idx] = fresh;
+            SyncLocalPlaylistMemberName(local.Id, newName);
+            AppState.Save();
+            _playlist.ApplyLocalPlaylistRename(local, fresh);
+            RebuildShellNavigation();
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>聚合成员按 Id 引用本地歌单,PlaylistName 只是源未登录时的展示兜底;
+    /// 改名后同步兜底名(成员属性 init-only ⇒ 原位换新实例),否则聚合设置页仍显示旧名。</summary>
+    private void SyncLocalPlaylistMemberName(string localId, string newName)
+    {
+        foreach (var aggregate in AppState.AggregatePlaylists)
+        for (var i = 0; i < aggregate.Members.Count; i++)
+        {
+            var member = aggregate.Members[i];
+            if (member.Source != MusicSource.Local || member.LocalPlaylistId != localId
+                || member.PlaylistName == newName) continue;
+            aggregate.Members[i] = new Models.AggregatePlaylistMember
+            {
+                Source = member.Source,
+                PlaylistId = member.PlaylistId,
+                LocalPlaylistId = member.LocalPlaylistId,
+                PlaylistName = newName,
+            };
+        }
+    }
+
+    /// <summary>本地音乐歌单删除:只移除实体、自定义封面与聚合成员引用,磁盘音频文件不动。
+    /// 成员被摘空的聚合一并移除 —— 持久化层本就不加载零成员聚合(AppStateStore 加载时丢弃),
+    /// 与其让它下次启动凭空消失,不如当场保持一致。打开中的本地/聚合详情页同步复位或重开。</summary>
+    private Task DeleteLocalPlaylistAsync(Models.LocalPlaylist local)
+    {
+        var target = AppState.LocalPlaylists.FirstOrDefault(
+            l => ReferenceEquals(l, local) || l.Id == local.Id);
+        if (target is null || !AppState.LocalPlaylists.Remove(target))
+            return Task.CompletedTask;
+
+        PlaylistCoverStore.Delete("local-" + target.Id);
+
+        var changed = new List<Models.AggregatePlaylist>();
+        var emptied = new List<Models.AggregatePlaylist>();
+        foreach (var aggregate in AppState.AggregatePlaylists)
+        {
+            var removed = aggregate.Members.RemoveAll(m =>
+                m.Source == MusicSource.Local && m.LocalPlaylistId == target.Id);
+            if (removed == 0) continue;
+            changed.Add(aggregate);
+            if (aggregate.Members.Count == 0) emptied.Add(aggregate);
+        }
+        foreach (var aggregate in emptied)
+        {
+            AppState.AggregatePlaylists.Remove(aggregate);
+            PlaylistCoverStore.Delete("agg-" + aggregate.Id);
+        }
+        AppState.Save();
+
+        if (Playlist.CurrentAggregate is { } openedAggregate && changed.Contains(openedAggregate))
+        {
+            if (emptied.Contains(openedAggregate)) _playlist.CloseAggregateDetail();
+            else _playlist.OpenAggregateCommand.Execute(openedAggregate); // 重开以剔掉已删成员的曲目
+        }
+        if (ReferenceEquals(Playlist.CurrentLocalPlaylist, target)) _playlist.CloseLocalPlaylistDetail();
+        RebuildShellNavigation();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>本地音乐歌单重命名成功回调:关弹窗(换实例/持久化/侧栏重建已在委托里完成)。</summary>
+    private void OnLocalPlaylistRenamed(Models.LocalPlaylist local) => IsRenamePlaylistDialogOpen = false;
+
+    /// <summary>本地音乐歌单删除成功回调:关弹窗。</summary>
+    private void OnLocalPlaylistDeleted(Models.LocalPlaylist local) => IsDeletePlaylistDialogOpen = false;
+
     // ---- 本地音乐歌单设置弹窗(封面自定义) ----
 
     /// <summary>本地音乐歌单设置弹窗状态(WinUI3 ContentDialog 式窗口内弹层)。</summary>
@@ -1455,9 +1564,12 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [RelayCommand] private void CloseLocalPlaylistSettingsDialog() => IsLocalPlaylistSettingsDialogOpen = false;
 
-    /// <summary>本地歌单设置保存回调:持久化已在弹窗 VM 完成,重开当前页让封面/状态生效。</summary>
+    /// <summary>本地歌单设置保存回调:弹窗只把封面文件落位,模型里的 CustomCover 还得写进
+    /// state.json(与聚合设置回调 OnAggregateSettingsSaved 同规,漏了 Save 会在重启后丢封面)。
+    /// 随后重开当前页让新封面生效。</summary>
     private void OnLocalPlaylistSettingsSaved(Models.LocalPlaylist local)
     {
+        AppState.Save();
         IsLocalPlaylistSettingsDialogOpen = false;
         if (ReferenceEquals(Playlist.CurrentLocalPlaylist, local))
             Playlist.OpenLocalPlaylistCommand.Execute(local);

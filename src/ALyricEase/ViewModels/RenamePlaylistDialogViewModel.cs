@@ -9,27 +9,35 @@ using CommunityToolkit.Mvvm.Input;
 namespace ALyricEase.ViewModels;
 
 /// <summary>重命名歌单对话框 VM:侧栏歌单子项右键打开,预填当前名。目标可为平台歌单
-/// (确认后按音源调用重命名接口)或聚合歌单(本地实体,经委托换实例持久化+重建侧栏);
-/// 成功经回调交给宿主(MainViewModel)关弹窗,失败在框内呈现文案不关框。名字未变时直接关框。</summary>
+/// (确认后按音源调用重命名接口)、聚合歌单或本地音乐歌单(后两者都是本地实体,经委托
+/// 换实例持久化+重建侧栏);成功经回调交给宿主(MainViewModel)关弹窗,失败在框内呈现
+/// 文案不关框。名字未变时直接关框。</summary>
 public sealed partial class RenamePlaylistDialogViewModel : ViewModelBase
 {
     private readonly PlaylistViewModel _playlist;
     private readonly Action<PlaylistItemViewModel> _onPlaylistRenamed;
     private readonly Func<AggregatePlaylist, string, Task> _renameAggregate;
     private readonly Action<AggregatePlaylist> _onAggregateRenamed;
+    private readonly Func<LocalPlaylist, string, Task> _renameLocalPlaylist;
+    private readonly Action<LocalPlaylist> _onLocalPlaylistRenamed;
 
     private PlaylistItemViewModel? _targetPlaylist;
     private AggregatePlaylist? _targetAggregate;
+    private LocalPlaylist? _targetLocalPlaylist;
 
     public RenamePlaylistDialogViewModel(PlaylistViewModel playlist,
         Action<PlaylistItemViewModel> onPlaylistRenamed,
         Func<AggregatePlaylist, string, Task> renameAggregate,
-        Action<AggregatePlaylist> onAggregateRenamed)
+        Action<AggregatePlaylist> onAggregateRenamed,
+        Func<LocalPlaylist, string, Task> renameLocalPlaylist,
+        Action<LocalPlaylist> onLocalPlaylistRenamed)
     {
         _playlist = playlist;
         _onPlaylistRenamed = onPlaylistRenamed;
         _renameAggregate = renameAggregate;
         _onAggregateRenamed = onAggregateRenamed;
+        _renameLocalPlaylist = renameLocalPlaylist;
+        _onLocalPlaylistRenamed = onLocalPlaylistRenamed;
     }
 
     /// <summary>新名字(打开时预填当前名)。</summary>
@@ -41,8 +49,9 @@ public sealed partial class RenamePlaylistDialogViewModel : ViewModelBase
     /// <summary>服务端/网络错误文案(非空时框内红字显示,不关框)。</summary>
     [ObservableProperty] private string? _message;
 
-    /// <summary>音源标题(标题内插:"重命名QQ音乐歌单"/"重命名聚合歌单")。</summary>
+    /// <summary>音源标题(标题内插:"重命名QQ音乐歌单"/"重命名聚合歌单"/"重命名本地音乐歌单")。</summary>
     public string SourceLabel => _targetAggregate is not null ? "聚合"
+        : _targetLocalPlaylist is not null ? "本地音乐"
         : _targetPlaylist?.Playlist.Source == MusicSource.QQ ? "QQ音乐" : "网易云";
 
     /// <summary>名字非空且不在提交中才可确认。</summary>
@@ -57,6 +66,7 @@ public sealed partial class RenamePlaylistDialogViewModel : ViewModelBase
     {
         _targetPlaylist = target;
         _targetAggregate = null;
+        _targetLocalPlaylist = null;
         Name = target.Name;
         Message = null;
         IsBusy = false;
@@ -68,6 +78,19 @@ public sealed partial class RenamePlaylistDialogViewModel : ViewModelBase
     {
         _targetAggregate = target;
         _targetPlaylist = null;
+        _targetLocalPlaylist = null;
+        Name = target.Name;
+        Message = null;
+        IsBusy = false;
+        OnPropertyChanged(nameof(SourceLabel));
+    }
+
+    /// <summary>打开对话框时调用:本地音乐歌单目标。</summary>
+    public void Refresh(LocalPlaylist target)
+    {
+        _targetLocalPlaylist = target;
+        _targetPlaylist = null;
+        _targetAggregate = null;
         Name = target.Name;
         Message = null;
         IsBusy = false;
@@ -115,6 +138,29 @@ public sealed partial class RenamePlaylistDialogViewModel : ViewModelBase
             {
                 await _renameAggregate(aggregate, name);
                 _onAggregateRenamed(aggregate);
+            }
+            catch (Exception ex)
+            {
+                Message = ex.Message; // 本地持久化失败等
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+        else if (_targetLocalPlaylist is { } local)
+        {
+            if (name == local.Name)
+            {
+                _onLocalPlaylistRenamed(local);
+                return;
+            }
+            IsBusy = true;
+            Message = null;
+            try
+            {
+                await _renameLocalPlaylist(local, name);
+                _onLocalPlaylistRenamed(local);
             }
             catch (Exception ex)
             {

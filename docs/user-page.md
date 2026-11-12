@@ -272,9 +272,11 @@ PC 端的"关注"页就是上面那条混排接口，粉丝只能在 App / 网�
 
 **修法**（三处，缺一处用户就看不懂发生了什么）：
 
-1. `QQMusicApiClient.GetPlaylistTrackPageAsync`：`dirinfo.dir_show == 2` → 抛
-   `ApiException("该歌单被主人设为隐私，仅本人可见")`；再加一条兜底 —— 首页 `songlist` 空而
-   `total_song_num > 0` 时抛"这 N 首暂不可见"（全下架也是这个形态）。
+1. `QQMusicApiClient.GetPlaylistTrackPageAsync`：首页 `songlist` 空而 `total_song_num > 0`
+   时抛异常 —— `dir_show == 2` 给"该歌单被主人设为隐私，仅本人可见"，否则给
+   "这 N 首暂不可见"（全下架也是这个形态）。⚠ **判据不是"看到 `dir_show==2` 就抛"**：
+   自己创建的私密歌单读回同样带 2，但本人能读到曲目；刚建的空私密歌单 `total=0`，
+   两种都不该报错。早期一律抛会把"创建私密歌单"自己锁在门外，见 §5.1。
 2. 主页 `mydiss.list` 的条目**自带 `dir_show`**（和详情接口一致）→ `Playlist.IsPrivate` →
    `PlaylistItemViewModel.TrackCountText` 显示"隐私歌单"而不是"N 首"，卡片与歌单页 hero 都跟着变。
 3. 歌单页原本没有空态文案（`Message` 在 `PlaylistView` 里根本没绑定），失败=空白 →
@@ -282,6 +284,38 @@ PC 端的"关注"页就是上面那条混排接口，粉丝只能在 App / 网�
    QQ 路径加载完/失败时填。
 
 ⚠ 不要用 `dirinfo.title` 判断：那是界面文案，随语言/版本变；`dir_show` 才是标记位。
+
+### 5.1 创建时就设为隐私（写入端 `dirShow=2`）
+
+读取端叫 `dir_show`，**写入端是驼峰 `dirShow`**，取值同样是 2。
+`music.musicasset.PlaylistBaseWrite/AddPlaylist` 官网创建私密歌单的完整形状：
+
+```json
+{"dirName":"...","dirDesc":"","dirPicUrl":"","taglist":"","dirShow":2}
+```
+
+证据（不是猜的）：
+
+- 本项目早期注释「该模块无隐私参数（参考实现同）」是**误判**：
+  [L-1124/QQMusicApi `songlist.create`](https://github.com/L-1124/QQMusicApi/blob/HEAD/qqmusic_api/modules/songlist.py)
+  只传 `{"dirName": ...}`，那只是封装没暴露这个选项 —— **参考仓库的最小参数集不等于上游能力集**；
+- [simple-music `docs/qq-music-api.md` §2.6](https://github.com/Yyyangshenghao/simple-music/blob/master/docs/qq-music-api.md)
+  记录「官网已确认的 `{dirName,dirDesc:'',dirPicUrl:'',taglist:'',dirShow:2}`」，
+  2026-10-16 用真实账号跑通私密创建、读回 `dirinfo.dir_show:2`、改名与清理；
+- 本项目 `Playlist.IsPrivate` 的判定正是 `mydiss.list` 的 `dir_show == 2`，写入与读取语义闭合。
+
+落点：`CreatePlaylistDialogViewModel.ShowIsPrivate => !IsLocal`（网易云 / QQ 都给勾选框，
+只有本地歌单隐藏）；`QQMusicApiClient.WriteCreatePlaylistParam` 隐私时补齐官网五个字段，
+公开歌单仍只传 `dirName`（已验证可用的最小形状，别动它）。`--local-pl-menu` 探针第 ⑥ 项
+离线验 param，不联网、不碰真实账号。
+
+配套改掉两处「自己建的私密歌单」会踩到的既有逻辑（原假设 `IsPrivate` / `dir_show` 只出现在
+他人歌单上）：`GetPlaylistTrackPageAsync` 不再见 2 就抛（§5 第 1 条）；歌单页空态文案
+从"该歌单被主人设为隐私"改成"这个隐私歌单还没有可显示的曲目"。
+
+⚠ **尚未用本项目账号做过端到端写验证**：`dirShow` 是否真被服务端采纳，需实号建一次私密歌单
+再读回 `dir_show` 确认。若被忽略（静默建成公开歌单），下一步是补 `EditPlaylist` 的 `mask:95`
+全字段改可见性（官网编辑页源码路径，同样见 simple-music §2.6）。
 
 ## 6. 回归
 

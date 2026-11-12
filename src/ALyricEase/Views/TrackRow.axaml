@@ -162,9 +162,97 @@
           </Grid>
         </ControlTemplate>
       </Setter>
-    </ControlTheme>
+  </ControlTheme>
 
-    <!-- 歌单宽行:仿原版 PlaylistTrackListItemWideStyle(30/50/3*/32/2*/3*/32 + Padding 8,0 + ColumnSpacing 8):
+  <!-- ============ 触屏精简变体 ============
+       触屏没有 hover,原模板里"悬停才浮现"的播放/更多/红心/时长切换在 .touch 下全部恒隐
+       (见本文件末尾那批 touch 样式),但控件照建 —— 一行 4~5 个 Button 纯属白付:
+       对象构造、样式匹配、Command/ToolTip 绑定一样不少,只是不 ApplyTemplate。
+       真机实测(docs/android-notes.md §12):滚动掉帧的毛刺几乎全部来自"容器实化那一刻",
+       稳态 Arrange 只值 5%,所以砍掉这些恒隐控件正好打在成本上。
+
+       ⚠ 新模板**不复用** row-title / row-duration / row-ops / row-heart 这些类:
+       它们绑着"桌面 hover 让位"的样式(标题 ColumnSpan 2↔1、时长 IsVisible 切换),
+       放进精简布局会串味。歌名只用 fileMissing(删除线)这一个类。 -->
+  <ControlTheme x:Key="TrackRowSearchTouchTheme" TargetType="views:TrackRow">
+    <Setter Property="Width" Value="400" />
+    <Setter Property="Height" Value="60" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
+          <!-- 根 Grid 画控件的 Background(透明):否则行内空白不可命中,单击整行播放失效 -->
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" Classes.is-local-missing="{Binding IsLocalFileMissing}" IsEnabled="{Binding IsRowEnabled}">
+            <!-- 只留按下反馈(触摸有),不要 hover 层 -->
+            <Border Classes="row-pressed-bg" />
+            <Grid ColumnDefinitions="50,*,40" Margin="8,0" ColumnSpacing="8">
+              <Border Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
+                      Background="{DynamicResource ArtFallback}">
+                <Image infra:ManagedCoverImage.DecodeSize="100"
+                       infra:ManagedCoverImage.FallbackSource="{x:Static infra:CoverImageConverter.PlaceholderUri}"
+                       infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
+                       Stretch="UniformToFill" />
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <TextBlock Classes.fileMissing="{Binding IsLocalFileMissing}" Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <Button x:Name="ArtistAlbumButton" Classes="row-link" HorizontalAlignment="Left"
+                        VerticalAlignment="Center" IsVisible="{Binding HasArtistOrAlbumName}"
+                        IsEnabled="{Binding HasArtistOrAlbum}">
+                  <TextBlock Text="{Binding ArtistsAndAlbumText}" FontSize="12"
+                             Foreground="{DynamicResource TextSecondary}"
+                             TextTrimming="CharacterEllipsis" />
+                  <Button.Resources>
+                    <!-- 与原 Search 主题同一份菜单(多歌手"表演者"子项);TrackRow.OnApplyTemplate 按名找 ArtistAlbumButton -->
+                    <MenuFlyout x:Key="TrackMenuFlyout" ShowMode="Transient">
+                      <MenuItem Header="{Binding Artist, StringFormat='表演者: {0}'}"
+                                Command="{Binding OpenArtistCommand}"
+                                IsEnabled="{Binding HasArtist}"
+                                IsVisible="{Binding HasMultipleArtists, Converter={x:Static BoolConverters.Not}}">
+                        <MenuItem.Icon>
+                          <TextBlock Text="{DynamicResource IconSingleArtist}"
+                                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                      <MenuItem Header="表演者" IsVisible="{Binding HasMultipleArtists}"
+                                ItemsSource="{Binding Artists}">
+                        <MenuItem.Icon>
+                          <TextBlock Text="{DynamicResource IconMultiArtists}"
+                                     FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                        </MenuItem.Icon>
+                        <MenuItem.ItemContainerTheme>
+                          <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
+                                        BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="Header" Value="{Binding Name}" />
+                            <Setter Property="Command" Value="{Binding OpenCommand}" />
+                            <Setter Property="CommandParameter" Value="{Binding Id}" />
+                            <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
+                          </ControlTheme>
+                        </MenuItem.ItemContainerTheme>
+                      </MenuItem>
+                      <MenuItem Header="{Binding Album, StringFormat='专辑: {0}'}"
+                                Command="{Binding OpenAlbumCommand}"
+                                IsEnabled="{Binding HasAlbum}">
+                        <MenuItem.Icon>
+                          <TextBlock Text="{DynamicResource IconAlbum}" FontFamily="{DynamicResource LyricEaseIconsOriginal}"
+                                     FontSize="14" />
+                        </MenuItem.Icon>
+                      </MenuItem>
+                    </MenuFlyout>
+                  </Button.Resources>
+                </Button>
+              </StackPanel>
+              <!-- 时长恒显(触屏没有 hover 让位),右对齐 -->
+              <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="12"
+                         HorizontalAlignment="Right" VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextSecondary}" />
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </ControlTheme>
+
+  <!-- 歌单宽行:仿原版 PlaylistTrackListItemWideStyle(30/50/3*/32/2*/3*/32 + Padding 8,0 + ColumnSpacing 8):
          序号 | 封面 | 歌名(跨列占播放列,悬停收起) | 播放(悬停) | 歌手 | 专辑 | 时长·更多(同列居中,更多盖住时长) -->
     <ControlTheme x:Key="TrackRowPlaylistWideTheme" TargetType="views:TrackRow">
       <Setter Property="Template">
@@ -367,6 +455,103 @@
       </Setter>
     </ControlTheme>
 
+  <!-- 歌单宽行·触屏精简:去掉悬停才出现的播放/更多/红心与两个 hover 层,列数 7→6;
+       保留序号/封面/歌名/歌手/专辑/时长(歌手与专辑是可点跳转的真功能,不是 hover 装饰) -->
+  <ControlTheme x:Key="TrackRowPlaylistWideTouchTheme" TargetType="views:TrackRow">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" Classes.is-local-missing="{Binding IsLocalFileMissing}" IsEnabled="{Binding IsRowEnabled}">
+            <Border Classes="row-pressed-bg" />
+            <Grid ColumnDefinitions="30,50,3*,2*,3*,40" Margin="8,0" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{Binding DisplayIndex}" FontSize="12" HorizontalAlignment="Center"
+                         VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+              <Border Grid.Column="1" Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
+                      Background="{DynamicResource ArtFallback}">
+                <Image infra:ManagedCoverImage.DecodeSize="100"
+                       infra:ManagedCoverImage.FallbackSource="{x:Static infra:CoverImageConverter.PlaceholderUri}"
+                       infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
+                       Stretch="UniformToFill" />
+              </Border>
+              <TextBlock Classes.fileMissing="{Binding IsLocalFileMissing}" Grid.Column="2" Text="{Binding Name}"
+                         FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <Button Grid.Column="3" x:Name="ArtistButton" Classes="row-link"
+                      Command="{Binding OpenArtistCommand}" VerticalAlignment="Center"
+                      IsVisible="{Binding HasArtistName}" IsEnabled="{Binding HasArtist}">
+                <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
+                <Button.Resources>
+                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
+                    <MenuFlyout.ItemContainerTheme>
+                      <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
+                                    BasedOn="{StaticResource {x:Type MenuItem}}">
+                        <Setter Property="Header" Value="{Binding Name}" />
+                        <Setter Property="Command" Value="{Binding OpenCommand}" />
+                        <Setter Property="CommandParameter" Value="{Binding Id}" />
+                        <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
+                      </ControlTheme>
+                    </MenuFlyout.ItemContainerTheme>
+                  </MenuFlyout>
+                </Button.Resources>
+              </Button>
+              <Button Grid.Column="4" Classes="row-link"
+                      Command="{Binding OpenAlbumCommand}" VerticalAlignment="Center"
+                      IsVisible="{Binding HasAlbumName}" IsEnabled="{Binding HasAlbum}">
+                <TextBlock Text="{Binding Album}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
+              </Button>
+              <TextBlock Grid.Column="5" Text="{Binding DurationText}" FontSize="12"
+                         HorizontalAlignment="Right" VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextSecondary}" />
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </ControlTheme>
+
+  <!-- 专辑行·触屏精简:专辑内歌曲不重复显示封面,去掉序号位上的播放/红心盖层与播放列/更多,
+       只留 序号/歌名/歌手/时长 -->
+  <ControlTheme x:Key="TrackRowAlbumTouchTheme" TargetType="views:TrackRow">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" Classes.is-local-missing="{Binding IsLocalFileMissing}" IsEnabled="{Binding IsRowEnabled}">
+            <Border Classes="row-pressed-bg" />
+            <Grid ColumnDefinitions="48,3*,2*,40" Margin="8,0" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{Binding DisplayIndex}" FontSize="12" HorizontalAlignment="Center"
+                         VerticalAlignment="Center" Foreground="{DynamicResource TextTertiary}" />
+              <TextBlock Classes.fileMissing="{Binding IsLocalFileMissing}" Grid.Column="1" Text="{Binding Name}"
+                         FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <Button Grid.Column="2" x:Name="ArtistButton" Classes="row-link"
+                      Command="{Binding OpenArtistCommand}" VerticalAlignment="Center"
+                      IsVisible="{Binding HasArtistName}" IsEnabled="{Binding HasArtist}">
+                <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
+                <Button.Resources>
+                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
+                    <MenuFlyout.ItemContainerTheme>
+                      <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
+                                    BasedOn="{StaticResource {x:Type MenuItem}}">
+                        <Setter Property="Header" Value="{Binding Name}" />
+                        <Setter Property="Command" Value="{Binding OpenCommand}" />
+                        <Setter Property="CommandParameter" Value="{Binding Id}" />
+                        <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
+                      </ControlTheme>
+                    </MenuFlyout.ItemContainerTheme>
+                  </MenuFlyout>
+                </Button.Resources>
+              </Button>
+              <TextBlock Grid.Column="3" Text="{Binding DurationText}" FontSize="12"
+                         HorizontalAlignment="Right" VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextSecondary}" />
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </ControlTheme>
+
   </Styles.Resources>
 
   <!-- 默认样式:默认套用歌单宽行;Background=Transparent 让整行可命中(:pointerover 悬停高亮 + 双击播放) -->
@@ -374,6 +559,13 @@
     <Setter Property="Theme" Value="{StaticResource TrackRowPlaylistWideTheme}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="MinHeight" Value="60" />
+  </Style>
+
+  <!-- 触屏默认走精简宽行(平板/外接屏才会用到宽行);特异性比上面那条多一个类,且后声明。
+       ⚠ 页面级样式(如歌单页 .narrow 那条、专辑页 album-row)特异性更高,必须在各自页面也补
+       .touch 变体,单靠这条覆盖不到。 -->
+  <Style Selector="views|TrackRow.touch">
+    <Setter Property="Theme" Value="{StaticResource TrackRowPlaylistWideTouchTheme}" />
   </Style>
 
   <!-- 悬停高亮:画在内容之后(仿原版行背景色动画),不遮罩封面/红心;

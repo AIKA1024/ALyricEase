@@ -539,6 +539,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>快捷键目前只在桌面宿主接入，Android 隐藏该入口。</summary>
     public bool HotkeysSupported => !OperatingSystem.IsAndroid();
 
+    /// <summary>歌曲行的播放/喜欢按钮只存在于指针模式(悬停浮现 + swap-ops 互换);
+    /// 触屏走精简模板,那一组按钮整个不建(TrackRow.axaml 的 *TouchTheme)⇒ 安卓上这个开关
+    /// 改了没有任何效果,直接隐藏。判定用 InteractionDefaults 而不是平台 API,与行内实现同源。</summary>
+    public bool RowHoverActionsSupported => !InteractionDefaults.IsTouchPrimary;
+
     /// <summary>打开快捷键设置弹窗(MainViewModel 承载的模态弹层,见 HotkeyDialogView)。</summary>
     [RelayCommand]
     private void EditHotkeys()

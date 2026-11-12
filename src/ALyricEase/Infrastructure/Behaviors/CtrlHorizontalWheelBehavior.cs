@@ -36,6 +36,11 @@ public sealed class CtrlHorizontalWheelBehavior : Behavior<ScrollViewer>
     protected override void OnAttached()
     {
         base.OnAttached();
+
+        // 安卓不接管:理由同 SmoothWheelScrollBehavior —— 触摸不产生滚轮事件,而外接鼠标/触控板
+        // 一旦触发,本行为每帧写一次 Offset(= 每帧 InvalidateArrange + 整屏 Arrange),手机上更卡。
+        if (OperatingSystem.IsAndroid()) return;
+
         // 隧道阶段拦截,与纵向平滑行为同层;外层页面行为遇 Ctrl 会自行让位
         AssociatedObject?.AddHandler(InputElement.PointerWheelChangedEvent, OnWheelTunnelled,
             RoutingStrategies.Tunnel);

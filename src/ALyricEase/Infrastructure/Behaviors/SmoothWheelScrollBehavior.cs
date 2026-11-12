@@ -39,6 +39,14 @@ public sealed class SmoothWheelScrollBehavior : Behavior<ScrollViewer>
     protected override void OnAttached()
     {
         base.OnAttached();
+
+        // 安卓不接管(2026-11-12 判定)。触摸拖拽/fling 走 ScrollGestureRecognizer,**不产生**
+        // PointerWheelChanged,本来就来不到这里;唯一会触发的是外接鼠标/触控板的 ACTION_SCROLL
+        // (平板键盘套、DeX、触控板双指滑动)。而这条路径上本行为是"每帧写一次 Offset" —— Avalonia
+        // 的 Offset 变化 = InvalidateArrange + 整屏 Arrange(滚动是布局驱动的,不是合成层平移),
+        // 于是滚一格要 Arrange 15~25 次,手机上比原生"一格一次"更卡。⇒ 零收益、纯风险,直接不挂。
+        if (OperatingSystem.IsAndroid()) return;
+
         // Tunneling:先于模板内 ScrollContentPresenter 的冒泡处理,才有机会替换原生跳变;
         // handledEventsToo=false:已被内部控件消费的滚轮(如打开的下拉框)不去抢。
         AssociatedObject?.AddHandler(InputElement.PointerWheelChangedEvent, OnWheelTunnelled,

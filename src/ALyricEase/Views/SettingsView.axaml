@@ -250,7 +250,7 @@
         </Border>
       </StackPanel>
 
-      <Border Classes="setting-card" Margin="0,0,0,8">
+      <Border Classes="setting-card" Margin="0,0,0,8" IsVisible="{Binding RowHoverActionsSupported}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconHeart}" />
           <TextBlock Grid.Column="1" Classes="setting-title" Text="歌曲行的播放与喜欢按钮互换位置" />

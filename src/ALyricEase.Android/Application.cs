@@ -27,6 +27,9 @@ public class Application : AvaloniaAndroidApplication<App>
 
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        // ⚠ 曾试过 .With(new AndroidPlatformOptions { RenderingMode = [AndroidRenderingMode.Vulkan] }),
+        // 2026-11-12 一加 7 Pro(骁龙 855/Adreno 640)实测**更差**:歌单页滚动 58.3→51.5fps、
+        // 最长帧 50→200ms。Vulkan 驱动的管线/shader 创建开销压过了提交开销的收益 ⇒ 留在默认 Egl。
         return base.CustomizeAppBuilder(builder)
             .WithInterFont();
     }

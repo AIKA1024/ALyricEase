@@ -24,6 +24,11 @@
       <Setter Property="Theme" Value="{StaticResource TrackRowSearchTheme}" />
       <Setter Property="Width" Value="NaN" />
     </Style>
+    <!-- 触屏精简模板,同 PlaylistView;见 docs/android-notes.md §12 -->
+    <Style Selector=".narrow ItemsControl.tracks views|TrackRow.touch">
+      <Setter Property="Theme" Value="{StaticResource TrackRowSearchTouchTheme}" />
+      <Setter Property="Width" Value="NaN" />
+    </Style>
     <Style Selector="ItemsControl.tracks > ContentPresenter">
       <Setter Property="Margin" Value="0,1" />
     </Style>

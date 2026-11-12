@@ -244,6 +244,11 @@
             <Setter Property="Theme" Value="{StaticResource TrackRowSearchTheme}" />
             <Setter Property="Width" Value="NaN" />
         </Style>
+        <!-- 触屏精简模板,同歌单页;见 docs/android-notes.md §12 -->
+        <Style Selector="Border.result-card views|TrackRow.touch">
+            <Setter Property="Theme" Value="{StaticResource TrackRowSearchTouchTheme}" />
+            <Setter Property="Width" Value="NaN" />
+        </Style>
         <!-- 分区卡片(原版 DefaultListBackgroundBrush + 1px 描边圆角 8) -->
         <Style Selector="Border.result-card">
             <Setter Property="Background" Value="{DynamicResource AppListBackground}" />

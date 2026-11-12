@@ -16,9 +16,11 @@ namespace ALyricEase.Diagnostics;
 ///
 /// 触发方式(只读,不影响正常启动):
 /// <code>
-/// adb shell am start -n com.aika1024.alyricease/ALyricEase.MainActivity --es aly_probe image-budget
+/// adb shell am start -n com.aika1024.alyricease/crc64ea7453dff8e094fe.MainActivity --es aly_probe image-budget
 /// adb logcat -d -s ALyricEaseProbe:I
 /// </code>
+/// activity 全名用 <c>adb shell cmd package resolve-activity --brief com.aika1024.alyricease</c> 取
+/// (旧文档里的 <c>ALyricEase.MainActivity</c> 是 .NET 9 时代的名字,已失效)。
 /// </summary>
 internal static class DeviceImageBudgetProbe
 {

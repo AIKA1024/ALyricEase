@@ -67,6 +67,12 @@ public class MainActivity : AvaloniaMainActivity
             return;
         }
 
+        if (probe == Diagnostics.DeviceScrollProbe.IntentExtraValue)
+        {
+            Diagnostics.DeviceScrollProbe.Run();
+            return;
+        }
+
         if (probe != Diagnostics.DeviceImageBudgetProbe.IntentExtraValue) return;
         _ = System.Threading.Tasks.Task.Run(Diagnostics.DeviceImageBudgetProbe.Run);
     }

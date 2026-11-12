@@ -46,6 +46,12 @@
       <Setter Property="Theme" Value="{StaticResource TrackRowSearchTheme}" />
       <Setter Property="Width" Value="NaN" />
     </Style>
+    <!-- 触屏:同布局换精简模板(去掉恒隐的播放/更多/红心按钮),见 TrackRow.axaml 顶部注释与
+         docs/android-notes.md §12。必须比上面那条多一个类才压得住 -->
+    <Style Selector=".narrow ItemsControl.tracks views|TrackRow.touch">
+      <Setter Property="Theme" Value="{StaticResource TrackRowSearchTouchTheme}" />
+      <Setter Property="Width" Value="NaN" />
+    </Style>
     <!-- 曲目列表:ItemsControl 无选中逻辑(不可选中);悬停高亮交给行内样式(共享 TrackRow),容器只留行间距 -->
     <Style Selector="ItemsControl.tracks">
       <Setter Property="Background" Value="Transparent" />
@@ -71,31 +77,8 @@
     <Style Selector="Button.hero-settings:pointerover">
       <Setter Property="Foreground" Value="{DynamicResource LyricEaseTeal}" />
     </Style>
-    <Style Selector="Button.hero-action-more">
-      <Setter Property="Width" Value="36" />
-      <Setter Property="Height" Value="36" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="Background" Value="{DynamicResource AppSurface}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="4" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.hero-action-more /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
-    <Style Selector="Button.hero-action-more:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
-    <Style Selector="Button.hero-action-more:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
+    <!-- 「更多」方按钮(hero-action-more)与「方角播放全部」(play-all-square)的样式
+         已提到 Styles/Controls/Buttons.axaml:专辑页头部用同一套,两处定义必然走样。 -->
     <!-- 创建者按钮(两个 hero 变体共用):Fluent 2 subtle 芯片 —— 透明底、teal 前景,
          悬停/按下浮起微底色;点击进用户页(CreatorId=0 时禁用,如 QQ 歌单) -->
     <Style Selector="Button.creator-chip">
@@ -152,8 +135,7 @@
                            IsVisible="{Binding SelectedPlaylist.HasDescription}" />
                 <Grid x:Name="HeroActions" Margin="0,8,0,0" ColumnDefinitions="*,Auto" Height="36">
                   <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
-                    <Button Classes="play-all" Content="▶ 播放全部" Command="{Binding PlayAllCommand}"
-                            CornerRadius="4" Padding="18,0" />
+                    <Button Classes="play-all play-all-square" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" />
                     <!-- 心动模式占位:仅平台歌单显示(仍为待接入);聚合歌单这里是"导入本地歌曲" -->
                     <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
                             CornerRadius="4" Height="36" Padding="14,0" IsEnabled="False" ToolTip.Tip="心动模式将在播放队列阶段接入"
@@ -228,8 +210,7 @@
                          IsVisible="{Binding SelectedPlaylist.HasDescription}" />
               <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto" Height="36">
                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                  <Button Classes="play-all" Content="▶ 播放全部" Command="{Binding PlayAllCommand}"
-                          CornerRadius="4" Padding="18,0" />
+                  <Button Classes="play-all play-all-square" Content="▶ 播放全部" Command="{Binding PlayAllCommand}" />
                   <!-- 与宽屏操作区同套显隐:心动模式仅平台歌单页,导入双钮仅本地歌单页 -->
                   <Button Background="{DynamicResource LyricEaseRed}" Foreground="White" BorderThickness="0"
                           CornerRadius="4" Height="36" Padding="14,0" IsEnabled="False" ToolTip.Tip="心动模式将在播放队列阶段接入"

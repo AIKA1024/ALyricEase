@@ -1,6 +1,7 @@
 namespace ALyricEase.ViewModels;
 
-/// <summary>详情页共享的轻量滚动状态；不持有 ScrollViewer 或任何视觉元素。</summary>
+/// <summary>页面级 VM 共享的轻量滚动状态；不持有 ScrollViewer 或任何视觉元素。
+/// 详情页与浏览页(页面视图每次新建)都用它把「上次滚到哪」带到新视图上。</summary>
 public abstract class NavigationDetailViewModelBase : ViewModelBase
 {
     private double _pageScrollOffset;

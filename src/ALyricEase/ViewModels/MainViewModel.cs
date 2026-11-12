@@ -375,8 +375,12 @@ public sealed partial class MainViewModel : ViewModelBase
             _ = Recommend.EnsureLoadedAsync();
 
         // 浏览页:榜单/新歌不依赖登录态,首载后不再重复请求(要更新用页面里的"刷新")。
+        // 视图每次返回都会新建,滚动位置得先交回给 VM 再重建(否则每次都从顶部开始)。
         if (value == "Browse")
+        {
+            Browse.RestoreScrollPosition();
             _ = Browse.EnsureLoadedAsync();
+        }
 
         if (value == "Library")
             _ = Playlist.EnsureLibraryOverviewAsync();
@@ -1087,6 +1091,20 @@ public sealed partial class MainViewModel : ViewModelBase
         ActivePage = "Album";
         try { await Album.LoadQqAsync(albumMid); }
         catch { /* 网络失败:停留在专辑页空内容 */ }
+    }
+
+    /// <summary>按音源自动路由的专辑跳转(浏览页「关注新专」卡与歌曲菜单共用):
+    /// 网易云按数字 id、QQ 按 album mid。缺目标时静默返回,停在当前页。</summary>
+    public async Task OpenAlbumAutoAsync(Models.Song song)
+    {
+        if (song.Source == MusicSource.QQ)
+        {
+            if (song.AlbumMid.Length > 0) await OpenQqAlbumCommand.ExecuteAsync(song.AlbumMid);
+        }
+        else if (song.AlbumId != 0)
+        {
+            await OpenAlbumCommand.ExecuteAsync(song.AlbumId);
+        }
     }
 
     /// <summary>歌手页"热门歌曲·查看更多" → 全部歌曲页(流式分页)。</summary>

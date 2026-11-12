@@ -89,17 +89,17 @@
                        TextTrimming="CharacterEllipsis" MaxLines="1" />
           </StackPanel>
           <Border Classes="card-mask" Grid.RowSpan="2" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
-          <!-- 歌单/榜单卡悬停浮现:左下 ▶ 播放、右下 ••• more 菜单(个人主页、个性推荐同款)。
+          <!-- 悬停浮现:左下 ▶ 播放、右下 ••• more 菜单(歌单/单曲/专辑三类卡都有)。
                独占一层 Panel 而不是塞进封面 Grid:遮罩声明在这之前,塞进去会被 20% 黑遮罩压一层。
-               只覆盖封面行(row 0),所以贴的是封面底边;歌曲卡不显示(IsPlaylist=false)。 -->
+               只覆盖封面行(row 0),所以贴的是封面底边;纯展示卡(HasCardOps=false)不显示。 -->
           <Panel Grid.Row="0">
-            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" IsVisible="{Binding IsPlaylist}"
+            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" IsVisible="{Binding HasCardOps}"
                     Click="OnCardPlayClick" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8"
-                    ToolTip.Tip="播放歌单" AutomationProperties.Name="{Binding Title, StringFormat='播放 {0}'}">
+                    ToolTip.Tip="播放" AutomationProperties.Name="{Binding Title, StringFormat='播放 {0}'}">
               <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
                          FontFamily="{DynamicResource LyricEaseIconsFilled}" />
             </Button>
-            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" IsVisible="{Binding IsPlaylist}"
+            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}" IsVisible="{Binding HasCardOps}"
                     Click="OnCardMoreClick" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8"
                     ToolTip.Tip="更多操作" AutomationProperties.Name="{Binding Title, StringFormat='{}{0}的更多操作'}">
               <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
@@ -530,7 +530,7 @@
       </Grid>
     </StackPanel>
 
-    <ScrollViewer Grid.Row="1" Classes="page-scroll"
+    <ScrollViewer x:Name="PageScroller" Grid.Row="1" Classes="page-scroll"
                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel x:Name="PageContent">
         <!-- ⚠ 这里的子项用各自 Margin 排间距,不要给 PageContent 加 Spacing:

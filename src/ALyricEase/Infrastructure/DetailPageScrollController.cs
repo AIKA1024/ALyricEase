@@ -4,7 +4,8 @@ using ALyricEase.ViewModels;
 
 namespace ALyricEase.Infrastructure;
 
-/// <summary>把详情页 VM 的轻量滚动快照应用到新建视图；挂树边界负责可靠退订。</summary>
+/// <summary>把页面 VM 的轻量滚动快照应用到新建视图；挂树边界负责可靠退订。
+/// 详情页与浏览页共用(两者每次返回都会新建视图,ScrollViewer 的 Offset 不会自己留下来)。</summary>
 internal sealed class DetailPageScrollController
 {
     private readonly UserControl _view;

@@ -13,8 +13,9 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
-/// <summary>浏览页卡片:榜单、歌单、新歌共用同一种卡片(封面 + 标题 + 副标题 + 播放量角标 + 音源角标)。
-/// 整卡是一个按钮,点击行为由构造时传入的 activate 决定:榜单/歌单进详情页,新歌直接播放。</summary>
+/// <summary>浏览页卡片:榜单、歌单、新歌、新专共用同一种卡片(封面 + 标题 + 副标题 + 播放量角标 + 音源角标)。
+/// 整卡是一个按钮,点击行为由构造时传入的 activate 决定:榜单/歌单/专辑进详情页,单曲直接播放。
+/// 悬停浮现的 ▶ / ••• 三类卡都有,具体行为由 View 按 Playlist / Song / AlbumSongs 分派。</summary>
 public sealed partial class BrowseCardViewModel : ViewModelBase
 {
     /// <summary>页面过渡(300ms)结束再亮出封面:首帧一次性挂十几二十张位图会把切页动画拖住
@@ -25,7 +26,8 @@ public sealed partial class BrowseCardViewModel : ViewModelBase
     private bool _coverRequestScheduled;
 
     public BrowseCardViewModel(string title, string subtitle, string coverUrl, MusicSource source,
-        long playCount = 0, Func<Task>? activate = null, string badge = "", PlaylistItemViewModel? playlist = null)
+        long playCount = 0, Func<Task>? activate = null, string badge = "", PlaylistItemViewModel? playlist = null,
+        Song? song = null, IReadOnlyList<Song>? albumSongs = null, Func<Task>? play = null)
     {
         Title = title;
         Subtitle = subtitle;
@@ -35,6 +37,9 @@ public sealed partial class BrowseCardViewModel : ViewModelBase
         Badge = badge;
         _activate = activate;
         Playlist = playlist;
+        Song = song;
+        AlbumSongs = albumSongs;
+        PlayAction = play;
     }
 
     public string Title { get; }
@@ -45,8 +50,25 @@ public sealed partial class BrowseCardViewModel : ViewModelBase
     /// 卡片的点击行为另由 <see cref="_activate"/> 承担 —— 点封面进歌单页,点 ▶ 才播。</summary>
     public PlaylistItemViewModel? Playlist { get; }
 
-    /// <summary>是否歌单卡(含榜单):只有这两类长操作圆钮,歌曲卡点击即播放,没有"整张歌单"语义。</summary>
+    /// <summary>是否歌单卡(含榜单):只有这两类是"整张歌单"语义,••• 弹歌单菜单。</summary>
     public bool IsPlaylist => Playlist is not null;
+
+    /// <summary>单曲卡携带的歌曲(••• 弹歌曲菜单);专辑卡与歌单卡为 null。</summary>
+    public Song? Song { get; }
+
+    /// <summary>专辑卡的播放队列：拿到全量曲目时是整张专辑，否则是这批采样。
+    /// 点 ▶ 播它，••• 弹专辑菜单；单曲卡与歌单卡为 null。</summary>
+    public IReadOnlyList<Song>? AlbumSongs { get; }
+
+    /// <summary>专辑卡:标题是专辑名、点击进专辑页。</summary>
+    public bool IsAlbum => AlbumSongs is { Count: > 0 };
+
+    /// <summary>封面上的 ▶(播放):自己的音频或这张专辑的采样曲目。</summary>
+    public Func<Task>? PlayAction { get; }
+
+    /// <summary>悬停是否浮现 ▶ / •••。歌单卡有"整张歌单"可播,歌曲卡/专辑卡各有一段音频可播,
+    /// 所以三类都显示;只有纯展示的卡片(比如失败兜底)才没有。</summary>
+    public bool HasCardOps => Playlist is not null || PlayAction is not null;
 
     public string CoverUrl { get; }
 
@@ -265,7 +287,7 @@ public sealed partial class BrowseSectionViewModel : ViewModelBase
 /// 顶部平台筛选(全部/网易云/QQ)只是重新投影同一批卡片实例,不会重新请求网络。
 /// </para>
 /// </summary>
-public sealed partial class BrowseViewModel : ViewModelBase
+public sealed partial class BrowseViewModel : NavigationDetailViewModelBase
 {
     // 每源多取两张:进了轮播的那几张会从货架里剔除(见 LoadToplistsAsync),留点余量货架才不会秃。
     private const int ToplistPerSource = 7;
@@ -297,8 +319,9 @@ public sealed partial class BrowseViewModel : ViewModelBase
     /// <summary>新歌速递的播放队列:点任意一首,上一首/下一首在两边的新歌之间连续切换。</summary>
     private IReadOnlyList<Song> _newSongQueue = [];
 
-    /// <summary>关注新歌的卡片与播放队列(独立加载,后到)。</summary>
+    /// <summary>「关注新歌」「关注新专」的卡片与播放队列(独立加载,后到)。</summary>
     private IReadOnlyList<BrowseCardViewModel> _followed = [];
+    private IReadOnlyList<BrowseCardViewModel> _followedAlbums = [];
     private IReadOnlyList<Song> _followedQueue = [];
     private CancellationTokenSource? _followedCts;
 
@@ -315,9 +338,15 @@ public sealed partial class BrowseViewModel : ViewModelBase
         NewSongsSection = new BrowseSectionViewModel("新歌速递");
         FollowedSection = new BrowseSectionViewModel("关注新歌",
             $"最近 {FollowedNewSongService.LookbackMonths} 个月");
+        FollowedAlbumsSection = new BrowseSectionViewModel("关注新专",
+            $"最近 {FollowedNewSongService.LookbackMonths} 个月");
         // 「关注新歌」排在「新歌速递」之前:它是按自己的关注列表算的,和下面的榜单没有重叠。
         // 它要逐位歌手查(近 50 次请求),所以**不阻塞**首屏:前三块先上屏,它自己后补。
-        Sections = [ToplistsSection, RecommendedSection, FollowedSection, NewSongsSection];
+        // 「关注新专」紧跟其后:同一批请求的结果,专辑单独一条货架,零额外网络成本。
+        Sections =
+        [
+            ToplistsSection, RecommendedSection, FollowedSection, FollowedAlbumsSection, NewSongsSection,
+        ];
         HeroItems.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasMultipleHeroes));
         SourceFilters =
         [
@@ -429,6 +458,9 @@ public sealed partial class BrowseViewModel : ViewModelBase
     /// <summary>关注歌手最近三个月的新歌(需登录;都没登录时整块隐藏)。</summary>
     public BrowseSectionViewModel FollowedSection { get; }
 
+    /// <summary>关注歌手最近三个月的新专辑:同专辑的多首合成一张卡,点击进专辑页。</summary>
+    public BrowseSectionViewModel FollowedAlbumsSection { get; }
+
     /// <summary>平台筛选:0=全部,1=网易云音乐,2=QQ音乐(与个人主页的筛选顺序一致)。</summary>
     [ObservableProperty] private int _sourceIndex;
 
@@ -442,6 +474,12 @@ public sealed partial class BrowseViewModel : ViewModelBase
 
     /// <summary>首载(幂等):榜单与新歌不依赖登录态,整页只拉一次;需要重新取用 <see cref="RefreshCommand"/>。</summary>
     public Task EnsureLoadedAsync() => _loaded || _loading ? Task.CompletedTask : LoadAsync(force: false);
+
+    /// <summary>切回浏览页时把上次的滚动位置交给新视图。内容区每次按模板新建 BrowseView,
+    /// ScrollViewer 是全新的、Offset 从 0 开始 —— 不在这里补一刀,返回就必然回到顶部。
+    /// 和详情页共用 <see cref="NavigationDetailViewModelBase"/> 的快照机制:
+    /// 滚动时由 <see cref="DetailPageScrollController"/> 写进 VM,这里把它标成待恢复。</summary>
+    internal void RestoreScrollPosition() => RestorePageScrollState(PageScrollOffset);
 
     [RelayCommand]
     private async Task RefreshAsync()
@@ -509,7 +547,7 @@ public sealed partial class BrowseViewModel : ViewModelBase
         }
     }
 
-    /// <summary>关注新歌:独立于前三块加载。未登录任一平台时直接返回(区块保持隐藏)。</summary>
+    /// <summary>关注新歌/新专:独立于前三块加载。未登录任一平台时直接返回(两块都保持隐藏)。</summary>
     private async Task LoadFollowedAsync(bool force, CancellationToken ct)
     {
         if (!_followedFeed.Enabled) return;
@@ -522,10 +560,15 @@ public sealed partial class BrowseViewModel : ViewModelBase
 
             await _dispatcher.InvokeAsync(() =>
             {
-                _followedQueue = result.Songs;
-                _followed = result.Songs.Select(ToFollowedCard).ToList();
+                // 同一批请求的结果分两条货架:单曲进「关注新歌」,同专辑合成的进「关注新专」。
+                // 队列只放单曲 —— 点单曲卡不该顺手把某张专辑的歌也排进来。
+                _followedQueue = result.Items.Where(item => !item.IsAlbum).Select(item => item.Lead).ToList();
+                _followed = _followedQueue.Select(ToFollowedSongCard).ToList();
+                _followedAlbums = result.Items.Where(item => item.IsAlbum).Select(ToFollowedAlbumCard).ToList();
                 ApplySection(FollowedSection, _followed);
-                FollowedSection.Caption = BuildFollowedCaption(result);
+                ApplySection(FollowedAlbumsSection, _followedAlbums);
+                FollowedSection.Caption = BuildFollowedCaption(result, _followed.Count);
+                FollowedAlbumsSection.Caption = BuildFollowedAlbumsCaption(_followedAlbums.Count);
             }).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -536,7 +579,9 @@ public sealed partial class BrowseViewModel : ViewModelBase
         {
             await _dispatcher.InvokeAsync(() =>
             {
-                FollowedSection.Caption = $"最近 {FollowedNewSongService.LookbackMonths} 个月 · 加载失败";
+                var window = $"最近 {FollowedNewSongService.LookbackMonths} 个月";
+                FollowedSection.Caption = $"{window} · 加载失败";
+                FollowedAlbumsSection.Caption = "";
             }).ConfigureAwait(false);
         }
         finally
@@ -545,19 +590,71 @@ public sealed partial class BrowseViewModel : ViewModelBase
         }
     }
 
-    private static string BuildFollowedCaption(FollowedNewSongResult result)
+    private static string BuildFollowedCaption(FollowedNewSongResult result, int singles)
     {
         var window = $"最近 {FollowedNewSongService.LookbackMonths} 个月";
-        if (result.Songs.Count > 0) return $"{window} · {result.Songs.Count} 首";
+        if (singles > 0) return $"{window} · {singles} 首";
         if (result.NetEaseFailed && result.QqFailed) return $"{window} · 加载失败";
-        // 拿到了名单却一首都没命中,和"一个歌手都没关注"是两件事,文案要分开。
-        return result.HasArtists ? $"{window} · 这段时间没发新歌" : window;
+        // 拿到了名单却一首单曲都没命中,和"一个歌手都没关注"是两件事,文案要分开。
+        return result.HasArtists ? $"{window} · 这段时间没发新单曲" : window;
     }
 
-    private BrowseCardViewModel ToFollowedCard(Song song)
-        => new(song.Name, song.Artist, song.CoverUrl, song.Source, 0,
-            () => _player.PlayFromList(song, _followedQueue, "关注新歌"),
-            badge: RelativeDate(song.PublishDate));
+    /// <summary>专辑货架的说明。空货架整块隐藏,所以只在有内容时才有意义。</summary>
+    private static string BuildFollowedAlbumsCaption(int albums)
+        => albums > 0
+            ? $"最近 {FollowedNewSongService.LookbackMonths} 个月 · {albums} 张专辑"
+            : "";
+
+    /// <summary>关注新歌的单曲卡:点击播放,▶ 也播放,••• 是歌曲菜单(加歌单/下载/表演者/专辑/分享)。</summary>
+    private BrowseCardViewModel ToFollowedSongCard(Song song)
+    {
+        var play = (Func<Task>)(() => _player.PlayFromList(song, _followedQueue, "关注新歌"));
+        return new(song.Name, song.Artist, song.CoverUrl, song.Source, 0,
+            activate: play,
+            badge: RelativeDate(song.PublishDate),
+            song: song,
+            play: play);
+    }
+
+    /// <summary>关注新专的专辑卡:标题是专辑名、副标题「歌手 · 共 N 首」,点击进专辑页;
+    /// ▶ 播整张专辑,••• 是专辑菜单(播放/打开专辑)。
+    /// 「N」是**专辑真实曲数**(拉到全量曲目后才知道):写采样数会当场被用户抓住 ——
+    /// 明透《BELOVED》采样 4 首、专辑 10 首,卡片上写 4 就是错的。拉不到全量时才退回「N 首新歌」。</summary>
+    private BrowseCardViewModel ToFollowedAlbumCard(FollowedNewSongItem item)
+    {
+        var lead = item.Lead;
+        // 副标题只放第一位歌手:QQ 的合唱署名是「甲/乙/丙」一大串,
+        // 整串铺上去会把后面的曲数挤出卡片(单行省略号截断)。
+        var subtitle = item.HasFullAlbum
+            ? $"{LeadArtist(lead)} · 共 {item.TotalCount} 首"
+            : $"{LeadArtist(lead)} · {item.Songs.Count} 首新歌";
+        var playback = item.PlaybackSongs;
+        return new(item.Album, subtitle, lead.CoverUrl, lead.Source, 0,
+            activate: () => OpenAlbumAsync(lead),
+            badge: RelativeDate(lead.PublishDate),
+            albumSongs: playback,
+            play: () => _player.PlayFromList(playback[0], playback, item.Album));
+    }
+
+    /// <summary>专辑页:网易云按数字 id、QQ 按 album mid(和歌曲菜单的"专辑："跳转同一口径)。</summary>
+    private static async Task OpenAlbumAsync(Song song)
+    {
+        try
+        {
+            await ServiceLocator.Get<MainViewModel>().OpenAlbumAutoAsync(song);
+        }
+        catch
+        {
+            // 未初始化 / 导航失败:停在浏览页,和歌曲菜单一跳转失败的处理一致。
+        }
+    }
+
+    private static string LeadArtist(Song song)
+    {
+        if (song.ArtistNames.Count > 0 && song.ArtistNames[0].Length > 0) return song.ArtistNames[0];
+        var slash = song.Artist.IndexOf('/');
+        return slash > 0 ? song.Artist[..slash] : song.Artist;
+    }
 
     /// <summary>徽章文案:新歌的时间感比"发行日期"更重要,超过一个月才退回月数。</summary>
     private static string RelativeDate(string publishDate)
@@ -663,6 +760,7 @@ public sealed partial class BrowseViewModel : ViewModelBase
         ApplySection(RecommendedSection, _recommended);
         ApplySection(NewSongsSection, _newSongs);
         ApplySection(FollowedSection, _followed);
+        ApplySection(FollowedAlbumsSection, _followedAlbums);
         RebuildHero();
         RebuildPromos();
     }
@@ -717,9 +815,16 @@ public sealed partial class BrowseViewModel : ViewModelBase
             () => OpenPlaylistAsync(playlist), playlist: playlist);
     }
 
+    /// <summary>新歌速递的歌曲卡:和「关注新歌」同款 —— 点击播放、悬停 ▶/•••、
+    /// •••/右键弹歌曲菜单(加歌单/下载/表演者/专辑/分享)。</summary>
     private BrowseCardViewModel ToSongCard(Song song, IReadOnlyList<Song> queue)
-        => new(song.Name, song.Artist, song.CoverUrl, song.Source, 0,
-            () => _player.PlayFromList(song, queue, "浏览"));
+    {
+        var play = (Func<Task>)(() => _player.PlayFromList(song, queue, "浏览"));
+        return new(song.Name, song.Artist, song.CoverUrl, song.Source, 0,
+            activate: play,
+            song: song,
+            play: play);
+    }
 
     // ---------- 打开 ----------
 

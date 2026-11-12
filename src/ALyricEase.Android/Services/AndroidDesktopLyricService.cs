@@ -24,8 +24,6 @@ public sealed class AndroidDesktopLyricService : IDisposable
     private readonly Handler _handler = new(Looper.MainLooper!);
     private IWindowManager? _manager;
     private LinearLayout? _root;
-    private LinearLayout? _toolbar;
-    private ToggleButton? _translationButton;
     private TextView? _original;
     private TextView? _translation;
     private WindowManagerLayoutParams? _layout;
@@ -34,7 +32,6 @@ public sealed class AndroidDesktopLyricService : IDisposable
     private bool _disposed;
     private float _downX, _downY;
     private int _startX, _startY;
-    private int _collapsedToolbarHeight;
 
     public AndroidDesktopLyricService(DesktopLyricViewModel model, AppStateStore state,
         ILogger<AndroidDesktopLyricService> logger)
@@ -121,15 +118,6 @@ public sealed class AndroidDesktopLyricService : IDisposable
             if (_root is null) CreateWindow();
             if (_root!.Background is GradientDrawable background)
                 background.SetColor(Color.Argb((int)(255 * _model.BackgroundOpacity), 35, 39, 45));
-            // 工具栏固定 48dp：收起高度，同时补偿窗口 Y，保持歌词屏幕坐标不变。
-            var collapsedHeight = _model.ClickThrough ? Dp(48) : 0;
-            var heightDelta = collapsedHeight - _collapsedToolbarHeight;
-            var expectedHeight = _root.Height > 0 ? Math.Max(1, _root.Height - heightDelta) : (int?)null;
-            _layout!.Y += heightDelta;
-            _collapsedToolbarHeight = collapsedHeight;
-            _toolbar!.Visibility = _model.ClickThrough ? ViewStates.Gone : ViewStates.Visible;
-            _translationButton!.Checked = _model.ShowTranslation;
-            _translationButton.SetTextColor(_model.ShowTranslation ? Color.Rgb(114, 229, 211) : Color.White);
             _layout!.Flags = WindowManagerFlags.NotFocusable | WindowManagerFlags.NotTouchModal
                 | (_model.ClickThrough ? WindowManagerFlags.NotTouchable : 0);
             // Android 12+ 的非可信悬浮窗触摸穿透要求遮挡透明度不超过 0.8。
@@ -142,8 +130,9 @@ public sealed class AndroidDesktopLyricService : IDisposable
             _translation!.Text = _model.Translation;
             _translation.TextSize = (float)_model.TranslationFontSize;
             _translation.Visibility = _model.HasTranslation ? ViewStates.Visible : ViewStates.Gone;
-            _model.Hint = "已允许悬浮窗；拖动歌词调整位置，点击 × 关闭。";
-            ClampPosition(expectedHeight);
+            FitWindowWidth();
+            _model.Hint = "已允许悬浮窗；拖动可调整位置，字号/翻译/背景/穿透在应用设置里调整。";
+            ClampPosition();
             _manager!.UpdateViewLayout(_root, _layout);
             _root!.Post(() =>
             {
@@ -157,18 +146,45 @@ public sealed class AndroidDesktopLyricService : IDisposable
 
     private int Dp(float value) => (int)(value * (_context.Resources?.DisplayMetrics?.Density ?? 1));
 
+    /// <summary>
+    /// 按两行文字的实际宽度设置窗口宽度（显式像素值，不是 WrapContent）。
+    /// 原因：WrapContent 的悬浮窗会被部分 OEM（实测一加 7 Pro）钳到 320dp，
+    /// 长歌词因此被逼着换行，看起来像"明明一行放得下却换行"。
+    /// 显式宽度不受该限制，窗口宽度 = min(文字宽 + 内边距, 屏宽/480dp)。
+    /// </summary>
+    private void FitWindowWidth()
+    {
+        if (_layout is null) return;
+        var metrics = _context.Resources!.DisplayMetrics!;
+        var maxWindow = Math.Min(Dp(480), metrics.WidthPixels);
+        var textWidth = Math.Max(MeasureText(_original), MeasureText(_translation));
+        var width = (int)Math.Ceiling(textWidth) + Dp(24); // 左右 padding 各 12dp
+        _layout.Width = Math.Clamp(width, Dp(120), maxWindow);
+    }
+
+    private static float MeasureText(TextView? view)
+        => view?.Text is { Length: > 0 } text && view.Paint is { } paint
+            ? paint.MeasureText(text) : 0f;
+
     private void CreateWindow()
     {
         _manager = _context.GetSystemService(Context.WindowService)?.JavaCast<IWindowManager>()
             ?? throw new InvalidOperationException("WindowManager unavailable");
         _root = new LinearLayout(_context) { Orientation = Orientation.Vertical };
         _root.Touch += OnDrag;
-        _root.SetPadding(Dp(12), Dp(8), Dp(4), Dp(8));
+        // 窗口只承载歌词本身。原来顶部那条 48dp 工具栏（A−/A+/译/背景/穿透/×）已移除：
+        // 它把歌词顶死，导致窗口 Y 到 0 时歌词仍差 48dp 才贴顶；这些开关在设置页
+        // 「桌面歌词」对话框里都有，触屏下长期占位并不划算。见 docs/android-notes.md。
+        _root.SetPadding(Dp(12), Dp(8), Dp(12), Dp(8));
+        // 宽度随内容走：短歌词窗口就窄，才拖得动；给个下限避免只剩一个字时抓不住。
+        _root.SetMinimumWidth(Dp(120));
         var background = new GradientDrawable();
         background.SetColor(Color.Argb(220, 35, 39, 45));
         background.SetCornerRadius(Dp(12));
         _root.Background = background;
         var text = new LinearLayout(_context) { Orientation = Orientation.Vertical };
+        // 原文与翻译两行字号不同(翻译 0.7 倍),宽度交给容器居中,两行才相对最宽行对齐。
+        text.SetGravity(GravityFlags.CenterHorizontal);
         _original = new TextView(_context) { Gravity = GravityFlags.Center };
         _original.SetTextColor(Color.Rgb(114, 229, 211));
         _original.SetShadowLayer(Dp(2), 0, Dp(1), Color.Black);
@@ -179,45 +195,20 @@ public sealed class AndroidDesktopLyricService : IDisposable
         _translation.SetShadowLayer(Dp(2), 0, Dp(1), Color.Black);
         _translation.SetMaxLines(2);
         _translation.Ellipsize = global::Android.Text.TextUtils.TruncateAt.End;
-        text.AddView(_original);
-        text.AddView(_translation);
+        // 宽度用 MatchParent,由窗口宽度决定;窗口宽度再按文字实测宽度算(FitWindowWidth)。
+        // ⚠ 不要回到 WrapContent:实测一加 7 Pro 会把 WrapContent 的悬浮窗钳到 320dp,
+        // 长歌词因此被逼着换行("明明一行放得下")。显式像素宽度不受这个限制。
+        text.AddView(_original, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+        text.AddView(_translation, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
         text.Touch += OnDrag;
         _original.Touch += OnDrag;
         _translation.Touch += OnDrag;
-        _toolbar = new LinearLayout(_context) { Orientation = Orientation.Horizontal };
-        _toolbar.SetGravity(GravityFlags.Right);
-        _toolbar.Touch += OnDrag;
-        void AddAction(string label, string description, Action action)
-        {
-            var button = new Button(_context) { Text = label, ContentDescription = description, TextSize = 12 };
-            button.SetPadding(0, 0, 0, 0);
-            button.SetTextColor(Color.White);
-            button.SetBackgroundColor(Color.Argb(210, 50, 55, 62));
-            button.Click += (_, _) => action();
-            _toolbar.AddView(button, new LinearLayout.LayoutParams(0, Dp(48), 1));
-        }
-        AddAction("A−", "缩小字号", () => _model.DecreaseFontCommand.Execute(null));
-        AddAction("A+", "放大字号", () => _model.IncreaseFontCommand.Execute(null));
-        _translationButton = new ToggleButton(_context)
-        {
-            TextOn = "译", TextOff = "译", TextSize = 12,
-            ContentDescription = "显示翻译", Checked = _model.ShowTranslation,
-        };
-        _translationButton.SetPadding(0, 0, 0, 0);
-        _translationButton.SetBackgroundColor(Color.Argb(210, 50, 55, 62));
-        _translationButton.CheckedChange += (_, e) => _model.ShowTranslation = e.IsChecked;
-        _toolbar.AddView(_translationButton, new LinearLayout.LayoutParams(0, Dp(48), 1));
-        AddAction("背景", "切换透明背景；更多选项在应用设置", () => _model.ToggleBackgroundCommand.Execute(null));
-        AddAction("穿透", "开启触摸穿透，在应用设置中解除", () => _model.ClickThrough = true);
-        var close = new Button(_context) { Text = "×", ContentDescription = "关闭桌面歌词" };
-        close.SetTextColor(Color.White);
-        close.SetBackgroundColor(Color.Transparent);
-        close.Click += (_, _) => _model.Enabled = false;
-        _toolbar.AddView(close, new LinearLayout.LayoutParams(Dp(48), Dp(48)));
-        _root.AddView(_toolbar);
-        _root.AddView(text);
+        _root.AddView(text, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
         _layout = new WindowManagerLayoutParams(
-            Dp(360), ViewGroup.LayoutParams.WrapContent,
+            Dp(240), ViewGroup.LayoutParams.WrapContent,
             OperatingSystem.IsAndroidVersionAtLeast(26) ? WindowManagerTypes.ApplicationOverlay : WindowManagerTypes.Phone,
             WindowManagerFlags.NotFocusable | WindowManagerFlags.NotTouchModal,
             Format.Translucent)
@@ -227,16 +218,33 @@ public sealed class AndroidDesktopLyricService : IDisposable
             Y = _state.AndroidLyricY ?? Dp(100),
         };
         ClampPosition();
+        // 换行会让窗口变高(宽度已由 FitWindowWidth 显式设定),贴底时 Y 会越界;
+        // 布局完成后重钳一次。X/Y 没变就不 UpdateViewLayout,避免"布局→钳制→再布局"的死循环。
+        _root.LayoutChange += (_, _) =>
+        {
+            if (_disposed || _layout is null || _root is null) return;
+            var x = _layout.X;
+            var y = _layout.Y;
+            ClampPosition();
+            if (x == _layout.X && y == _layout.Y) return;
+            try { _manager!.UpdateViewLayout(_root, _layout); }
+            catch (Exception ex) { Fail("悬浮歌词显示失败，请重新开启。", ex); }
+        };
         _manager.AddView(_root, _layout);
     }
 
-    private void ClampPosition(int? expectedHeight = null)
+    private void ClampPosition()
     {
         if (_layout is null) return;
         var metrics = _context.Resources!.DisplayMetrics!;
-        _layout.Width = Math.Min(Dp(480), Math.Max(Dp(120), metrics.WidthPixels - Dp(16)));
-        _layout.X = Math.Clamp(_layout.X, 0, Math.Max(0, metrics.WidthPixels - _layout.Width));
-        var height = expectedHeight ?? (_root?.Height > 0 ? _root.Height : Dp(100));
+        // 宽度由 FitWindowWidth 按文字实测宽度写入,这里只钳位置。
+        // ⚠ 别再把它写死成"屏宽 − 16dp"(曾经如此) ⇒ X 的活动范围只剩 16dp,
+        // 手感上就是"只能水平居中、左右拖不动"(见 docs/android-notes.md §13)。
+        var width = _layout.Width > 0 ? _layout.Width : Dp(120);
+        _layout.X = Math.Clamp(_layout.X, 0, Math.Max(0, metrics.WidthPixels - width));
+        var height = _root?.Height > 0 ? _root.Height : Dp(100);
+        // 下限 0：窗口顶就是歌词顶，可以贴到屏幕最上方（原先被 48dp 工具栏顶住，最多差一行）。
+        // 底部留 48dp，避开手势条与导航栏。
         _layout.Y = Math.Clamp(_layout.Y, 0,
             Math.Max(0, metrics.HeightPixels - height - Dp(48)));
     }
@@ -259,7 +267,7 @@ public sealed class AndroidDesktopLyricService : IDisposable
             case MotionEventActions.Up:
             case MotionEventActions.Cancel:
                 _state.AndroidLyricX = _layout.X;
-                _state.AndroidLyricY = _layout.Y - _collapsedToolbarHeight;
+                _state.AndroidLyricY = _layout.Y;
                 _state.Save();
                 break;
         }
@@ -282,12 +290,9 @@ public sealed class AndroidDesktopLyricService : IDisposable
         catch (Java.Lang.IllegalArgumentException) { /* 系统已移除窗口（例如撤销权限）。 */ }
         _root.Dispose();
         _root = null;
-        _toolbar = null;
-        _translationButton = null;
         _original = null;
         _translation = null;
         _layout = null;
-        _collapsedToolbarHeight = 0;
     }
 
     public void Dispose()

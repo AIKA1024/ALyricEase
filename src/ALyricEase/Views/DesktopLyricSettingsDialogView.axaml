@@ -38,7 +38,7 @@
                 <TextBlock Text="鼠标 / 触摸穿透" VerticalAlignment="Center" />
                 <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0" IsEnabled="{CompiledBinding Enabled}" IsChecked="{CompiledBinding ClickThrough, Mode=TwoWay}" AutomationProperties.Name="鼠标或触摸穿透" />
               </Grid>
-              <TextBlock Text="开启后歌词窗口不响应点击。在此关闭穿透，或用快捷键切换，即可恢复拖动和按钮操作。"
+              <TextBlock Text="开启后歌词窗口不响应点击。在此关闭穿透即可恢复拖动；Windows 也可用快捷键切换。"
                          FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
             </StackPanel>
             <StackPanel Spacing="8">

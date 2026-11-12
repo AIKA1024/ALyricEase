@@ -26,6 +26,7 @@
 | 某处 GPU 占用偏高("6% 能降吗") | [perf-notes.md](perf-notes.md)(先读「详情页 GPU 的大头是"在动"」) |
 | 用户说"某页滚动时 GPU 能到 X%" / "滚动歌单页只有 5-6%,主页却 20%" | [perf-notes.md](perf-notes.md) §十(**先对齐窗口尺寸**;每帧开销 ∝ 窗口面积,与内容量无关;任务管理器那列读到的是**峰值**,真窗口实测均值 ≈11% / 峰 20%;**跨页差值是帧数不是画法** §10.7) |
 | 歌词面板太贵 / 逐行模糊该不该留 | [perf-notes.md](perf-notes.md)(先读「把歌词模糊收进『性能与体验』档位」;再读它上面那条已回退的「摘掉远景行的模糊」——**为什么试过又撤**) |
+| 桌面/Android 悬浮歌词:设置弹窗结构、字体·颜色·描边·阴影怎么画的 | [desktop-lyrics.md](desktop-lyrics.md)(描边是 8 层偏移副本,不是几何描边;`--desktop-lyrics`) |
 | 某个动画/循环最小化后还在烧 CPU | [avalonia-tips.md](avalonia-tips.md)「自续订的 RequestAnimationFrame 循环」「先分清三类"一直在动"」 |
 | 进度条/动画"卡卡的,鼠标一动就顺" | [avalonia-tips.md](avalonia-tips.md) 文末「UI 线程静息时长睡 ~79ms」 |
 | 弹层/过渡"定住一秒后瞬间消失、没动画"(UI 线程没死) | [perf-notes.md](perf-notes.md) §九「UI 线程动画必须自己持帧泵」 |

@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="60"
+             x:Class="ALyricEase.Controls.DesktopLyricText"
+             x:Name="Root">
+  <!-- 桌面歌词的一行文字:描边 = 同一段文字在 8 个方向上偏移一层(描边色)再叠正文,
+       Avalonia 没有文字描边原语,也不方便拿 TextLayout 的轮廓几何(公开 API 只有
+       FormattedText.BuildGeometry,而且它不换行)。8 层副本与原文字共享同一格、同一宽度,
+       换行位置天然一致,偏移量由 code-behind 按 OutlineThickness 写进 RenderTransform
+       (不能改 Margin:外边距会改变可用宽度,副本的换行就和正文错开) -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock">
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+  <Grid ClipToBounds="False">
+    <TextBlock x:Name="Outline0" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Outline1" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Outline2" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Outline3" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Outline4" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Outline5" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Outline6" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Outline7" Text="{Binding #Root.Text}" Foreground="{Binding #Root.OutlineBrush}" />
+    <TextBlock x:Name="Body" Text="{Binding #Root.Text}" Foreground="{Binding #Root.TextBrush}" />
+  </Grid>
+</UserControl>

@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:ALyricEase.Controls"
+             mc:Ignorable="d" d:DesignWidth="140" d:DesignHeight="32"
+             x:Class="ALyricEase.Controls.ColorSwatchPicker"
+             x:Name="Root">
+  <!-- Fluent 2 的 ColorPickerButton:按钮上是当前色块 + 色值,弹出层给常用色板 + 手填 HEX。
+       不做取色盘/HSV 三滑块(Avalonia 颜色控件要额外的 Avalonia.Controls.ColorPicker 包),
+       歌词上色只需要一批看得清的常用色和一个精确入口。 -->
+  <UserControl.Styles>
+    <Style Selector="Button.color-picker">
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="{DynamicResource AppControlFill}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
+    <Style Selector="Button.color-picker:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillHover}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+    </Style>
+    <Style Selector="Button.color-picker:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillPressed}" />
+    </Style>
+    <!-- 色板小格:去掉按钮默认的填充/描边,只留自己画的圆角方块 -->
+    <Style Selector="Button.swatch">
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.swatch:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.swatch:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.swatch Border.chip">
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+    </Style>
+    <!-- 悬停时给格子一圈更亮的外框,面积小、不做位移动画 -->
+    <Style Selector="Button.swatch:pointerover Border.chip">
+      <Setter Property="BorderBrush" Value="{DynamicResource TextSecondary}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Button x:Name="PickerButton" Classes="color-picker" ToolTip.Tip="选择颜色"
+          AutomationProperties.Name="{Binding #Root.Label}">
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <Border x:Name="Swatch" Width="18" Height="18" CornerRadius="4"
+              VerticalAlignment="Center" BorderThickness="1"
+              BorderBrush="{DynamicResource AppControlStroke}" />
+      <TextBlock x:Name="HexLabel" FontSize="13" VerticalAlignment="Center" MinWidth="62" />
+    </StackPanel>
+    <Button.Flyout>
+      <Flyout Placement="BottomEdgeAlignedRight">
+        <StackPanel Width="252" Spacing="10" Margin="8">
+          <TextBlock Text="颜色" FontSize="12" Foreground="{DynamicResource TextSecondary}" />
+          <ItemsControl ItemsSource="{Binding #Root.Palette}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="8" Rows="4" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="controls:ColorPaletteEntry">
+                <Button Classes="swatch" Click="OnPaletteClick" ToolTip.Tip="{Binding Hex}">
+                  <Border Classes="chip" Background="{Binding Brush}" />
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBox x:Name="HexBox" Height="32" FontSize="13" PlaceholderText="#FF72E5D3"
+                   TextChanged="OnHexChanged"
+                   AutomationProperties.Name="颜色值（十六进制）" />
+        </StackPanel>
+      </Flyout>
+    </Button.Flyout>
+  </Button>
+</UserControl>

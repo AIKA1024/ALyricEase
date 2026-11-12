@@ -75,6 +75,18 @@ public sealed class AppStateFile
     /// <summary>暂停(或停止)时收起歌词窗口;null 表示沿用旧配置的默认值 false。</summary>
     public bool? DesktopLyricHideWhenPaused { get; set; }
     public double? DesktopLyricFontSize { get; set; }
+    /// <summary>歌词字体家族名;null / 空 = 跟随应用默认字体。</summary>
+    public string? DesktopLyricFontFamily { get; set; }
+    /// <summary>歌词文字颜色(#AARRGGBB);null = 旧配置,用默认青色。</summary>
+    public string? DesktopLyricTextColor { get; set; }
+    /// <summary>文字描边开关。默认关:保持老版本无描边的观感。</summary>
+    public bool? DesktopLyricOutlineEnabled { get; set; }
+    public double? DesktopLyricOutlineThickness { get; set; }
+    public string? DesktopLyricOutlineColor { get; set; }
+    /// <summary>文字投影开关。默认开:老版本一直挂着 DropShadow。</summary>
+    public bool? DesktopLyricShadowEnabled { get; set; }
+    public double? DesktopLyricShadowBlur { get; set; }
+    public string? DesktopLyricShadowColor { get; set; }
     public int? DesktopLyricX { get; set; }
     public int? DesktopLyricY { get; set; }
     public int? AndroidLyricX { get; set; }

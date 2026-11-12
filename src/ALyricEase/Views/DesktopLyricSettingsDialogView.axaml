@@ -1,65 +1,365 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:ALyricEase.Controls"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:Class="ALyricEase.Views.DesktopLyricSettingsDialogView"
-             x:DataType="vm:MainViewModel">
+             x:DataType="vm:MainViewModel"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="640">
+  <!-- 桌面歌词设置弹窗(Fluent 2 ContentDialog + Pivot 结构):
+       标题栏带总开关 → 实时预览 → 分段标签(常规 / 文字 / 效果) → 分区设置卡片 → 页脚(恢复默认 / 完成)。
+       一次只渲染一段,弹窗高度不再随选项数量一路拉长;预览始终可见,改颜色/描边/阴影能当场看到结果。 -->
+  <UserControl.Styles>
+    <!-- 设置卡片:比弹窗表面亮一档,靠 1px 描边勾出边界(Fluent 2 的 Layer + Stroke 组合) -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="14,12" />
+    </Style>
+    <Style Selector="TextBlock.row-title">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <Style Selector="TextBlock.row-desc">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,2,0,0" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="TextBlock.value-text">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="TextBlock.group-header">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Margin" Value="2,8,0,0" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <!-- 分段标签:3 段等宽胶囊,选中段抬成卡片色。底色与文字都走 /template/ 或内层 TextBlock,
+         免得被主题的 :pointerover 三态改掉 -->
+    <Style Selector="Border.segmented">
+      <Setter Property="Background" Value="{DynamicResource AppBackground}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="3" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+    <Style Selector="Button.tab">
+      <Setter Property="Height" Value="30" />
+      <Setter Property="Padding" Value="18,0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <!-- 描边厚度**每个状态都是 1**:只在选中态加边会让那个按钮比别家宽 2px,
+         点谁谁变宽、其余按钮横跳(实测宽度 64/62/62)。没选中时用透明边。 -->
+    <Style Selector="Button.tab /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.tab:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceHover}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.tab:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfacePressed}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <!-- 选中段只换颜色,不换描边厚度(见上):抬成"卡片色 + 1px 描边" -->
+    <Style Selector="Button.tab.selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+    </Style>
+    <Style Selector="Button.tab.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceElevated}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderStrong}" />
+    </Style>
+    <Style Selector="Button.tab TextBlock">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="Button.tab.selected TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+    </Style>
+    <!-- 预览板:先铺一层"桌面"底,再叠歌词自己的半透明底色,透明度调多少就看得出多少。
+         高度跟着字号长(MinHeight/MaxHeight 夹住):字号本来就能到 48,写死高度只能靠"封顶预览字号"
+         兜,那样 26 以上拖滑杆预览就不动了。 -->
+    <Style Selector="Border.preview-plate">
+      <Setter Property="MinHeight" Value="116" />
+      <Setter Property="MaxHeight" Value="212" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="ClipToBounds" Value="True" />
+      <Setter Property="Background" Value="#FF1B1E23" />
+    </Style>
+    <Style Selector="TextBlock.preview-caption">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Margin" Value="2,0,0,0" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+    </Style>
+    <Style Selector="Button.dialog-secondary">
+      <Setter Property="Height" Value="32" />
+      <Setter Property="MinWidth" Value="96" />
+      <Setter Property="Padding" Value="14,0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="{DynamicResource AppControlFill}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlStroke}" />
+    </Style>
+    <Style Selector="Button.dialog-secondary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillHover}" />
+    </Style>
+    <Style Selector="Button.dialog-secondary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppControlFillPressed}" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- 卡片高度由 code-behind 按"可用高度夹到上限"算好后写死(Height),
+       不能让内容决定:三段内容高矮差很多(常规/文字/效果 ≈ 668/700/348),
+       内容自适应的话点一次标签整张弹窗就抽一下。高度固定后内容多就滚动、少就留白。 -->
   <Grid Background="#99000000" KeyboardNavigation.TabNavigation="Cycle">
-    <Border MaxWidth="460" MaxHeight="640" Margin="16" Padding="24" CornerRadius="8"
+    <Border MaxWidth="560" Margin="16" CornerRadius="8"
             HorizontalAlignment="Stretch" VerticalAlignment="Center"
             Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorderStrong}"
             BorderThickness="1" x:Name="DialogCard" BoxShadow="0 32 64 #66000000">
-      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="20">
-        <StackPanel Spacing="6">
-          <TextBlock Text="歌词设置" FontSize="20" FontWeight="SemiBold" />
-          <TextBlock Text="调整即时生效，并自动保存。" FontSize="13" Foreground="{DynamicResource TextSecondary}" />
-        </StackPanel>
-        <ScrollViewer Grid.Row="1" Padding="0,0,12,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-          <StackPanel DataContext="{CompiledBinding Settings.DesktopLyrics}" x:DataType="vm:DesktopLyricViewModel" Spacing="20">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="桌面歌词" VerticalAlignment="Center" />
-              <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0"
-                            IsChecked="{CompiledBinding Enabled, Mode=TwoWay}" AutomationProperties.Name="桌面歌词总开关" />
-            </Grid>
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="显示翻译" VerticalAlignment="Center" />
-              <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0" IsChecked="{CompiledBinding ShowTranslation, Mode=TwoWay}" AutomationProperties.Name="显示翻译" />
-            </Grid>
-            <StackPanel Spacing="6">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="暂停时隐藏歌词" VerticalAlignment="Center" />
-                <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0"
-                              IsChecked="{CompiledBinding HideWhenPaused, Mode=TwoWay}" AutomationProperties.Name="暂停时隐藏歌词" />
-              </Grid>
-              <TextBlock Text="播放暂停或停止时收起歌词窗口，继续播放后自动显示。"
-                         FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
-            </StackPanel>
-            <StackPanel Spacing="6">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="鼠标 / 触摸穿透" VerticalAlignment="Center" />
-                <ToggleSwitch Grid.Column="1" OnContent="" OffContent="" MinWidth="0" IsEnabled="{CompiledBinding Enabled}" IsChecked="{CompiledBinding ClickThrough, Mode=TwoWay}" AutomationProperties.Name="鼠标或触摸穿透" />
-              </Grid>
-              <TextBlock Text="开启后歌词窗口不响应点击。在此关闭穿透即可恢复拖动；Windows 也可用快捷键切换。"
-                         FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}" />
-            </StackPanel>
-            <StackPanel Spacing="8">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="歌词字号" />
-                <TextBlock Grid.Column="1" Text="{CompiledBinding FontSize, StringFormat={}{0:0}}" Foreground="{DynamicResource TextSecondary}" />
-              </Grid>
-              <Slider Minimum="16" Maximum="48" TickFrequency="2" IsSnapToTickEnabled="True"
-                      Value="{CompiledBinding FontSize, Mode=TwoWay}" AutomationProperties.Name="歌词字号" />
-            </StackPanel>
-            <StackPanel Spacing="8">
-              <Grid ColumnDefinitions="*,Auto">
-                <TextBlock Text="背景不透明度" />
-                <TextBlock Grid.Column="1" Text="{CompiledBinding BackgroundOpacity, StringFormat={}{0:P0}}" Foreground="{DynamicResource TextSecondary}" />
-              </Grid>
-              <Slider Minimum="0" Maximum="1" Value="{CompiledBinding BackgroundOpacity, Mode=TwoWay}" AutomationProperties.Name="背景不透明度" />
-            </StackPanel>
+      <Grid RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- ===== 标题 + 总开关 ===== -->
+        <Grid Grid.Row="0" Margin="24,20,24,0" ColumnDefinitions="*,Auto" ColumnSpacing="16">
+          <StackPanel Spacing="4" VerticalAlignment="Center">
+            <TextBlock Text="桌面歌词" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="调整即时生效，并自动保存。" FontSize="13"
+                       Foreground="{DynamicResource TextSecondary}" />
           </StackPanel>
-        </ScrollViewer>
-        <Button x:Name="DoneButton" Grid.Row="2" Classes="accent" Content="完成" MinWidth="96" Height="32"
-                HorizontalAlignment="Right" Command="{CompiledBinding CloseDesktopLyricDialogCommand}" />
+          <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent="" MinWidth="0"
+                        IsChecked="{CompiledBinding Settings.DesktopLyrics.Enabled, Mode=TwoWay}"
+                        ToolTip.Tip="开启 / 关闭桌面歌词"
+                        AutomationProperties.Name="桌面歌词总开关" />
+        </Grid>
+
+        <!-- ===== 实时预览 ===== -->
+        <StackPanel Grid.Row="1" Margin="24,16,24,0" Spacing="6">
+          <TextBlock Classes="preview-caption" Text="实时预览" />
+          <Border Classes="preview-plate">
+            <Panel>
+              <Border Background="{CompiledBinding Settings.DesktopLyrics.BackgroundBrush}" CornerRadius="8" />
+              <StackPanel DataContext="{CompiledBinding Settings.DesktopLyrics}" x:DataType="vm:DesktopLyricViewModel"
+                          VerticalAlignment="Center" Spacing="3" Margin="16,14"
+                          Effect="{CompiledBinding LyricShadow}">
+                <controls:DesktopLyricText Text="{CompiledBinding Original}"
+                                           FontSize="{CompiledBinding FontSize}" FontWeight="SemiBold"
+                                           TextFontFamily="{CompiledBinding LyricFontFamily}"
+                                           TextBrush="{CompiledBinding TextBrush}"
+                                           OutlineBrush="{CompiledBinding OutlineBrush}"
+                                           OutlineThickness="{CompiledBinding EffectiveOutlineThickness}"
+                                           MaxTextLines="2" />
+                <controls:DesktopLyricText Text="{CompiledBinding Translation}" IsVisible="{CompiledBinding HasTranslation}"
+                                           FontSize="{CompiledBinding TranslationFontSize}"
+                                           TextFontFamily="{CompiledBinding LyricFontFamily}"
+                                           TextBrush="{CompiledBinding TranslationBrush}"
+                                           OutlineBrush="{CompiledBinding OutlineBrush}"
+                                           OutlineThickness="{CompiledBinding EffectiveOutlineThickness}"
+                                           MaxTextLines="1" />
+              </StackPanel>
+            </Panel>
+          </Border>
+        </StackPanel>
+
+        <!-- ===== 分段标签 + 内容 ===== -->
+        <Grid Grid.Row="2" RowDefinitions="Auto,*" Margin="0,16,0,0">
+          <Border Classes="segmented" Margin="24,0">
+            <StackPanel Orientation="Horizontal" Spacing="2">
+              <Button x:Name="TabGeneral" Classes="tab selected" Tag="0" Click="OnTabClick" Content="常规" />
+              <Button x:Name="TabText" Classes="tab" Tag="1" Click="OnTabClick" Content="文字" />
+              <Button x:Name="TabEffects" Classes="tab" Tag="2" Click="OnTabClick" Content="效果" />
+            </StackPanel>
+          </Border>
+
+          <ScrollViewer x:Name="ContentScroll" Grid.Row="1" Margin="0,12,0,0" Padding="24,0,16,10"
+                        HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <Grid>
+              <!-- 常规 -->
+              <StackPanel x:Name="PanelGeneral" DataContext="{CompiledBinding Settings.DesktopLyrics}"
+                          x:DataType="vm:DesktopLyricViewModel" Spacing="8">
+                <Border Classes="card">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Classes="row-title" Text="显示翻译" />
+                      <TextBlock Classes="row-desc" Text="在主歌词下方显示当前这一行的翻译。" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent="" MinWidth="0"
+                                  IsChecked="{CompiledBinding ShowTranslation, Mode=TwoWay}"
+                                  AutomationProperties.Name="显示翻译" />
+                  </Grid>
+                </Border>
+
+                <Border Classes="card">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Classes="row-title" Text="暂停时隐藏" />
+                      <TextBlock Classes="row-desc" Text="播放暂停或停止时收起歌词窗口，继续播放后自动显示。" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent="" MinWidth="0"
+                                  IsChecked="{CompiledBinding HideWhenPaused, Mode=TwoWay}"
+                                  AutomationProperties.Name="暂停时隐藏歌词" />
+                  </Grid>
+                </Border>
+
+                <Border Classes="card">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Classes="row-title" Text="鼠标 / 触摸穿透" />
+                      <TextBlock Classes="row-desc" Text="开启后歌词窗口不响应点击。在此关闭穿透即可恢复拖动；Windows 也可用快捷键切换。" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent="" MinWidth="0"
+                                  IsEnabled="{CompiledBinding Enabled}"
+                                  IsChecked="{CompiledBinding ClickThrough, Mode=TwoWay}"
+                                  AutomationProperties.Name="鼠标或触摸穿透" />
+                  </Grid>
+                </Border>
+
+                <TextBlock Classes="group-header" Text="背景" />
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="row-title" Text="背景不透明度" />
+                      <TextBlock Grid.Column="1" Classes="value-text"
+                                 Text="{CompiledBinding BackgroundOpacity, StringFormat={}{0:P0}}" />
+                    </Grid>
+                    <Slider Minimum="0" Maximum="1" TickFrequency="0.05" IsSnapToTickEnabled="True"
+                            Value="{CompiledBinding BackgroundOpacity, Mode=TwoWay}"
+                            AutomationProperties.Name="背景不透明度" />
+                    <TextBlock Classes="row-desc" Text="0% 是完全透明，只留文字；任意桌面背景都保证不了对比度，觉得花就调高这一项或加描边。" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- 文字 -->
+              <StackPanel x:Name="PanelText" IsVisible="False" DataContext="{CompiledBinding Settings.DesktopLyrics}"
+                          x:DataType="vm:DesktopLyricViewModel" Spacing="8">
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Classes="row-title" Text="字号" />
+                      <TextBlock Grid.Column="1" Classes="value-text"
+                                 Text="{CompiledBinding FontSize, StringFormat={}{0:0}}" />
+                    </Grid>
+                    <Slider Minimum="16" Maximum="48" TickFrequency="2" IsSnapToTickEnabled="True"
+                            Value="{CompiledBinding FontSize, Mode=TwoWay}" AutomationProperties.Name="歌词字号" />
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="row-title" Text="字体" />
+                    <TextBlock Classes="row-desc" Text="列出本机已安装的字体；列表中按字体名排序，第一项跟随应用默认字体。" />
+                    <ComboBox HorizontalAlignment="Stretch" Height="32" Margin="0,2,0,0"
+                              ItemsSource="{CompiledBinding FontOptions}"
+                              SelectedIndex="{CompiledBinding FontFamilyIndex, Mode=TwoWay}"
+                              AutomationProperties.Name="歌词字体">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:LyricFontOption">
+                          <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="row-title" Text="字体颜色" />
+                    <TextBlock Classes="row-desc" Text="只作用于主歌词；翻译行保持近白色，主次仍分得开。" />
+                    <controls:ColorSwatchPicker Color="{CompiledBinding TextColor, Mode=TwoWay}"
+                                                HorizontalAlignment="Left" Margin="0,2,0,0"
+                                                Label="歌词字体颜色" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- 效果 -->
+              <StackPanel x:Name="PanelEffects" IsVisible="False" DataContext="{CompiledBinding Settings.DesktopLyrics}"
+                          x:DataType="vm:DesktopLyricViewModel" Spacing="8">
+                <Border Classes="card" IsVisible="{CompiledBinding SupportsOutline}">
+                  <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Classes="row-title" Text="文字描边" />
+                        <TextBlock Classes="row-desc" Text="在文字外圈压一层实色边。浅色或花哨的桌面上，比纯阴影更容易读。" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent="" MinWidth="0"
+                                    IsChecked="{CompiledBinding OutlineEnabled, Mode=TwoWay}"
+                                    AutomationProperties.Name="文字描边" />
+                    </Grid>
+                    <StackPanel Spacing="8" IsVisible="{CompiledBinding OutlineEnabled}">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="row-title" Text="描边粗细" />
+                        <TextBlock Grid.Column="1" Classes="value-text" Text="{CompiledBinding OutlineThicknessText}" />
+                      </Grid>
+                      <Slider Minimum="0.5" Maximum="4" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                              Value="{CompiledBinding OutlineThickness, Mode=TwoWay}" AutomationProperties.Name="描边粗细" />
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0">
+                        <TextBlock Classes="row-title" Text="描边颜色" />
+                        <controls:ColorSwatchPicker Grid.Column="1"
+                                                    Color="{CompiledBinding OutlineColor, Mode=TwoWay}"
+                                                    Label="描边颜色" />
+                      </Grid>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Classes="row-title" Text="文字阴影" />
+                        <TextBlock Classes="row-desc" Text="往下投一层柔光，让文字从背景里浮起来；模糊越大越柔。" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent="" MinWidth="0"
+                                    IsChecked="{CompiledBinding ShadowEnabled, Mode=TwoWay}"
+                                    AutomationProperties.Name="文字阴影" />
+                    </Grid>
+                    <StackPanel Spacing="8" IsVisible="{CompiledBinding ShadowEnabled}">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="row-title" Text="阴影模糊" />
+                        <TextBlock Grid.Column="1" Classes="value-text" Text="{CompiledBinding ShadowBlurText}" />
+                      </Grid>
+                      <Slider Minimum="0" Maximum="16" TickFrequency="1" IsSnapToTickEnabled="True"
+                              Value="{CompiledBinding ShadowBlur, Mode=TwoWay}" AutomationProperties.Name="阴影模糊" />
+                      <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0">
+                        <TextBlock Classes="row-title" Text="阴影颜色" />
+                        <controls:ColorSwatchPicker Grid.Column="1"
+                                                    Color="{CompiledBinding ShadowColor, Mode=TwoWay}"
+                                                    Label="阴影颜色" />
+                      </Grid>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </Grid>
+          </ScrollViewer>
+        </Grid>
+
+        <!-- ===== 页脚 ===== -->
+        <Border Grid.Row="3" Margin="24,0,24,20" BorderBrush="{DynamicResource AppBorder}"
+                BorderThickness="0,1,0,0" Padding="0,14,0,0">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Button Classes="dialog-secondary" Content="恢复默认"
+                    Command="{CompiledBinding Settings.DesktopLyrics.ResetAppearanceCommand}"
+                    ToolTip.Tip="把字号、字体、颜色、描边、阴影与背景恢复到默认值；翻译、暂停隐藏和穿透保持不变" />
+            <Button x:Name="DoneButton" Grid.Column="2" Classes="accent" Content="完成" MinWidth="96" Height="32"
+                    Command="{CompiledBinding CloseDesktopLyricDialogCommand}" />
+          </Grid>
+        </Border>
       </Grid>
     </Border>
   </Grid>

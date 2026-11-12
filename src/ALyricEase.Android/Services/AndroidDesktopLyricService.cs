@@ -58,6 +58,9 @@ public sealed class AndroidDesktopLyricService : IDisposable
             or nameof(DesktopLyricViewModel.Original) or nameof(DesktopLyricViewModel.Translation)
             or nameof(DesktopLyricViewModel.FontSize) or nameof(DesktopLyricViewModel.BackgroundOpacity)
             or nameof(DesktopLyricViewModel.ClickThrough) or nameof(DesktopLyricViewModel.ShowTranslation)
+            or nameof(DesktopLyricViewModel.TextColor) or nameof(DesktopLyricViewModel.FontFamilyName)
+            or nameof(DesktopLyricViewModel.ShadowEnabled) or nameof(DesktopLyricViewModel.ShadowBlur)
+            or nameof(DesktopLyricViewModel.ShadowColor)
             or nameof(DesktopLyricViewModel.IsWindowVisible))) return;
         var requestPermission = e.PropertyName == nameof(DesktopLyricViewModel.Enabled) && _model.Enabled;
         _handler.Post(() =>
@@ -130,6 +133,7 @@ public sealed class AndroidDesktopLyricService : IDisposable
             _translation!.Text = _model.Translation;
             _translation.TextSize = (float)_model.TranslationFontSize;
             _translation.Visibility = _model.HasTranslation ? ViewStates.Visible : ViewStates.Gone;
+            ApplyTextStyle();
             FitWindowWidth();
             _model.Hint = "已允许悬浮窗；拖动可调整位置，字号/翻译/背景/穿透在应用设置里调整。";
             ClampPosition();
@@ -145,6 +149,42 @@ public sealed class AndroidDesktopLyricService : IDisposable
     }
 
     private int Dp(float value) => (int)(value * (_context.Resources?.DisplayMetrics?.Density ?? 1));
+
+    /// <summary>
+    /// 字体 / 文字颜色 / 阴影:和桌面端读同一份设置。
+    /// ⚠ 描边在 Android 这边做不了(原生 TextView 没有文字描边),"文字描边"卡片在该端整个隐藏
+    /// (见 <see cref="DesktopLyricViewModel.SupportsOutline"/>)。
+    /// </summary>
+    private void ApplyTextStyle()
+    {
+        if (_original is null || _translation is null) return;
+        _original.SetTextColor(ToAndroidColor(_model.TextColor));
+        // 翻译行固定近白(和桌面端一致),主歌词换成什么颜色都还能分出主次。
+        _translation.SetTextColor(Color.Argb(230, 255, 255, 255));
+
+        var family = _model.FontFamilyName;
+        var typeface = string.IsNullOrWhiteSpace(family)
+            ? null : Typeface.Create(family, TypefaceStyle.Normal);
+        _original.SetTypeface(typeface, TypefaceStyle.Normal);
+        _translation.SetTypeface(typeface, TypefaceStyle.Normal);
+
+        if (_model.ShadowEnabled && _model.ShadowBlur > 0)
+        {
+            var color = ToAndroidColor(_model.ShadowColor);
+            var radius = Dp((float)_model.ShadowBlur);
+            _original.SetShadowLayer(radius, 0, Dp(1), color);
+            _translation.SetShadowLayer(radius, 0, Dp(1), color);
+        }
+        else
+        {
+            // 半径 0 = 关掉阴影。
+            _original.SetShadowLayer(0, 0, 0, Color.Transparent);
+            _translation.SetShadowLayer(0, 0, 0, Color.Transparent);
+        }
+    }
+
+    private static Color ToAndroidColor(Avalonia.Media.Color color)
+        => Color.Argb(color.A, color.R, color.G, color.B);
 
     /// <summary>
     /// 按两行文字的实际宽度设置窗口宽度（显式像素值，不是 WrapContent）。

@@ -127,6 +127,18 @@ public sealed class AppStateStore
     /// <summary>播放暂停/停止时收起歌词窗口。默认关:保持"一直显示"的旧行为。</summary>
     public bool DesktopLyricHideWhenPaused { get; set; }
     public double DesktopLyricFontSize { get; set; } = 28;
+    /// <summary>歌词字体家族名;null / 空 = 跟随应用默认字体。</summary>
+    public string? DesktopLyricFontFamily { get; set; }
+    /// <summary>歌词文字颜色(#AARRGGBB)。默认 #72E5D3 = 老版本硬编码的青色。</summary>
+    public string DesktopLyricTextColor { get; set; } = "#FF72E5D3";
+    /// <summary>文字描边。默认关 = 老版本观感。</summary>
+    public bool DesktopLyricOutlineEnabled { get; set; }
+    public double DesktopLyricOutlineThickness { get; set; } = 2;
+    public string DesktopLyricOutlineColor { get; set; } = "#FF000000";
+    /// <summary>文字投影。默认开 = 老版本常驻的 DropShadow。</summary>
+    public bool DesktopLyricShadowEnabled { get; set; } = true;
+    public double DesktopLyricShadowBlur { get; set; } = 3;
+    public string DesktopLyricShadowColor { get; set; } = "#FF000000";
     public double DesktopLyricBackgroundOpacity { get; set; } = 0.85;
     public int? DesktopLyricX { get; set; }
     public int? DesktopLyricY { get; set; }
@@ -321,6 +333,18 @@ public sealed class AppStateStore
             DesktopLyricShowTranslation = dto.DesktopLyricShowTranslation ?? true;
             DesktopLyricHideWhenPaused = dto.DesktopLyricHideWhenPaused ?? false;
             DesktopLyricFontSize = dto.DesktopLyricFontSize is >= 16 and <= 48 ? dto.DesktopLyricFontSize.Value : 28;
+            // 字体家族只认名字,解析失败由绘制端回落默认字体;空串归一成 null,别让配置里留个空壳。
+            DesktopLyricFontFamily = string.IsNullOrWhiteSpace(dto.DesktopLyricFontFamily)
+                ? null : dto.DesktopLyricFontFamily.Trim();
+            DesktopLyricTextColor = NormalizeColor(dto.DesktopLyricTextColor, "#FF72E5D3");
+            DesktopLyricOutlineEnabled = dto.DesktopLyricOutlineEnabled ?? false;
+            DesktopLyricOutlineThickness = dto.DesktopLyricOutlineThickness is >= 0.5 and <= 4
+                ? dto.DesktopLyricOutlineThickness.Value : 2;
+            DesktopLyricOutlineColor = NormalizeColor(dto.DesktopLyricOutlineColor, "#FF000000");
+            DesktopLyricShadowEnabled = dto.DesktopLyricShadowEnabled ?? true;
+            DesktopLyricShadowBlur = dto.DesktopLyricShadowBlur is >= 0 and <= 16
+                ? dto.DesktopLyricShadowBlur.Value : 3;
+            DesktopLyricShadowColor = NormalizeColor(dto.DesktopLyricShadowColor, "#FF000000");
             DesktopLyricX = dto.DesktopLyricX;
             DesktopLyricY = dto.DesktopLyricY;
             AndroidLyricX = dto.AndroidLyricX;
@@ -490,6 +514,14 @@ public sealed class AppStateStore
                 DesktopLyricShowTranslation = DesktopLyricShowTranslation,
                 DesktopLyricHideWhenPaused = DesktopLyricHideWhenPaused,
                 DesktopLyricFontSize = DesktopLyricFontSize,
+                DesktopLyricFontFamily = DesktopLyricFontFamily,
+                DesktopLyricTextColor = DesktopLyricTextColor,
+                DesktopLyricOutlineEnabled = DesktopLyricOutlineEnabled,
+                DesktopLyricOutlineThickness = DesktopLyricOutlineThickness,
+                DesktopLyricOutlineColor = DesktopLyricOutlineColor,
+                DesktopLyricShadowEnabled = DesktopLyricShadowEnabled,
+                DesktopLyricShadowBlur = DesktopLyricShadowBlur,
+                DesktopLyricShadowColor = DesktopLyricShadowColor,
                 DesktopLyricX = DesktopLyricX,
                 DesktopLyricY = DesktopLyricY,
                 AndroidLyricX = AndroidLyricX,
@@ -561,6 +593,17 @@ public sealed class AppStateStore
     /// <summary>设备字段的空串一律归一为 null(= 未选择 / 跟随系统默认设备)。</summary>
     private static string? NormalizeDeviceText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// 颜色字符串归一成 <c>#AARRGGBB</c>:认不出来(老配置、手改坏值)就用回退值。
+    /// 存归一结果而不是原文,绘制端只解析一种格式,省得 #RGB / 颜色名 / 空白在两边各写一套。
+    /// </summary>
+    private static string NormalizeColor(string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Avalonia.Media.Color.TryParse(value.Trim(), out var parsed)) return fallback;
+        return $"#{parsed.A:X2}{parsed.R:X2}{parsed.G:X2}{parsed.B:X2}";
+    }
 
     /// <summary>记录一次真正开始的播放，并按累计次数降序、同次数最近优先排列。</summary>
     public void RecordRecentSong(Song song)

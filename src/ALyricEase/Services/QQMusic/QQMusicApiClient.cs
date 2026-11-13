@@ -873,7 +873,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// 响应条目 songid/songmid 平铺形态,复用 MapTrack。</summary>
     public async Task<List<Song>> SearchAsync(string keyword, int limit = 30, int offset = 0, CancellationToken ct = default)
     {
-        var page = offset / Math.Max(limit, 1) + 1;
+        var page = PageOf(offset, limit);
         var body = await SearchBodyAsync(keyword, 0, limit, page, "搜索失败", ct).ConfigureAwait(false);
         var list = body.Song?.List;
         if (list is null)
@@ -881,18 +881,22 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return list.Select(t => MapTrack(t, hasFullQualityMetadata: true)).ToList();
     }
 
+    /// <summary>上游只认 page_num(1 起),按 offset/limit 换算;调用方保证 offset 是 limit 的整数倍。</summary>
+    private static int PageOf(int offset, int limit) => offset / Math.Max(limit, 1) + 1;
+
     /// <summary>多类型搜索:SearchCgiService 的 search_type 0 歌曲 / 1 歌手 / 2 专辑 / 3 歌单 / 8 用户。
     /// 登录态下五路均可返回(2026-10-19 实测,含专辑/歌手/用户);匿名仅用户通道放行,
-    /// 其余回 2001 强制登录。全部页五路并行,单类型只发一路。</summary>
-    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
+    /// 其余回 2001 强制登录。全部页五路并行,单类型只发一路。
+    /// 分页:上游只有 page_num(没有 offset),按 <paramref name="offset"/> / limit 换算。</summary>
+    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, int offset = 0, CancellationToken ct = default)
     {
         if (kind == SearchKind.All)
         {
             var songs = SearchAsync(keyword, limit, 0, ct);
-            var playlists = SafeSearchAsync(SearchPlaylistsAsync(keyword, limit, ct));
-            var artists = SafeSearchAsync(SearchArtistsAsync(keyword, limit, ct));
-            var albums = SafeSearchAsync(SearchAlbumsAsync(keyword, limit, ct));
-            var users = SafeSearchAsync(SearchUsersAsync(keyword, limit, ct));
+            var playlists = SafeSearchAsync(SearchPlaylistsAsync(keyword, limit, 0, ct));
+            var artists = SafeSearchAsync(SearchArtistsAsync(keyword, limit, 0, ct));
+            var albums = SafeSearchAsync(SearchAlbumsAsync(keyword, limit, 0, ct));
+            var users = SafeSearchAsync(SearchUsersAsync(keyword, limit, 0, ct));
 
             var all = new SearchAllResult();
             try
@@ -916,19 +920,19 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         switch (kind)
         {
             case SearchKind.Track:
-                result.Songs.AddRange(await SearchAsync(keyword, limit, 0, ct).ConfigureAwait(false));
+                result.Songs.AddRange(await SearchAsync(keyword, limit, offset, ct).ConfigureAwait(false));
                 break;
             case SearchKind.Album:
-                result.Albums.AddRange(await SearchAlbumsAsync(keyword, limit, ct).ConfigureAwait(false));
+                result.Albums.AddRange(await SearchAlbumsAsync(keyword, limit, offset, ct).ConfigureAwait(false));
                 break;
             case SearchKind.Artist:
-                result.Artists.AddRange(await SearchArtistsAsync(keyword, limit, ct).ConfigureAwait(false));
+                result.Artists.AddRange(await SearchArtistsAsync(keyword, limit, offset, ct).ConfigureAwait(false));
                 break;
             case SearchKind.Playlist:
-                result.Playlists.AddRange(await SearchPlaylistsAsync(keyword, limit, ct).ConfigureAwait(false));
+                result.Playlists.AddRange(await SearchPlaylistsAsync(keyword, limit, offset, ct).ConfigureAwait(false));
                 break;
             case SearchKind.User:
-                result.Users.AddRange(await SearchUsersAsync(keyword, limit, ct).ConfigureAwait(false));
+                result.Users.AddRange(await SearchUsersAsync(keyword, limit, offset, ct).ConfigureAwait(false));
                 break;
         }
         return result;
@@ -949,9 +953,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     /// <summary>搜索歌单(search_type=3)。登录态带 Cookie 与 comm uin;
     /// 匿名请求只有头 1~2 次配额,之后一律回 2001(响应内附登录页 feedbackURL)。</summary>
-    private async Task<List<SearchPlaylistItem>> SearchPlaylistsAsync(string keyword, int limit, CancellationToken ct)
+    private async Task<List<SearchPlaylistItem>> SearchPlaylistsAsync(string keyword, int limit, int offset, CancellationToken ct)
     {
-        var body = await SearchBodyAsync(keyword, 3, limit, 1, "搜索歌单失败", ct).ConfigureAwait(false);
+        var body = await SearchBodyAsync(keyword, 3, limit, PageOf(offset, limit), "搜索歌单失败", ct).ConfigureAwait(false);
         var items = new List<SearchPlaylistItem>();
         foreach (var p in body.Songlist?.List ?? [])
         {
@@ -970,9 +974,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>搜索歌手(search_type=1):singerMID 走歌手页,singerPic 作头像。</summary>
-    private async Task<List<SearchArtistItem>> SearchArtistsAsync(string keyword, int limit, CancellationToken ct)
+    private async Task<List<SearchArtistItem>> SearchArtistsAsync(string keyword, int limit, int offset, CancellationToken ct)
     {
-        var body = await SearchBodyAsync(keyword, 1, limit, 1, "搜索歌手失败", ct).ConfigureAwait(false);
+        var body = await SearchBodyAsync(keyword, 1, limit, PageOf(offset, limit), "搜索歌手失败", ct).ConfigureAwait(false);
         return (body.Singer?.List ?? []).Select(a => new SearchArtistItem
         {
             Id = a.SingerID,
@@ -984,9 +988,9 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>搜索专辑(search_type=2):albumMID 走专辑页;publicTime 上游形如 2026-03-25。</summary>
-    private async Task<List<SearchAlbumItem>> SearchAlbumsAsync(string keyword, int limit, CancellationToken ct)
+    private async Task<List<SearchAlbumItem>> SearchAlbumsAsync(string keyword, int limit, int offset, CancellationToken ct)
     {
-        var body = await SearchBodyAsync(keyword, 2, limit, 1, "搜索专辑失败", ct).ConfigureAwait(false);
+        var body = await SearchBodyAsync(keyword, 2, limit, PageOf(offset, limit), "搜索专辑失败", ct).ConfigureAwait(false);
         return (body.Album?.List ?? []).Select(a => new SearchAlbumItem
         {
             Id = a.AlbumID,
@@ -1002,10 +1006,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
 
     /// <summary>搜索用户(search_type=8):QQ 无个人签名,副标题用身份标签,缺失时退粉丝数。
     /// 该通道上游会超发(limit=10 回 14、limit=30 回 54),此处按请求条数截断。</summary>
-    private async Task<List<SearchUserItem>> SearchUsersAsync(string keyword, int limit, CancellationToken ct)
+    private async Task<List<SearchUserItem>> SearchUsersAsync(string keyword, int limit, int offset, CancellationToken ct)
     {
-        var body = await SearchBodyAsync(keyword, 8, limit, 1, "搜索用户失败", ct).ConfigureAwait(false);
-        return (body.User?.List ?? []).Take(Math.Max(limit, 1)).Select(u => new SearchUserItem
+        var body = await SearchBodyAsync(keyword, 8, limit, PageOf(offset, limit), "搜索用户失败", ct).ConfigureAwait(false);
+        // 该通道上游会超发(limit=10 回 14、limit=30 回 54):limit<=0 表示不传 num_per_page 也不截断,
+        // 只用于实测服务端一页到底给多少条;正常搜索仍按调用方条数截断(All 页只要 5 条)。
+        var list = body.User?.List ?? [];
+        return list.Select(u => new SearchUserItem
         {
             Name = u.Title ?? "",
             AvatarUrl = u.Pic ?? "",
@@ -1039,7 +1046,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 w.WriteNumber("search_type", searchType);
                 w.WriteString("query", keyword);
                 w.WriteNumber("page_num", page);
-                w.WriteNumber("num_per_page", limit);
+                if (limit > 0) w.WriteNumber("num_per_page", limit);
                 w.WriteEndObject();
                 w.WriteEndObject();
                 w.WriteEndObject();
@@ -2802,16 +2809,20 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>歌手专辑分页(GetAlbumList begin/number):"查看更多"专辑页流式加载用。
-    /// 总数服务端不下发,由调用方按页长判断是否还有下一页。</summary>
+    /// ⚠ <paramref name="order"/> 与歌曲那套**不是**同一套语义(实测见 <c>--qq-albums</c>):
+    /// 0=按发行时间倒序(网页版默认,最新在前);1=另一套顺序,会把最近发布的十几张**甩到列表末尾**
+    /// (鸣潮先约电台 order=1 首屏从 2026-07-29《待春归》开始,11-13 的《放课后时光》排到第 60 条之后);
+    /// 2/3 与 0 实测一致,但只有 0 有明确来源,别用。总数服务端不下发,
+    /// 由调用方按页长判断是否还有下一页。</summary>
     public async Task<IReadOnlyList<ArtistAlbumItem>> GetArtistAlbumPageAsync(
-        string singerMid, int begin, int pageSize, CancellationToken ct = default)
+        string singerMid, int begin, int pageSize, CancellationToken ct = default, int order = 0)
     {
         using var doc = await PostMusicuAsync(w =>
         {
             WriteModuleReq(w, "music.musichallAlbum.AlbumListServer", "GetAlbumList", p =>
             {
                 p.WriteString("singerMid", singerMid);
-                p.WriteNumber("order", 1);
+                p.WriteNumber("order", order);
                 p.WriteNumber("number", pageSize);
                 p.WriteNumber("begin", begin);
             });
@@ -2838,14 +2849,17 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>歌手专辑列表:music.musichallAlbum.AlbumListServer/GetAlbumList(封面按 albummid 拼模板)。
-    /// 总数服务端不下发,满页(== limit)才继续翻。</summary>
+    /// 走 order=0(最新在前),歌手页横向区只取前 <paramref name="limit"/> 张也有最新专辑。
+    /// 总数服务端不下发,满页才继续翻。</summary>
     public async Task<List<ArtistAlbumItem>> GetArtistAlbumsAsync(string singerMid, int limit = 50, CancellationToken ct = default)
     {
+        // 服务端单页上限 30(number 传 50 也只回 30),按 30 取才不会被"30 < 50"骗成没有下一页
+        const int maxPageSize = 30;
         var all = new List<ArtistAlbumItem>();
         var offset = 0;
         while (all.Count < limit)
         {
-            var take = Math.Min(50, limit - all.Count);
+            var take = Math.Min(maxPageSize, limit - all.Count);
             var page = await GetArtistAlbumPageAsync(singerMid, offset, take, ct).ConfigureAwait(false);
             all.AddRange(page);
             if (page.Count < take) break;

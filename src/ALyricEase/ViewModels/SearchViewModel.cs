@@ -27,6 +27,15 @@ public sealed partial class SearchViewModel : ViewModelBase
 
     private const int TabLimit = 30;
 
+    /// <summary>单类型 Tab 的分页游标(已请求条数);综合模式同用。</summary>
+    private int _pageOffset;
+
+    /// <summary>本次结果已出现过的条目键(跨页去重:QQ 分页会重复给同一条)。</summary>
+    private readonly HashSet<string> _seenKeys = new(StringComparer.Ordinal);
+
+    /// <summary>搜索结果播放队列:所有已加载歌曲,分页只往同一实例追加(行 VM 持有引用)。</summary>
+    private readonly List<Song> _songQueue = new();
+
     private readonly PlayerViewModel _player;
 
     /// <summary>网易云账号能力直接注入歌曲行；QQ 与合并结果的备用录音由歌曲行经 MusicApiProvider 路由。</summary>
@@ -210,9 +219,19 @@ public sealed partial class SearchViewModel : ViewModelBase
     [RelayCommand]
     private void ShowTab(SearchKind kind) => SelectedTab = kind;
 
-    /// <summary>页脚"没有更多结果":加载完成且非空非错误。</summary>
-    public bool ShowNoMore => HasSearched && !IsSearching && Message is null
+    /// <summary>页脚"没有更多结果":加载完成、有结果、非错误,且确认没有下一页。</summary>
+    public bool ShowNoMore => HasSearched && !IsSearching && !IsLoadingMore && !HasMore && Message is null
         && (Songs.Count > 0 || Playlists.Count > 0 || Artists.Count > 0 || Albums.Count > 0 || Users.Count > 0);
+
+    /// <summary>还有下一页(首屏满页才置 true;到底/加载失败置 false)。</summary>
+    [ObservableProperty] private bool _hasMore;
+
+    /// <summary>增量补页进行中(页尾"加载中…")。</summary>
+    [ObservableProperty] private bool _isLoadingMore;
+
+    partial void OnHasMoreChanged(bool value) => OnPropertyChanged(nameof(ShowNoMore));
+
+    partial void OnIsLoadingMoreChanged(bool value) => OnPropertyChanged(nameof(ShowNoMore));
 
     /// <summary>回顶按钮显隐(滚动超过一屏由视图回报)。</summary>
     [ObservableProperty] private bool _showBackToTop;
@@ -452,19 +471,19 @@ public sealed partial class SearchViewModel : ViewModelBase
         await LoadTabCoreAsync(tab, keyword).ConfigureAwait(true);
     }
 
-    /// <summary>实际加载:按 kind 调 SearchAllAsync 并填充分区;过期代次直接丢弃。</summary>
+    /// <summary>实际加载首屏:按 kind 调 SearchAllAsync 并填充分区;过期代次直接丢弃。
+    /// 单类型 Tab 满页时置 <see cref="HasMore"/>,后续由滚动触底调 <see cref="LoadMoreAsync"/> 追加。</summary>
     private async Task<bool> LoadTabCoreAsync(SearchKind kind, string keyword)
     {
         var generation = ++_loadGeneration;
         IsSearching = true;
+        IsLoadingMore = false;
         Message = null;
         ClearResultCollections();
         try
         {
             var limit = kind == SearchKind.All ? SectionLimit : TabLimit;
-            var result = IsCombinedSource
-                ? await SearchCombinedAsync(keyword, limit).ConfigureAwait(true)
-                : await SelectedSource.SearchAllAsync(keyword, kind, limit).ConfigureAwait(true);
+            var (result, fullPage) = await FetchPageAsync(keyword, kind, limit, 0).ConfigureAwait(true);
             if (generation != _loadGeneration) return false; // 期间新搜索/切页,丢弃过期结果
 
             if (result is null)
@@ -472,13 +491,13 @@ public sealed partial class SearchViewModel : ViewModelBase
                 Message = "没有搜索结果";
                 return false;
             }
-            foreach (var song in result.Songs)
-                Songs.Add(new SongItemViewModel(song, _player.PlayFromList, queue: result.Songs,
-                    api: _neteaseApi, source: IsCombinedSource ? "综合搜索" : $"{SelectedSource.DisplayName}·搜索"));
-            foreach (var p in result.Playlists) Playlists.Add(new SearchPlaylistItemViewModel(p));
-            foreach (var a in result.Artists) Artists.Add(new SearchArtistItemViewModel(a));
-            foreach (var a in result.Albums) Albums.Add(new SearchAlbumItemViewModel(a));
-            foreach (var u in result.Users) Users.Add(new SearchUserItemViewModel(u));
+            AppendResult(result, kind == SearchKind.All ? SectionLimit : 0);
+            // 游标按**请求条数**推进(不是按实际收到条数):QQ 用户通道一页会给 55 条,
+            // 但下一页(page=offset/limit+1)是从第 56 条起的连续窗口,按 30 推进正好接上;
+            // 按 55 推进会跳过窗口。
+            _pageOffset = limit;
+            // 全部页每区固定 5 条,不翻页
+            HasMore = fullPage && kind != SearchKind.All;
             NotifySectionFlags();
 
             if (Songs.Count == 0 && Playlists.Count == 0 && Artists.Count == 0 &&
@@ -498,11 +517,122 @@ public sealed partial class SearchViewModel : ViewModelBase
         return Message is null;
     }
 
-    private async Task<SearchAllResult> SearchCombinedAsync(string keyword, int limit)
+    /// <summary>滚动到底:追加下一页(单飞;仅单类型 Tab)。
+    /// 失败只停手不弹错(已有结果不能因为续页失败变成空态)。</summary>
+    public async Task LoadMoreAsync()
+    {
+        if (!HasSearched || IsSearching || IsLoadingMore || !HasMore) return;
+        var kind = SelectedTab;
+        if (kind == SearchKind.All) return;
+        var keyword = SubmittedKeyword;
+        if (keyword.Length == 0) return;
+
+        var generation = _loadGeneration;
+        var limit = TabLimit;
+        var offset = _pageOffset;
+        IsLoadingMore = true;
+        try
+        {
+            var (result, fullPage) = await FetchPageAsync(keyword, kind, limit, offset).ConfigureAwait(true);
+            if (generation != _loadGeneration) return;
+            if (result is null)
+            {
+                HasMore = false;
+                return;
+            }
+            AppendResult(result);
+            _pageOffset = offset + limit;
+            HasMore = fullPage;
+            NotifySectionFlags();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
+        {
+            // 失败停手:滚到底不重复请求(换关键词/切 Tab 会重新开始)
+            if (generation == _loadGeneration) HasMore = false;
+        }
+        finally
+        {
+            if (generation == _loadGeneration) IsLoadingMore = false;
+        }
+    }
+
+    /// <summary>拉一页;同时报告"上游是否满页"(只有满页才认为还有下一页)。</summary>
+    private async Task<(SearchAllResult? Result, bool FullPage)> FetchPageAsync(
+        string keyword, SearchKind kind, int limit, int offset)
+    {
+        if (IsCombinedSource)
+        {
+            var (combined, fullPage) = await SearchCombinedAsync(keyword, limit, offset).ConfigureAwait(true);
+            return (combined, fullPage);
+        }
+        var result = await SelectedSource.SearchAllAsync(keyword, kind, limit, offset).ConfigureAwait(true);
+        return (result, IsFullPage(result, kind, limit));
+    }
+
+    private static bool IsFullPage(SearchAllResult? result, SearchKind kind, int limit)
+        => result is not null && CountOf(result, kind) >= limit;
+
+    /// <summary>某类型分区在这一页里的条数(All 页是五区之和,单类型只算对应区)。</summary>
+    private static int CountOf(SearchAllResult result, SearchKind kind) => kind switch
+    {
+        SearchKind.Track => result.Songs.Count,
+        SearchKind.Album => result.Albums.Count,
+        SearchKind.Artist => result.Artists.Count,
+        SearchKind.Playlist => result.Playlists.Count,
+        SearchKind.User => result.Users.Count,
+        _ => result.Songs.Count + result.Albums.Count + result.Artists.Count
+             + result.Playlists.Count + result.Users.Count,
+    };
+
+    /// <summary>把一页结果追加到分区(跨页去重);歌曲同时进共享播放队列。
+    /// <paramref name="maxPerSection"/>&gt;0 时每区最多收这么多条(All 页只要 5 条)。</summary>
+    private void AppendResult(SearchAllResult result, int maxPerSection = 0)
+    {
+        var source = IsCombinedSource ? "综合搜索" : $"{SelectedSource.DisplayName}·搜索";
+        foreach (var song in result.Songs)
+        {
+            if (maxPerSection > 0 && Songs.Count >= maxPerSection) break;
+            if (!_seenKeys.Add(ItemKey("S", song.Source, song.Id, song.Mid))) continue;
+            _songQueue.Add(song);
+            Songs.Add(new SongItemViewModel(song, _player.PlayFromList, queue: _songQueue,
+                api: _neteaseApi, source: source));
+        }
+        foreach (var p in result.Playlists)
+        {
+            if (maxPerSection > 0 && Playlists.Count >= maxPerSection) break;
+            if (!_seenKeys.Add(ItemKey("P", p.Source, p.Id, p.Name))) continue;
+            Playlists.Add(new SearchPlaylistItemViewModel(p));
+        }
+        foreach (var a in result.Artists)
+        {
+            if (maxPerSection > 0 && Artists.Count >= maxPerSection) break;
+            if (!_seenKeys.Add(ItemKey("A", a.Source, a.Id, a.Mid))) continue;
+            Artists.Add(new SearchArtistItemViewModel(a));
+        }
+        foreach (var a in result.Albums)
+        {
+            if (maxPerSection > 0 && Albums.Count >= maxPerSection) break;
+            if (!_seenKeys.Add(ItemKey("L", a.Source, a.Id, a.Mid))) continue;
+            Albums.Add(new SearchAlbumItemViewModel(a));
+        }
+        foreach (var u in result.Users)
+        {
+            if (maxPerSection > 0 && Users.Count >= maxPerSection) break;
+            if (!_seenKeys.Add(ItemKey("U", u.Source, u.Id, u.EncryptUin))) continue;
+            Users.Add(new SearchUserItemViewModel(u));
+        }
+    }
+
+    /// <summary>去重键:类型 + 音源 + 数字 id(为 0 时退回字符串 id/mid)。</summary>
+    private static string ItemKey(string kind, MusicSource source, long id, string alt) =>
+        $"{kind}|{source}|{(id != 0 ? id.ToString() : alt)}";
+
+    private async Task<(SearchAllResult Result, bool FullPage)> SearchCombinedAsync(
+        string keyword, int limit, int offset)
     {
         var requestLimit = Math.Max(limit, 10);
-        var netEaseTask = SearchSourceSafelyAsync(_netEaseSource, keyword, requestLimit);
-        var qqTask = SearchSourceSafelyAsync(_qqSource, keyword, requestLimit);
+        var netEaseTask = SearchSourceSafelyAsync(_netEaseSource, keyword, requestLimit, offset);
+        var qqTask = SearchSourceSafelyAsync(_qqSource, keyword, requestLimit, offset);
         await Task.WhenAll(netEaseTask, qqTask).ConfigureAwait(true);
 
         var netEase = await netEaseTask.ConfigureAwait(true);
@@ -516,20 +646,23 @@ public sealed partial class SearchViewModel : ViewModelBase
             qq.Songs,
             limit,
             GetCombinedSourcePreference));
-        return result;
+        // 两源分页各自推进,合并去重后不足 limit 属正常;任一源满页就还能继续翻
+        var fullPage = netEase.Songs.Count >= requestLimit || qq.Songs.Count >= requestLimit;
+        return (result, fullPage);
     }
 
     private static async Task<SourceSearchResult> SearchSourceSafelyAsync(
         IMusicApi? source,
         string keyword,
-        int limit)
+        int limit,
+        int offset)
     {
         if (source is null)
             return new SourceSearchResult([], new InvalidOperationException("音源未注册"));
         try
         {
             return new SourceSearchResult(
-                await source.SearchAsync(keyword, limit, 0).ConfigureAwait(false),
+                await source.SearchAsync(keyword, limit, offset).ConfigureAwait(false),
                 null);
         }
         catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
@@ -553,6 +686,11 @@ public sealed partial class SearchViewModel : ViewModelBase
     private void ClearResultCollections()
     {
         Songs.Clear(); Playlists.Clear(); Artists.Clear(); Albums.Clear(); Users.Clear();
+        _songQueue.Clear();
+        _seenKeys.Clear();
+        _pageOffset = 0;
+        HasMore = false;
+        IsLoadingMore = false;
         NotifySectionFlags();
     }
 

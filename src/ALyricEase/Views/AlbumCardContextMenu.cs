@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
@@ -26,7 +27,8 @@ internal static class AlbumCardContextMenu
     private static readonly FontFamily MenuIconFont =
         new("avares://ALyricEase/Assets/Fonts/FluentUISystemIcons.ttf#FluentUISystemIcons");
 
-    public static MenuFlyout Create(Visual anchor, BrowseCardViewModel card, IReadOnlyList<Song> songs)
+    public static MenuFlyout Create(
+        Visual anchor, string title, IReadOnlyList<Song> songs, Func<Task>? playAction)
     {
         var menu = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
         menu.FlyoutPresenterClasses.Add("player-song-menu");
@@ -35,7 +37,7 @@ internal static class AlbumCardContextMenu
 
         menu.Items.Add(new MenuItem
         {
-            Header = card.Title,
+            Header = title,
             IsEnabled = false,
             Focusable = false,
         });
@@ -46,7 +48,7 @@ internal static class AlbumCardContextMenu
         play.Click += async (_, _) =>
         {
             menu.Hide();
-            if (card.PlayAction is not { } action) return;
+            if (playAction is not { } action) return;
             try { await action(); }
             catch { /* 播放失败由播放器提示,菜单不额外弹窗。 */ }
         };

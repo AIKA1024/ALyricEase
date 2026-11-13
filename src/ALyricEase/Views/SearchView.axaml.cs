@@ -77,6 +77,9 @@ public partial class SearchView : UserControl
     {
         if (e.PropertyName is nameof(SearchViewModel.ShowResults) or nameof(SearchViewModel.IsSearching))
             _resultsScroll?.Offset = new Avalonia.Vector(0, 0);
+        // 首屏/续页落地后看一眼是否填满一屏(不满就继续补,避免用户滚不动也无内容)
+        if (e.PropertyName is nameof(SearchViewModel.IsSearching) or nameof(SearchViewModel.HasMore))
+            Dispatcher.UIThread.Post(TryFillViewport, DispatcherPriority.Background);
         if (e.PropertyName == nameof(SearchViewModel.ShowResults) && Vm is { ShowResults: true })
             Dispatcher.UIThread.Post(() =>
             {
@@ -86,11 +89,27 @@ public partial class SearchView : UserControl
             }, DispatcherPriority.Loaded);
     }
 
-    /// <summary>结果页滚动:超过 400px 显示回顶按钮(原版为滚过头部后浮现)。</summary>
+    /// <summary>结果页滚动:超过 400px 显示回顶按钮(原版为滚过头部后浮现);
+    /// 距底 240px 内续页(VM 内部单飞 + HasMore 门控,滚动越界重复触发无副作用)。</summary>
     private void OnResultsScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        if (Vm is { } vm)
-            vm.ShowBackToTop = (_resultsScroll?.Offset.Y ?? 0) > 400;
+        if (Vm is not { } vm) return;
+        var sv = _resultsScroll;
+        vm.ShowBackToTop = (sv?.Offset.Y ?? 0) > 400;
+        if (sv is not null && sv.Extent.Height > sv.Viewport.Height
+            && sv.Offset.Y + sv.Viewport.Height >= sv.Extent.Height - 240)
+            _ = vm.LoadMoreAsync();
+    }
+
+    /// <summary>内容不足一屏时用户滚不动,触底事件永远不会来 ⇒ 主动补页直到填满或到底。
+    /// 由 VM 的 IsSearching/HasMore 变化触发,补完一页会再次进来。</summary>
+    private void TryFillViewport()
+    {
+        if (!IsViewModelSubscribed || Vm is not { } vm || _resultsScroll is not { } sv) return;
+        if (!vm.HasMore || vm.IsLoadingMore || vm.IsSearching) return;
+        // Viewport 还是 0 说明没布局完,这时候判断"不满一屏"必然为真,会白拉一页
+        if (sv.Viewport.Height > 0 && sv.Extent.Height <= sv.Viewport.Height + 1)
+            _ = vm.LoadMoreAsync();
     }
 
     // ---- 类型 Tab 溢出(原版 NavigationView 顶栏:放不下时收进"···"按钮的 Flyout) ----

@@ -666,18 +666,18 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
     /// <summary>多类型搜索(结果页分区/类型 Tab,对应原版 SearchResultView 的多类型模块)。
     /// kind=All 并发拉五类(单曲/专辑/歌手/歌单/用户),单类失败只空该分区;其余 kind 只拉对应类型。
     /// weapi cloudsearch 换 type 参数(1/10/100/1000/1002),被风控时回落明文 /api/cloudsearch/pc(结构一致)。</summary>
-    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
+    public async Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, int offset = 0, CancellationToken ct = default)
     {
         var result = new SearchAllResult();
         if (kind == SearchKind.Track)
         {
-            result.Songs.AddRange(await SearchAsync(keyword, limit, 0, ct).ConfigureAwait(false));
+            result.Songs.AddRange(await SearchAsync(keyword, limit, offset, ct).ConfigureAwait(false));
             return result;
         }
 
         // All:并发拉五类,单路失败只空该分区;单类型 kind:只发对应请求,失败整体抛给调用方提示
         var isAll = kind == SearchKind.All;
-        var songTask = WrapAsync(isAll, SearchAsync(keyword, limit, 0, ct));
+        var songTask = WrapAsync(isAll, SearchAsync(keyword, limit, offset, ct));
         var albumTask = KindTask(SearchKind.Album, 10);
         var artistTask = KindTask(SearchKind.Artist, 100);
         var playlistTask = KindTask(SearchKind.Playlist, 1000);
@@ -701,7 +701,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         {
             if (kind != SearchKind.All && kind != k)
                 return Task.FromResult<SearchResponse?>(null); // 非本类型,不发请求
-            return WrapNullableAsync(isAll, TypedSearchAsync(keyword, type, limit, ct));
+            return WrapNullableAsync(isAll, TypedSearchAsync(keyword, type, limit, offset, ct));
         }
 
         static async Task<T?> WrapAsync<T>(bool swallow, Task<T> task) where T : class
@@ -720,7 +720,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
     }
 
     /// <summary>单类型搜索(weapi cloudsearch,风控回落明文 /api/cloudsearch/pc;失败抛 ApiException)。</summary>
-    private async Task<SearchResponse?> TypedSearchAsync(string keyword, int type, int limit, CancellationToken ct)
+    private async Task<SearchResponse?> TypedSearchAsync(string keyword, int type, int limit, int offset, CancellationToken ct)
     {
         if (!_wafBlocked)
         {
@@ -732,7 +732,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
                     ["s"] = keyword,
                     ["type"] = type,
                     ["limit"] = limit,
-                    ["offset"] = 0,
+                    ["offset"] = offset,
                     ["csrf_token"] = "",
                 };
                 using var req = CreateWeapiRequest("weapi/cloudsearch/get/web", payload, includeRealIp: false);
@@ -744,7 +744,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
                 _wafBlocked = true; // 本网络加密通道被拦,后续直接走明文
             }
         }
-        var url = $"{BaseUrl}/api/cloudsearch/pc?s={Uri.EscapeDataString(keyword)}&type={type}&limit={limit}&offset=0";
+        var url = $"{BaseUrl}/api/cloudsearch/pc?s={Uri.EscapeDataString(keyword)}&type={type}&limit={limit}&offset={offset}";
         using var plain = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyCommonHeaders(plain, includeRealIp: false);
         using var plainDoc = await PostJsonAsync(plain, ct).ConfigureAwait(false);

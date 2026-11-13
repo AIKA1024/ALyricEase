@@ -145,7 +145,8 @@ public sealed partial class ArtistAlbumsPageViewModel : NavigationDetailViewMode
                 if (qqCards is not null)
                     _ = FetchQqSongCountsAsync(qqCards, generation, ct);
             }
-            Subtitle = $"已加载 {_allAlbums.Count} 张专辑";
+            // 区块头只留标题:加载完成后不再显示"已加载 N 张专辑"(用户要求去掉)
+            Subtitle = "";
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

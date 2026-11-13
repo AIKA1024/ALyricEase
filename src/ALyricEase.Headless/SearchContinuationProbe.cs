@@ -223,7 +223,7 @@ internal static class SearchContinuationProbe
             return Task.FromResult(Result(keyword, source).Songs);
         }
 
-        public Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
+        public Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, int offset = 0, CancellationToken ct = default)
         {
             Requests.Add((keyword, kind));
             if (Pending.TryDequeue(out var pending)) return pending;

@@ -38,6 +38,9 @@
 | 用户页 / 关注·粉丝名单(点行看对方用户页) | [user-page.md](user-page.md)(QQ 侧没有名单协议;`--user-relations`) |
 | 要改浏览页(双平台混排 / 平台筛选 / 点 QQ 榜单进歌单页) | [avalonia-tips.md](avalonia-tips.md)「浏览页:两个音源装进同一页」(`--browse`) |
 | 浏览页「关注新歌」没内容 / 想知道两家怎么拼出来的 | [followed-new-songs.md](followed-new-songs.md)(无聚合接口,关注列表+每位歌手按时间取最新;`--followed-new-songs` / `--browse-followed`) |
+| 搜索页某个分类只有几十条 / 滚到底不加载 / 想改每页条数 | [search-paging.md](search-paging.md)(`SearchAllAsync` 带 offset;QQ 只有 page_num;虚拟化 + 跨页去重;`--search-paging-ui`) |
+| 歌手页/专辑页的专辑卡没有 ▶ / ••• / 右键菜单 | [album-card.md](album-card.md)(共用 `Controls/AlbumCard`;曲目按需拉;探针 `--album-card`) |
+| QQ 歌手页专辑不是最新 / 最新专辑要滚很久才出现 / 横向区只有 30 张 | [qq-artist-albums.md](qq-artist-albums.md)(`GetAlbumList` 的 `order=0` 才是时间倒序,1 会把最新十几张甩到末尾;`--qq-albums`) |
 | 要加或改图标码位 | [icon-fonts.md](icon-fonts.md) |
 | 登录相关(代理登录 / MUSIC_U / eapi 两种格式) | [netease-login.md](netease-login.md) |
 | 应用走不走代理 / 改了代理要重启吗 / 新加网络请求忘了挂代理 | [network-proxy.md](network-proxy.md)(handler 拿恒定 `IWebProxy`,改设置即时生效;`--proxy` / `--proxydialog`) |

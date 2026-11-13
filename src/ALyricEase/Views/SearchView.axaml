@@ -624,9 +624,15 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- 单类型 Tab:同类卡片,无分区头(歌曲 Tab 30 条) -->
+                    <!-- 单类型 Tab:同类卡片,无分区头。行列表走 VirtualizingStackPanel(外层 ResultsScroll
+                         负责滚动),翻到 300 条也只实化视口内的行 -->
                     <Border Classes="result-card" IsVisible="{Binding IsTrackTab}">
                         <ItemsControl ItemsSource="{Binding Songs}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SongItemViewModel">
                                     <views:TrackRow />
@@ -636,6 +642,11 @@
                     </Border>
                     <Border Classes="result-card" IsVisible="{Binding IsPlaylistTab}">
                         <ItemsControl ItemsSource="{Binding Playlists}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SearchPlaylistItemViewModel">
                                     <Button Classes="result-row"
@@ -663,6 +674,11 @@
                     </Border>
                     <Border Classes="result-card" IsVisible="{Binding IsAlbumTab}">
                         <ItemsControl ItemsSource="{Binding Albums}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SearchAlbumItemViewModel">
                                     <Button Classes="result-row"
@@ -690,6 +706,11 @@
                     </Border>
                     <Border Classes="result-card" IsVisible="{Binding IsArtistTab}">
                         <ItemsControl ItemsSource="{Binding Artists}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SearchArtistItemViewModel">
                                     <Button Classes="result-row"
@@ -714,6 +735,11 @@
                     </Border>
                     <Border Classes="result-card" IsVisible="{Binding IsUserTab}">
                         <ItemsControl ItemsSource="{Binding Users}" ContainerPrepared="OnResultContainerPrepared">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:SearchUserItemViewModel">
                                     <Button Classes="result-row"
@@ -742,7 +768,9 @@
                         </ItemsControl>
                     </Border>
 
-                    <!-- 页脚:没有更多结果(原版 ListView Footer) -->
+                    <!-- 页脚:续页加载中 / 没有更多结果(原版 ListView Footer) -->
+                    <TextBlock Text="加载中…" FontSize="13" HorizontalAlignment="Center" Margin="0,2,0,0"
+                               IsVisible="{Binding IsLoadingMore}" Foreground="{DynamicResource TextTertiary}" />
                     <TextBlock Text="没有更多结果" FontSize="13" HorizontalAlignment="Center" Margin="0,2,0,0"
                                IsVisible="{Binding ShowNoMore}" Foreground="{DynamicResource TextTertiary}" />
                 </StackPanel>

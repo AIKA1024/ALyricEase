@@ -33,8 +33,9 @@ public interface IMusicApi
     Task<List<Song>> SearchAsync(string keyword, int limit = 30, int offset = 0, CancellationToken ct = default);
 
     /// <summary>多类型搜索(结果页分区/类型 Tab)。kind=All 拉全部支持的分区,单类型只填对应列表;
-    /// limit 为该类型条数。不支持多类型/该类型的音源返回 null(结果页退化为仅歌曲)。</summary>
-    Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, CancellationToken ct = default)
+    /// limit 为每页条数,<paramref name="offset"/> 为起始条数(单类型 Tab 滚动到底加载下一页)。
+    /// 不支持多类型/该类型的音源返回 null(结果页退化为仅歌曲)。</summary>
+    Task<SearchAllResult?> SearchAllAsync(string keyword, SearchKind kind, int limit, int offset = 0, CancellationToken ct = default)
         => Task.FromResult<SearchAllResult?>(null);
 
     /// <summary>获取播放地址;VIP/版权受限返回 null 或 Url 为空。

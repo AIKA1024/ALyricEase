@@ -92,7 +92,9 @@ public static class AlbumGridProbe
         {
             var art = card.GetVisualDescendants().OfType<Border>()
                 .FirstOrDefault(b => b.Name is null && b.Height == 200 && b.Width == 200);
-            var title = card.GetVisualDescendants().OfType<TextBlock>().FirstOrDefault();
+            // 卡片内现在还有 ▶/••• 的图标 TextBlock(视觉树里排在标题前),按文案挑标题
+            var title = card.GetVisualDescendants().OfType<TextBlock>()
+                .FirstOrDefault(t => t.Text?.StartsWith("专辑", StringComparison.Ordinal) == true);
             var cardBox = card.Bounds;
             var artBox = art is null ? default : art.TranslatePoint(new Point(0, 0), card);
             var titleBox = title is null ? default : title.TranslatePoint(new Point(0, 0), card);

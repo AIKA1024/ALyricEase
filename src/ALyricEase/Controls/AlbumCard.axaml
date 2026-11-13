@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:infra="using:ALyricEase.Infrastructure"
+             xmlns:vm="using:ALyricEase.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="200" d:DesignHeight="252"
+             x:CompileBindings="True"
+             x:DataType="vm:AlbumCardViewModel"
+             VerticalAlignment="Top" HorizontalAlignment="Left"
+             x:Class="ALyricEase.Controls.AlbumCard">
+  <!-- 歌手页 / 全部专辑页共用的专辑卡:封面 + 标题 + 发布信息行。
+       悬停浮现左下 ▶(播整张)与右下 •••(与右键/长按同一份菜单);
+       点卡片本体的其它位置仍是"进专辑页"(外层 Button 的 OpenCommand)。 -->
+  <UserControl.Styles>
+    <!-- 卡片本体:透明底,视觉全在内容里 -->
+    <Style Selector="Button.album-card">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <!-- 悬停黑遮罩 0 → 0.2(与浏览页 browse-card 同款) -->
+    <Style Selector="Border.album-card-mask">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.album-card:pointerover Border.album-card-mask">
+      <Setter Property="Opacity" Value="0.2" />
+    </Style>
+    <!-- 封面上的两枚圆形操作按钮:默认透明,悬停卡片才浮现(用 Opacity 而不是 IsVisible,不做布局反馈) -->
+    <Style Selector="Button.card-op">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButton}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.card-op:pointerover">
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButtonHover}" />
+    </Style>
+    <Style Selector="Button.card-op:pressed">
+      <Setter Property="Background" Value="{DynamicResource CardOverlayButtonPressed}" />
+    </Style>
+    <Style Selector="Button.album-card:pointerover Button.card-op">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+  </UserControl.Styles>
+
+  <Button Theme="{StaticResource RowButtonTheme}" Classes="album-card"
+          Command="{Binding OpenCommand}" ContextRequested="OnContextRequested">
+    <!-- 三行(封面/标题/发布信息):封面固定 200 高且顶对齐,标题间隔 6(与个性推荐/全部专辑页一致)。
+         不要改回"单格 + 标题 Margin 220"的写法:Stretch + 固定 Height 会把封面垂直居中。 -->
+    <Grid Width="200" RowDefinitions="200,Auto,Auto">
+      <Border Grid.Row="0" Width="200" Height="200" CornerRadius="8" ClipToBounds="True"
+              Background="{DynamicResource ArtFallback}">
+        <Grid>
+          <Image infra:ManagedCoverImage.DecodeSize="300"
+                 infra:ManagedCoverImage.Source="{Binding CoverUrl}"
+                 Stretch="UniformToFill" />
+          <Border Classes="album-card-mask" CornerRadius="8" Background="#FF000000" IsHitTestVisible="False" />
+          <Panel>
+            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}"
+                    Click="OnPlayClick" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8"
+                    ToolTip.Tip="播放" AutomationProperties.Name="{Binding Title, StringFormat='播放 {0}'}">
+              <TextBlock Text="{DynamicResource IconPlayFilled}" FontSize="14"
+                         FontFamily="{DynamicResource LyricEaseIconsFilled}" />
+            </Button>
+            <Button Classes="card-op" Theme="{StaticResource RowButtonTheme}"
+                    Click="OnMoreClick" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8"
+                    ToolTip.Tip="更多操作"
+                    AutomationProperties.Name="{Binding Title, StringFormat='{}{0}的更多操作'}">
+              <TextBlock Text="{DynamicResource IconMore}" FontSize="14"
+                         FontFamily="{DynamicResource LyricEaseIcons}" />
+            </Button>
+          </Panel>
+        </Grid>
+      </Border>
+      <TextBlock Grid.Row="1" Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                 TextTrimming="CharacterEllipsis" MaxLines="1" Margin="4,6,4,0" />
+      <TextBlock Grid.Row="2" Text="{Binding InfoText}" FontSize="12"
+                 Foreground="{DynamicResource TextTertiary}" IsVisible="{Binding HasInfo}"
+                 TextTrimming="CharacterEllipsis" MaxLines="1" Margin="4,3,4,0" />
+    </Grid>
+  </Button>
+</UserControl>

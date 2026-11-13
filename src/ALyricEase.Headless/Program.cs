@@ -412,6 +412,82 @@ public static class Program
             return;
         }
 
+        // 专辑卡悬停操作(--album-card):▶/••• 是否存在、曲目能否拉、菜单结构。
+        if (args.Length > 0 && args[0] == "--album-card")
+        {
+            var albumCardBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var albumCardExit = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { albumCardExit = await AlbumCardProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[album-card] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            albumCardBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = albumCardExit;
+            return;
+        }
+
+        // 搜索页"滚到底自动续页"端到端(--search-paging-ui):真实 SearchView + 真实滚动。
+        if (args.Length > 0 && args[0] == "--search-paging-ui")
+        {
+            var pagingUiBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var pagingUiExit = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { pagingUiExit = await SearchPagingUiProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[search-paging-ui] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            pagingUiBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = pagingUiExit;
+            return;
+        }
+
+        // 搜索页分页(--search-paging [关键词]):两源单类型第二页是否真的换了一批。
+        if (args.Length > 0 && args[0] == "--search-paging")
+        {
+            var pagingBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var pagingExit = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    pagingExit = await SearchPagingProbe.RunAsync(
+                        args.Length > 1 ? args[1] : "周杰伦");
+                }
+                catch (Exception ex) { Console.Error.WriteLine($"[search-paging] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            pagingBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = pagingExit;
+            return;
+        }
+
+        // QQ 歌手专辑 order 语义(--qq-albums [关键词]):最新专辑为什么不在第一屏。
+        if (args.Length > 0 && args[0] == "--qq-albums")
+        {
+            var qqAlbumBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var qqAlbumExit = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    qqAlbumExit = await QqArtistAlbumProbe.RunAsync(
+                        args.Length > 1 ? args[1] : "鸣潮先约电台");
+                }
+                catch (Exception ex) { Console.Error.WriteLine($"[qq-albums] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            qqAlbumBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = qqAlbumExit;
+            return;
+        }
+
         // QQ 关注歌手新歌(--qq-singer-songs):关注列表 MID 能否直接查歌 + order 哪个是时间序。
         if (args.Length > 0 && args[0] == "--qq-singer-songs")
         {

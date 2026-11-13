@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using ALyricEase.Controls;
 using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
@@ -27,7 +28,46 @@ public static class ArtistCardsProbe
     public static void Run()
     {
         ArtistViewProbe();
+        SinglesProbe();
         RecommendViewProbe();
+    }
+
+    /// <summary>
+    /// "单曲与EP"区回归:它曾经留着一份内联卡片模板,而遮罩样式收进 AlbumCard 后,
+    /// 内联模板里的 Border.album-card-mask 失去 Opacity=0 ⇒ 封面被 100% 黑遮罩盖死。
+    /// 这里填 Singles 后检查:该区渲染的是 AlbumCard 控件,且所有遮罩在未悬停时都是全透明。
+    /// </summary>
+    private static void SinglesProbe()
+    {
+        var vm = ServiceLocator.Get<ArtistViewModel>();
+        const int count = 40;
+        foreach (var i in Enumerable.Range(1, count))
+            vm.Singles.Add(new AlbumCardViewModel(i, $"单曲{i}", ""));
+        vm.HasSingles = true;
+
+        var win = new Window { Width = 1000, Height = 700, Content = new ArtistView { DataContext = vm } };
+        win.Show();
+        Drain();
+
+        var cards = win.GetVisualDescendants().OfType<AlbumCard>().Count();
+        var masks = win.GetVisualDescendants().OfType<Border>()
+            .Where(b => b.Classes.Contains("album-card-mask")).ToList();
+        var maxOpacity = masks.Count == 0 ? -1 : masks.Max(b => b.Opacity);
+        var singles = CardButtons(win, "album-card")
+            .Select(b => b.DataContext).OfType<AlbumCardViewModel>()
+            .Where(c => c.Title.StartsWith("单曲", StringComparison.Ordinal)).ToList();
+
+        Console.WriteLine($"[acards] 单曲与EP: 数据={count} 渲染卡片={singles.Count} " +
+                          $"AlbumCard控件={cards} 遮罩={masks.Count} 遮罩最大透明度={maxOpacity:F2} (期望 0)");
+
+        var ok = singles.Count > 0 && cards == masks.Count && maxOpacity == 0;
+        Console.WriteLine(ok
+            ? "[acards] PASS 单曲与EP 走共用 AlbumCard,封面未被黑遮罩盖住"
+            : "[acards] FAIL 单曲与EP 仍有内联模板或遮罩不透明(封面会全黑)");
+
+        win.Close();
+        vm.Singles.Clear();
+        vm.HasSingles = false;
     }
 
     private static void ArtistViewProbe()

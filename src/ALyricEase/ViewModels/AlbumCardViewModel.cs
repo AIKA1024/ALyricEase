@@ -1,14 +1,28 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using ALyricEase.Infrastructure;
+using ALyricEase.Models;
+using ALyricEase.Services;
+using ALyricEase.Services.NetEase;
+using ALyricEase.Services.QQMusic;
 using CommunityToolkit.Mvvm.Input;
 
 namespace ALyricEase.ViewModels;
 
 /// <summary>歌手页专辑/单曲卡片(200 宽):封面 + 标题 + 发布信息(原版歌手页同款"yyyy-M-d发布,共N首歌"),
-/// 点击跳专辑页。封面后台加载。网易云按数字 id、QQ 按 mid 跳转。</summary>
+/// 点击跳专辑页。封面后台加载。网易云按数字 id、QQ 按 mid 跳转。
+/// 卡片悬停浮现的播放/更多操作要曲目,按需拉一次(<see cref="LoadSongsAsync"/>,成功即缓存)。</summary>
 public sealed partial class AlbumCardViewModel : ViewModelBase
 {
     private readonly string _mid;
+
+    private List<Song>? _songs;
+
+    private Task<IReadOnlyList<Song>>? _loadTask;
 
     public AlbumCardViewModel(long id, string title, string coverUrl, string mid = "",
         long publishTimeMs = 0, int songCount = 0)
@@ -87,5 +101,56 @@ public sealed partial class AlbumCardViewModel : ViewModelBase
             else if (Id != 0) await ServiceLocator.Get<MainViewModel>().OpenAlbumCommand.ExecuteAsync(Id);
         }
         catch { /* 未初始化:忽略 */ }
+    }
+
+    /// <summary>卡片悬停 ▶ / ••• 菜单要用整张专辑的曲目。成功缓存,失败返回空(不抛给 UI,
+    /// 下次点击还能重试);并发调用共享同一个在途任务。</summary>
+    public Task<IReadOnlyList<Song>> LoadSongsAsync(CancellationToken ct = default)
+    {
+        if (_songs is { Count: > 0 }) return Task.FromResult<IReadOnlyList<Song>>(_songs);
+        return _loadTask ??= LoadSongsCoreAsync(ct);
+    }
+
+    private async Task<IReadOnlyList<Song>> LoadSongsCoreAsync(CancellationToken ct)
+    {
+        try
+        {
+            List<Song> songs;
+            if (IsQq)
+            {
+                songs = await ServiceLocator.Get<QQMusicApiClient>()
+                    .GetAlbumSongsByMidAsync(_mid, 200, ct).ConfigureAwait(true);
+            }
+            else
+            {
+                var detail = await ServiceLocator.Get<NetEaseApiClient>()
+                    .GetAlbumAsync(Id, ct).ConfigureAwait(true);
+                songs = detail.Songs.ToList();
+            }
+            if (songs.Count > 0) _songs = songs;
+            return songs;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or TaskCanceledException)
+        {
+            return [];
+        }
+        finally
+        {
+            _loadTask = null; // 失败后允许重试;成功时 _songs 已缓存,不会再发请求
+        }
+    }
+
+    /// <summary>播放整张专辑(第一首起播,队列 = 全量曲目)。</summary>
+    [RelayCommand]
+    public async Task PlayAsync()
+    {
+        var songs = await LoadSongsAsync().ConfigureAwait(true);
+        if (songs.Count == 0) return;
+        try
+        {
+            await ServiceLocator.Get<PlayerViewModel>()
+                .PlayFromList(songs[0], songs, Title).ConfigureAwait(true);
+        }
+        catch { /* 播放失败由播放器提示 */ }
     }
 }

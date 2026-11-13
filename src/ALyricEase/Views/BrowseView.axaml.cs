@@ -77,7 +77,8 @@ public partial class BrowseView : UserControl
             return;
         }
         if (card.AlbumSongs is { Count: > 0 } songs)
-            AlbumCardContextMenu.Create(button, card, songs).ShowAt(button, fromContextRequest);
+            AlbumCardContextMenu.Create(button, card.Title, songs, card.PlayAction)
+                .ShowAt(button, fromContextRequest);
     }
 
     /// <summary>指针压在海报上就把倒计时冻住(微软商店同款:想让这一张多停一会儿,不用去点箭头)。

@@ -228,7 +228,8 @@ internal static class BrowseCardOpsProbe
             "单曲卡菜单 = 歌名 / 添加到歌单 / …");
 
         // 专辑卡菜单:结构对齐歌单菜单(播放 / 属性 / 分享三段)。
-        var albumMenu = AlbumCardContextMenu.Create(new Button(), albumCard, albumCard.AlbumSongs!);
+        var albumMenu = AlbumCardContextMenu.Create(
+            new Button(), albumCard.Title, albumCard.AlbumSongs!, albumCard.PlayAction);
         Check(albumMenu.Items.Count == 7
               && albumMenu.Items[0] is MenuItem { Header: "某专辑", IsEnabled: false }
               && albumMenu.Items[1] is MenuItem { Header: "播放（2 首）" }

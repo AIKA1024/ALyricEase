@@ -467,6 +467,40 @@ public static class Program
             return;
         }
 
+        // 私人FM 双源逐首交替(--fm-mix):真实登录态下起播,看相邻两首是否换源。
+        if (args.Length > 0 && args[0] == "--fm-mix")
+        {
+            var fmMixBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var fmMixExit = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { fmMixExit = await FmMixProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[fm-mix] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            fmMixBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = fmMixExit;
+            return;
+        }
+
+        // QQ 私人FM 对标物(--qq-fm):五条候选通道哪条能回成批曲目、连打两次是否换歌。
+        if (args.Length > 0 && args[0] == "--qq-fm")
+        {
+            var fmBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var fmExit = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { fmExit = await QqPersonalFmProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[qq-fm] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            fmBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = fmExit;
+            return;
+        }
+
         // QQ 歌手专辑 order 语义(--qq-albums [关键词]):最新专辑为什么不在第一屏。
         if (args.Length > 0 && args[0] == "--qq-albums")
         {

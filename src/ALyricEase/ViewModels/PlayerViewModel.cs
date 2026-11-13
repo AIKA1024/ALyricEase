@@ -87,11 +87,16 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     // (2026-10-26 线上日志实测:同一首歌 40 秒内被自动重播十余次)。
     private bool _playbackFailed;
 
-    // 私人FM:激活后"下一曲/播完自动切"持续从 FM 接口取歌(无限流);播放其他列表自动退出。
+    // 私人FM:激活后"下一曲/播完自动切"持续取歌(无限流);播放其他列表自动退出。
+    // 两个音源**逐首交替**(网易云→QQ→网易云…),用户不需要切源按钮:每听完一首就换一边的口味。
     // 队列保持"当前曲后至少预补 2 首",并只保留少量已播放历史,避免长时间收听时线性增长。
     private const int MaxFmHistoryCount = 5;
-    private readonly Queue<Song> _fmBuffer = new();
+    private const int FmInitialQueueCount = 4;
+    private readonly Queue<Song> _fmNetEase = new();
+    private readonly Queue<Song> _fmQq = new();
+    private bool _fmNextFromQq;
     private bool _fmFetching;
+    private readonly QQMusicApiClient? _qq;
 
     [ObservableProperty] private bool _isFmActive;
 
@@ -113,6 +118,8 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _smtc = smtc;
         _appState = appState;
         _musicCache = musicCache;
+        // 私人FM 要逐首交替两源,QQ 客户端从注册表里取(未注册则为 null,FM 退化为单源)。
+        _qq = sources.All.OfType<QQMusicApiClient>().FirstOrDefault();
         _smtc.PlayPauseRequested += OnSmtcPlayPause;
         _smtc.SeekRequested += OnSmtcSeek;
         _smtc.NextRequested += OnSmtcNext;
@@ -471,13 +478,13 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
 
     // ---------- 私人FM ----------
 
-    /// <summary>开始私人FM:拉一批(约 3 首)入队播放第一首;之后"下一曲/播完自动切"持续从 FM 取歌。
-    /// 未登录时提示(不阻塞页面)。已在 FM 中则幂等。</summary>
+    /// <summary>开始私人FM:拉两源各一批入队(网易云/QQ 交替),播放第一首;之后"下一曲/播完自动切"
+    /// 持续取歌,相邻两首必来自不同音源。两个源都未登录时提示(不阻塞页面)。已在 FM 中则幂等。</summary>
     [RelayCommand]
     public async Task StartPersonalFmAsync()
     {
         if (IsFmActive) return;
-        if (!_api.IsLoggedIn)
+        if (!_api.IsLoggedIn && _qq is not { IsLoggedIn: true })
         {
             Message = "登录后收听私人FM";
             return;
@@ -489,7 +496,12 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             return;
         }
         var batch = new List<Song>();
-        while (_fmBuffer.Count > 0) batch.Add(_fmBuffer.Dequeue());
+        while (batch.Count < FmInitialQueueCount && TakeFmSong() is { } next) batch.Add(next);
+        if (batch.Count == 0)
+        {
+            Message = "私人FM获取失败,请稍后重试";
+            return;
+        }
         SetQueue(batch, batch[0], "私人FM");
         IsFmActive = true;
         _ = PrefetchFmAsync();
@@ -516,12 +528,18 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
             {
                 while (_queue.Count - 1 - _queueIndex < 2)
                 {
-                    if (_fmBuffer.Count == 0 && !await FillFmBufferAsync())
+                    // 轮到的那一源见底就先补它,否则 TakeFmSong 会连续从另一源顶歌(实测 = 连着三首 QQ)
+                    if ((FmTurnEmpty || !HasFmSongs) && !await FillFmBufferAsync() && !HasFmSongs)
                     {
                         Message = "私人FM获取失败,请稍后重试";
                         return;
                     }
-                    var bufferedSong = _fmBuffer.Dequeue();
+                    var bufferedSong = TakeFmSong();
+                    if (bufferedSong is null)
+                    {
+                        Message = "私人FM获取失败,请稍后重试";
+                        return;
+                    }
                     if (!CanAttemptPlayback(bufferedSong))
                     {
                         if (++unavailableSkips >= maxUnavailableSkips)
@@ -569,34 +587,98 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
         _queueIndex -= removeCount;
     }
 
-    /// <summary>后台补充 FM 缓冲(缓冲剩余 ≤1 时拉一批)。</summary>
+    /// <summary>后台补充 FM 缓冲:任一源见底就补(逐首交替要求两边都有货)。</summary>
     private async Task PrefetchFmAsync()
     {
-        if (_fmBuffer.Count > 1) return;
+        if (_fmNetEase.Count > 1 && _fmQq.Count > 1) return;
         await FillFmBufferAsync();
     }
 
-    /// <summary>从 FM 接口拉一批入缓冲。并发单飞;失败返回 false(保留旧缓冲)。
+    /// <summary>给见底的源各补一批。并发单飞;两源互不牵连(一边失败另一边照常)。
+    /// 阈值是"≤1 首":等空了再补会来不及 —— 轮流到那一源时缓冲已空,只能从另一源顶歌。
     /// 不用 ConfigureAwait(false):Enqueue 必须回 UI 线程,与 Dequeue(全部 UI 线程)互斥。</summary>
     private async Task<bool> FillFmBufferAsync()
     {
-        if (_fmFetching) return _fmBuffer.Count > 0;
+        if (_fmFetching) return HasFmSongs;
         _fmFetching = true;
         try
         {
-            var songs = await _api.GetPersonalFmAsync();
-            foreach (var s in songs)
-                _fmBuffer.Enqueue(s);
-            return _fmBuffer.Count > 0;
-        }
-        catch
-        {
-            return _fmBuffer.Count > 0;
+            var needNetEase = _fmNetEase.Count <= 1;
+            var needQq = _fmQq.Count <= 1;
+            if (needNetEase && needQq)
+            {
+                var netEaseTask = FetchNetEaseFmAsync();
+                var qqTask = FetchQqFmAsync();
+                await Task.WhenAll(netEaseTask, qqTask);
+                EnqueueFm(_fmNetEase, await netEaseTask);
+                EnqueueFm(_fmQq, await qqTask);
+            }
+            else if (needNetEase)
+            {
+                EnqueueFm(_fmNetEase, await FetchNetEaseFmAsync());
+            }
+            else if (needQq)
+            {
+                EnqueueFm(_fmQq, await FetchQqFmAsync());
+            }
+            return HasFmSongs;
         }
         finally
         {
             _fmFetching = false;
         }
+    }
+
+    private bool HasFmSongs => _fmNetEase.Count > 0 || _fmQq.Count > 0;
+
+    /// <summary>下一首轮到的那一源是否已经没货(补货优先级看它)。</summary>
+    private bool FmTurnEmpty => _fmNextFromQq ? _fmQq.Count == 0 : _fmNetEase.Count == 0;
+
+    /// <summary>探针专用(--fm-mix):按真实播放顺序导出"当前曲之后"的队列片段
+    /// (不环绕、不掺已播历史),用来检查相邻两首是否换源。</summary>
+    internal IReadOnlyList<Song> DumpFmUpcomingForProbe()
+        => _queueIndex < 0 ? [] : _queue.Skip(_queueIndex + 1).ToList();
+
+    private static void EnqueueFm(Queue<Song> buffer, IReadOnlyList<Song> songs)
+    {
+        foreach (var song in songs) buffer.Enqueue(song);
+    }
+
+    /// <summary>网易云私人FM(一次约 3 首)。未登录/失败回空,让 QQ 单独撑起这一轮。</summary>
+    private async Task<IReadOnlyList<Song>> FetchNetEaseFmAsync()
+    {
+        if (!_api.IsLoggedIn) return [];
+        try { return await _api.GetPersonalFmAsync(); }
+        catch { return []; }
+    }
+
+    /// <summary>QQ 私人FM(猜你喜欢电台,一次 10 首)。未登录/失败回空。</summary>
+    private async Task<IReadOnlyList<Song>> FetchQqFmAsync()
+    {
+        if (_qq is not { IsLoggedIn: true }) return [];
+        try { return await _qq.GetPersonalFmAsync(); }
+        catch { return []; }
+    }
+
+    /// <summary>按轮次取一首:轮到哪一源就取哪一源,取到后翻转轮次 ⇒ 相邻两首必然换源。
+    /// 轮到的那源暂时没歌则由另一源顶上,轮次不动(补货后仍优先原来那一源)。</summary>
+    private Song? TakeFmSong()
+    {
+        if (_fmNextFromQq)
+        {
+            if (_fmQq.Count > 0)
+            {
+                _fmNextFromQq = false;
+                return _fmQq.Dequeue();
+            }
+            return _fmNetEase.Count > 0 ? _fmNetEase.Dequeue() : null;
+        }
+        if (_fmNetEase.Count > 0)
+        {
+            _fmNextFromQq = true;
+            return _fmNetEase.Dequeue();
+        }
+        return _fmQq.Count > 0 ? _fmQq.Dequeue() : null;
     }
 
     /// <summary>增量同步"接下来播放":从当前曲下一首开始的循环顺序，保留未变化的行与封面。</summary>

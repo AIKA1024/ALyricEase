@@ -16,6 +16,7 @@ namespace ALyricEase.Models.Dtos;
 [JsonSerializable(typeof(QQProfileOrderAssetResponse))]
 [JsonSerializable(typeof(QQRecommendFeedResponse))]
 [JsonSerializable(typeof(QQRadarResponse))]
+[JsonSerializable(typeof(QQRadioFmResponse))]
 [JsonSerializable(typeof(QQSongEntriesResponse))]
 [JsonSerializable(typeof(QQAlbumListResponse))]
 [JsonSerializable(typeof(QQAlbumDetailResponse))]

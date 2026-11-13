@@ -516,6 +516,27 @@ public sealed record QQRadarData
     [JsonPropertyName("hasMore")] public bool HasMore { get; init; }
 }
 
+// ---------- 私人FM(猜你喜欢电台,pf.radiosvr/GetRadiosonglist)----------
+
+public sealed record QQRadioFmResponse
+{
+    [JsonPropertyName("req_0")] public QQRadioFmReq? Req0 { get; init; }
+}
+
+public sealed record QQRadioFmReq
+{
+    public int Code { get; init; }
+
+    public QQRadioFmData? Data { get; init; }
+}
+
+public sealed record QQRadioFmData
+{
+    /// <summary>一批曲目(实测 10 首)。注意条目是**平铺曲目**本身(顶层就是 id/mid/name/singer/album),
+    /// 不像歌单那样再包一层 track_info —— 直接复用 <see cref="QQTrackDto"/>。</summary>
+    [JsonPropertyName("track_list")] public List<QQTrackDto>? TrackList { get; init; }
+}
+
 // ---------- 歌手/专辑(mid 维度,QQ 导航页)----------
 
 public sealed record QQSongEntriesResponse

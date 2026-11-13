@@ -2435,6 +2435,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return doc.RootElement.Clone().GetRawText();
     }
 
+    /// <summary>探针专用:任意 module/method 的只读探针入口 —— 走完整 comm/凭证链路,
+    /// 用来确认某个上游模块是否还活着、回包结构如何(如私人FM各候选通道)。
+    /// 写请求请走 <see cref="SecureAssetWriteAsync"/>,生产路径勿用。</summary>
+    internal Task<JsonDocument> ProbeModuleAsync(string module, string method,
+        Action<Utf8JsonWriter> writeParam, CancellationToken ct = default)
+        => PostMusicuAsync(w => WriteModuleReq(w, module, method, writeParam), ct);
+
     /// <summary>探针专用(--qq-user-pl):dump 他人主页原始响应,确认 mydiss.list 条目是否带隐私标记。</summary>
     internal async Task<string> DumpUserHomepageRawAsync(string euin, CancellationToken ct = default)
     {
@@ -2613,6 +2620,37 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             if (!page.HasMore) break;
         }
         return songs;
+    }
+
+    /// <summary>"猜你喜欢"电台 id(QQ 私人FM 的取歌入口)。实测见 <c>--qq-fm</c>:
+    /// 老电台模块 <c>pf.radiosvr/GetRadiosonglist</c> 仍可用,新版
+    /// <c>music.radio.RadioServer/get_radio_track</c> 一律回 500003。</summary>
+    private const int GuessYouLikeRadioId = 99;
+
+    /// <summary>私人FM:猜你喜欢电台一批(实测 10 首)。<c>firstplay=1</c> 让服务端按账号口味
+    /// 重新随机 —— 连打两次两批不重复(9/10 首、重叠 0),可直接当无限流用。
+    /// 未登录或账号无推荐内容时回空列表,由调用方与其它音源互为兜底。</summary>
+    public async Task<List<Song>> GetPersonalFmAsync(CancellationToken ct = default)
+    {
+        using var doc = await PostMusicuAsync(w =>
+        {
+            WriteModuleReq(w, "pf.radiosvr", "GetRadiosonglist", p =>
+            {
+                p.WriteNumber("id", GuessYouLikeRadioId);
+                p.WriteNumber("firstplay", 1);
+                p.WriteNumber("num", 10);
+            });
+        }, ct).ConfigureAwait(false);
+
+        var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQRadioFmResponse);
+        var req = resp?.Req0;
+        if (req is null || req.Code != 0)
+            throw new ApiException($"获取私人FM失败(code={req?.Code ?? -1})", req?.Code ?? -1);
+
+        return (req.Data?.TrackList ?? [])
+            .Select(track => MapTrack(track, hasFullQualityMetadata: true))
+            .Where(song => song.Id != 0)
+            .ToList();
     }
 
     /// <summary>每日推荐歌曲:官方"每日30首"歌单(与 PC 客户端同源)——RecommendFeed 首页货架取

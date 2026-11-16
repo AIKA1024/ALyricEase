@@ -110,6 +110,10 @@ public sealed record QQTrackDto
     /// <summary>嵌套专辑(仅详情 track_info 有)。</summary>
     public QQAlbumRefDto? Album { get; init; }
 
+    /// <summary>专辑内曲序(1 起，跨碟全局连续)。只有专辑曲目接口(GetAlbumSongList)会带；
+    /// 歌单/搜索/歌手歌曲响应不返回 ⇒ 默认 0，调用方须按"缺省视为最大"处理。</summary>
+    [JsonPropertyName("index_album")] public int IndexAlbum { get; init; }
+
     public QQPayDto? Pay { get; init; }
 
 }

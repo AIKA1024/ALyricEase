@@ -2965,7 +2965,12 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             });
         }, ct).ConfigureAwait(false);
         var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQSongEntriesResponse);
-        return MapSongEntries(resp?.Req0?.Code, resp?.Req0?.Data?.SongList);
+        // songList 不是曲序:实测 15 张专辑 12 张乱(33 首那张开头 33,13,31,1,…;9 首那张 1,4,3,8,2,9,6,5,7),
+        // 真实曲序只在 songInfo.index_album(跨碟全局连续 1..N,实测无缺失)。缺字段按最大排,OrderBy 稳定 ⇒ 保留原顺序。
+        var ordered = resp?.Req0?.Data?.SongList?
+            .OrderBy(e => e.SongInfo is { IndexAlbum: > 0 } s ? s.IndexAlbum : int.MaxValue)
+            .ToList();
+        return MapSongEntries(resp?.Req0?.Code, ordered);
     }
 
     /// <summary>专辑基础信息(名字/发行日期/简介):music.musichallAlbum.AlbumInfoServer/GetAlbumDetail。</summary>

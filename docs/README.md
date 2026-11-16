@@ -40,7 +40,7 @@
 | 浏览页「关注新歌」没内容 / 想知道两家怎么拼出来的 | [followed-new-songs.md](followed-new-songs.md)(无聚合接口,关注列表+每位歌手按时间取最新;`--followed-new-songs` / `--browse-followed`) |
 | 搜索页某个分类只有几十条 / 滚到底不加载 / 想改每页条数 | [search-paging.md](search-paging.md)(`SearchAllAsync` 带 offset;QQ 只有 page_num;虚拟化 + 跨页去重;`--search-paging-ui`) |
 | 歌手页/专辑页的专辑卡没有 ▶ / ••• / 右键菜单 | [album-card.md](album-card.md)(共用 `Controls/AlbumCard`;曲目按需拉;探针 `--album-card`) |
-| QQ 歌手页专辑不是最新 / 最新专辑要滚很久才出现 / 横向区只有 30 张 | [qq-artist-albums.md](qq-artist-albums.md)(`GetAlbumList` 的 `order=0` 才是时间倒序,1 会把最新十几张甩到末尾;`--qq-albums`) |
+| QQ 歌手页专辑不是最新 / 最新专辑要滚很久才出现 / 横向区只有 30 张 / **专辑内曲目乱序** | [qq-artist-albums.md](qq-artist-albums.md)(`GetAlbumList` 的 `order=0` 才是时间倒序,1 会把最新十几张甩到末尾;专辑曲目要按 `songInfo.index_album` 排,`songList` 原序是乱的;`--qq-albums` / `--album-card`) |
 | QQ 音乐有没有私人FM / 私人FM 怎么在两源间轮换 | [qq-personal-fm.md](qq-personal-fm.md)(猜你喜欢电台 id 99;私人FM 逐首交替网易云↔QQ,补货阈值 ≤1 首;`--qq-fm` / `--fm-mix`) |
 | 要加或改图标码位 | [icon-fonts.md](icon-fonts.md) |
 | 登录相关(代理登录 / MUSIC_U / eapi 两种格式) | [netease-login.md](netease-login.md) |

@@ -50,7 +50,39 @@
 - **榜单/歌单的 total 不可信**:`uniform_get_Dissinfo` 会剔无效条目但 `total` 照算,
   与这里无关,见 [netease-login.md](netease-login.md)。
 
-## 4. 回归判据(`--qq-albums`)
+## 4. 专辑详情页的曲目顺序:`songList` 不是曲序(2026-11-16)
+
+用户反馈:QQ 源打开专辑页,歌曲顺序是乱的(不是专辑列表乱,是**专辑里的曲目**乱)。
+
+`GetAlbumSongList` 返回的 `data.songList` **不按专辑曲序**,是上游内部顺序(看着像热度/上架序)。
+真实曲序只在该条的 `songInfo.index_album` 字段(1 起,`index_cd` 是碟号)。
+
+实测(15 张专辑,`num=200` 一次拉全):
+
+| 专辑 | 曲数 | 接口原序的 index_album |
+|---|---|---|
+| 放课后时光 `003tUiIx1jFmRV` | 9 | 1,**4,3,8,2,9,6,5,7** |
+| 朝月听尘 `0037gGxH2H1UTu` | 40(3 碟) | 前五 **33,13,31,1,26** |
+| 万声弥新 `001rovrt1tUywT` | 50(4 碟) | 33,13,31,1,26,19,22,… |
+
+- 15 张里 **12 张乱序**;另外 3 张"看着正常"的都是 2 首的小单曲,两首两种排列各占一半。
+- `index_album` 实测**跨碟全局连续**(40 首那张 1..40、50 首那张 1..50,碟间不重置),
+  15 张全部唯一、无缺失、无 0 ⇒ 单按它就够,不必用 `index_cd`。
+- 对照组:网页端旧接口 `c.y.qq.com/v8/fcg-bin/fcg_v8_album_info_cp.fcg` 返回的顺序**就是**曲序。
+  拿 3 张(9 / 28 / 40 首,含多碟)逐条比 `songmid`:原序全不等,**按 `index_album` 升序后
+  与网页端逐位完全一致**。
+
+修法:`QQTrackDto` 加 `[JsonPropertyName("index_album")] IndexAlbum`;
+`GetAlbumSongsByMidAsync` 在映射前 `OrderBy(IndexAlbum)`,缺省(0)按 `int.MaxValue` 排后
+(LINQ `OrderBy` 稳定 ⇒ 字段全缺时保留原顺序,不制造新乱序)。
+
+> 影响面:专辑页、专辑卡 ▶ 播整张、关注新歌的 `FullSongs` 全走这个方法,一处修全好。
+> 歌手歌曲(`GetSingerSongList`)与歌单的顺序是服务端刻意排的(热度/时间),**不要**套用该排序。
+
+若哪天上游给 `index_album` 全填 0(比如换了模块),表现会退回"原序"而不是崩,能靠 `--album-card`
+的「曲序前5」一行立刻看出来。
+
+## 5. 回归判据(`--qq-albums`)
 
 ```
 [qq-albums] order=0 begin=0 ... 首=2026-11-13 放课后时光
@@ -61,3 +93,11 @@
 ```
 
 歌手页/专辑页首条必须是最新发行的那张;若又变成 `待春归`,说明有人把 `order` 改回了 1。
+
+曲序另有 `--album-card` 一行判据(《放课后时光》9 首必须是官方序):
+
+```
+[album-card] 曲序前5: CATCH UP！学院晴空 → 晚星降落的夜街与灯火 → 琥珀色午后 → 明天见、在雪落之时 → 热烫！~捞起一天好心情~
+```
+
+出现「CATCH UP！→ 明天见 → 琥珀色午后 → 若时间 → 晚星」就是 `index_album` 排序被去掉了。

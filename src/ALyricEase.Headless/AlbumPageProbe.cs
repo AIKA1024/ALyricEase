@@ -122,7 +122,8 @@ internal static class AlbumPageProbe
                                       hoverArtistBackgroundVisible;
 
             // 头部两个操作按钮要与歌单页同一套"方角"外观:play-all-square + hero-action-more,
-            // 圆角 4、等高 36、间距 8;「更多」是字体字形而不是「•••」文字,菜单是 分享/复制链接。
+            // 圆角 4、等高 36、间距 8;「更多」是字体字形而不是「•••」文字,
+            // 菜单是 分享/在浏览器中打开/复制链接(与歌手页头部、歌曲行同序)。
             var playAll = visibleActions.GetVisualDescendants().OfType<Button>()
                 .First(button => button.Classes.Contains("play-all"));
             var moreButton = vertical.IsVisible
@@ -143,7 +144,8 @@ internal static class AlbumPageProbe
                                  Math.Abs(visibleActions.Spacing - 8) < 0.01 &&
                                  Equals(playAll.Content, "▶ 播放全部");
             var moreMenuOk = moreButton.IsVisible && moreGlyph.Length == 1 &&
-                             menuHeaders.Length == 2 && menuHeaders[0] == "分享" && menuHeaders[1] == "复制链接" &&
+                             menuHeaders.Length == 3 && menuHeaders[0] == "分享" &&
+                             menuHeaders[1] == "在浏览器中打开" && menuHeaders[2] == "复制链接" &&
                              moreButton.Flyout is MenuFlyout { Items: var items } &&
                              items.OfType<MenuItem>().All(item => item.Icon is not null);
             // 菜单能真的弹出来(和歌单页一样挂在这个按钮上),否则只是"有数据结构"。

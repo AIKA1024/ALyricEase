@@ -52,6 +52,22 @@ public partial class AlbumView : UserControl
         await ClipboardService.TryCopyTextAsync(vm.ShareLink);
     }
 
+    /// <summary>与歌手页/歌曲行同一口径:交给系统 Launcher 打开公开网页,
+    /// 没有可处理该链接的应用时静默返回(菜单语境无错误呈现面)。</summary>
+    private async void OnOpenAlbumInBrowserClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not AlbumViewModel { ShareLink.Length: > 0 } vm) return;
+        try
+        {
+            if (TopLevel.GetTopLevel(this)?.Launcher is { } launcher)
+                await launcher.LaunchUriAsync(new Uri(vm.ShareLink));
+        }
+        catch
+        {
+            // 平台没有浏览器/URI 处理器时保持页面原状。
+        }
+    }
+
     /// <summary>容器 realized 时加载红心状态；封面由 Image 按可见性加载。</summary>
     private void OnTrackContainerPreparing(object? sender, ContainerPreparedEventArgs e)
     {

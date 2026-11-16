@@ -108,7 +108,7 @@ musichall.song_list_server / GetSingerSongList     { singerMid, order:2, number:
     来源名 = 专辑名；没拉到全量时退回采样曲目）。
   - •••/右键：单曲弹歌曲菜单（加歌单/下载/表演者/专辑/分享…）、歌单卡弹歌单菜单；
     专辑卡弹**专辑菜单**，结构对齐歌单菜单（`AlbumCardContextMenu`）：
-    专辑名(灰) / 播放（N 首）/ 打开专辑页 / 表演者：XXX（多歌手为子菜单）/ ─ / 分享 / 复制链接。
+    专辑名(灰) / 播放（N 首）/ 打开专辑页 / 表演者：XXX（多歌手为子菜单）/ ─ / 分享 / 在浏览器中打开 / 复制链接。
     缺公开链接（缺 mid/id）时整段分享项省略。分享链接见 `Services/AlbumShareLinks.cs`
     （网易云 `/album?id=`、QQ `/ryqq/albumDetail/{albumMid}`）。
 - **「新歌速递」与「关注新歌」同款**（2026-11）：卡上也带 `Song` + `PlayAction`，
@@ -164,7 +164,7 @@ dotnet run --project src/ALyricEase.Headless/ALyricEase.Headless.csproj -c Debug
 [browse-ops] 单曲卡封面也浮现 ▶ 与 •••(点击卡本身直接播放)
 [browse-ops] 专辑卡封面也浮现 ▶ 与 •••(点击卡本身进专辑页)
 [browse-ops] 单曲卡菜单 = 歌名 / 添加到歌单 / …
-[browse-ops] 专辑卡菜单 = 专辑名 / 播放 / 打开专辑页 / 表演者 / ─ / 分享 / 复制链接
+[browse-ops] 专辑卡菜单 = 专辑名 / 播放 / 打开专辑页 / 表演者 / ─ / 分享 / 在浏览器中打开 / 复制链接
 [browse-ops] 右键弹出歌单菜单
 [browse-ops] 专辑卡右键/长按弹出专辑菜单
 ```

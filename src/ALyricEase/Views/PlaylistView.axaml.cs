@@ -164,6 +164,24 @@ public partial class PlaylistView : UserControl
         await ClipboardService.TryCopyTextAsync(PlaylistShareLinks.For(playlist));
     }
 
+    /// <summary>交给系统 Launcher 打开公开网页;平台没有可处理该链接的应用时静默返回
+    /// (与专辑页/歌手页同一口径)。链接仍由 PlaylistShareLinks 统一拼,QQ 榜单会走 /toplist 路由。</summary>
+    private async void OnOpenPlaylistInBrowserClick(object? sender, RoutedEventArgs e)
+    {
+        if (GetShareablePlaylist() is not { } playlist) return;
+        var link = PlaylistShareLinks.For(playlist);
+        if (link.Length == 0) return;
+        try
+        {
+            if (TopLevel.GetTopLevel(this)?.Launcher is { } launcher)
+                await launcher.LaunchUriAsync(new Uri(link));
+        }
+        catch
+        {
+            // 平台没有浏览器/URI 处理器时保持页面原状。
+        }
+    }
+
     private Models.Playlist? GetShareablePlaylist()
     {
         if (DataContext is not PlaylistViewModel { SelectedPlaylist.Playlist: { Id: > 0 } playlist })

@@ -45,6 +45,9 @@ internal static class AlbumCardProbe
             album.Id, album.Name, album.PicUrl, album.Mid, album.PublishTime, album.Size);
         var songs = await card.LoadSongsAsync();
         Console.WriteLine($"[album-card] 曲目={songs.Count} 首 首曲={songs.FirstOrDefault()?.Name ?? "(空)"}");
+        // 曲序判据:songList 原序是乱的(000eh…9 首那张原序 1,4,3,8,2,9,6,5,7),
+        // 必须按 songInfo.index_album 升序 ⇒ 与 QQ 网页端专辑页逐位一致。这里打印前 5 首供人工对照。
+        Console.WriteLine($"[album-card] 曲序前5: {string.Join(" → ", songs.Take(5).Select(s => s.Name))}");
 
         var window = new Window
         {
@@ -92,9 +95,10 @@ internal static class AlbumCardProbe
         var headers = menu.Items.OfType<MenuItem>().Select(i => i.Header?.ToString() ?? "").ToList();
         Console.WriteLine($"[album-card] 菜单项={menu.Items.Count}: {string.Join(" | ", headers)}");
         if (!headers.Any(h => h.StartsWith("播放（", StringComparison.Ordinal))
-            || !headers.Contains("打开专辑页"))
+            || !headers.Contains("打开专辑页")
+            || !headers.Contains("在浏览器中打开"))
         {
-            Console.WriteLine("[album-card] FAIL 菜单缺少播放或打开专辑页");
+            Console.WriteLine("[album-card] FAIL 菜单缺少播放/打开专辑页/在浏览器中打开");
             return 1;
         }
 

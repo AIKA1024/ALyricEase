@@ -164,6 +164,12 @@
                               <TextBlock Text="{DynamicResource IconShare}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
                             </MenuItem.Icon>
                           </MenuItem>
+                          <!-- 与专辑页头部/歌手页头部同序:分享 → 在浏览器中打开 → 复制链接 -->
+                          <MenuItem Header="在浏览器中打开" Click="OnOpenPlaylistInBrowserClick">
+                            <MenuItem.Icon>
+                              <TextBlock Text="{DynamicResource IconOpenInBrowser}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                            </MenuItem.Icon>
+                          </MenuItem>
                           <MenuItem Header="复制链接" Click="OnCopyPlaylistLinkClick">
                             <MenuItem.Icon>
                               <TextBlock Text="{DynamicResource IconCopyLink}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
@@ -236,6 +242,11 @@
                         <MenuItem Header="分享" Click="OnSharePlaylistClick">
                           <MenuItem.Icon>
                             <TextBlock Text="{DynamicResource IconShare}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
+                          </MenuItem.Icon>
+                        </MenuItem>
+                        <MenuItem Header="在浏览器中打开" Click="OnOpenPlaylistInBrowserClick">
+                          <MenuItem.Icon>
+                            <TextBlock Text="{DynamicResource IconOpenInBrowser}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
                           </MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="复制链接" Click="OnCopyPlaylistLinkClick">

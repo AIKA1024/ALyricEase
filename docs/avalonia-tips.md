@@ -486,10 +486,13 @@ Avalonia(WPF 不同)的 `TemplatedControl.HorizontalContentAlignment` 默认值�
 - ⚠ 这两条样式原先只写在 `PlaylistView.UserControl.Styles` 里。专辑页照着做出来时出现了三个偏差:
   局部 `CornerRadius="18"` 压掉样式(仍是胶囊)、手写「•••」文字、ToolTip 写着
   「更多操作(后续接入)」但根本没有菜单。现在统一定义在 `Styles/Controls/Buttons.axaml`,
-  两页共用一份;菜单也统一成歌单页那套 **分享 / 复制链接**(同一份 `IPlatformShareService`
-  与 `AlbumShareLinks`/`PlaylistShareLinks`)。
-- 回归:`--albumpage` 断言专辑页两套头部(横/竖)的圆角 4、高度 36、间距 8、菜单两项带图标;
-  `--collection-filter` 守歌单页那对按钮仍是方角 36。
+  两页共用一份;菜单也统一成 **分享 / 在浏览器中打开 / 复制链接**(同一份 `IPlatformShareService`
+  与 `AlbumShareLinks`/`PlaylistShareLinks`,项序/图标与歌手页头部、歌曲行一致)。
+  卡片/行级菜单(歌单 more、专辑卡 •••)尾部同样是这三项,由 `SongContextMenu.AddShareItems`
+  统一产出 —— 以前三处各写一遍,专辑页头部和专辑卡就曾少了「在浏览器中打开」。
+- 回归:`--albumpage` 断言专辑页两套头部(横/竖)的圆角 4、高度 36、间距 8、菜单三项
+  (分享 / 在浏览器中打开 / 复制链接)且都带图标;`--collection-filter` 断言歌单页头部同样三项
+  且仍是方角 36;`--browse-ops` / `--recommend-ops` 守卡片级菜单的项数与项序。
 
 ## Release 包的裁剪会删掉"反射创建的页面视图"的构造函数(构建期 IL2072 就是预告)
 

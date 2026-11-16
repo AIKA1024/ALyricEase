@@ -7,7 +7,6 @@ using ALyricEase.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Avalonia.VisualTree;
 
 namespace ALyricEase.Views;
 
@@ -73,13 +72,8 @@ internal static class PlaylistContextMenu
         menu.Items.Add(new Separator());
 
         var link = PlaylistLink(playlist);
-        var share = MenuItemWithIcon("分享", IconGlyphs.Share);
-        share.Click += async (_, _) => await ShareAsync(anchor, playlist, link);
-        menu.Items.Add(share);
-
-        var copy = MenuItemWithIcon("复制链接", IconGlyphs.CopyLink);
-        copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
-        menu.Items.Add(copy);
+        // 分享 / 在浏览器中打开 / 复制链接 与歌曲行、专辑卡共用同一段(项序与图标不再各写一遍)。
+        SongContextMenu.AddShareItems(menu, anchor, link, $"分享歌单：{playlist.Name}", playlist.Name);
 
         AppendManageItems(menu, playlist);
 
@@ -153,17 +147,5 @@ internal static class PlaylistContextMenu
                 .SubscribePlaylistAsync(playlist.Id, subscribe: true).ConfigureAwait(false);
         }
         catch { /* 未登录/风控/已收藏:静默(菜单语境无错误呈现面)。 */ }
-    }
-
-    private static async Task ShareAsync(Visual anchor, PlaylistItemViewModel playlist, string link)
-    {
-        try
-        {
-            var topLevel = TopLevel.GetTopLevel(anchor);
-            var ownerHandle = topLevel?.TryGetPlatformHandle()?.Handle ?? 0;
-            await ServiceLocator.Get<IPlatformShareService>().ShareUriAsync(
-                ownerHandle, $"分享歌单：{playlist.Name}", playlist.Name, new Uri(link));
-        }
-        catch { /* 当前宿主不支持系统分享时静默返回,复制链接入口仍可用。 */ }
     }
 }

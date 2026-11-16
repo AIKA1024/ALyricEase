@@ -82,11 +82,13 @@ internal static class RecommendCardOpsProbe
         // 菜单结构:与用户页共用同一份,创建者项依赖 personalized/playlist 下发的 creator。
         var menu = PlaylistContextMenu.Create(new Button(), playlist);
         var items = menu.Items.ToList();
-        Check(items.Count == 7, $"歌单 more 菜单项数={items.Count},期望 7");
+        Check(items.Count == 8, $"歌单 more 菜单项数={items.Count},期望 8");
         Check(items[0] is MenuItem { IsEnabled: false, Header: "深夜电台" }, "首项为禁用的歌单标题");
         Check(items[3] is MenuItem { Header: "创建者： 晚风", IsEnabled: true }, "创建者项应为可跳转的「晚风」");
-        Check(items[5] is MenuItem { Header: "分享" } && items[6] is MenuItem { Header: "复制链接" },
-            "分享/复制链接项齐全");
+        Check(items[5] is MenuItem { Header: "分享" }
+              && items[6] is MenuItem { Header: "在浏览器中打开" }
+              && items[7] is MenuItem { Header: "复制链接" },
+            "分享/在浏览器中打开/复制链接项齐全");
 
         var view = new RecommendView { DataContext = vm };
         var window = new Window { Width = 1000, Height = 700, Content = view };

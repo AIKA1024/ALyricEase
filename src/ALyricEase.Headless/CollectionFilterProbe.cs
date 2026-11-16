@@ -136,7 +136,7 @@ public static class CollectionFilterProbe
         var menu = more.Flyout as MenuFlyout
                    ?? throw new InvalidOperationException("更多按钮没有 MenuFlyout");
         Assert(menu.Items.OfType<MenuItem>().Select(item => item.Header?.ToString())
-                   .SequenceEqual(new[] { "分享", "复制链接" }),
+                   .SequenceEqual(new[] { "分享", "在浏览器中打开", "复制链接" }),
             "更多按钮的菜单结构与原版不一致");
         menu.ShowAt(more);
         Drain();

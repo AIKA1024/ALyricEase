@@ -84,10 +84,10 @@ internal static class BrowseCardOpsProbe
             "QQ 榜单链接走 /toplist/(TopId,不是 dissid)");
 
         var neMenu = PlaylistContextMenu.Create(new Button(), nePlaylist);
-        Check(neMenu.Items.Count == 7 && neMenu.Items[2] is MenuItem { Header: "收藏" },
-            "网易云歌单菜单保留「收藏」(共 7 项)");
+        Check(neMenu.Items.Count == 8 && neMenu.Items[2] is MenuItem { Header: "收藏" },
+            "网易云歌单菜单保留「收藏」(共 8 项)");
         var qqMenu = PlaylistContextMenu.Create(new Button(), qqPlaylist);
-        Check(qqMenu.Items.Count == 6 && qqMenu.Items.All(item => item is not MenuItem { Header: "收藏" }),
+        Check(qqMenu.Items.Count == 7 && qqMenu.Items.All(item => item is not MenuItem { Header: "收藏" }),
             "QQ 歌单菜单不出现「收藏」(没有收藏他人歌单的写接口)");
         Check(qqMenu.Items[2] is MenuItem { Header: "创建者： QQ音乐", IsEnabled: false }, "QQ 歌单创建者项");
 
@@ -227,18 +227,20 @@ internal static class BrowseCardOpsProbe
               && songMenu.Items[1] is MenuItem { Header: "添加到歌单" },
             "单曲卡菜单 = 歌名 / 添加到歌单 / …");
 
-        // 专辑卡菜单:结构对齐歌单菜单(播放 / 属性 / 分享三段)。
+        // 专辑卡菜单:结构对齐歌单菜单(播放 / 属性 / 分享三段);分享段与歌曲行、歌单卡共用一份
+        // (分享 → 在浏览器中打开 → 复制链接)。
         var albumMenu = AlbumCardContextMenu.Create(
             new Button(), albumCard.Title, albumCard.AlbumSongs!, albumCard.PlayAction);
-        Check(albumMenu.Items.Count == 7
+        Check(albumMenu.Items.Count == 8
               && albumMenu.Items[0] is MenuItem { Header: "某专辑", IsEnabled: false }
               && albumMenu.Items[1] is MenuItem { Header: "播放（2 首）" }
               && albumMenu.Items[2] is MenuItem { Header: "打开专辑页" }
               && albumMenu.Items[3] is MenuItem { Header: "表演者： 某歌手" }
               && albumMenu.Items[4] is Separator
               && albumMenu.Items[5] is MenuItem { Header: "分享" }
-              && albumMenu.Items[6] is MenuItem { Header: "复制链接" },
-            "专辑卡菜单 = 专辑名 / 播放 / 打开专辑页 / 表演者 / ─ / 分享 / 复制链接");
+              && albumMenu.Items[6] is MenuItem { Header: "在浏览器中打开" }
+              && albumMenu.Items[7] is MenuItem { Header: "复制链接" },
+            "专辑卡菜单 = 专辑名 / 播放 / 打开专辑页 / 表演者 / ─ / 分享 / 在浏览器中打开 / 复制链接");
 
         // 歌单卡右键:弹 more 菜单。先测它 —— Transient 菜单弹出后会盖住后面的卡片,
         // 专辑卡那条改用 InvokeHandler 走 ContextRequested,不受遮挡影响。

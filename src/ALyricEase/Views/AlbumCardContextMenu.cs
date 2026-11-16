@@ -69,21 +69,11 @@ internal static class AlbumCardContextMenu
         if (link is null) return menu;
 
         menu.Items.Add(new Separator());
-
-        var share = MenuItemWithIcon("分享", IconGlyphs.Share);
-        share.Click += async (_, _) =>
-        {
-            menu.Hide();
-            var description = string.IsNullOrWhiteSpace(lead.Artist)
-                ? lead.Album
-                : $"{lead.Album} - {lead.Artist}";
-            await SongContextMenu.ShareUriAsync(anchor, link, $"分享专辑：{lead.Album}", description);
-        };
-        menu.Items.Add(share);
-
-        var copy = MenuItemWithIcon("复制链接", IconGlyphs.CopyLink);
-        copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
-        menu.Items.Add(copy);
+        // 分享 / 在浏览器中打开 / 复制链接 与歌曲行、歌单卡共用同一段(项序与图标不再各写一遍)。
+        var description = string.IsNullOrWhiteSpace(lead.Artist)
+            ? lead.Album
+            : $"{lead.Album} - {lead.Artist}";
+        SongContextMenu.AddShareItems(menu, anchor, link, $"分享专辑：{lead.Album}", description);
 
         return menu;
     }

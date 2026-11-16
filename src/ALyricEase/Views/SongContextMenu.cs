@@ -137,23 +137,10 @@ internal static class SongContextMenu
             menu.Items.Add(new Separator());
 
             var link = SongShareLinks.For(song);
-            var share = MenuItemWithIcon("分享", IconGlyphs.Share);
-            share.IsEnabled = link is not null;
-            if (link is not null)
-                share.Click += async (_, _) => await ShareSongAsync(anchor, song, link);
-            menu.Items.Add(share);
-
-            var openBrowser = MenuItemWithIcon("在浏览器中打开", IconGlyphs.OpenInBrowser);
-            openBrowser.IsEnabled = link is not null;
-            if (link is not null)
-                openBrowser.Click += async (_, _) => await OpenBrowserAsync(anchor, link);
-            menu.Items.Add(openBrowser);
-
-            var copy = MenuItemWithIcon("复制链接", IconGlyphs.CopyLink);
-            copy.IsEnabled = link is not null;
-            if (link is not null)
-                copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link);
-            menu.Items.Add(copy);
+            var description = string.IsNullOrWhiteSpace(song.Artist)
+                ? song.Name
+                : $"{song.Name} - {song.Artist}";
+            AddShareItems(menu, anchor, link, $"分享歌曲：{song.Name}", description);
         }
 
         // 只有聚合歌单行携带成员歌单引用;来源分组和横线一起添加。
@@ -240,7 +227,7 @@ internal static class SongContextMenu
         },
     };
 
-    private static MenuItem MenuItemWithIcon(string header, string glyph, FontFamily? font = null) => new()
+    internal static MenuItem MenuItemWithIcon(string header, string glyph, FontFamily? font = null) => new()
     {
         Header = header,
         Icon = new TextBlock
@@ -251,6 +238,33 @@ internal static class SongContextMenu
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
         },
     };
+
+    /// <summary>分享 / 在浏览器中打开 / 复制链接 —— 歌曲行、专辑卡、歌单卡共用这一段。
+    /// 三项的顺序与图标在原版里是固定的,各菜单各写一遍迟早漂移(专辑页头部/卡片就曾只有两项),
+    /// 所以收敛到这里。link 为空时三项一律禁用;前置分隔线与后续管理项由调用方负责。</summary>
+    internal static void AddShareItems(
+        MenuFlyout menu, Visual anchor, string? link, string shareTitle, string shareDescription)
+    {
+        var enabled = !string.IsNullOrEmpty(link);
+
+        var share = MenuItemWithIcon("分享", IconGlyphs.Share);
+        share.IsEnabled = enabled;
+        if (enabled)
+            share.Click += async (_, _) => await ShareUriAsync(anchor, link!, shareTitle, shareDescription);
+        menu.Items.Add(share);
+
+        var openBrowser = MenuItemWithIcon("在浏览器中打开", IconGlyphs.OpenInBrowser);
+        openBrowser.IsEnabled = enabled;
+        if (enabled)
+            openBrowser.Click += async (_, _) => await OpenBrowserAsync(anchor, link!);
+        menu.Items.Add(openBrowser);
+
+        var copy = MenuItemWithIcon("复制链接", IconGlyphs.CopyLink);
+        copy.IsEnabled = enabled;
+        if (enabled)
+            copy.Click += async (_, _) => await ClipboardService.TryCopyTextAsync(link!);
+        menu.Items.Add(copy);
+    }
 
     /// <summary>表演者项（单个直接跳、多个给子菜单）。专辑卡菜单也复用它 —— 专辑的"表演者"
     /// 就是歌单菜单里的"创建者"。</summary>
@@ -311,15 +325,7 @@ internal static class SongContextMenu
         catch { /* 未初始化或导航失败时保持当前页。 */ }
     }
 
-    private static async Task ShareSongAsync(Visual anchor, Song song, string link)
-    {
-        var description = string.IsNullOrWhiteSpace(song.Artist)
-            ? song.Name
-            : $"{song.Name} - {song.Artist}";
-        await ShareUriAsync(anchor, link, $"分享歌曲：{song.Name}", description);
-    }
-
-    /// <summary>系统分享入口（歌曲/专辑菜单共用）。Windows 的 ShowShareUIForWindow 要求前台窗口，
+    /// <summary>系统分享入口（歌曲/专辑/歌单菜单共用）。Windows 的 ShowShareUIForWindow 要求前台窗口，
     /// 否则静默返回 True；这里只负责把 TopLevel 句柄和文案递过去，诊断走 ShareDiag。</summary>
     internal static async Task ShareUriAsync(Visual anchor, string link, string title, string description)
     {

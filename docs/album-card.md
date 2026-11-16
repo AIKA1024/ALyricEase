@@ -39,7 +39,8 @@
 
 菜单复用浏览页那份 `AlbumCardContextMenu`,签名从"吃 `BrowseCardViewModel`"改成
 `Create(anchor, title, songs, playAction)` —— 浏览页与专辑卡从此共用一套
-(专辑名 / 播放（N 首）/ 打开专辑页 / 表演者 / ─ / 分享 / 复制链接)。
+(专辑名 / 播放（N 首）/ 打开专辑页 / 表演者 / ─ / 分享 / 在浏览器中打开 / 复制链接)。
+尾部那三项由 `SongContextMenu.AddShareItems` 统一产出,歌单卡菜单也调它 ⇒ 三处项序/图标不会再漂移。
 
 ## 3. 三个坑
 
@@ -69,3 +70,5 @@
 
 `--album-card` 的判据:操作按钮恰好 2 枚(默认 Opacity 0)、`LoadSongsAsync` 返回 >0、
 菜单含「播放（N 首）」与「打开专辑页」。实测《放课后时光》9 首、菜单 7 项。
+另打印「曲序前5」一行——曲目顺序必须是官方曲序(见
+[qq-artist-albums.md](qq-artist-albums.md) §4),接口原序是乱的。

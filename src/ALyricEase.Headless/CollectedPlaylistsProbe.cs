@@ -83,8 +83,10 @@ internal static class CollectedPlaylistsProbe
             Drain();
             var scroller = view.GetVisualDescendants().OfType<ScrollViewer>().First();
             Check(scroller.Extent.Width <= scroller.Viewport.Width + 1, "390px 无横向溢出");
-            Check(window.GetVisualDescendants().OfType<Button>().Count(b => b.Classes.Contains("row-action")
-                && b.IsEffectivelyVisible) == 2, "触屏每行始终可见更多菜单");
+            var rowActions = window.GetVisualDescendants().OfType<Button>()
+                .Count(b => b.Classes.Contains("row-action") && b.IsEffectivelyVisible);
+            // 2 行 × (播放 + 更多)。触屏曾把播放按钮藏起来,只剩每行一个「更多」。
+            Check(rowActions == 4, $"触屏每行始终可见播放与更多菜单（实际 {rowActions} 个）");
             Capture(window, root, "narrow-dark");
             Application.Current.RequestedThemeVariant = ThemeVariant.Light;
             Drain();

@@ -135,9 +135,10 @@
         <Setter Property="Background" Value="{DynamicResource PlayAllButtonBackgroundPressed}" />
     </Style>
 
-    <!-- 方角版「播放全部」(歌单页/专辑页头部):同一套主操作色阶,只把胶囊的 18px 圆角换成 4px。
+    <!-- 方角版「播放全部」(歌单页/专辑页头部、最近播放页):同一套主操作色阶,只把胶囊的 18px 圆角换成 4px。
          圆角必须写在全局类里,不能在各页面写局部值 —— 局部值会压掉样式与伪类,
-         而且两个页面各写一遍迟早走样。 -->
+         而且两个页面各写一遍迟早走样。最近播放页是因为右侧「清空记录」是 Fluent 默认的 4px 方角,
+         胶囊和它并排不成对,才一起用方角。 -->
     <Style Selector="Button.play-all-square">
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="Padding" Value="18,0" />

@@ -59,7 +59,9 @@
                      Foreground="{DynamicResource TextTertiary}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <Button Classes="play-all" Command="{Binding PlayAllCommand}"
+          <!-- 方角版:和右侧「清空记录」(Fluent 默认 4px 圆角) 并排,胶囊的 18px 在这里不搭。
+               圆角只走全局类,页面里别写局部值。 -->
+          <Button Classes="play-all play-all-square" Command="{Binding PlayAllCommand}"
                   IsVisible="{Binding HasSongs}"
                   AutomationProperties.Name="播放全部最近播放歌曲">
             <StackPanel Orientation="Horizontal" Spacing="6">

@@ -114,10 +114,9 @@
     <Style Selector=".narrow StackPanel.row-actions">
       <Setter Property="IsVisible" Value="True" />
     </Style>
-    <Style Selector=".narrow Button.row-play">
-      <Setter Property="IsVisible" Value="False" />
-    </Style>
-    <!-- ▶/••• 圆钮复用全局 row-action + RowButtonTheme(与歌曲行同一套) -->
+    <!-- ▶/••• 圆钮复用全局 row-action + RowButtonTheme(与歌曲行同一套)。
+         触屏也必须给播放:行操作常显时若只留「更多」,想播放整张歌单得先点进详情页,
+         个人主页的歌单行一直两个都在,这里不能少。 -->
   </UserControl.Styles>
 
   <ScrollViewer Classes="page-scroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">

@@ -113,6 +113,26 @@
    一次性脚本落在 `D:/temp/git-replay-0018.py`(读取 `GH_TOK` 环境变量,`COMMITS` 列表换成要推的
    短 SHA 即可),重放完 `git status` 立刻恢复 `## master...origin/master`。
 
+   ⚠ **TUN 开着时连 Git Data API 也会被卡**(2026-11-16 实测,和上面不是同一回事)。
+   `Mihomo` 网卡 + `api.github.com → 198.18.1.101` 时,`git push` 照旧 `curl 52`,
+   而 Git Data API 建 blob: **1KB 请求体 201,3KB / 4KB / 6KB / 8KB 全部 `HTTP 000`**
+   (约 6~7 秒断)。直连、`7890`、`10183`、`--resolve` 两个真实 IP 全一样;
+   SSH(22 与 `ssh.github.com:443`)也被 fake-ip 接管后直接 close ⇒ **必须先关 TUN**,没有绕法。
+   量化判据(30 秒能跑完,别猜):
+
+   ```bash
+   # 分别为 1KB / 3KB 的 blob 请求体:前者 201 后者 000 ⇒ 上行被卡,去关 TUN
+   curl --noproxy '*' -sS -m 40 -X POST -H "Authorization: Bearer $tok" \
+     -H "Accept: application/vnd.github+json" -H "Content-Type: application/json" \
+     --data-binary @probe-3k.json \
+     https://api.github.com/repos/AIKA1024/ALyricEase/git/blobs -w "%{http_code}\n"
+   ```
+
+   关 TUN 后 3KB / 8KB 都恢复 201(同一个 payload 从 `000 t=6.4s` 变成 `201 t=0.9s`)。
+   另:重放脚本的 HTTP 层**要用 curl,不要用 urllib** —— 本机环境导出了
+   `HTTPS_PROXY=http://127.0.0.1:10183`,urllib 走它会把 POST 体改成坏请求,
+   服务端回 `400 malformed request`(只在 POST 上出现,GET 正常)。
+
    ```bash
    # ---- TUN 开着:走 mixed-port 代理 ----
    curl -x http://127.0.0.1:7890 -H "Expect:" \

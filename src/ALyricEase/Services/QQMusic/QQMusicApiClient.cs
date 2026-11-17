@@ -2546,8 +2546,15 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
 
         var total = req.Data.TotalSongNum;
-        var hasMore = pageSonglist.Count >= pageSize && (total <= 0 || begin + pageSonglist.Count < total);
-        var totalCount = total is > int.MaxValue ? int.MaxValue : (int)Math.Max(total, begin + pageSonglist.Count);
+        // ⚠ song_begin 是**原始歌单下标**,不是"已返回条数":服务端会把失效/下架条目剔出 songlist
+        // (实测《听歌吧》标称 1082 首,song_num=300 首页只回 295 条;按返回条数推进会重复 5 首,
+        // 按 pageSize 推进则两组结果 id 集合完全一致)。所以"song_begin 是否还在标称总数内"
+        // 才是到底判据 —— 用"本页条数 == pageSize"会把 300 首以上的歌单永远截在第一页。
+        var hasMore = pageSonglist.Count > 0
+            && (total > 0 ? begin + pageSize < total : pageSonglist.Count >= pageSize);
+        // 空页不能把总数抬到 begin(越界请求会回 0 条,begin 却已越过标称总数)
+        var knownCount = pageSonglist.Count > 0 ? begin + pageSonglist.Count : total;
+        var totalCount = total is > int.MaxValue ? int.MaxValue : (int)Math.Max(total, knownCount);
         return new PlaylistTrackPage(songs, hasMore, totalCount);
     }
 
@@ -2609,7 +2616,7 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
     /// <summary>歌单全量曲目:music.srfDissInfo.aiDissInfo/uniform_get_Dissinfo(与网页端同源,
     /// 条目为 track_info 同构复用 MapTrack)。旧 DissInfo/CgiGetDiss 与 qzone fcg_ucc 均已失效 ——
     /// CgiGetDiss 现网对缺 userinfo/tag/orderlist 的请求只回 code=0 但 songlist 空(详情页白屏);
-    /// 按 song_begin/song_num 分页拉齐 total_song_num。</summary>
+    /// 按 song_begin/song_num 分页拉齐 total_song_num(返回条目会被服务端剔失效条目,故按请求页长推进)。</summary>
     public async Task<List<Song>> GetPlaylistTracksAsync(long id, CancellationToken ct = default)    {
         const int pageSize = 300;
         var songs = new List<Song>();
@@ -2617,7 +2624,8 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         {
             var page = await GetPlaylistTrackPageAsync(id, begin, pageSize, ct).ConfigureAwait(false);
             songs.AddRange(page.Songs);
-            if (!page.HasMore) break;
+            // 空白页兜底:整页条目全部失效时别原地打转(hasMore 已按总数判过,这里只防服务端异常)
+            if (!page.HasMore || page.Songs.Count == 0) break;
         }
         return songs;
     }

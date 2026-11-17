@@ -406,6 +406,214 @@ public static class QqApiProbe
         return 0;
     }
 
+    /// <summary>QQ 歌单"失效条目"探针(--qqdiss &lt;tid&gt;):官方 songlist 会把失效/下架条目剔掉
+    /// (标称 1082 只回 1077),但官方客户端里这类歌往往仍带着"已下架/无版权"标记置灰显示。
+    /// 这里把几个候选通道都打一遍,看有没有哪个能拿到完整条目 —— 决定我们该隐藏还是显示+禁用。</summary>
+    public static async Task<int> RunDissVariantsProbeAsync(long tid)
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var api = new QQMusicApiClient(new CookieStore());
+        if (!api.IsLoggedIn)
+        {
+            Console.WriteLine("[qqdiss][FAIL] 本机无有效 QQ Cookie");
+            return 1;
+        }
+
+        async Task TryAsync(string tag, string module, string method, Action<System.Text.Json.Utf8JsonWriter> write)
+        {
+            try
+            {
+                using var doc = await api.ProbeModuleAsync(module, method, write);
+                var root = doc.RootElement;
+                if (!root.TryGetProperty("req_0", out var req) || req.ValueKind != System.Text.Json.JsonValueKind.Object)
+                {
+                    Console.WriteLine($"[qqdiss] {tag}: 响应没有 req_0");
+                    return;
+                }
+                var code = req.TryGetProperty("code", out var codeEl) && codeEl.ValueKind == System.Text.Json.JsonValueKind.Number
+                    ? codeEl.GetInt64()
+                    : -1;
+                if (!req.TryGetProperty("data", out var data) || data.ValueKind != System.Text.Json.JsonValueKind.Object)
+                {
+                    Console.WriteLine($"[qqdiss] {tag}: code={code} 无 data 段");
+                    return;
+                }
+                var total = data.TryGetProperty("total_song_num", out var totalEl)
+                            && totalEl.ValueKind == System.Text.Json.JsonValueKind.Number
+                    ? totalEl.GetInt64()
+                    : -1;
+                var count = -1;
+                string first = "", last = "";
+                if (data.TryGetProperty("songlist", out var songlist)
+                    && songlist.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    count = songlist.GetArrayLength();
+                    if (count > 0)
+                    {
+                        first = TrackName(songlist[0]);
+                        last = TrackName(songlist[count - 1]);
+                    }
+                }
+                Console.WriteLine($"[qqdiss] {tag}: code={code} total={total} songlist={count} 首=[{first}] 尾=[{last}]");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[qqdiss] {tag}: FAIL {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        // 1) 生产通道,一次要全部(看看是不是"一页只给 300"之外还剔条目)
+        await TryAsync("uniform 全量(2000)", "music.srfDissInfo.aiDissInfo", "uniform_get_Dissinfo", p =>
+        {
+            p.WriteNumber("disstid", tid);
+            p.WriteNumber("userinfo", 1);
+            p.WriteNumber("tag", 1);
+            p.WriteNumber("orderlist", 1);
+            p.WriteNumber("song_begin", 0);
+            p.WriteNumber("song_num", 2000);
+            p.WriteNumber("onlysonglist", 0);
+            p.WriteString("enc_host_uin", "");
+        });
+
+        // 2) onlysonglist=1:只要歌单条目,不要 dirinfo(部分实现走不同取数分支)
+        await TryAsync("uniform onlysonglist", "music.srfDissInfo.aiDissInfo", "uniform_get_Dissinfo", p =>
+        {
+            p.WriteNumber("disstid", tid);
+            p.WriteNumber("userinfo", 1);
+            p.WriteNumber("tag", 1);
+            p.WriteNumber("orderlist", 1);
+            p.WriteNumber("song_begin", 0);
+            p.WriteNumber("song_num", 300);
+            p.WriteNumber("onlysonglist", 1);
+            p.WriteString("enc_host_uin", "");
+        });
+
+        // 3) 老 CgiGetDiss:注释里记录过"缺 userinfo/tag/orderlist 会空",这里参数给全再试
+        await TryAsync("CgiGetDiss 全量", "music.srfDissInfo.DissInfo", "CgiGetDiss", p =>
+        {
+            p.WriteNumber("disstid", tid);
+            p.WriteNumber("dirid", 0);
+            p.WriteNumber("tag", 1);
+            p.WriteNumber("song_begin", 0);
+            p.WriteNumber("song_num", 2000);
+            p.WriteNumber("userinfo", 1);
+            p.WriteNumber("orderlist", 1);
+            p.WriteNumber("onlysonglist", 0);
+        });
+
+        // 4) CgiGetDiss 单页对照
+        await TryAsync("CgiGetDiss 300", "music.srfDissInfo.DissInfo", "CgiGetDiss", p =>
+        {
+            p.WriteNumber("disstid", tid);
+            p.WriteNumber("dirid", 0);
+            p.WriteNumber("tag", 1);
+            p.WriteNumber("song_begin", 0);
+            p.WriteNumber("song_num", 300);
+            p.WriteNumber("userinfo", 1);
+            p.WriteNumber("orderlist", 1);
+            p.WriteNumber("onlysonglist", 0);
+        });
+
+        // 5) Web 端另一条详情通道(歌单页 SSR 数据用):给不到就当没有
+        await TryAsync("PlaylistInfoServer", "music.playlist.PlaylistInfoServer", "GetDetail", p =>
+        {
+            p.WriteNumber("disstid", tid);
+            p.WriteNumber("song_begin", 0);
+            p.WriteNumber("song_num", 300);
+        });
+
+        // 6) 缺的条目到底是"内容层面不存在"还是"每页按请求切片后过滤"?前者怎么切都少,
+        //    后者把页切小就能把它们捞回来(那样才谈得上显示+禁用)。
+        var chunkTotal = 0;
+        var chunkSizes = new List<string>();
+        for (var begin = 0; begin < 300; begin += 15)
+        {
+            var page = await api.GetPlaylistTrackPageAsync(tid, begin, 15);
+            chunkTotal += page.Songs.Count;
+            if (page.Songs.Count != 15) chunkSizes.Add($"{begin}:{page.Songs.Count}");
+        }
+        Console.WriteLine($"[qqdiss] 前 300 位按 15 条切页: 合计 {chunkTotal} 条" +
+                          (chunkSizes.Count > 0 ? $"; 不足 15 的位置 [{string.Join(',', chunkSizes)}]" : "; 每页都是满的"));
+
+        return 0;
+    }
+
+    private static string TrackName(System.Text.Json.JsonElement track)
+    {
+        if (track.ValueKind != System.Text.Json.JsonValueKind.Object) return "?";
+        foreach (var key in new[] { "name", "songname", "title", "songName" })
+            if (track.TryGetProperty(key, out var value)
+                && value.ValueKind == System.Text.Json.JsonValueKind.String)
+                return value.GetString() ?? "";
+        return "?";
+    }
+
+    /// <summary>QQ 歌单分页语义探针(--qqpage &lt;tid&gt; [num]):同一歌单按两种推进方式各拉一遍——
+    /// A 用"本页实际返回条数"推进 song_begin,B 用"请求条数"推进。比较两组的曲目集合/重复,
+    /// 判定服务端把 song_begin 当原始列表下标还是过滤后可见列表下标(2026-11 修"QQ 歌单只加载一页")。</summary>
+    public static async Task<int> RunPlaylistPageProbeAsync(long tid, int num = 300)
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+        var api = new QQMusicApiClient(new CookieStore());
+        if (!api.IsLoggedIn)
+        {
+            Console.WriteLine("[qqpage][FAIL] 本机无有效 QQ Cookie");
+            return 1;
+        }
+
+        async Task<(List<long> Ids, List<int> Sizes, long Total)> PullByCountAsync()
+        {
+            var ids = new List<long>();
+            var sizes = new List<int>();
+            var total = 0L;
+            for (var begin = 0; begin < 20000; )
+            {
+                var page = await api.GetPlaylistTrackPageAsync(tid, begin, num);
+                sizes.Add(page.Songs.Count);
+                total = page.TotalCount;
+                foreach (var s in page.Songs) if (s.Id != 0) ids.Add(s.Id);
+                Console.WriteLine($"[qqpage][A] begin={begin} 本页={page.Songs.Count} total={page.TotalCount} HasMore={page.HasMore} 首=[{page.Songs.FirstOrDefault()?.Name}] 尾=[{page.Songs.LastOrDefault()?.Name}]");
+                if (page.Songs.Count == 0) break;
+                begin += page.Songs.Count;
+            }
+            return (ids, sizes, total);
+        }
+
+        async Task<(List<long> Ids, List<int> Sizes, long Total)> PullByRequestAsync()
+        {
+            var ids = new List<long>();
+            var sizes = new List<int>();
+            var total = 0L;
+            for (var begin = 0; begin < 20000; begin += num)
+            {
+                var page = await api.GetPlaylistTrackPageAsync(tid, begin, num);
+                sizes.Add(page.Songs.Count);
+                total = page.TotalCount;
+                foreach (var s in page.Songs) if (s.Id != 0) ids.Add(s.Id);
+                Console.WriteLine($"[qqpage][B] begin={begin} 本页={page.Songs.Count} total={page.TotalCount} HasMore={page.HasMore} 首=[{page.Songs.FirstOrDefault()?.Name}] 尾=[{page.Songs.LastOrDefault()?.Name}]");
+                if (page.Songs.Count == 0) break;
+            }
+            return (ids, sizes, total);
+        }
+
+        try
+        {
+            var a = await PullByCountAsync();
+            var b = await PullByRequestAsync();
+            Console.WriteLine($"[qqpage] A(按返回条数推进): 行数={a.Ids.Count} 去重={a.Ids.Distinct().Count()} 页={a.Sizes.Count} 各页={string.Join('/', a.Sizes)}");
+            Console.WriteLine($"[qqpage] B(按请求条数推进): 行数={b.Ids.Count} 去重={b.Ids.Distinct().Count()} 页={b.Sizes.Count} 各页={string.Join('/', b.Sizes)}");
+            var onlyA = a.Ids.Distinct().Except(b.Ids.Distinct()).Count();
+            var onlyB = b.Ids.Distinct().Except(a.Ids.Distinct()).Count();
+            Console.WriteLine($"[qqpage] 仅 A 有={onlyA} 仅 B 有={onlyB} 交集={a.Ids.Distinct().Intersect(b.Ids.Distinct()).Count()} 标称={a.Total}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[qqpage][FAIL] {ex.GetType().Name}: {ex.Message}");
+            return 1;
+        }
+    }
+
     /// <summary>用户歌单逐个试读探针(--qqplaylist [tid]):无参列出全部歌单(id/dirId/标称曲数),
     /// 再对每个歌单调 GetPlaylistTrackPageAsync 读首页,逐个打印成功/失败与服务端错误码。
     /// 带 tid 参数时对指定歌单做 GetPlaylistTracksAsync 全量拉取计时(复现 UI 打开路径)。</summary>

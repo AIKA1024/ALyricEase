@@ -522,6 +522,23 @@ public static class Program
             return;
         }
 
+        // QQ 歌单页分页回归:首屏先出、余下几页补齐、滚动续页不重复(用户报"滑到底不加载剩下的歌")
+        if (args.Length > 1 && args[0] == "--qq-pl-paging" && long.TryParse(args[1], out var pagingTid))
+        {
+            var pagingBuilder = AppBuilder.Configure<HeadlessApp>().UsePlatformDetect();
+            HeadlessApp.ConfigureServices();
+            var pagingExitCode = 1;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { pagingExitCode = await QqPlaylistPagingProbe.RunAsync(pagingTid); }
+                catch (Exception ex) { Console.Error.WriteLine($"[qq-pl] 异常: {ex}"); }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            pagingBuilder.StartWithClassicDesktopLifetime([], ShutdownMode.OnExplicitShutdown);
+            Environment.ExitCode = pagingExitCode;
+            return;
+        }
+
         // QQ 关注歌手新歌(--qq-singer-songs):关注列表 MID 能否直接查歌 + order 哪个是时间序。
         if (args.Length > 0 && args[0] == "--qq-singer-songs")
         {
@@ -1175,6 +1192,25 @@ public static class Program
         if (args.Length > 0 && args[0] == "--qqsearch")
         {
             Environment.ExitCode = System.Threading.Tasks.Task.Run(QqApiProbe.RunSearchProbeAsync)
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // QQ 歌单失效条目:几个候选通道各拉一遍,看能不能拿到官方剔掉的歌(决定显示+禁用还是隐藏)
+        if (args.Length > 1 && args[0] == "--qqdiss" && long.TryParse(args[1], out var dissTid))
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task
+                .Run(() => QqApiProbe.RunDissVariantsProbeAsync(dissTid))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
+        // QQ 歌单分页语义:同歌单分别按"返回条数"与"请求条数"推进 song_begin,比较集合差异
+        if (args.Length > 1 && args[0] == "--qqpage" && long.TryParse(args[1], out var pageTid))
+        {
+            var pageNum = args.Length > 2 && int.TryParse(args[2], out var n) ? n : 300;
+            Environment.ExitCode = System.Threading.Tasks.Task
+                .Run(() => QqApiProbe.RunPlaylistPageProbeAsync(pageTid, pageNum))
                 .GetAwaiter().GetResult();
             return;
         }

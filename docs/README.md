@@ -42,6 +42,7 @@
 | 歌手页/专辑页的专辑卡没有 ▶ / ••• / 右键菜单 | [album-card.md](album-card.md)(共用 `Controls/AlbumCard`;曲目按需拉;探针 `--album-card`) |
 | QQ 歌手页专辑不是最新 / 最新专辑要滚很久才出现 / 横向区只有 30 张 / **专辑内曲目乱序** | [qq-artist-albums.md](qq-artist-albums.md)(`GetAlbumList` 的 `order=0` 才是时间倒序,1 会把最新十几张甩到末尾;专辑曲目要按 `songInfo.index_album` 排,`songList` 原序是乱的;`--qq-albums` / `--album-card`) |
 | QQ 音乐有没有私人FM / 私人FM 怎么在两源间轮换 | [qq-personal-fm.md](qq-personal-fm.md)(猜你喜欢电台 id 99;私人FM 逐首交替网易云↔QQ,补货阈值 ≤1 首;`--qq-fm` / `--fm-mix`) |
+| QQ 歌单只显示开头几百首 / **滑到底不加载剩下的歌** | [qq-playlist-paging.md](qq-playlist-paging.md)(`song_begin` 是**原始下标**,服务端剔失效条目会让首页只回 295/300 条 —— 旧判据"本页条数==pageSize"就此判成到底;`--qq-pl-paging` / `--qqpage`) |
 | 要加或改图标码位 | [icon-fonts.md](icon-fonts.md) |
 | 登录相关(代理登录 / MUSIC_U / eapi 两种格式) | [netease-login.md](netease-login.md) |
 | 应用走不走代理 / 改了代理要重启吗 / 新加网络请求忘了挂代理 | [network-proxy.md](network-proxy.md)(handler 拿恒定 `IWebProxy`,改设置即时生效;`--proxy` / `--proxydialog`) |

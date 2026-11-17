@@ -42,6 +42,8 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private readonly ILogger<PlaylistViewModel> _logger;
     internal const int AggregateNetEaseBatchSize = 100;
     internal const int AggregateQqPageSize = 300;
+    /// <summary>QQ 歌单详情一页的条数(与 uniform_get_Dissinfo 的 song_num 粒度一致)。</summary>
+    internal const int QqPlaylistPageSize = 300;
     private const int AggregateUiBatchSize = 50;
 
     /// <summary>诊断钩子(默认 null,零开销):离页捕获与返回恢复的各阶段耗时。
@@ -1446,6 +1448,20 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private int _materialized;          // 已物化进 Tracks 的曲目数(按 trackIds 顺序)
     [ObservableProperty] private bool _isLoadingMore;
 
+    /// <summary>QQ 歌单的分页游标(网易云那套 _trackIds/_materialized 只在"已知全量 id"时成立;
+    /// QQ 没有全量 id 协议,只能按 song_begin 逐页取)。null = 当前页不是 QQ 歌单/已拉完。</summary>
+    private QqPlaylistPaging? _qqPaging;
+    /// <summary>QQ 补页的单飞任务:打开时的首屏之后与滚动到底共用,避免重复请求同一页。</summary>
+    private Task? _qqPagingTask;
+
+    private sealed class QqPlaylistPaging
+    {
+        public required long PlaylistId { get; init; }
+        public required int TotalCount { get; init; }
+        public int NextBegin { get; set; }
+        public bool HasMore { get; set; }
+    }
+
     /// <summary>补页指示条文案:正常"正在加载更多歌曲…",命中网易云账号限速(405)时改为退避提示。</summary>
     [ObservableProperty] private string _loadingMoreText = "正在加载更多歌曲…";
     private int _loadGeneration;        // 打开新歌单时自增,使旧歌单的加载失效
@@ -1629,13 +1645,16 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 _aggregateLoad.QqBegin,
                 _aggregateLoad.FailedCount,
                 _aggregateLoad.CoverSet);
+        var qqPagingState = _qqPaging is { HasMore: true } qq
+            ? new QqPlaylistPageCacheState(qq.PlaylistId, qq.NextBegin, qq.TotalCount, qq.HasMore)
+            : null;
         // 尚未拿到首批内容时不保存“空的加载中页面”，返回时让缺失快照自然触发网络回退。
         // 云盘没有独立续页游标，只有完整加载结束后才可安全快照。
         if ((tracks.Count > 0 || !wasBusy) && (kind != PlaylistPageKind.Cloud || !wasBusy))
             _ = _musicCache.CachePlaylistPageSnapshotAsync(
                 cacheKey,
                 new PlaylistPageCacheData(
-                    tracks, _trackIds.ToArray(), _materialized, aggregateState));
+                    tracks, _trackIds.ToArray(), _materialized, aggregateState, qqPagingState));
 
         Mark("驻留内存快照");
         ReleaseCurrentPageData();
@@ -1733,6 +1752,15 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 
         if (snapshot.Kind == PlaylistPageKind.NetEase && _trackIds.Count > 0)
             _playbackQueue = new IndexedSongQueue(_trackIds, pageSongs, _api.GetSongsByIdsAsync);
+        else if (snapshot.Kind == PlaylistPageKind.Qq && cached.QqPaging is { HasMore: true } qqPaging)
+            // 离页时 QQ 歌单还没拉完:恢复游标,返回后滚动到底继续续页
+            _qqPaging = new QqPlaylistPaging
+            {
+                PlaylistId = qqPaging.PlaylistId,
+                TotalCount = qqPaging.TotalCount,
+                NextBegin = qqPaging.NextBegin,
+                HasMore = qqPaging.HasMore,
+            };
         else if (snapshot.Kind == PlaylistPageKind.Aggregate && snapshot.Aggregate is { } aggregate)
         {
             var members = OrderAggregateMembers(aggregate);
@@ -1963,8 +1991,10 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
     }
 
-    /// <summary>点开 QQ 歌单:一次拉全量曲目(QQ 无 trackIds 增量协议,fcg 按歌单 id 整页返回)。
-    /// 复用网易云歌单页 UI:hero/曲目列表/共享队列;_trackIds 留空即无增量补充,播放全部直接用已物化列表。
+    /// <summary>点开 QQ 歌单:先取首页(300 首)上屏,剩余页随后按 song_begin 续拉 ——
+    /// QQ 没有全量 trackId 协议,1000+ 首的歌单若一次拉齐就要等好几轮请求才出第一屏
+    /// (而且早先用"本页条数 == pageSize"判到底,大于 300 首的歌单会永远停在第一页)。
+    /// 复用网易云歌单页 UI:hero/曲目列表/共享队列;滚动到底由 <see cref="LoadMoreAsync"/> 续页。
     /// 浏览页的官方榜单也走这里(<see cref="Models.Playlist.TopId"/> &gt; 0):榜单不是歌单,
     /// 曲目改由 ToplistInfoServer/GetDetail 分页取 id 再补详情。</summary>
     [RelayCommand]
@@ -1997,26 +2027,34 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             hasCachedTracks = await RestoreCachedTracksAsync(playlist, generation, ct);
             if (!IsCurrentLoad(generation, ct)) return;
             Message = hasCachedTracks ? "已显示缓存内容，正在刷新…" : null;
-            var songs = playlist.Playlist.TopId > 0
-                ? await _qqApi.GetToplistSongsAsync(playlist.Playlist.TopId, ct: ct)
-                : await _qqApi.GetPlaylistTracksAsync(playlist.Id, ct);
-            if (!IsCurrentLoad(generation, ct)) return;
-            _queueSongs.Clear();
-            foreach (var song in songs) _queueSongs.Add(song);
-            // 与网易云同理:缓存行能原地升级就别重建(重建会让已上屏的封面重新异步加载)
-            ApplyFreshRows(songs, (song, index) =>
+            if (playlist.Playlist.TopId > 0)
             {
-                var row = new SongItemViewModel(
-                    song, _player.PlayFromList, index + 1, _queueSongs, null, playlist.Name);
-                AttachRemoveCommandIfNeeded(row);
-                return row;
-            });
-            if (songs.Count == 0)
-                // 自己创建的私密歌单也是 IsPrivate=true,别再说"被主人设为隐私"(那是给他人看的)
-                EmptyTracksHint = playlist.Playlist.IsPrivate
-                    ? "这个隐私歌单还没有可显示的曲目"
-                    : "这个歌单还没有可显示的曲目";
-            await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, songs);
+                // 榜单不是歌单:TopId 才是曲目入口。GetDetail 没有"总数"以外的续页语义,
+                // 所以榜单仍由 GetToplistSongsAsync 一次性取到 limit(默认 100)。
+                var toplistSongs = await _qqApi.GetToplistSongsAsync(playlist.Playlist.TopId, ct: ct);
+                if (!IsCurrentLoad(generation, ct)) return;
+                ApplyQqSongs(playlist, toplistSongs);
+                await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, toplistSongs);
+                return;
+            }
+
+            var firstPage = await _qqApi.GetPlaylistTrackPageAsync(playlist.Id, 0, QqPlaylistPageSize, ct);
+            if (!IsCurrentLoad(generation, ct)) return;
+            _qqPaging = new QqPlaylistPaging
+            {
+                PlaylistId = playlist.Id,
+                TotalCount = firstPage.TotalCount,
+                NextBegin = QqPlaylistPageSize,
+                HasMore = firstPage.HasMore,
+            };
+            ApplyQqSongs(playlist, firstPage.Songs);
+            // 首屏已上屏,先解除页面忙碌态(大歌单不再等全量);余下几页交给同一条补页路径。
+            IsBusy = false;
+            // ⚠ 只有整张歌单都在手时才写缓存:否则首页就把离线快照覆盖成残缺列表,
+            // 下次断网打开会少一大截(补页失败/中途退出都由旧缓存兜底,不写残缺数据)。
+            if (!_qqPaging.HasMore)
+                await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, firstPage.Songs);
+            await EnsureQqPlaylistPagesLoadedAsync(generation, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -2034,6 +2072,89 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         finally
         {
             if (IsCurrentLoad(generation, ct)) IsBusy = false;
+        }
+    }
+
+    /// <summary>QQ 歌单的一次落地:与网易云同理,缓存行能原地升级就别重建
+    /// (重建会让已上屏的封面重新异步加载)。</summary>
+    private void ApplyQqSongs(PlaylistItemViewModel playlist, IReadOnlyList<Song> songs)
+    {
+        _queueSongs.Clear();
+        foreach (var song in songs) _queueSongs.Add(song);
+        ApplyFreshRows(songs, (song, index) =>
+        {
+            var row = new SongItemViewModel(
+                song, _player.PlayFromList, index + 1, _queueSongs, null, playlist.Name);
+            AttachRemoveCommandIfNeeded(row);
+            return row;
+        });
+        if (songs.Count == 0)
+            // 自己创建的私密歌单也是 IsPrivate=true,别再说"被主人设为隐私"(那是给他人看的)
+            EmptyTracksHint = playlist.Playlist.IsPrivate
+                ? "这个隐私歌单还没有可显示的曲目"
+                : "这个歌单还没有可显示的曲目";
+    }
+
+    /// <summary>把一页 QQ 曲目追加到行列表末尾。页内顺序即服务端顺序,页与页之间按 song_begin 单调推进,
+    /// 所以直接追加即可(不能走 ApplyFreshRows:它会截断到本页长度)。</summary>
+    private void AppendQqPage(IReadOnlyList<Song> songs)
+    {
+        foreach (var song in songs)
+        {
+            _allTrackRows.Add(CreateTrackRow(song, _allTrackRows.Count, null));
+            _queueSongs.Add(song);
+        }
+        _materialized = _allTrackRows.Count;
+        RefreshVisibleTracks();
+    }
+
+    /// <summary>QQ 歌单续页(单飞):打开时的首屏之后、滚动到底、展开筛选都走这里。
+    /// 失败时保留游标 —— 滚动到底会再次触发,不必重开页面。</summary>
+    private Task EnsureQqPlaylistPagesLoadedAsync(int generation, CancellationToken ct)
+    {
+        if (_qqPaging is not { HasMore: true }) return Task.CompletedTask;
+        return _qqPagingTask is { IsCompleted: false } running
+            ? running
+            : _qqPagingTask = LoadQqPlaylistPagesCoreAsync(generation, ct);
+    }
+
+    private async Task LoadQqPlaylistPagesCoreAsync(int generation, CancellationToken ct)
+    {
+        try
+        {
+            while (_qqPaging is { HasMore: true } paging && IsCurrentLoad(generation, ct))
+            {
+                IsLoadingMore = true;
+                LoadingMoreText = "正在加载更多歌曲…";
+                var page = await _qqApi.GetPlaylistTrackPageAsync(
+                    paging.PlaylistId, paging.NextBegin, QqPlaylistPageSize, ct);
+                if (!IsCurrentLoad(generation, ct)) return;
+                paging.NextBegin += QqPlaylistPageSize;
+                paging.HasMore = page.HasMore;
+                if (page.Songs.Count == 0)
+                {
+                    // 整页条目全部失效(下架/无版权):继续按 song_begin 推进只会空转
+                    paging.HasMore = false;
+                    break;
+                }
+                AppendQqPage(page.Songs);
+                // 每页 300 行入列后先让出一帧,避免连续几页把 UI 线程占满(与聚合页的批间隔同口径)
+                await Task.Delay(80, ct);
+            }
+            if (IsCurrentLoad(generation, ct) && SelectedPlaylist is { } playlist && _queueSongs.Count > 0)
+                await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, _queueSongs);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex) when (ex is ApiException || IsConnectivityFailure(ex))
+        {
+            // 单页失败不拖垮已上屏的行;游标停在失败页,滚动到底重试
+        }
+        finally
+        {
+            if (generation == _loadGeneration) IsLoadingMore = false;
+            _qqPagingTask = null;
         }
     }
 
@@ -2584,11 +2705,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         return new AggregateSongQueue(_api, _qqApi, descriptors);
     }
 
-    /// <summary>滚动接近底部时调用：补齐下一批(≤100)曲目元数据并物化。</summary>
+    /// <summary>滚动接近底部时调用：补齐下一批(≤100)曲目元数据并物化。
+    /// QQ 歌单走自己的分页游标(每次续一页 300 首),网易云按 trackId 增量补详情。</summary>
     public Task LoadMoreAsync()
     {
         var cancellation = _loadCancellation;
         if (cancellation is null || cancellation.IsCancellationRequested) return Task.CompletedTask;
+        if (_qqPaging is not null)
+            return EnsureQqPlaylistPagesLoadedAsync(_loadGeneration, cancellation.Token);
         return IsAggregate
             ? LoadMoreAggregateAsync(_loadGeneration, cancellation.Token)
             : LoadMoreAsync(fillTo: null, generation: _loadGeneration, cancellation.Token);
@@ -2606,6 +2730,9 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         _allTrackRows.Clear();
         Tracks.Clear();
         EmptyTracksHint = null;
+        // 分页游标属于"当前页":换歌单/离页时必须连同单飞任务一起作废
+        _qqPaging = null;
+        _qqPagingTask = null;
     }
 
     private void RefreshVisibleTracks()
@@ -2648,6 +2775,12 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 {
                     if (_aggregateLoad is not { HasMore: true }) break;
                     await LoadMoreAggregateAsync(generation, ct);
+                }
+                else if (_qqPaging is not null)
+                {
+                    // QQ 没有全量 id:排序/筛选要覆盖整张歌单就得先按页拉完
+                    if (_qqPaging is not { HasMore: true }) break;
+                    await EnsureQqPlaylistPagesLoadedAsync(generation, ct);
                 }
                 else
                 {
@@ -2907,11 +3040,17 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     private async Task PlayAllAsync()
     {
         if (Tracks.Count == 0) return;
-        // 非懒队列保留原行为；懒队列无需为了播放器提前创建更多 Song/UI 行。
         var cancellation = _loadCancellation;
-        if (_playbackQueue is null && cancellation is { IsCancellationRequested: false })
-            _ = LoadMoreAsync(fillTo: Math.Min(_trackIds.Count, _materialized + 300),
-                generation: _loadGeneration, cancellation.Token);
+        if (cancellation is { IsCancellationRequested: false })
+        {
+            if (_qqPaging is { HasMore: true })
+                // QQ 队列就是"已物化行":还没续完的页必须先补,否则只播到首屏那 300 首
+                await EnsureQqPlaylistPagesLoadedAsync(_loadGeneration, cancellation.Token);
+            else if (_playbackQueue is null)
+                // 非懒队列保留原行为；懒队列无需为了播放器提前创建更多 Song/UI 行。
+                _ = LoadMoreAsync(fillTo: Math.Min(_trackIds.Count, _materialized + 300),
+                    generation: _loadGeneration, cancellation.Token);
+        }
         var firstPlayable = Tracks.FirstOrDefault(track => track.IsPlayable);
         if (firstPlayable is not null)
             await firstPlayable.PlayCommand.ExecuteAsync(null);

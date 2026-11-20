@@ -133,6 +133,22 @@
    `HTTPS_PROXY=http://127.0.0.1:10183`,urllib 走它会把 POST 体改成坏请求,
    服务端回 `400 malformed request`(只在 POST 上出现,GET 正常)。
 
+   ⚠ **同一个门槛在 release 资产上传上更隐蔽**(2026-11-20 实测): TUN 开着时
+   3KB 的 blob 请求**照样 201**(不像上一条那样硬断),但 10MB 以上的资产传不动 ——
+   10MB 的 delta 跑 4 分 42 秒、39MB 的 Setup 跑 12 分钟,最后在草稿上全是 `starter`
+   (未完成),速率 19~139KB/s;同一条通道下 1.8KB 与 99KB 的文件秒过。
+   ⇒ **判断能不能上传,要用「大文件能否走到 uploaded」而不是小请求状态码**:
+
+   ```bash
+   # 传完立刻查 state:必须全是 uploaded,出现 starter 就是被掐了
+   curl --noproxy '*' -sS -H "Authorization: Bearer $tok" \
+     "https://api.github.com/repos/AIKA1024/ALyricEase/releases/$id/assets?per_page=100" \
+     | python -c "import sys,json;[print(a['name'],a['state']) for a in json.load(sys.stdin)]"
+   ```
+
+   留在草稿上的 `starter` 资产要先 DELETE 再重传(同名重传不会覆盖 starter)。
+   关 TUN 后 6 个大文件 3 分 10 秒传完、稳定 1MB/s。
+
    ```bash
    # ---- TUN 开着:走 mixed-port 代理 ----
    curl -x http://127.0.0.1:7890 -H "Expect:" \

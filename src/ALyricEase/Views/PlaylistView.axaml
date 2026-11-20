@@ -56,7 +56,7 @@
     <Style Selector="ItemsControl.tracks">
       <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="ItemsControl.tracks > ContentPresenter">
+    <Style Selector="ItemsControl.tracks > views|TrackRow">
       <Setter Property="Margin" Value="0,1" />
     </Style>
     <!-- 聚合歌单右上角齿轮设置按钮:32px 透明底,悬停浅底+teal 字形 -->
@@ -292,19 +292,13 @@
             <!-- 外层 ScrollViewer(仿 UWP ListView 模板)直接包裹 ItemsControl + VirtualizingStackPanel -->
             <Grid RowDefinitions="Auto,Auto,Auto">
               <!-- 底部留白由 detail-shell 的底部 margin 提供(仿 UWP ScrollViewer 内容末尾留白) -->
-              <ItemsControl x:Name="TracksList" Classes="tracks" ItemsSource="{Binding Tracks}"
-                            ContainerPrepared="OnTrackContainerPreparing">
+              <views:PlaylistTrackList x:Name="TracksList" Classes="tracks" ItemsSource="{Binding Tracks}">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
                     <VirtualizingStackPanel />
                   </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:SongItemViewModel">
-                    <views:TrackRow />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+              </views:PlaylistTrackList>
               <StackPanel Grid.Row="1" Margin="12,10" Spacing="7" IsVisible="{Binding IsLoadingMore}">
                 <!-- 最小化时停掉循环动画:框架不会替你看窗口状态,详 IndeterminateAnimationGate -->
                 <ProgressBar Height="3" IsIndeterminate="True"

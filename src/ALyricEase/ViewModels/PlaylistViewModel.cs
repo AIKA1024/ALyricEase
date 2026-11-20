@@ -41,6 +41,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
 {
     private readonly ILogger<PlaylistViewModel> _logger;
     internal const int AggregateNetEaseBatchSize = 100;
+    internal const int TrackDetailBatchSize = 100;
     internal const int AggregateQqPageSize = 300;
     /// <summary>QQ 歌单详情一页的条数(与 uniform_get_Dissinfo 的 song_num 粒度一致)。</summary>
     internal const int QqPlaylistPageSize = 300;
@@ -1973,7 +1974,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             IsBusy = false;
 
             // 后台静默补充到 ~200 首,让首屏滚动不断档(至多一次 song/detail 请求,不阻塞 UI)
-            await LoadMoreAsync(fillTo: 200, generation: generation, ct);
+            await LoadMoreAsync(fillTo: 200, generation: generation, ct, cacheInitialTracks: true);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -2099,13 +2100,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// 所以直接追加即可(不能走 ApplyFreshRows:它会截断到本页长度)。</summary>
     private void AppendQqPage(IReadOnlyList<Song> songs)
     {
+        var start = _allTrackRows.Count;
         foreach (var song in songs)
         {
             _allTrackRows.Add(CreateTrackRow(song, _allTrackRows.Count, null));
             _queueSongs.Add(song);
         }
         _materialized = _allTrackRows.Count;
-        RefreshVisibleTracks();
+        PublishAppendedTracks(start);
     }
 
     /// <summary>QQ 歌单续页(单飞):打开时的首屏之后、滚动到底、展开筛选都走这里。
@@ -2785,7 +2787,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
                 else
                 {
                     if (_materialized >= _trackIds.Count) break;
-                    var target = Math.Min(_trackIds.Count, _materialized + 100);
+                    var target = Math.Min(_trackIds.Count, _materialized + TrackDetailBatchSize);
                     await LoadMoreAsync(target, generation, ct);
                 }
 
@@ -2801,21 +2803,28 @@ public sealed partial class PlaylistViewModel : ViewModelBase
         }
     }
 
-    private async Task LoadMoreAsync(int? fillTo, int generation, CancellationToken ct)
+    private async Task LoadMoreAsync(int? fillTo, int generation, CancellationToken ct, bool cacheInitialTracks = false)
     {
         if (IsLoadingMore) return;
+        var start = _materialized;
+        var target = Math.Min(_trackIds.Count, fillTo ?? start + TrackDetailBatchSize);
+        if (start >= target)
+        {
+            if (cacheInitialTracks && SelectedPlaylist is { } initial && _queueSongs.Count > 0)
+                await _musicCache.CachePlaylistTracksAsync(initial.Playlist, _queueSongs);
+            return;
+        }
         IsLoadingMore = true;
         LoadingMoreText = "正在加载更多歌曲…";
         var retriedEmptyBatch = false;
         try
         {
-            var target = fillTo ?? Math.Min(_trackIds.Count, _materialized + 100);
             while (_materialized < target && _materialized < _trackIds.Count)
             {
                 ct.ThrowIfCancellationRequested();
                 // 从当前未解析位置取下一段(≤100 个缺失 id)
                 var slice = new List<long>();
-                for (var i = _materialized; i < _trackIds.Count && slice.Count < 100; i++)
+                for (var i = _materialized; i < _trackIds.Count && slice.Count < TrackDetailBatchSize; i++)
                     if (!_known.ContainsKey(_trackIds[i])) slice.Add(_trackIds[i]);
                 if (slice.Count > 0)
                 {
@@ -2867,7 +2876,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             if (generation == _loadGeneration)
             {
                 IsLoadingMore = false;
-                if (SelectedPlaylist is { } playlist && _queueSongs.Count > 0)
+                if ((cacheInitialTracks || _materialized > start) && SelectedPlaylist is { } playlist && _queueSongs.Count > 0)
                     await _musicCache.CachePlaylistTracksAsync(playlist.Playlist, _queueSongs);
             }
         }
@@ -2912,7 +2921,7 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     /// UI 行与 _queueSongs 仍同步增长，但播放使用 _playbackQueue 的完整逻辑范围。</summary>
     private void AppendKnownTracks()
     {
-        var changed = false;
+        var start = _allTrackRows.Count;
         while (_materialized < _trackIds.Count)
         {
             var id = _trackIds[_materialized];
@@ -2920,9 +2929,17 @@ public sealed partial class PlaylistViewModel : ViewModelBase
             _allTrackRows.Add(CreateTrackRow(song, _materialized, _api));
             _queueSongs.Add(song);
             _materialized++;
-            changed = true;
         }
-        if (changed) RefreshVisibleTracks();
+        PublishAppendedTracks(start);
+    }
+
+    private void PublishAppendedTracks(int start)
+    {
+        if (_allTrackRows.Count == start) return;
+        if (Filters.IsActive)
+            RefreshVisibleTracks();
+        else
+            Tracks.AddRange(_allTrackRows.GetRange(start, _allTrackRows.Count - start));
     }
 
     /// <summary>已上屏的行与 <paramref name="songs"/> 逐首同 id 的最大前缀长度。
@@ -2931,7 +2948,14 @@ public sealed partial class PlaylistViewModel : ViewModelBase
     {
         var limit = Math.Min(_allTrackRows.Count, songs.Count);
         var adopt = 0;
-        while (adopt < limit && _allTrackRows[adopt].Song.Id == songs[adopt].Id) adopt++;
+        while (adopt < limit)
+        {
+            var cached = _allTrackRows[adopt].Song;
+            var fresh = songs[adopt];
+            if (cached.Id != fresh.Id || cached.Artist != fresh.Artist ||
+                cached.Album != fresh.Album || cached.CoverUrl != fresh.CoverUrl) break;
+            adopt++;
+        }
         return adopt;
     }
 

@@ -79,10 +79,20 @@ public partial class LyricView : UserControl
     public static readonly StyledProperty<bool> BlurEnabledProperty =
         AvaloniaProperty.Register<LyricView, bool>(nameof(BlurEnabled), defaultValue: true);
 
+    /// <summary>页面此刻是否在可视状态(与 <see cref="_pageParked"/> 相反,供模板里的逐字控件停泵)。</summary>
+    public static readonly StyledProperty<bool> IsPageActiveProperty =
+        AvaloniaProperty.Register<LyricView, bool>(nameof(IsPageActive), defaultValue: false);
+
     public double FontScale
     {
         get => GetValue(FontScaleProperty);
         set => SetValue(FontScaleProperty, value);
+    }
+
+    public bool IsPageActive
+    {
+        get => GetValue(IsPageActiveProperty);
+        set => SetValue(IsPageActiveProperty, value);
     }
 
     public bool BlurEnabled
@@ -338,6 +348,7 @@ public partial class LyricView : UserControl
         // 页面收起时是"平移出窗外",`IsVisible` 不变 ⇒ 可见性订阅链**不会**被触发,
         // 所以解封与补做都得在这里显式做。
         _pageParked = false;
+        IsPageActive = true;
 
         // 不可见期间攒下的定位请求在这里补做一次。只有真攒过才补:
         // 健康路径上多叫一次 `ScrollIntoView` 本身就是在给上游那个锚点缺陷递机会。
@@ -369,6 +380,7 @@ public partial class LyricView : UserControl
     internal void OnPageHidden()
     {
         _pageParked = true;
+        IsPageActive = false;
         _scrollAnimationVersion++;
     }
 

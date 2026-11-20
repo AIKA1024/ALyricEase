@@ -411,16 +411,27 @@ public sealed class MusicCacheService
     {
         var fileName = BuildLyricFileName(song);
         var bytes = await TryReadBytesAsync(fileName).ConfigureAwait(false);
+        var legacyQq = song.Source == MusicSource.QQ && bytes is null;
+        if (legacyQq)
+        {
+            fileName = "l-" + BuildSongKey(song) + ".lyrics";
+            bytes = await TryReadBytesAsync(fileName).ConfigureAwait(false);
+        }
         if (bytes is null) return null;
         try
         {
             using var stream = new MemoryStream(bytes, writable: false);
             using var reader = new BinaryReader(stream, Encoding.UTF8);
-            if (reader.ReadByte() != 1) throw new InvalidDataException("未知歌词缓存版本");
+            // v3 起多存 yrc。旧版本缓存直接作废(删掉重取):否则老用户命中的缓存永远没有逐字,
+            // 也就永远看不到 yrc —— 一次重取比留个"半新半旧"的缓存便宜。
+            // (v2 是"字段在但值恒空"的那一版:写它的时候歌词还在走明文回落,见 NetEaseApiClient.GetLyricAsync。)
+            if (reader.ReadByte() != 3) throw new InvalidDataException("未知歌词缓存版本");
             return new LyricResult
             {
                 Original = reader.ReadString(),
                 Translation = reader.ReadString(),
+                Yrc = reader.ReadString(),
+                Cacheable = !legacyQq,
             };
         }
         catch
@@ -432,15 +443,16 @@ public sealed class MusicCacheService
 
     public Task CacheLyricAsync(Song song, LyricResult lyric)
     {
-        if (string.IsNullOrEmpty(lyric.Original) && string.IsNullOrEmpty(lyric.Translation))
+        if (!lyric.Cacheable || (string.IsNullOrEmpty(lyric.Original) && string.IsNullOrEmpty(lyric.Translation) && string.IsNullOrEmpty(lyric.Yrc)))
             return Task.CompletedTask;
 
         using var stream = new MemoryStream();
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write((byte)1);
+            writer.Write((byte)3);
             writer.Write(lyric.Original ?? string.Empty);
             writer.Write(lyric.Translation ?? string.Empty);
+            writer.Write(lyric.Yrc ?? string.Empty);
         }
         return StoreBytesAsync(BuildLyricFileName(song), stream.ToArray());
     }
@@ -1238,7 +1250,8 @@ public sealed class MusicCacheService
 
     private static string BuildCoverFileName(string url) => "c-" + Hash(url) + ".cover";
 
-    private static string BuildLyricFileName(Song song) => "l-" + BuildSongKey(song) + ".lyrics";
+    private static string BuildLyricFileName(Song song) =>
+        "l-" + BuildSongKey(song) + (song.Source == MusicSource.QQ ? ".qrc.lyrics" : ".lyrics");
 
     private static string BuildPlaylistTracksFileName(Playlist playlist)
         => BuildPlaylistTracksFileName(playlist.Source, playlist.Id);

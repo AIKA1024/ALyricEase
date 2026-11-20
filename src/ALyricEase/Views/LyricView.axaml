@@ -6,6 +6,7 @@
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:models="using:ALyricEase.Models"
              xmlns:views="using:ALyricEase.Views"
+             xmlns:controls="using:ALyricEase.Controls"
              x:DataType="vm:LyricViewModel"
              mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="320"
              x:Class="ALyricEase.Views.LyricView">
@@ -23,9 +24,14 @@
              因而视觉字号仍为 32/22，但换行提前为选中放大预留空间。 -->
         <DataTemplate x:Key="DetailLyricItemTemplate" x:DataType="models:LyricLine">
             <StackPanel>
-                <TextBlock Text="{Binding Original}" TextAlignment="Left" TextWrapping="Wrap"
-                           FontWeight="Bold" Foreground="#FFFFFFFF"
-                           FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=33.6}" />
+                <!-- 逐字高亮:当前行用 yrc 字级时间,其余行与原来的 TextBlock 等价(单色) -->
+                <controls:KaraokeText Text="{Binding Original}" Words="{Binding Words}"
+                                      IsActive="{Binding $parent[ListBoxItem].IsSelected}"
+                                      IsPageActive="{Binding $parent[views:LyricView].IsPageActive}"
+                                      IsPlaying="{Binding $parent[views:LyricView].((vm:LyricViewModel)DataContext).IsPlaying}"
+                                      PositionMs="{Binding $parent[views:LyricView].((vm:LyricViewModel)DataContext).SyllablePositionMs}"
+                                      FontWeight="Bold"
+                                      FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=33.6}" />
                 <TextBlock Text="{Binding Translation}" TextAlignment="Left" TextWrapping="Wrap"
                            Foreground="#BFFFFFFF"
                            FontSize="{Binding $parent[views:LyricView].FontScale, Converter={x:Static infra:FontScaleConverter.Instance}, ConverterParameter=23.1}">

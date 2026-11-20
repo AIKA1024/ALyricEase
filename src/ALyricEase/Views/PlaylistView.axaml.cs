@@ -15,8 +15,7 @@ namespace ALyricEase.Views;
 /// <summary>歌单详情页：登录卡片 / 选中歌单的头部 + 曲目表。歌单入口由左侧 shell 提供。</summary>
 public partial class PlaylistView : UserControl
 {
-    private DispatcherTimer? _coverDebounce;
-    private readonly System.Collections.Generic.HashSet<SongItemViewModel> _pendingCovers = new();
+    private DispatcherTimer? _likedDebounce;
     private PlaylistViewModel? _observedViewModel;
     private int _appliedScrollRestoreVersion;
     private int _scheduledScrollRestoreVersion;
@@ -36,6 +35,7 @@ public partial class PlaylistView : UserControl
         DetachedFromVisualTree += (_, _) =>
         {
             _isAttached = false;
+            _likedDebounce?.Stop();
             _scheduledScrollRestoreVersion = 0;
             StopObservingViewModel();
         };
@@ -47,16 +47,22 @@ public partial class PlaylistView : UserControl
         };
         // 页面滚动接近底部时增量补齐下一批曲目
         PageScroller.ScrollChanged += OnTracksScrollChanged;
+        // 触屏行没有红心按钮；桌面在滚动停稳后只查询此时仍在屏幕上的行。
+        if (!InteractionDefaults.IsTouchPrimary)
+            TracksList.ContainerPrepared += OnTrackContainerPrepared;
     }
 
-    /// <summary>滚动接近底部(剩余不足 ~500px)时请求下一批曲目元数据;LoadMoreAsync 内部单飞防止重入。</summary>
+    /// <summary>触屏向下滚动时保留一批歌曲的提前量，避免惯性滚动撞上尚未补齐的列表末尾。</summary>
     private void OnTracksScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        if (sender is not ScrollViewer sv) return;
-        if (DataContext is PlaylistViewModel current)
-            current.UpdatePageScrollOffset(sv.Offset.Y);
+        if (sender is not ScrollViewer sv || DataContext is not PlaylistViewModel vm) return;
+        vm.UpdatePageScrollOffset(sv.Offset.Y);
         var remaining = sv.Extent.Height - sv.Offset.Y - sv.Viewport.Height;
-        if (remaining < 500 && DataContext is PlaylistViewModel vm)
+        if (sv.Viewport.Height <= 0) return;
+        var approachingPageEnd = InteractionDefaults.IsTouchPrimary && e.OffsetDelta.Y > 0
+            && TracksList.ItemsPanelRoot is VirtualizingStackPanel { LastRealizedIndex: >= 0 } panel
+            && TracksList.ItemCount - 1 - panel.LastRealizedIndex <= PlaylistViewModel.TrackDetailBatchSize;
+        if (approachingPageEnd || remaining < Math.Max(500, 2 * sv.Viewport.Height))
             _ = vm.LoadMoreAsync();
     }
 
@@ -120,22 +126,18 @@ public partial class PlaylistView : UserControl
         }, attempt == 0 ? DispatcherPriority.Loaded : DispatcherPriority.Render);
     }
 
-    /// <summary>曲目容器 realized 时触发封面懒加载。封面节流:滚动中不立即加载,
-    /// 停止 150ms 后统一加载可见行,减少滚动时封面解码/Image 更新造成的渲染与内存波动。</summary>
-    private void OnTrackContainerPreparing(object? sender, ContainerPreparedEventArgs e)
+    private void OnTrackContainerPrepared(object? sender, ContainerPreparedEventArgs e)
     {
-        if (e.Container?.DataContext is not SongItemViewModel item) return;
-        _coverDebounce ??= new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, OnCoverDebounceTick);
-        _coverDebounce.Stop();
-        _pendingCovers.Add(item);
-        _coverDebounce.Start();
+        _likedDebounce ??= new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, OnLikedDebounceTick);
+        _likedDebounce.Stop();
+        _likedDebounce.Start();
     }
 
-    private void OnCoverDebounceTick(object? sender, EventArgs e)
+    private void OnLikedDebounceTick(object? sender, EventArgs e)
     {
-        _coverDebounce?.Stop();
-        foreach (var item in _pendingCovers) item.EnsureLikedLoaded();
-        _pendingCovers.Clear();
+        _likedDebounce?.Stop();
+        foreach (var container in TracksList.GetRealizedContainers())
+            if (container.DataContext is SongItemViewModel song) song.EnsureLikedLoaded();
     }
 
     /// <summary>原版“更多”菜单的系统分享入口。原生分享面板需要当前 TopLevel 句柄，因此留在视图层。</summary>

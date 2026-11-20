@@ -124,6 +124,8 @@ public sealed class AppStateStore
     public bool DesktopLyricEnabled { get; set; }
     public bool DesktopLyricClickThrough { get; set; }
     public bool DesktopLyricShowTranslation { get; set; } = true;
+    /// <summary>桌面歌词逐字高亮。默认开:有 yrc 的歌直接唱到哪亮到哪。</summary>
+    public bool DesktopLyricKaraokeEnabled { get; set; } = true;
     /// <summary>播放暂停/停止时收起歌词窗口。默认关:保持"一直显示"的旧行为。</summary>
     public bool DesktopLyricHideWhenPaused { get; set; }
     public double DesktopLyricFontSize { get; set; } = 28;
@@ -331,6 +333,7 @@ public sealed class AppStateStore
             DesktopLyricClickThrough = dto.DesktopLyricEnabled && dto.DesktopLyricClickThrough == true;
             DesktopLyricBackgroundOpacity = dto.DesktopLyricBackgroundOpacity is >= 0 and <= 1 ? dto.DesktopLyricBackgroundOpacity.Value : 0.85;
             DesktopLyricShowTranslation = dto.DesktopLyricShowTranslation ?? true;
+            DesktopLyricKaraokeEnabled = dto.DesktopLyricKaraokeEnabled ?? true;
             DesktopLyricHideWhenPaused = dto.DesktopLyricHideWhenPaused ?? false;
             DesktopLyricFontSize = dto.DesktopLyricFontSize is >= 16 and <= 48 ? dto.DesktopLyricFontSize.Value : 28;
             // 字体家族只认名字,解析失败由绘制端回落默认字体;空串归一成 null,别让配置里留个空壳。
@@ -512,6 +515,7 @@ public sealed class AppStateStore
                 DesktopLyricClickThrough = DesktopLyricClickThrough,
                 DesktopLyricBackgroundOpacity = DesktopLyricBackgroundOpacity,
                 DesktopLyricShowTranslation = DesktopLyricShowTranslation,
+                DesktopLyricKaraokeEnabled = DesktopLyricKaraokeEnabled,
                 DesktopLyricHideWhenPaused = DesktopLyricHideWhenPaused,
                 DesktopLyricFontSize = DesktopLyricFontSize,
                 DesktopLyricFontFamily = DesktopLyricFontFamily,

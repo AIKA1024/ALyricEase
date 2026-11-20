@@ -327,7 +327,7 @@ public sealed record SongDetailResponse
     public List<SongDetailItem>? Songs { get; init; }
 }
 
-/// <summary>v3/song/detail 的曲目(字段是 artists/album)。</summary>
+/// <summary>v3/song/detail 的曲目。歌手、专辑通常为 ar/al，兼容长字段名的响应。</summary>
 public sealed record SongDetailItem
 {
     [JsonPropertyName("l")] public JsonElement StandardQuality { get; init; }
@@ -338,6 +338,9 @@ public sealed record SongDetailItem
     public long Id { get; init; }
 
     public string Name { get; init; } = "";
+
+    [JsonPropertyName("ar")] public List<SearchArtist>? ShortArtists { get; init; }
+    [JsonPropertyName("al")] public SearchAlbum? ShortAlbum { get; init; }
 
     public List<SearchArtist>? Artists { get; init; }
 

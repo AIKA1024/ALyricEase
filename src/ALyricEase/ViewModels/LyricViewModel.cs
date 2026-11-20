@@ -36,6 +36,13 @@ public sealed partial class LyricViewModel : ViewModelBase
     private ObservableCollection<LyricLine> _lines = new();
 
     [ObservableProperty] private int _currentIndex = -1;
+
+    /// <summary>逐字控件用的时间轴位置(已叠加 [offset:])。与 <see cref="LyricDocument.FindIndex"/>
+    /// 同一套语义:字的 StartMs 是 yrc 绝对时间,offset 为正表示歌词提前。</summary>
+    [ObservableProperty] private long _syllablePositionMs;
+
+    /// <summary>是否正在播放。逐字控件据此决定要不要继续外推位置。</summary>
+    [ObservableProperty] private bool _isPlaying;
     [ObservableProperty] private bool _hasLyric;
     [ObservableProperty] private string _message = "暂无歌词(纯音乐?)";
 
@@ -80,20 +87,27 @@ public sealed partial class LyricViewModel : ViewModelBase
             else
             {
                 var lrc = await _cache.TryGetLyricAsync(song).ConfigureAwait(false);
-                if (lrc is null)
+                if (lrc is not null)
+                    doc = LrcParser.Parse(lrc.Original, lrc.Translation, lrc.Yrc);
+                if (lrc is null || !lrc.Cacheable)
                 {
                     var api = _sources.Resolve(song);
                     lrc = await api.GetLyricAsync(song).ConfigureAwait(false);
                     if (lrc is not null)
-                        await _cache.CacheLyricAsync(song, lrc).ConfigureAwait(false);
+                    {
+                        var fresh = LrcParser.Parse(lrc.Original, lrc.Translation, lrc.Yrc);
+                        if (!fresh.IsEmpty)
+                        {
+                            doc = fresh;
+                            await _cache.CacheLyricAsync(song, lrc).ConfigureAwait(false);
+                        }
+                    }
                 }
-                if (lrc is not null)
-                    doc = LrcParser.Parse(lrc.Original, lrc.Translation);
             }
         }
         catch (Exception)
         {
-            doc = null; // 歌词失败不阻塞播放
+            // 网络刷新失败时仍可显示已经读到的旧 QQ 歌词。
         }
 
         _dispatcher.Post(() =>
@@ -117,6 +131,7 @@ public sealed partial class LyricViewModel : ViewModelBase
     {
         _positionMs = positionMs;
         if (_doc is null) return;
+        SyllablePositionMs = positionMs + (long)_doc.Offset.TotalMilliseconds;
         var idx = _doc.FindIndex(positionMs);
         if (idx != CurrentIndex) CurrentIndex = idx;
     }
@@ -134,5 +149,6 @@ public sealed partial class LyricViewModel : ViewModelBase
         Lines = new ObservableCollection<LyricLine>();
         HasLyric = false;
         CurrentIndex = -1;
+        SyllablePositionMs = 0;
     }
 }

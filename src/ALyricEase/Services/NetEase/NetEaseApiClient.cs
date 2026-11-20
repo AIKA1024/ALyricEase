@@ -503,21 +503,73 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
 
     public async Task<LyricResult?> GetLyricAsync(long id, CancellationToken ct = default)
     {
-        if (!_wafBlocked)
+        // 注意:这里**不能**看 _wafBlocked。那个标记是"本进程有任意一个 weapi 被代理出口拦过",
+        // 搜索/取址都会置位;而逐字(yrc)只有加密通道给,明文永远没有。跟着它跳过 weapi
+        // 的后果就是:正常启动 → 先搜歌(置位)→ 再播歌 → 每首歌词都没逐字。
+        // 实测 2026-11-18:先 SearchAsync 再取《孤勇者》,yrc=0;跳过全局标记后同条件有 yrc。
+        //
+        // 歌词只认自己的两态:代理不通 → 本进程内改直连;直连也不通 → 这一首走明文。
+        //
+        // 三个细节都是踩出来的(2026-11-18):
+        // 1) 不能记"彻底不行了"。代理出口是间歇性返回空 body 的,记死会把后面正常的歌也拖进明文。
+        // 2) 空 body 是**按请求**抽中的,同一首连跑三次大约有一次空 ⇒ 同一通道重试比换通道更有效,
+        //    所以这里给两次重试,而不是一次失败就投降。
+        // 3) 明文回落的结果不写缓存(见 LyricResult.Cacheable):明文永远没有 yrc,落盘即永久丢逐字。
+        var retries = 0;
+        while (true)
         {
+            var client = _lyricViaDirect ? DirectHttp : retries == 0 ? null : DirectHttp;
             try
             {
-                return await LyricWeapiAsync(id, ct).ConfigureAwait(false);
+                var result = await LyricWeapiAsync(id, ct, client).ConfigureAwait(false);
+                if (client is not null) _lyricViaDirect = true;
+                return result;
             }
             catch (ApiException ex) when (ex.Code == BlockedCode)
             {
-                _wafBlocked = true;
+                if (++retries > 3) break;
+                await Task.Delay(200 * retries, ct).ConfigureAwait(false);
             }
         }
-        return await LyricLegacyAsync(id, ct).ConfigureAwait(false);
+
+        var legacy = await LyricLegacyAsync(id, ct).ConfigureAwait(false);
+        return legacy is null
+            ? null
+            : new LyricResult
+            {
+                Original = legacy.Original,
+                Translation = legacy.Translation,
+                Yrc = legacy.Yrc,
+                Cacheable = false,
+            };
     }
 
-    /// <summary>歌曲详情(v3/song/detail),字段为 artists/album。</summary>
+    /// <summary>歌词是否已确认只有直连能过(当前代理出口被风控)。</summary>
+    private bool _lyricViaDirect;
+
+    private HttpClient? _directHttp;
+
+    /// <summary>直连 client(不走 NetworkProxy)。只给歌词的 weapi 兜底:代理出口被 WAF 拦时,
+    /// 同一请求直连可通过。共享 CookieContainer,所以匿名/登录 cookie 都照常带上。
+    /// <para>
+    /// 必须显式 <c>UseProxy = false</c>:只把 <c>Proxy</c> 设成 null 是"改用系统代理",
+    /// .NET 会继续读 HTTP_PROXY/HTTPS_PROXY 环境变量 —— 本机那套环境变量指着的还是同一个
+    /// 被风控的出口,等于没直连。实测 2026-11-18:同一个歌词请求,Proxy=null 时 yrc=0,
+    /// 改成 UseProxy=false 立刻回 9869 字符的 yrc。
+    /// </para></summary>
+    private HttpClient DirectHttp => _directHttp ??= new HttpClient(new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.All,
+        CookieContainer = _cookieContainer,
+        UseCookies = true,
+        Proxy = null,
+        UseProxy = false,
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(20),
+    };
+
+    /// <summary>歌曲详情(v3/song/detail)。</summary>
     public async Task<Song?> GetSongDetailAsync(long id, CancellationToken ct = default)
     {
         await TryEnsureAnonymousAsync(ct).ConfigureAwait(false);
@@ -621,20 +673,28 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         return resp.Result.Songs.Select(MapSearchSong).ToList();
     }
 
-    private async Task<LyricResult?> LyricWeapiAsync(long id, CancellationToken ct)
+    /// <summary>歌词(加密通道)。必须走 <c>weapi/song/lyric/v1</c> 且显式带 yv/ytv/yrv=-1 才返回逐字 yrc;
+    /// 老的 <c>weapi/song/lyric</c> 实测 6 首全为 0(见 docs/netease-api/05-lyric-yrc.md)。
+    /// WAF 拦截时抛 BlockedCode 回落明文,明文通道不返回 yrc,由调用方按空处理。</summary>
+    private async Task<LyricResult?> LyricWeapiAsync(long id, CancellationToken ct, HttpClient? http = null)
     {
         await TryEnsureAnonymousAsync(ct).ConfigureAwait(false);
         var payload = new Dictionary<string, object?>
         {
             ["id"] = id,
+            ["cp"] = false,
             ["os"] = "pc",
             ["lv"] = -1,
             ["kv"] = -1,
             ["tv"] = -1,
+            ["rv"] = -1,
+            ["yv"] = -1,
+            ["ytv"] = -1,
+            ["yrv"] = -1,
             ["csrf_token"] = "",
         };
-        using var req = CreateWeapiRequest("weapi/song/lyric", payload, includeRealIp: false);
-        using var doc = await PostJsonAsync(req, ct).ConfigureAwait(false);
+        using var req = CreateWeapiRequest("weapi/song/lyric/v1", payload, includeRealIp: false);
+        using var doc = await PostJsonAsync(req, ct, http).ConfigureAwait(false);
         var resp = doc.RootElement.Deserialize(NetEaseJsonContext.Default.LyricResponse);
         if (resp is null || resp.Code != 200)
             throw new ApiException("获取歌词失败", resp?.Code ?? -1);
@@ -642,6 +702,7 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         {
             Original = resp.Lrc?.Lyric ?? "",
             Translation = resp.TLyric?.Lyric ?? "",
+            Yrc = resp.Yrc?.Lyric ?? "",
         };
     }
 
@@ -1950,9 +2011,9 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
             req.Headers.TryAddWithoutValidation("X-Real-IP", _ipPool.Next());
     }
 
-    private async Task<JsonDocument> PostJsonAsync(HttpRequestMessage req, CancellationToken ct)
+    private async Task<JsonDocument> PostJsonAsync(HttpRequestMessage req, CancellationToken ct, HttpClient? http = null)
     {
-        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        using var resp = await (http ?? _http).SendAsync(req, ct).ConfigureAwait(false);
         await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
         var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(body))
@@ -2082,22 +2143,27 @@ public sealed partial class NetEaseApiClient : IMusicApi, IUserMusicApi
         AlbumId = s.Album?.Id ?? 0,
     };
 
-    private static Song MapDetailSong(SongDetailItem s) => new()
+    private static Song MapDetailSong(SongDetailItem s)
     {
-        AvailableQualityLevels = SongQualityMetadata.NetEase(s.StandardQuality, s.HighQuality, s.LosslessQuality, s.HiResQuality),
-        Id = s.Id,
-        Name = s.Name,
-        Artist = s.Artists is { Count: > 0 } ? string.Join("/", s.Artists.Select(a => a.Name)) : "",
-        Album = s.Album?.Name ?? "",
-        CoverUrl = s.Album?.PicUrl ?? "",
-        DurationMs = s.DurationMs,
-        Fee = s.Fee,
-        IsPurchased = GetPurchasedStatus(s.Privilege),
-        IsNoCopyright = IsCopyrightUnavailable(s.Privilege),
-        ArtistIds = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Id).ToList() : new List<long>(),
-        ArtistNames = s.Artists is { Count: > 0 } ? s.Artists.Select(a => a.Name).ToList() : new List<string>(),
-        AlbumId = s.Album?.Id ?? 0,
-    };
+        var artists = s.ShortArtists ?? s.Artists;
+        var album = s.ShortAlbum ?? s.Album;
+        return new Song
+        {
+            AvailableQualityLevels = SongQualityMetadata.NetEase(s.StandardQuality, s.HighQuality, s.LosslessQuality, s.HiResQuality),
+            Id = s.Id,
+            Name = s.Name,
+            Artist = artists is null ? "" : string.Join("/", artists.Select(a => a.Name)),
+            Album = album?.Name ?? "",
+            CoverUrl = album?.PicUrl ?? "",
+            DurationMs = s.DurationMs,
+            Fee = s.Fee,
+            IsPurchased = GetPurchasedStatus(s.Privilege),
+            IsNoCopyright = IsCopyrightUnavailable(s.Privilege),
+            ArtistIds = artists?.Select(a => a.Id).ToList() ?? [],
+            ArtistNames = artists?.Select(a => a.Name).ToList() ?? [],
+            AlbumId = album?.Id ?? 0,
+        };
+    }
 
     /// <summary>网易云只有 st=-200 表示明确无版权；-1 等状态在搜索接口中可能与
     /// 歌曲详情矛盾，不能据此阻止用户请求实际播放地址。</summary>

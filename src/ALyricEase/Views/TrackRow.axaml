@@ -181,19 +181,18 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="views:TrackRow" x:DataType="vm:SongItemViewModel">
-          <!-- 根 Grid 画控件的 Background(透明):否则行内空白不可命中,单击整行播放失效 -->
-          <Grid Background="{TemplateBinding Background}" Classes="track-root" Classes.is-local="{Binding IsLocal}" Classes.is-local-missing="{Binding IsLocalFileMissing}" IsEnabled="{Binding IsRowEnabled}">
+          <!-- 两侧宽度固定。直接用边距为封面和时长留位，避免滚动中反复测量嵌套列。 -->
+          <Grid Background="{TemplateBinding Background}" Classes="track-root" IsEnabled="{Binding IsRowEnabled}">
             <!-- 只留按下反馈(触摸有),不要 hover 层 -->
             <Border Classes="row-pressed-bg" />
-            <Grid ColumnDefinitions="50,*,40" Margin="8,0" ColumnSpacing="8">
-              <Border Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="0,5"
+              <Border HorizontalAlignment="Left" Width="50" Height="50" CornerRadius="4" ClipToBounds="True" Margin="8,5"
                       Background="{DynamicResource ArtFallback}">
                 <Image infra:ManagedCoverImage.DecodeSize="100"
                        infra:ManagedCoverImage.FallbackSource="{x:Static infra:CoverImageConverter.PlaceholderUri}"
                        infra:ManagedCoverImage.Source="{Binding Song.CoverUrl}"
                        Stretch="UniformToFill" />
               </Border>
-              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <StackPanel Margin="66,0,56,0" VerticalAlignment="Center" Spacing="2">
                 <TextBlock Classes.fileMissing="{Binding IsLocalFileMissing}" Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                 <Button x:Name="ArtistAlbumButton" Classes="row-link" HorizontalAlignment="Left"
                         VerticalAlignment="Center" IsVisible="{Binding HasArtistOrAlbumName}"
@@ -242,10 +241,9 @@
                 </Button>
               </StackPanel>
               <!-- 时长恒显(触屏没有 hover 让位),右对齐 -->
-              <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontSize="12"
+              <TextBlock MaxWidth="40" Margin="0,0,8,0" Text="{Binding DurationText}" FontSize="12"
                          HorizontalAlignment="Right" VerticalAlignment="Center"
                          Foreground="{DynamicResource TextSecondary}" />
-            </Grid>
           </Grid>
         </ControlTemplate>
       </Setter.Value>

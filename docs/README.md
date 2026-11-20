@@ -26,7 +26,7 @@
 | 某处 GPU 占用偏高("6% 能降吗") | [perf-notes.md](perf-notes.md)(先读「详情页 GPU 的大头是"在动"」) |
 | 用户说"某页滚动时 GPU 能到 X%" / "滚动歌单页只有 5-6%,主页却 20%" | [perf-notes.md](perf-notes.md) §十(**先对齐窗口尺寸**;每帧开销 ∝ 窗口面积,与内容量无关;任务管理器那列读到的是**峰值**,真窗口实测均值 ≈11% / 峰 20%;**跨页差值是帧数不是画法** §10.7) |
 | 歌词面板太贵 / 逐行模糊该不该留 | [perf-notes.md](perf-notes.md)(先读「把歌词模糊收进『性能与体验』档位」;再读它上面那条已回退的「摘掉远景行的模糊」——**为什么试过又撤**) |
-| 桌面/Android 悬浮歌词:设置弹窗结构、字体·颜色·描边·阴影怎么画的 | [desktop-lyrics.md](desktop-lyrics.md)(描边是 8 层偏移副本,不是几何描边;`--desktop-lyrics`) |
+| 桌面/Android 悬浮歌词:设置弹窗结构、字体·颜色·描边·阴影·逐字高亮怎么做的 | [desktop-lyrics.md](desktop-lyrics.md)(描边改几何 `BuildGeometry`+`Pen`;正文 `KaraokeText`;`--desktop-lyrics`) |
 | 某个动画/循环最小化后还在烧 CPU | [avalonia-tips.md](avalonia-tips.md)「自续订的 RequestAnimationFrame 循环」「先分清三类"一直在动"」 |
 | 进度条/动画"卡卡的,鼠标一动就顺" | [avalonia-tips.md](avalonia-tips.md) 文末「UI 线程静息时长睡 ~79ms」 |
 | 弹层/过渡"定住一秒后瞬间消失、没动画"(UI 线程没死) | [perf-notes.md](perf-notes.md) §九「UI 线程动画必须自己持帧泵」 |
@@ -51,6 +51,10 @@
 | 开机后冒出两个窗口 / 双击图标又开一个 / 更新完起不来 | [updates.md](updates.md) §五(单实例闸;根因是缺 Mutex,不是更新;更新前必须先让锁) |
 | 点播放要等将近一秒才出声 / 设了 Hi-Res 却在放 320k | [playback-quality.md](playback-quality.md)(降级链串行 + 档位上限记忆;`--quality-ceiling`) |
 | 要加网易云端点 / 排查 400 空响应 / 防封号 | [netease-api/](netease-api/)(先读它的 README,再过 [03-antiban.md](netease-api/03-antiban.md) 的检查清单) |
+| 想做逐字歌词 / 歌词能不能一句里前半亮后半暗 | [netease-api/05-lyric-yrc.md](netease-api/05-lyric-yrc.md)(yrc 只在 `lyric/v1` + 加密通道;行头两字段;`Trim()` 会吃掉承载长音的空格字;覆盖不全必须回落) |
+| 逐字歌词为什么这么画 / 想改未唱颜色 | [karaoke-lyrics.md](karaoke-lyrics.md)(两个 `TextLayout` + `PushClip`,不走离屏层;只当前行启动帧循环;`--karaoke`) |
+| 逐字亮区**卡住/倒退/每句顿一下** | [karaoke-lyrics.md](karaoke-lyrics.md) §2(采样只作目标、渲染位置永不后退;帧链看门狗 `Kick`;`--karaoke-smooth` 能复现旧行为的 -391ms 回退) |
+| 某首歌没有逐字 / 播了但整行一个颜色 | [karaoke-lyrics.md](karaoke-lyrics.md) §7(先 `--yrc <id> --after-search`;缓存首字节必须是 3;明文回落不写缓存) + [netease-api/05-lyric-yrc.md](netease-api/05-lyric-yrc.md) §8(`_wafBlocked` 别跟、`Proxy=null` 不是直连、空 body 按请求抽) |
 | 自问"原版 UWP 为什么占用更低" | [original-uwp-notes.md](original-uwp-notes.md)(账记在 `dwm.exe` 里,别承诺做到同读数) |
 | 要写或改性能探针 | [perf-notes.md](perf-notes.md) §四「写性能探针的坑」+ §七探针清单 |
 

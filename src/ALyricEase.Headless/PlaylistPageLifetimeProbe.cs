@@ -29,6 +29,13 @@ internal static class PlaylistPageLifetimeProbe
                            ?? throw new InvalidOperationException("找不到歌单滚动容器");
             Assert(Math.Abs(scroller.Offset.Y - 712) < 1,
                 $"布局完成后的实际滚动位置错误：{scroller.Offset.Y:F1}");
+            var list = view.FindControl<PlaylistTrackList>("TracksList")!;
+            scroller.Offset = new(0, scroller.ScrollBarMaximum.Y);
+            for (var index = 0; index < 8; index++) Dispatcher.UIThread.RunJobs();
+            Assert(list.GetRealizedContainers().Count() < vm.Tracks.Count
+                   && list.ContainerFromIndex(vm.Tracks.Count - 1) is TrackRow last
+                   && ReferenceEquals(last.DataContext, vm.Tracks[^1]),
+                "滑到底部后应只实化视口附近的歌曲，并绑定正确的末行");
             window.Close();
             vm.ReleaseCurrentPageData();
 
@@ -95,6 +102,19 @@ internal static class PlaylistPageLifetimeProbe
         Assert(vm.RetainedQueueSongCount == songs.Count, "播放队列没有恢复");
         Assert(vm.RetainedTrackIdCount == songs.Count, "懒加载索引没有恢复");
         Assert(vm.Filters.SelectedSortIndex == 1 && vm.Filters.IsExpanded, "筛选 UI 状态没有恢复");
+
+        var loadingChanges = 0;
+        void ObservePaging(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(vm.IsLoadingMore)) loadingChanges++;
+        }
+        vm.PropertyChanged += ObservePaging;
+        try
+        {
+            for (var i = 0; i < 5; i++) await vm.LoadMoreAsync();
+            Assert(loadingChanges == 0, "已加载完整的歌单在底部滚动时仍反复进入分页状态");
+        }
+        finally { vm.PropertyChanged -= ObservePaging; }
 
         vm.UpdatePageScrollOffset(712);
         var rowReference = CaptureAndRelease(vm, out var captured);

@@ -514,3 +514,73 @@ Android 项目的 `gc.env` 采用 1–2 MiB。冷启动测试结束时，进程 
 **关于"一行放得下却换行"**：第一版当成"宽度上限多扣了 16dp"，那只占 56px；真正的限制是上面
 那条 320dp 的 `WrapContent` 钳制。改成显式宽度后 14 字句能拿到 1176px，不再换行。
 
+## 14. 系统 SRC：我们同样被重采样（2026-11-16 实测）
+
+**结论**：`44.1kHz 源 → 48kHz 混音器` 的重采样发生在 **AudioFlinger**，不是我们代码，也不是
+Media3 做的；App 层没有公开手段绕开。
+
+**链路**：MP3/FLAC(44.1k) → Media3 解码 → `AudioTrack`（按源采样率 44100 创建，ExoPlayer
+不主动重采样） → **AudioFlinger `MixerThread`（48000）重采样** → HAL → DAC。
+
+**实测**（一加 7 Pro / GM1911 / Android 12 / 生产包 0.0.21，`--es aly_probe playback-state`）：
+
+```
+# adb shell dumpsys media.audio_flinger
+Output thread 0x…, name AudioOut_D, tid 2253, type 0 (MIXER):
+  Sample rate: 48000 Hz
+  HAL format: 0x1 (AUDIO_FORMAT_PCM_16_BIT)
+
+1 Tracks of which 1 are active
+  Id  Active Client Session Port  S  Flags   Format    Chn mask  SRate …  BitPerfect
+  364 yes    4551   833     422   A  0x000   00000001  00000003  44100 …  false
+```
+
+`Client=4551` 即 `com.aika1024.alyricease` 的 pid，`SRate=44100`、`Flags=0x000`（普通 track）、
+所在线程 `type 0 (MIXER)` + `Sample rate: 48000` ⇒ 44.1k 进 48k 混音器，**必然过一次 SRC**。
+
+**为什么绕不过**
+
+能免 SRC 的线程优先级是 `BitPerfect > Direct > Offload > Mixer > Spatializer`：
+
+- BitPerfect 需要 USB audio AIDL HAL 支持（商品机上基本只有 Pixel 9 有）；
+- Direct **没有任何公开 API** 可以请求（AOSP 里只有 AudioTrack.cpp 内部路径，Poweramp 的
+  "Hi-Res 输出"靠 dlsym 私有符号，属易碎 hack）；
+- Offload 是公开 API（`DefaultRenderersFactory.setEnableAudioOffload`），但解码交给 DSP，
+  音质变成厂商固件黑盒，且与 Visualizer（我们拿它做背景律动）冲突。
+
+我们的 `new ExoPlayerBuilder(context).Build()` 全部默认 ⇒ 连 offload 都没开，走的就是最普通的
+MixerThread，和网易云/QQ 音乐在安卓上没有区别。
+
+**严重性别夸大**：Android 5.0+ 的混音器重采样是多相 sinc（早期才是线性插值），44.1→48 属
+"可测不可闻"，手机外放/蓝牙的瓶颈远大于它。真正该在意的排序大致是：
+蓝牙编解码 < 系统音效/空间音频 < 数字音量衰减 < SRC。
+
+**别信"预转成设备原生采样率"那套偏方**：它只对**实时合成**音频（游戏/合成器）有意义，
+因为那些 PCM 是自己生成的。播放器把 44.1k 自己转成 48k，同样要过一次 SRC，除非我们带的
+重采样器比系统好，否则纯亏 CPU。
+
+**复核命令**（三条同时成立＝正在被 SRC）：
+
+```
+adb shell am start -n <pkg>/<activity> --es aly_probe playback-state
+adb shell dumpsys media.audio_flinger | awk '/Tracks of which/,/Effect Chains/'
+# 看：Client=本应用 pid、SRate=44100、Flags=0x000、BitPerfect=false、线程 Sample rate=48000
+```
+
+### 14.1 比特完美（BIT_PERFECT）：Media3 侧现状
+
+- 一手出处是 **`androidx/media#415`「Plans for Android 14 bit-perfect audio support」**
+  （2023-05 由 Auxio 作者开，tonihei 认领）。2026-11 核过：**仍 open**、29 条评论、
+  最后更新 2026-10-18，label 只有 `enhancement`。
+- 时间线（都是 tonihei 原话）：2023-05「可以用一个简单配置项暴露，但要等 compileSdk 34」→
+  2023-11「计划放进 1.3.0」→ 2024-01「内部改动已写完，但**没有设备能端到端测**，
+  缺的是厂商低层 HAL」→ 2024-09 Pixel 9 / 2025-03 Pixel 8 才补上。
+- 框架侧的 `AudioMixerAttributes` 是**我们自己就能调**的（`AudioManager.GetSupportedMixerAttributes`
+  / `SetPreferredMixerAttributes`）；缺的只是 ExoPlayer 的高层集成（让 `DefaultAudioSink`
+  用指定 format 建 AudioTrack）。要做得自己写 `AudioSink`（或用第三方，如 issue 里提到的
+  `decent-player`，那条路是 usbdevfs 直写，绕的是整个 AudioFlinger）。
+- 本地佐证：Media3 **1.11.1** 的 .NET 绑定里搜 `BitPerfect` / `MixerAttributes` **0 命中**，
+  `EnableOffload` 2 命中、`PreferredAudioDevice` 3 命中 ⇒ 到 1.11.1 为止没有该 API。
+- 顺带纠偏：网上「Google 说在计划中」多转述自 nift4.org（2025-08）的博文，
+  其依据就是上面这个 issue，不是任何 Google 官方路线图。
+

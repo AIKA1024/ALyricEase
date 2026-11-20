@@ -25,9 +25,65 @@ internal static class PageRefreshProbe
         var httpField = typeof(NetEaseApiClient).GetField("_http", BindingFlags.Instance | BindingFlags.NonPublic)!;
         ((HttpClient)httpField.GetValue(api)!).Dispose();
         httpField.SetValue(api, new HttpClient(handler));
+        await VerifyTrackMetadataAsync(ServiceLocator.Get<PlaylistViewModel>(), api);
+        await VerifyTouchPagingAsync(ServiceLocator.Get<PlaylistViewModel>(), handler);
         await VerifyProfileAsync(main.UserProfile, api, handler);
         await VerifyRecommendAsync(ServiceLocator.Get<RecommendViewModel>(), api, handler);
         Console.WriteLine("[page-refresh] PASS");
+    }
+
+    private static async Task VerifyTrackMetadataAsync(PlaylistViewModel vm, NetEaseApiClient api)
+    {
+        var songs = await api.GetSongsByIdsAsync([11, 12]);
+        Check(songs.Count == 2 && songs.All(s => s.Artist == "歌手" && s.ArtistIds.SequenceEqual([7L])
+            && s.AlbumId == 8 && s.Album == "专辑" && s.CoverUrl == "https://example.test/8.jpg"),
+            "批量歌曲详情兼容 ar/al 和 artists/album 两种字段");
+
+        SongItemViewModel Row(Song song, int index) => new(song, _ => Task.FromResult(true), index + 1);
+        vm.ApplyFreshRows([songs[0], new Song { Id = 12, Name = "仅有歌名" }], Row);
+        var retained = vm.Tracks[0];
+        vm.ApplyFreshRows(songs, Row);
+        Check(ReferenceEquals(vm.Tracks[0], retained) && vm.Tracks[1].Song == songs[1],
+            "联网刷新补齐同 ID 的残缺缓存行，并复用元数据一致的行");
+    }
+
+    private static async Task VerifyTouchPagingAsync(PlaylistViewModel vm, ResponseHandler handler)
+    {
+        var previous = InteractionDefaults.IsTouchPrimary;
+        InteractionDefaults.Init(true);
+        var view = new PlaylistView { DataContext = vm };
+        var window = new Window { Width = 420, Height = 780, Content = view };
+        var pending = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        handler.TrackPagePending = pending;
+        try
+        {
+            await vm.OpenPlaylistCommand.ExecuteAsync(new PlaylistItemViewModel(new Playlist { Id = 8801, Name = "触屏分页" }));
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            var scroll = view.FindControl<ScrollViewer>("PageScroller")!;
+            var end = scroll.ScrollBarMaximum.Y;
+            Check(vm.Tracks.Count == 210 && handler.TrackPageRequests == 0, "首屏有充足曲目时不触发滚动预取");
+            scroll.Offset = new(0, end * 0.65);
+            await WaitUntilAsync(() => handler.TrackPageRequests == 1);
+            scroll.Offset = new(0, end * 0.75);
+            Dispatcher.UIThread.RunJobs();
+            Check(end - scroll.Offset.Y > 2 * scroll.Viewport.Height && vm.IsLoadingMore
+                && handler.TrackPageRequests == 1, "快速滑动在两屏之外提前续页，慢请求期间只发一批");
+            pending.SetResult(ResponseHandler.Json(JsonSerializer.Serialize(new
+            {
+                code = 200, songs = Enumerable.Range(211, 100).Select(id => new { id, name = $"歌曲{id}" }),
+            })));
+            await WaitUntilAsync(() => vm.Tracks.Count == 310);
+            Check(vm.Tracks[210].Song.Id == 211 && scroll.Offset.Y < end, "下一批按顺序追加且滚动未触底");
+        }
+        finally
+        {
+            window.Close();
+            vm.ReleaseCurrentPageData();
+            pending.TrySetCanceled();
+            handler.TrackPagePending = null;
+            InteractionDefaults.Init(previous);
+        }
     }
 
     private static async Task VerifyProfileAsync(UserProfileViewModel vm, NetEaseApiClient api, ResponseHandler handler)
@@ -141,12 +197,35 @@ internal static class PageRefreshProbe
         public long PlaylistId = 1;
         public bool NewSongsEmpty;
         public TaskCompletionSource<HttpResponseMessage>? PlaylistPending;
+        public TaskCompletionSource<HttpResponseMessage>? TrackPagePending;
+        public int TrackPageRequests;
 
         internal static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json) };
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
+            if (path == "/api/v6/playlist/detail" && TrackPagePending is not null)
+                return Task.FromResult(Json(JsonSerializer.Serialize(new
+                {
+                    code = 200, playlist = new
+                    {
+                        trackIds = Enumerable.Range(1, 310).Select(id => new { id }),
+                        tracks = Enumerable.Range(1, 210).Select(id => new { id, name = $"歌曲{id}" }),
+                    },
+                })));
+            if (path == "/weapi/v3/song/detail" && TrackPagePending is { } page)
+            {
+                TrackPageRequests++;
+                return page.Task;
+            }
+            if (path == "/weapi/v3/song/detail")
+                return Task.FromResult(Json("""
+                    {"code":200,"songs":[
+                      {"id":11,"ar":[{"id":7,"name":"歌手"}],"al":{"id":8,"name":"专辑","picUrl":"https://example.test/8.jpg"}},
+                      {"id":12,"artists":[{"id":7,"name":"歌手"}],"album":{"id":8,"name":"专辑","picUrl":"https://example.test/8.jpg"}}
+                    ]}
+                    """));
             if (path.Contains("user/detail"))
             {
                 ProfileRequests++;

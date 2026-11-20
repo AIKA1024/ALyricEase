@@ -38,6 +38,12 @@
 （已验证加密正确，Python requests 同样被拦），也非 cookie 前提（暖场 GET 不产生 cookie）。
 疑似**地区级 WAF 针对加密通道**。
 
+> **2026-11-18 更正（已结案）**：上面"与加密无关"的结论是错的。根因是 `RsaPadding.N`
+> 少了末尾一个字节 `e7`（见 [01-crypto.md](01-crypto.md) §2.2），`encSecKey` 恒定解不出
+> secretKey，服务端只能回空 body。补齐后**直连立即恢复 200 + 完整 JSON**（歌词 yrc 也一起来了）。
+> 仍成立的部分：经本地代理（海外出口）请求 weapi 依旧被拦，直连才行 —— 歌词因此加了
+> "代理失败 → 直连重试"；eapi 不受影响（它不走这个模数）。
+
 2026-10 复测：weapi 仍返回空 body，但 **eapi(`interface.music.163.com`)恢复可用**——
 播放地址与扫码/手机验证码登录均走 eapi（登录见 [E0](02-endpoints.md#e0-扫码--手机验证码登录eapi-加密-post匿名)）。
 
@@ -154,3 +160,4 @@ CN IP 池见 `CnIpPool.cs`（22 个大陆公共 DNS / 云厂商 IP，随机取�
 | [02-endpoints.md](02-endpoints.md) | 全部端点：路径、方法、参数、响应样例、字段差异 |
 | [03-antiban.md](03-antiban.md) | 反封号：请求节制、降级链、批量上限、频率建议 |
 | [04-verify-selftest.md](04-verify-selftest.md) | 端到端验证清单（`--selftest` 覆盖了哪些） |
+| [05-lyric-yrc.md](05-lyric-yrc.md) | 逐字歌词 yrc：只有 `lyric/v1` + 加密通道给、两字段行头、空格字承载长音、文本与 lrc 的差异 |

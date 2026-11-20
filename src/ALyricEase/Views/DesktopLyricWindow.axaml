@@ -15,6 +15,11 @@
                 Effect="{CompiledBinding LyricShadow}">
       <!-- 投影挂在容器上(一行一个 Effect 太贵);描边/颜色/字体在每行自己的控件里 -->
       <controls:DesktopLyricText Text="{CompiledBinding Original}"
+                                 Words="{CompiledBinding Words}"
+                                 PositionMs="{CompiledBinding SyllablePositionMs}"
+                                 IsPlaying="{CompiledBinding IsPlayingKaraoke}"
+                                 ShowKaraoke="{CompiledBinding ShowKaraoke}"
+                                 DimTextBrush="{CompiledBinding DimTextBrush}"
                                  FontSize="{CompiledBinding FontSize}"
                                  TextFontFamily="{CompiledBinding LyricFontFamily}"
                                  FontWeight="SemiBold"

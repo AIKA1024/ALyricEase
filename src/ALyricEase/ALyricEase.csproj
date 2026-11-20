@@ -30,6 +30,7 @@
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="Lyricify.Lyrics.Helper" Version="0.2.1" />
     <PackageReference Include="Xaml.Behaviors.Avalonia" Version="12.1.5" />
   </ItemGroup>
 </Project>

@@ -340,6 +340,7 @@ public sealed partial class PlayerViewModel : ViewModelBase, IDisposable
     {
         OnPropertyChanged(nameof(ShowPauseIcon));
         OnPropertyChanged(nameof(ShowPlayIcon));
+        _lyric.IsPlaying = value; // 逐字歌词据此停/起外推
     }
 
     partial void OnIsLoadingChanged(bool value)

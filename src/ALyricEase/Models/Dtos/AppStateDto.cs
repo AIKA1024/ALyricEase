@@ -72,6 +72,8 @@ public sealed class AppStateFile
     public bool? DesktopLyricClickThrough { get; set; }
     public double? DesktopLyricBackgroundOpacity { get; set; }
     public bool? DesktopLyricShowTranslation { get; set; }
+    /// <summary>桌面歌词逐字高亮。null = 旧配置,按默认开处理。</summary>
+    public bool? DesktopLyricKaraokeEnabled { get; set; }
     /// <summary>暂停(或停止)时收起歌词窗口;null 表示沿用旧配置的默认值 false。</summary>
     public bool? DesktopLyricHideWhenPaused { get; set; }
     public double? DesktopLyricFontSize { get; set; }

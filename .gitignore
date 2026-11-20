@@ -5,6 +5,7 @@ obj/
 artifacts/
 # 探针临时输出目录(tmp_shareprobe 之类)
 tmp_*/
+/tmp/
 riderModule.iml
 /_ReSharper.Caches/
 .idea/

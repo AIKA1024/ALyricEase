@@ -28,7 +28,11 @@
 
 - **字体家族**：`FontManager.Current.SystemFonts` 枚举本机字体，第一项「跟随系统默认」= 不写局部值（`ClearValue(TextBlock.FontFamilyProperty)` 回继承）。⚠ 别给 `TextBlock.FontFamily` 塞 null，排版里拿不到家族会出问题；列表为空（Headless / 受限平台）只留默认项，不算错误。
 - **文字颜色**只作用于主歌词；翻译行固定近白色（`#E6FFFFFF`），主歌词换成任意颜色后主次仍分得开。
-- **描边**：Avalonia 没有文字描边原语，公开 API 里只有 `FormattedText.BuildGeometry`，而它不换行（歌词必须换行）⇒ 用 `Controls/DesktopLyricText`：同一段文字在 8 个方向各偏移一层描边色，正文叠在最上面。8 层和正文共享同一格、同一宽度，换行位置天然一致（所以偏移只能写 `RenderTransform`，不能改 `Margin`：外边距会改可用宽度，副本的换行就和正文错开）。关掉描边时副本 `IsVisible=false`，不参与测量。实拍 1.5px / 3px 两档轮廓均匀，没有可见空隙（探针导出 `aly-lyric-outline-{1.5,3.0}.png`）。
+- **描边**：`Controls/TextOutlineLayer` —— `FormattedText`（设 `MaxTextWidth` 折行）→ `BuildGeometry()` → `DrawGeometry(null, Pen(brush, thickness*2){LineJoin=Round})`。一份排版、一次描边，粗细均匀、斜角不变厚；正文（`KaraokeText`）叠在上面，描边内半圈被盖住，外扩正好等于设定宽度。
+  - ⚠ 早先的"8 层偏移副本"已退役。当时的理由「`BuildGeometry` 不支持换行」是**错的**：Avalonia 12 的 `FormattedText` 内部就是 TextLayout，设 `MaxTextWidth` 后返回的是多行 `GeometryGroup`（实测 4 行文本 4 个子项，末行还带居中偏移）。这个结论曾被 XML 文档误导（文档没写换行、也没写 `ShapedTextRun.GlyphRun`），现在用 `--text-geometry` 常驻验证。
+  - ⚠ `Pen` 宽度必须取 2 倍：描边沿轮廓居中。`PenLineJoin.Round` 不能省，默认 Miter 会在字形尖角拉出长刺。
+  - 描边层与正文层必须拿同一套排版参数（宽度 / 对齐 / 行数 / 高度上限），否则换行位置错开。行高实测两路完全一致（149.35 = 149.35）。
+  - 实拍 1.5px / 3px 两档轮廓均匀，没有可见空隙（探针导出 `aly-lyric-outline-{1.5,3.0}.png`）。
 - **阴影**：`DropShadowEffect` 挂在歌词容器上（不是每行一个），关掉时 `LyricShadow` 返回 null —— 不挂 Effect 才是真的不画，半径 0 一样要走离屏渲染。
 
 弹窗里的预览和真实窗口绑的是同一份属性，所以不存在"预览跟实际不一致"的可能。预览**按真实字号 1:1 画**（`FontSize` 直接绑过去，别再封顶）：预览板高度在 116~212 之间跟着长，超长行用 `MaxTextLines`（正文 2 行 / 翻译 1 行）+ 省略号收尾。⚠ 不要退回"像素高度硬裁"（那是窗口那边的模式）：大字号下会长歌词裁在半行上，看着像坏了。
@@ -40,3 +44,38 @@
 系统级置顶、拖动、跨应用穿透以及 Android 授权返回需要真机验收。
 
 ⚠ 截图/渲染前必须 `Dispatcher.UIThread.RunJobs()`：`IsVisible` 的变化要跑一次布局才会反映到卡片高度，否则导出的图是上一帧的排版。
+
+## 逐字高亮（2026-11-18）
+
+桌面歌词复用详情页那套逐字数据：`LyricViewModel.SyllablePositionMs / IsPlaying` + 当前行的 `Words`（yrc 字级时间），由 `DesktopLyricViewModel` 转发到窗口。
+
+- **结构**：`DesktopLyricText` = `TextOutlineLayer`（静态描边几何）+ `KaraokeText`（正文，`TextAlignment=Center`）。没有逐字时 `KaraokeText` 走单色分支，观感与改动前一致；有逐字时画"暗底 + 已唱亮色"，每帧只重画正文这一层。
+- **开关**：设置 → 文字 →「逐字高亮」，落盘字段 `DesktopLyricKaraokeEnabled`（默认开）。关掉后整行单色。
+- **颜色**：已唱 = `TextBrush`；未唱 = `DimTextBrush` = 文字色 × 35%（与详情页同一档）。
+- **范围**：只有主歌词行做逐字；翻译行没有字级时间，保持单色。
+- **成本**（headless CPU 光栅化，720×89 窗口，只能当相对值）：静态 0.08 ms/帧、逐字 0.09 ms/帧、逐字+阴影 0.8 ms/帧 —— 逐字本身几乎免费，**阴影 `Effect` 才是大头**。实测这个量级 60fps 可以接受，所以没有做"逐字时关阴影"的降级；真机如果掉帧，先动这一项。
+- **停泵**：`KaraokeText` 只在 `IsActive && IsPlaying && IsPageActive` 时跑帧循环。桌面歌词窗口隐藏（暂停隐藏）时控件是 detach 的，`OnDetachedFromVisualTree` 停泵、`OnAttachedToVisualTree` 重新起泵。
+
+### 曾经"每句卡一下 / 随机卡住"的两个原因（2026-11-18 修）
+
+都出在 `KaraokeText` 的位置推进，桌面歌词逐字把它放大到肉眼可见（详情页只按整行变亮，看不出来）：
+
+1. **采样回退被原样画出来**。播放器位置是 200ms 轮询、带台阶、会回退（`PlayerViewModel` 为此留了
+   1500ms 噪声容差），而控件每次采样都 `_renderedMs = _sampleMs` 硬重置 ⇒ 每 200ms 亮区往回退一截。
+   `--karaoke-smooth` 实测旧行为：**6 次倒退，最大 -391.8ms（≈两个字）**。现在采样只作目标值，
+   渲染位置用 `Stopwatch` 按帧推进 + 缓动吸收偏差 + 永不后退。
+2. **帧链断一次就永久冻住**。`RequestAnimationFrame` 靠 `OnFrame` 自己续期，某次 tick 被跳过
+   （窗口被遮挡/系统挂起/正在测量）就断了，而旧的 `_looping=true` 让所有重启尝试短路。
+   现在 `Kick()` 在每次采样（5Hz）时用 `_framePending` 去重补帧 —— 断链最多 200ms 自动恢复。
+
+切行本身不是瓶颈：`--desktop-lyrics` 里新增的 `[desktop-switch]` 实测切一句 p50 0.52ms / max 1.53ms
+（含正文 2×TextLayout + 描边 FormattedText/BuildGeometry 重建），远小于 16.7ms 帧预算。
+
+### 顺带修掉的老 bug：`TextLine.Start` 不是字符索引
+
+`KaraokeText` 早先把 `TextLine.Start` 当字符索引用（`ResolveRightEdge((int)line.Start, ...)`）。`Start` 的语义是**"行起点距段落左边的距离"**（居中对齐时 ≈250），字符索引要用 `FirstTextSourceIndex`；行内左/右边界分别用 `Start` 和 `Start + Width`。
+
+- 详情页是左对齐：`Start` 恒为 0，单行时碰巧正确；**一句折两行时第二行会从第 0 个字符开始算**，只是没人逐像素看。
+- 桌面歌词居中：`Start ≈250`，守卫 `line.Start < text.Length` 直接为 false ⇒ 整行永远不亮。
+
+修复后探针新增折行回归 `--karaoke` 的 `wrap` 段：0ms 上下两半都暗、500ms 只亮上半行、1200ms 两半都亮（实测 0/0 → 1655/0 → 1936/2004）。

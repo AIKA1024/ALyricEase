@@ -122,7 +122,8 @@ internal static class DesktopLyricProbe
         var window = new DesktopLyricWindow { DataContext = model };
         window.Show();
         Dispatcher.UIThread.RunJobs();
-        Check(window.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "新歌曲"), "窗口编译绑定");
+        Check(window.GetVisualDescendants().OfType<ALyricEase.Controls.KaraokeText>().Any(t => t.Text == "新歌曲"),
+            "窗口编译绑定");
         // 顶部按钮行已去掉:窗口里不该再有任何按钮,整块歌词区域自己就是拖动热区。
         Check(!window.GetVisualDescendants().OfType<Button>().Any(), "歌词窗口没有按钮行");
         var lyricSurface = window.FindControl<Border>("LyricSurface")!;
@@ -149,7 +150,7 @@ internal static class DesktopLyricProbe
             bitmap.Render(content);
             bitmap.Save(Path.Combine(Path.GetTempPath(), "aly-desktop-lyrics-preview.png"), PngBitmapEncoderOptions.Default);
         }
-        var lyricText = window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "新歌曲");
+        var lyricText = window.GetVisualDescendants().OfType<ALyricEase.Controls.KaraokeText>().First(t => t.Text == "新歌曲");
         var lyricOrigin = lyricText.PointToScreen(default);
         var expandedPosition = window.ExpandedPosition;
         var windowSize = window.ClientSize;
@@ -305,6 +306,9 @@ internal static class DesktopLyricProbe
             "文字颜色即时同步");
         Check(dialog.GetVisualDescendants().OfType<Slider>().Any(s => s.Bounds.Width > 0
             && Avalonia.Automation.AutomationProperties.GetName(s) == "描边粗细"), "描边开启后展开粗细滑块");
+        Check(dialog.GetVisualDescendants().OfType<ToggleSwitch>().Any(t =>
+                Avalonia.Automation.AutomationProperties.GetName(t) == "逐字高亮"),
+            "设置里有逐字高亮开关");
         state.Flush();
         var styled = new AppStateStore(Path.Combine(dir, "state.json"));
         Check(styled.DesktopLyricTextColor == "#FFEEDDCC" && styled.DesktopLyricOutlineEnabled
@@ -384,7 +388,234 @@ internal static class DesktopLyricProbe
                 PngBitmapEncoderOptions.Default);
         }
         styleWindow.Close();
+
+        // ---- 逐字高亮:真实窗口 + 像素断言 ----
+        RunKaraokeChecks(model);
+
         Console.WriteLine("PASS: desktop lyrics");
+    }
+
+    /// <summary>桌面歌词的逐字:关掉时单色、开着时亮区随位置前进、切歌复位。
+    /// 像素只统计歌词控件自己的矩形(窗口里还有翻译行/背景,全窗口统计会串味)。</summary>
+    private static void RunKaraokeChecks(DesktopLyricViewModel model)
+    {
+        model.Enabled = true;
+        model.HideWhenPaused = false;
+        model.BackgroundOpacity = 1;
+        model.ShadowEnabled = false;       // 探针里不需要投影,免得离屏层影响像素
+        model.OutlineEnabled = false;
+        model.ShowTranslation = false;
+        model.Original = "深海中那点光";
+        model.Words = BuildWords("深海中那点光", 200);
+        model.ShowKaraoke = true;
+        model.IsPlayingKaraoke = false;
+
+        var window = new DesktopLyricWindow { DataContext = model };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var row = window.GetVisualDescendants().OfType<ALyricEase.Controls.DesktopLyricText>().First();
+        row.IsPlaying = false;             // 位置完全由探针给定,不要外推
+        Dispatcher.UIThread.RunJobs();
+
+        var atStart = CaptureRow(window, row, model, 0, "karaoke-0");
+        var atMid = CaptureRow(window, row, model, 500, "karaoke-500");
+        var atEnd = CaptureRow(window, row, model, 1200, "karaoke-1200");
+        Console.WriteLine($"[desktop-karaoke] 亮像素: 0ms={atStart} 500ms={atMid} 1200ms={atEnd}");
+        Check(atStart == 0, "逐字:0ms 没有已唱像素");
+        Check(atMid > atStart, "逐字:500ms 亮区变大");
+        Check(atEnd > atMid, "逐字:1200ms 整行唱完");
+
+        // 默认字号的短句居中时，两侧留白都可能比文字本身更宽。
+        var previousSize = model.FontSize;
+        model.FontSize = 28;
+        var previousLit = 0;
+        for (var ms = 100; ms <= 1200; ms += 100)
+        {
+            var lit = CaptureRow(window, row, model, ms, $"center-{ms}");
+            Check(lit > previousLit, $"居中短句每半字都有新增亮像素（{ms}ms）");
+            previousLit = lit;
+        }
+        model.FontSize = previousSize;
+
+        // 关掉开关:整行回到单色(亮像素应等于"整行都亮")
+        model.ShowKaraoke = false;
+        Dispatcher.UIThread.RunJobs();
+        var off = CaptureRow(window, row, model, 500, "karaoke-off");
+        Console.WriteLine($"[desktop-karaoke] 关闭开关后 500ms 亮像素={off}");
+        // 单色 vs "全唱完":两者画的是同一段文字,但逐字路径底下还压着一层暗色,
+        // 抗锯齿边缘会有一圈像素落在阈值下,数量差几个百分点属正常。
+        Check(off >= atEnd * 0.95, "逐字:关闭开关后整行单色");
+
+        model.ShowKaraoke = true;
+
+        // 改文字颜色必须即时生效:画刷已经进了排版缓存键,漏了会一直用旧色。
+        model.TextColor = Avalonia.Media.Color.Parse("#FFFF0000");
+        Dispatcher.UIThread.RunJobs();
+        var recolored = CaptureRow(window, row, model, 500, "karaoke-recolor");
+        Check(recolored == 0, $"改文字颜色即时生效（红色亮度低于阈值，实际亮像素 {recolored}）");
+        model.TextColor = Avalonia.Media.Color.Parse("#FF72E5D3");
+        Dispatcher.UIThread.RunJobs();
+
+        // 没有逐字的行(切歌/纯音乐):整行单色,不能残留半截高亮
+        model.Words = null;
+        Dispatcher.UIThread.RunJobs();
+        var noWords = CaptureRow(window, row, model, 500, "karaoke-nowords");
+        Check(noWords >= atEnd * 0.95, "逐字:没有 yrc 的行整行单色");
+
+        model.Words = BuildWords("深海中那点光", 200);
+        model.SyllablePositionMs = 0;
+        Dispatcher.UIThread.RunJobs();
+
+        // 超长行必须按窗口给的 200px 上限裁掉,不能把歌词窗口顶到屏幕上沿。
+        // 注意先清掉 Words:KaraokeText 在逐字模式下用"字拼接"当显示文本,留着旧词就测不到新文本。
+        model.Words = null;
+        model.Original = string.Concat(Enumerable.Repeat("很长的一句歌词用来验证高度上限。", 6));
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+        var tall = row.Bounds.Height;
+        Check(tall > 100 && tall <= 200.5, $"超长行按高度上限裁剪（实际 {tall:0.#}）");
+        model.Original = "深海中那点光";
+        model.Words = BuildWords("深海中那点光", 200);
+        Dispatcher.UIThread.RunJobs();
+
+        // 每帧成本(headless CPU 光栅化,只能当相对值看):静态 / 逐字 / 逐字+阴影。
+        model.ShowKaraoke = false;
+        model.ShadowEnabled = false;
+        Dispatcher.UIThread.RunJobs();
+        MeasureFrames(window, "静态(无阴影)");
+
+        model.ShowKaraoke = true;
+        Dispatcher.UIThread.RunJobs();
+        MeasureFrames(window, "逐字(无阴影)");
+
+        model.ShadowEnabled = true;
+        Dispatcher.UIThread.RunJobs();
+        MeasureFrames(window, "逐字 + 阴影");
+
+        model.ShadowEnabled = false;
+        model.ShowKaraoke = true;
+        Dispatcher.UIThread.RunJobs();
+        MeasureLineSwitch(window, model);
+
+        window.Close();
+    }
+
+    /// <summary>切行成本:换一句歌词要重建两层的排版(正文 2×TextLayout + 描边 FormattedText/几何)。
+    /// 这一帧若明显比稳态贵,逐字动画就会在每句开头顿一下 —— 与位置回退是两条独立原因。</summary>
+    private static void MeasureLineSwitch(Window window, DesktopLyricViewModel model, int count = 24)
+    {
+        var sentences = new[]
+        {
+            "深海中那点光在闪烁",
+            "谁说对弈平凡的不算英雄",
+            "爱你孤身走暗巷爱你不跪的模样",
+            "去吗 配吗 这褴褛的披风",
+        };
+
+        var size = new PixelSize(
+            (int)Math.Ceiling(window.ClientSize.Width), (int)Math.Ceiling(window.ClientSize.Height));
+        using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
+
+        var times = new List<double>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var text = sentences[i % sentences.Length];
+            model.Original = text;
+            model.Words = BuildWords(text, 150);
+            model.SyllablePositionMs = i * 3000L;
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            Dispatcher.UIThread.RunJobs();
+            window.UpdateLayout();
+            bitmap.Render(window);
+            sw.Stop();
+            times.Add(sw.Elapsed.TotalMilliseconds);
+        }
+
+        var sorted = times.OrderBy(t => t).ToList();
+        Console.WriteLine($"[desktop-switch] 切行 p50={sorted[count / 2]:0.00} " +
+                          $"p90={sorted[(int)(count * 0.9)]:0.00} max={sorted[^1]:0.00} ms");
+    }
+
+    private static void MeasureFrames(Window window, string label, int frames = 24)
+    {
+        var size = new PixelSize(
+            (int)Math.Ceiling(window.ClientSize.Width), (int)Math.Ceiling(window.ClientSize.Height));
+        using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
+        bitmap.Render(window); // 预热:首帧含布局与纹理创建
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < frames; i++)
+        {
+            window.InvalidateVisual();
+            bitmap.Render(window);
+        }
+        sw.Stop();
+        Console.WriteLine($"[desktop-frame] {label}: {sw.Elapsed.TotalMilliseconds / frames:0.00} ms/帧");
+    }
+
+    private static IReadOnlyList<LyricWord> BuildWords(string text, long durationMs)
+    {
+        var words = new List<LyricWord>();
+        long t = 0;
+        foreach (var ch in text)
+        {
+            words.Add(new LyricWord(ch.ToString(), t, t + durationMs));
+            t += durationMs;
+        }
+        return words;
+    }
+
+    private static int CaptureRow(
+        Window window, Control row, DesktopLyricViewModel model, long positionMs, string name)
+    {
+        model.SyllablePositionMs = positionMs;
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
+
+        var size = new PixelSize(
+            (int)Math.Ceiling(window.ClientSize.Width), (int)Math.Ceiling(window.ClientSize.Height));
+        using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
+        bitmap.Render(window);
+        bitmap.Save(Path.Combine(Path.GetTempPath(), $"aly-desktop-lyric-{name}.png"),
+            PngBitmapEncoderOptions.Default);
+
+        var stride = size.Width * 4;
+        var buffer = new byte[stride * size.Height];
+        var handle = System.Runtime.InteropServices.GCHandle.Alloc(
+            buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+        try
+        {
+            bitmap.CopyPixels(new PixelRect(0, 0, size.Width, size.Height),
+                handle.AddrOfPinnedObject(), buffer.Length, stride);
+        }
+        finally
+        {
+            handle.Free();
+        }
+
+        var origin = row.TranslatePoint(default, window) ?? default;
+        var x0 = Math.Clamp((int)origin.X, 0, size.Width);
+        var y0 = Math.Clamp((int)origin.Y, 0, size.Height);
+        var x1 = Math.Clamp((int)(origin.X + row.Bounds.Width), 0, size.Width);
+        var y1 = Math.Clamp((int)(origin.Y + row.Bounds.Height), 0, size.Height);
+
+        var lit = 0;
+        for (var y = y0; y < y1; y++)
+        {
+            var rowStart = y * stride;
+            for (var x = x0; x < x1; x++)
+            {
+                var i = rowStart + x * 4;
+                if (i + 3 >= buffer.Length) break;
+                var lum = (buffer[i] + buffer[i + 1] + buffer[i + 2]) / 3;
+                if (lum > 130) lit++;   // 已唱(原文字色) / 单色行
+            }
+        }
+
+        Console.WriteLine($"[desktop-karaoke:{name}] rect=({x0},{y0})-({x1},{y1}) lit={lit}");
+        return lit;
     }
 
     private static void PumpUntil(Func<bool> condition)

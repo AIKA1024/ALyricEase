@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.ComponentModel;
+using ALyricEase.Models;
 using ALyricEase.Services;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -22,6 +23,7 @@ public sealed partial class DesktopLyricViewModel : ViewModelBase, IDisposable
         _enabled = state.DesktopLyricEnabled;
         _clickThrough = state.DesktopLyricClickThrough;
         _showTranslation = state.DesktopLyricShowTranslation;
+        _showKaraoke = state.DesktopLyricKaraokeEnabled;
         _hideWhenPaused = state.DesktopLyricHideWhenPaused;
         _fontSize = state.DesktopLyricFontSize;
         _backgroundOpacity = state.DesktopLyricBackgroundOpacity;
@@ -44,6 +46,18 @@ public sealed partial class DesktopLyricViewModel : ViewModelBase, IDisposable
     private bool _enabled;
     public string StatusText => Enabled ? "已开启" : "已关闭";
     [ObservableProperty] private bool _showTranslation;
+
+    /// <summary>桌面歌词逐字高亮(设置项)。关掉后正文单色,与改动前一致。</summary>
+    [ObservableProperty] private bool _showKaraoke;
+
+    /// <summary>当前行的逐字时间轴;null = 没有 yrc,正文退回单色。</summary>
+    [ObservableProperty] private IReadOnlyList<LyricWord>? _words;
+
+    /// <summary>逐字位置(与详情页同一个时间轴,已叠加 [offset:])。</summary>
+    [ObservableProperty] private long _syllablePositionMs;
+
+    /// <summary>播放态。逐字控件据此决定是否继续外推。</summary>
+    [ObservableProperty] private bool _isPlayingKaraoke;
     /// <summary>暂停 / 停止时收起歌词窗口。歌词开着的用户随时可以再播、或用快捷键切歌。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsWindowVisible))]
@@ -122,6 +136,10 @@ public sealed partial class DesktopLyricViewModel : ViewModelBase, IDisposable
         string.IsNullOrWhiteSpace(FontFamilyName) ? null : new FontFamily(FontFamilyName);
 
     public IBrush TextBrush => new SolidColorBrush(TextColor);
+
+    /// <summary>逐字时"未唱"部分的颜色:文字色 × 35%(和详情页同一档)。</summary>
+    public IBrush DimTextBrush => new SolidColorBrush(Color.FromArgb(
+        (byte)Math.Round(255 * 0.35), TextColor.R, TextColor.G, TextColor.B));
     public IBrush OutlineBrush => new SolidColorBrush(OutlineColor);
     /// <summary>翻译行固定近白色:主歌词换色后仍能一眼分出主次。</summary>
     public IBrush TranslationBrush => new SolidColorBrush(Color.FromArgb(230, 255, 255, 255));
@@ -209,7 +227,17 @@ public sealed partial class DesktopLyricViewModel : ViewModelBase, IDisposable
         _state.Save();
     }
 
-    partial void OnTextColorChanged(Color value) => SaveColor(value, v => _state.DesktopLyricTextColor = v);
+    partial void OnTextColorChanged(Color value)
+    {
+        OnPropertyChanged(nameof(DimTextBrush));
+        SaveColor(value, v => _state.DesktopLyricTextColor = v);
+    }
+
+    partial void OnShowKaraokeChanged(bool value)
+    {
+        _state.DesktopLyricKaraokeEnabled = value;
+        _state.Save();
+    }
     partial void OnOutlineColorChanged(Color value) => SaveColor(value, v => _state.DesktopLyricOutlineColor = v);
     partial void OnShadowColorChanged(Color value) => SaveColor(value, v => _state.DesktopLyricShadowColor = v);
 
@@ -311,8 +339,21 @@ public sealed partial class DesktopLyricViewModel : ViewModelBase, IDisposable
 
     private void OnLyricChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(LyricViewModel.CurrentIndex) or nameof(LyricViewModel.Lines)
-            or nameof(LyricViewModel.HasLyric) or nameof(LyricViewModel.Song)) RefreshText();
+        switch (e.PropertyName)
+        {
+            case nameof(LyricViewModel.SyllablePositionMs):
+                SyllablePositionMs = _lyric.SyllablePositionMs;
+                break;
+            case nameof(LyricViewModel.IsPlaying):
+                IsPlayingKaraoke = _lyric.IsPlaying;
+                break;
+            case nameof(LyricViewModel.CurrentIndex):
+            case nameof(LyricViewModel.Lines):
+            case nameof(LyricViewModel.HasLyric):
+            case nameof(LyricViewModel.Song):
+                RefreshText();
+                break;
+        }
     }
 
     private void RefreshText()
@@ -326,6 +367,9 @@ public sealed partial class DesktopLyricViewModel : ViewModelBase, IDisposable
         Translation = line is null
             ? (song is null ? "播放音乐后显示歌词" : song.Artist)
             : ShowTranslation ? line.Translation ?? "" : "";
+        Words = line?.Words;
+        SyllablePositionMs = _lyric.SyllablePositionMs;
+        IsPlayingKaraoke = _lyric.IsPlaying;
     }
 
     [RelayCommand] private void Close() => Enabled = false;

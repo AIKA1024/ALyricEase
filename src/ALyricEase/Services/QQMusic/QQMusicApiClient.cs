@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using ALyricEase.Models;
 using ALyricEase.Models.Dtos;
+using ALyricEase.Services.Lrc;
 using ALyricEase.Services.NetEase;
 using ALyricEase.Services.Network;
 using Microsoft.Extensions.Logging;
@@ -1109,16 +1110,17 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         return null; // 全部档位不可播(VIP/版权/曲目无该档文件),由调用方提示
     }
 
-    /// <summary>歌词:主路径 fcg_query_lyric_new.fcg(base64);负业务码或空时回落
-    /// musicu.musichallSong.PlayLyricInfo。两通道都无歌词则返回空 LyricResult(UI 显示空态)。</summary>
+    /// <summary>优先请求带逐字时间的歌词；旧网页接口和普通 LRC 接口补齐缺失的原文或翻译。</summary>
     public async Task<LyricResult?> GetLyricAsync(Song song, CancellationToken ct = default)
     {
         var mid = await EnsureMidAsync(song, ct).ConfigureAwait(false);
         if (mid.Length == 0)
             throw new ApiException("缺少歌曲 mid,无法获取歌词", -1);
 
-        var original = "";
-        var translation = "";
+        var timed = await TryLyricByMusicuAsync(song, mid, wordTiming: true, ct).ConfigureAwait(false);
+        var original = timed?.Original ?? "";
+        var translation = timed?.Translation ?? "";
+        if (original.Length > 0 && translation.Length > 0) return timed;
         try
         {
             var query = new Dictionary<string, string?>
@@ -1134,27 +1136,30 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
             var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQLyricFcgResponse);
             if (resp is not null && !HasNegativeBizCode(resp.Retcode, resp.Code, resp.Subcode))
             {
-                original = DecodeBase64(resp.Lyric);
-                translation = DecodeBase64(resp.Trans);
+                if (original.Length == 0) original = DecodeBase64(resp.Lyric);
+                if (translation.Length == 0) translation = DecodeBase64(resp.Trans);
             }
         }
-        catch (ApiException)
+        catch (Exception ex) when (IsLyricRequestFailure(ex, ct))
         {
-            // 主通道异常 → 走回落
+            // 网页接口不可用时保留已取得的 QRC。
         }
 
-        // 旧网页接口目前通常只返回原文、Trans 为空。只在两者都为空时回落会让
-        // QQ 歌曲永远拿不到翻译；新接口同时用于补齐缺失的一侧，已有结果不覆盖。
-        if (original.Length == 0 || translation.Length == 0)
+        // 逐字请求失败时，普通 LRC 请求仍可补齐网页接口缺失的原文或翻译。
+        if (timed is not { Original.Length: > 0 } && (original.Length == 0 || translation.Length == 0))
         {
-            var fallback = await TryLyricByMusicuAsync(song, mid, ct).ConfigureAwait(false);
+            var fallback = await TryLyricByMusicuAsync(song, mid, wordTiming: false, ct).ConfigureAwait(false);
             if (fallback is not null)
             {
                 if (original.Length == 0) original = fallback.Original;
                 if (translation.Length == 0) translation = fallback.Translation;
             }
         }
-        return new LyricResult { Original = original, Translation = translation };
+        return new LyricResult
+        {
+            Original = original, Translation = translation,
+            Cacheable = timed is { Original.Length: > 0 },
+        };
     }
 
     /// <summary>按数字 id 取歌曲详情:music.pf_song_detail_svr/get_song_detail_yqq(顺带填 mid 缓存)。</summary>
@@ -3279,7 +3284,10 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
         }
     }
 
-    private async Task<LyricResult?> TryLyricByMusicuAsync(Song song, string mid, CancellationToken ct)
+    private static bool IsLyricRequestFailure(Exception ex, CancellationToken ct) =>
+        !ct.IsCancellationRequested && ex is ApiException or HttpRequestException or OperationCanceledException or JsonException;
+
+    private async Task<LyricResult?> TryLyricByMusicuAsync(Song song, string mid, bool wordTiming, CancellationToken ct)
     {
         try
         {
@@ -3288,14 +3296,13 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 WriteModuleReq(w, "music.musichallSong.PlayLyricInfo", "GetPlayLyricInfo", p =>
                 {
                     // 当前接口只有在附带歌曲元数据并显式 trans=1 时才返回翻译。
-                    // qrc=0 + crypt=0 请求 Base64 LRC；qrc=1 会返回需另行解密的加密 QRC。
                     p.WriteString("albumName", EncodeBase64(song.Album));
                     p.WriteNumber("crypt", 0);
                     p.WriteNumber("ct", 19);
                     p.WriteNumber("cv", 2111);
                     p.WriteNumber("interval", Math.Max(0, song.DurationMs / 1000));
                     p.WriteNumber("lrc_t", 0);
-                    p.WriteNumber("qrc", 0);
+                    p.WriteNumber("qrc", wordTiming ? 1 : 0);
                     p.WriteNumber("qrc_t", 0);
                     p.WriteNumber("roma", 0);
                     p.WriteNumber("roma_t", 0);
@@ -3309,14 +3316,14 @@ public sealed class QQMusicApiClient : IMusicApi, IUserMusicApi
                 });
             }, ct).ConfigureAwait(false);
             var resp = doc.RootElement.Deserialize(QQMusicJsonContext.Default.QQMusicuLyricResponse);
-            var data = resp?.Req0?.Data;
-            if (data is null) return null;
-            var original = DecodeBase64(data.Lyric);
-            var translation = DecodeBase64(data.Trans);
+            if (resp is not { Code: 0, Req0: { Code: 0, Data: { } data } }) return null;
+            var original = QqLyricDecoder.Decode(data.Lyric);
+            var translation = QqLyricDecoder.Decode(data.Trans);
+            if (original.Length > 0 && LrcParser.Parse(original).IsEmpty) original = "";
             if (original.Length == 0 && translation.Length == 0) return null;
             return new LyricResult { Original = original, Translation = translation };
         }
-        catch (ApiException)
+        catch (Exception ex) when (IsLyricRequestFailure(ex, ct))
         {
             return null; // 回落失败不抛,LrcParser 对空文本显示空态
         }

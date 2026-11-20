@@ -284,6 +284,19 @@
                                                 Label="歌词字体颜色" />
                   </StackPanel>
                 </Border>
+                <Border Classes="card">
+                  <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Classes="row-title" Text="逐字高亮" />
+                        <TextBlock Classes="row-desc" Text="唱到哪个字亮到哪个字。只有带逐字时间轴的歌才有效，其余歌整句单色。" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" OnContent="" OffContent="" MinWidth="0"
+                                    IsChecked="{CompiledBinding ShowKaraoke, Mode=TwoWay}"
+                                    AutomationProperties.Name="逐字高亮" />
+                    </Grid>
+                  </StackPanel>
+                </Border>
               </StackPanel>
 
               <!-- 效果 -->

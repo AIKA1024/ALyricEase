@@ -1410,6 +1410,45 @@ public static class Program
             return;
         }
 
+        // 文字描边可行性:FormattedText 折行 + 几何轮廓是否可用(--text-geometry)
+        if (args.Length > 0 && args[0] == "--text-geometry")
+        {
+            Environment.ExitCode = TextGeometryProbe.Run();
+            return;
+        }
+
+        // 逐字位置流畅度:采样抖动/回退是否会造亮区停顿或倒退(--karaoke-smooth)
+        if (args.Length > 0 && args[0] == "--karaoke-smooth")
+        {
+            Environment.ExitCode = KaraokeSmoothProbe.Run();
+            return;
+        }
+
+        // 逐字歌词渲染:detail 模板里的 KaraokeText 亮区是否随位置前进(--karaoke)
+        if (args.Length > 0 && args[0] == "--karaoke")
+        {
+            Environment.ExitCode = KaraokeProbe.Run();
+            return;
+        }
+
+        // 逐字歌词真实数据版:线上 yrc → LrcParser → detail 模板,像素验证双色高亮(--karaoke-real [id])
+        if (args.Length > 0 && args[0] is "--karaoke-real" or "--qq-karaoke-real")
+        {
+            var qq = args[0] == "--qq-karaoke-real";
+            Environment.ExitCode = KaraokeProbe.RunReal(
+                args.Length > 1 ? long.Parse(args[1]) : qq ? 97773 : 1901371647, qq);
+            return;
+        }
+
+        // 逐字歌词端到端:weapi/song/lyric/v1 返回 yrc → YrcParser → 按行贴到 LRC(--yrc [id...])
+        if (args.Length > 0 && args[0] == "--yrc")
+        {
+            Environment.ExitCode = System.Threading.Tasks.Task.Run(
+                    () => YrcProbe.RunAsync(args.Length > 1 ? args[1..] : []))
+                .GetAwaiter().GetResult();
+            return;
+        }
+
         // 官方客户端代理登录端到端:CopycatProxy MITM 捕获伪造 eapi 请求的 MUSIC_U(验证器注入,不碰存档)
         if (args.Length > 0 && args[0] == "--neproxy")
         {

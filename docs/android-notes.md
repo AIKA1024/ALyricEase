@@ -348,9 +348,9 @@ CL=0.5     52.3 / 52.2fps  max 168 / 139     >50ms=11 / 11 分配 57.9 / 57.5MB
 3. **滚动 55.3 vs jitter 59.0**:再掉 3.7fps,且 >50ms 从 1 涨到 7 ——
    **毛刺主要来自"容器实化/回收"这一刻的一次性成本**,不是每帧布局。
 
-**尖峰不是 GC**:同轮 logcat 里 ART 的并发复制 GC `paused` 只有 28~70µs
-(total 8~26ms 走后台线程),与 67~168ms 的尖峰对不上。也不是封面解码(四轮都从 y=0 起滚,
-第 2~4 轮命中缓存,尖峰没有下降)。
+同轮 logcat 里 ART 报告的 `paused` 只有 28~70µs。这个字段只计 ART 暂停线程的时间。
+排查 .NET 界面的长帧还需要对齐整次跨运行时回收与帧回调的时间戳。四轮都从 y=0 起滚，
+第 2~4 轮封面命中缓存时仍有尖峰。
 
 **机制**:Avalonia 的滚动是**布局驱动**的 —— `ScrollContentPresenter.OnPropertyChanged(Offset)`
 直接 `InvalidateArrange()`,下一帧 `ArrangeOverrideImpl(size, -Offset)` 重摆子元素,不走合成层平移。
@@ -399,16 +399,14 @@ CL=0.5     52.3 / 52.2fps  max 168 / 139     >50ms=11 / 11 分配 57.9 / 57.5MB
 - **`IRecyclingDataTemplate`(容器内容回收)** → 无差异。58.3 → 58.6fps(噪声内),
   分配只降 4%。它绕开的是 #20259 说的"每次重建模板内容",但**重建本来不是大头**:
   每轮滚 78 行,一行 15 个 visual ≈ 5KB,合计 ~400KB,只占 26MB/轮的 1.5%。
-  大头是每帧布局的临时分配(≈78KB/帧),而 Gen0 GC 很快,不构成卡顿。⇒ 已撤销。
+  此轮仍有约 78KB/帧的临时分配。已撤销这次模板实验。
 - **`CacheLength`**(官方文档把它叫 `BufferFactor`,12.1.6 里只有 `CacheLength`)→ 负收益,见上。
 - **`ItemsRepeater`** → 12.0 已退役(官方 performance 文档写明),社区反馈比 VSP 更慢(FluentAvalonia #445),
   不用考虑。
 - **`SkiaOptions.MaxGpuResourceSizeBytes`**(默认 28MB)→ 未试:瓶颈在 UI 线程布局,
   不在 GPU 纹理回收,预期无效。
 
-**天花板**:精简模板下滚动 58.3 / 空转 61.8 = **94%**。剩下的 ~3.5fps 是 Avalonia 布局引擎的固定成本
-(每帧 `Offset` ⇒ 整屏 Arrange),不换架构拿不回来。再往下只能砍功能(去封面、合并文本行),
-或者等上游 #20259 那个"内容级虚拟化"落地。
+精简模板下，脚本匀速滚动 58.3 FPS，空转 61.8 FPS。快速触屏甩动还需测长帧次数和最长间隔。
 
 **复跑**:
 ```
@@ -418,6 +416,29 @@ adb logcat -d -s ALyricEaseProbe:I
 ⚠ 必须用 **Release** 包测(Debug 是 JIT,帧率没有参考价值),先手动进歌单页再发 intent。
 横屏(TrackRowPlaylistWideTouchTheme)与专辑页(TrackRowAlbumTouchTheme)已用截图确认
 列顺序/对齐无回归。
+
+### 快速甩动时的短顿（2026-11-20）
+
+一加 7 Pro，Android 14，60 Hz，ARM64 Release，.NET 11 CoreCLR，Avalonia 12.1.6。
+在「咸咸的鱼干喜欢的音乐」用相同的 38 次触摸滑动测试每个方向。通过 `aly_probe=scroll-input`
+记录 25 秒的 UI 帧回调间隔、列表行数和分页状态。另用 `adb logcat -v monotonic` 对齐 ART
+显式回收时间，用 `atrace gfx view input dalvik` 统计首次按下至末次抬手间的 EGL 提交间隔。
+
+已加载约 1,110 行时，默认配置的两轮合计出现 48 次至少 50 ms 的帧回调间隔，每次都和
+ART 显式回收重叠。将 Gen0 分配预算放宽到 16–32 MiB 后，次数降到 23，最长间隔却从
+84 ms 增至 244 ms。本机采到的是时间重叠。上游在另一台设备记录到了 UI 线程等待跨运行时
+垃圾回收的调用栈。[.NET Android 实验记录](https://github.com/dotnet/runtime/issues/131370#issuecomment-5494255083)
+
+| 场景 | 默认配置 | Gen0 预算 1–2 MiB |
+|---|---:|---:|
+| 冷启动后边加载边滑，行数从 210 增至 910 | 28 次长帧，最长 103 ms | 14 次长帧，最长 78 ms |
+| 同一轮滑动，EGL 提交间隔 P99 | 82.8 ms | 51.5 ms |
+| 加载后反向 / 正向各滑 38 次，长帧次数 | 25 / 23 | 第一轮 0 / 0，重启复测 16 / 22 |
+| 加载后反向 / 正向的 EGL 提交间隔 P99 | 66.4 / 67.4 ms | 第一轮 32.1 / 31.0 ms，重启复测 49.9 / 50.3 ms |
+
+Android 项目的 `gc.env` 采用 1–2 MiB。冷启动测试结束时，进程 PSS 为 490 MiB，默认配置为
+492 MiB。再收紧到 0.5–1 MiB，同一段分页滚动仍有 14 次长帧，ART 显式回收次数从 91 增至
+192。以上为单机结果。长帧按 UI 帧回调间隔至少 50 ms 计，EGL 提交间隔另从系统轨迹计算。
 
 ## 13. 悬浮歌词去掉按钮行，改成纯歌词窗口(2026-11-12)
 

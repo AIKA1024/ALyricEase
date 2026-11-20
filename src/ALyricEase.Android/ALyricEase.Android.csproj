@@ -44,6 +44,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AndroidEnvironment Include="gc.env" />
     <ProjectReference Include="..\ALyricEase\ALyricEase.csproj" />
   </ItemGroup>
 

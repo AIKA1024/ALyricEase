@@ -61,6 +61,42 @@ internal static class DeviceScrollProbe
 
     public static void Run() => Dispatcher.UIThread.Post(() => _ = RunAsync());
 
+    // Observe actual touch/inertia without driving Offset. Buffer in memory so logging doesn't affect the frames.
+    public static void ObserveInput() => Dispatcher.UIThread.Post(() =>
+    {
+        var top = FindTopLevel();
+        if (top is null || FindScroller(top) is not { DataContext: ViewModels.PlaylistViewModel vm } sv)
+        {
+            Emit("scroll-input: open a playlist first");
+            return;
+        }
+
+        var clock = Stopwatch.StartNew();
+        var samples = new List<(double Ms, double Y, double Max, int Rows, bool Paging)>(2048);
+        void Tick(TimeSpan _)
+        {
+            var ms = clock.Elapsed.TotalMilliseconds;
+            samples.Add((ms, sv.Offset.Y, sv.ScrollBarMaximum.Y, vm.Tracks.Count, vm.IsLoadingMore));
+            if (ms < 25000)
+            {
+                top.RequestAnimationFrame(Tick);
+                return;
+            }
+
+            for (var i = 1; i < samples.Count; i++)
+            {
+                var prev = samples[i - 1];
+                var s = samples[i];
+                if (i == 1 || s.Ms - prev.Ms >= 50 || s.Paging != prev.Paging || s.Rows != prev.Rows
+                    || (s.Max - s.Y < 1) != (prev.Max - prev.Y < 1) || i % 12 == 0)
+                    Emit($"input ms={s.Ms:F0} dt={s.Ms-prev.Ms:F0} y={s.Y:F0} max={s.Max:F0} rows={s.Rows} paging={s.Paging}");
+            }
+            Emit("scroll-input complete");
+        }
+        Emit("scroll-input recording");
+        top.RequestAnimationFrame(Tick);
+    });
+
     private static async Task RunAsync()
     {
         try

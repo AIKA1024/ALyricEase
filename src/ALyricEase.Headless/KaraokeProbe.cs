@@ -62,6 +62,7 @@ internal static class KaraokeProbe
                           ?? throw new InvalidOperationException("detail 模板里没有 KaraokeText。");
             if (!karaoke.IsActive)
                 throw new InvalidOperationException("IsActive 绑定失败:当前行没有进入逐字模式。");
+            CheckSelectionIndicator(list);
 
             Console.WriteLine($"[karaoke] container.Opacity={container.Opacity} classes=[{string.Join(",", container.Classes)}] " +
                               $"active={karaoke.IsActive} accent={karaoke.AccentBrush} dim={karaoke.DimBrush} " +
@@ -93,6 +94,7 @@ internal static class KaraokeProbe
             view.UpdateLayout();
             if (karaoke.IsActive)
                 throw new InvalidOperationException("切行后旧当前行仍是 IsActive。");
+            CheckSelectionIndicator(list);
 
             Console.WriteLine("[karaoke] PASS: 亮区随位置前进,切行后退出逐字模式");
             CheckWrapped();
@@ -105,6 +107,14 @@ internal static class KaraokeProbe
             Console.Error.WriteLine($"[karaoke] FAIL: {ex.Message}");
             return 1;
         }
+    }
+
+    private static void CheckSelectionIndicator(ListBox list)
+    {
+        if (list.ContainerFromIndex(list.SelectedIndex) is not ListBoxItem { IsSelected: true } row)
+            throw new InvalidOperationException("当前歌词行未选中。");
+        if (row.GetVisualDescendants().OfType<Control>().Any(c => c.Name == "SelectionIndicator" && c.IsEffectivelyVisible))
+            throw new InvalidOperationException("当前歌词行左侧出现了列表选中标记。");
     }
 
     private static void CheckProgressUpdates(IReadOnlyList<LyricWord> words)

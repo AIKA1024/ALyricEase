@@ -25,7 +25,7 @@ public partial class LyricView : UserControl
     /// 选中变化时自己 ScrollIntoView,这条抑制拦不住框架的拉回(--lyrscroll 实测复现,2026-09-30 修)。
     /// </summary>
     private const long AutoFollowPauseMs = 4000;
-    private long _lastUserScrollTimestamp;
+    private long? _lastUserScrollTimestamp;
 
     /// <summary>
     /// 自身 + **全部祖先**的 `IsVisible` 订阅集(必须记住:脱离视觉树后祖先链就断了,靠回走收不回来,
@@ -199,6 +199,12 @@ public partial class LyricView : UserControl
         return true;
     }
 
+    private void OnLyricListSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        // Fluent 2 把 ListBox.Padding 放在可滚动内容内，尾部留半个视口即可居中末句。
+        LyricList.Padding = new Thickness(0, 0, 0, e.NewSize.Height / 2);
+    }
+
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         UpdateProgressClasses();
@@ -228,7 +234,7 @@ public partial class LyricView : UserControl
     }
 
     private bool IsAutoFollowSuppressed
-        => Environment.TickCount64 - _lastUserScrollTimestamp < AutoFollowPauseMs;
+        => _lastUserScrollTimestamp is long timestamp && Environment.TickCount64 - timestamp < AutoFollowPauseMs;
 
     private void OnLyricListUserScroll(object? sender, RoutedEventArgs e)
         => MarkUserScroll();
@@ -402,11 +408,11 @@ public partial class LyricView : UserControl
         var viewportHeight = scroll.Viewport.Height;
         if (itemHeight <= 0 || viewportHeight <= 0) return; // 布局未就绪
 
-        // 项在内容坐标系中的顶部 = 视口内位置 + 当前偏移
-        var pos = container.TranslatePoint(new Point(0, 0), scroll);
+        // 选中动画会缩放歌词行；直接换算行中心，避免把缩放后的顶部和布局高度混用。
+        var pos = container.TranslatePoint(new Point(0, itemHeight / 2), scroll);
         if (pos is null) return;
 
-        var desired = pos.Value.Y + scroll.Offset.Y + itemHeight / 2 - viewportHeight / 2;
+        var desired = pos.Value.Y + scroll.Offset.Y - viewportHeight / 2;
         var maxY = Math.Max(0.0, scroll.Extent.Height - viewportHeight);
         var targetY = Math.Clamp(desired, 0, maxY);
         var startY = scroll.Offset.Y;
@@ -455,6 +461,10 @@ public partial class LyricView : UserControl
         var positionMs = DataContext is LyricViewModel vm
             ? vm.GetPlaybackPositionMs(line)
             : Math.Max(0, line.TimeMs);
+        // 跳播后立即跟随；重播当前句不会触发 SelectionChanged，需要在此居中。
+        _lastUserScrollTimestamp = null;
+        if (container.IsSelected && IsEffectivelyPresentable())
+            Recenter(LyricList.SelectedIndex);
         SeekRequested?.Invoke(this, new LyricSeekRequestedEventArgs(positionMs));
         e.Handled = true;
     }

@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:views="using:ALyricEase.Views"
+             xmlns:input="using:Avalonia.Input.TextInput"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:SettingsViewModel"
              mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="1200"
@@ -31,17 +32,22 @@
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
-    <!-- 缓存上限在窄屏分两行，避免标题和帮助按钮被数值输入框挤压。 -->
-    <Style Selector="Grid.cache-limit-row > StackPanel.cache-limit-editor">
-      <Setter Property="Grid.Column" Value="2" />
-      <Setter Property="Grid.Row" Value="0" />
-      <Setter Property="HorizontalAlignment" Value="Right" />
+    <Style Selector="Grid.cache-limit-row NumericUpDown">
+      <Setter Property="Width" Value="140" />
+      <Setter Property="Height" Value="32" />
     </Style>
-    <Style Selector="Grid.cache-limit-row.compact > StackPanel.cache-limit-editor">
-      <Setter Property="Grid.Column" Value="1" />
-      <Setter Property="Grid.Row" Value="1" />
-      <Setter Property="Grid.ColumnSpan" Value="2" />
-      <Setter Property="Margin" Value="0,8,0,0" />
+    <Style Selector="Grid.cache-limit-row.compact NumericUpDown">
+      <Setter Property="ShowButtonSpinner" Value="False" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Width" Value="76" />
+      <Setter Property="Height" Value="40" />
+      <Setter Property="TextAlignment" Value="Right" />
+    </Style>
+    <Style Selector="Grid.cache-limit-row.compact > TextBlock.setting-icon">
+      <Setter Property="Margin" Value="0,0,8,0" />
+    </Style>
+    <Style Selector="Grid.cache-limit-row.minimal > TextBlock.setting-icon">
+      <Setter Property="IsVisible" Value="False" />
     </Style>
     <!-- "关于该选项"青色下划线链接(悬停提示说明) -->
     <Style Selector="TextBlock.about-link">
@@ -373,11 +379,11 @@
       <TextBlock Classes="section-header" Text="存储" />
 
       <Border x:Name="CacheLimitCard" Classes="setting-card" Margin="0,0,0,8">
-        <Grid Classes="cache-limit-row" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto"
+        <Grid Classes="cache-limit-row" ColumnDefinitions="Auto,*,Auto"
               SizeChanged="OnCacheLimitRowSizeChanged">
           <TextBlock Classes="setting-icon" Text="{DynamicResource IconMusicNote}" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
-                      VerticalAlignment="Center" Margin="0,0,16,0">
+                      VerticalAlignment="Center">
             <TextBlock Classes="setting-title" Text="缓存上限" />
             <!-- Fluent Info label：说明按需打开，触屏和键盘都可访问。 -->
             <Button x:Name="CacheLimitInfoButton" Classes="icon-button" Width="40" Height="40"
@@ -395,9 +401,8 @@
               </Button.Flyout>
             </Button>
           </StackPanel>
-          <StackPanel Classes="cache-limit-editor" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <NumericUpDown Width="140" Height="32"
-                           AutomationProperties.Name="缓存上限（MB）"
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Right">
+            <NumericUpDown AutomationProperties.Name="缓存上限（MB）" input:TextInputOptions.ContentType="Digits"
                            Minimum="128" Maximum="10240" Increment="128"
                            Value="{CompiledBinding MusicCacheMaximumSizeMb, Mode=TwoWay}" />
             <TextBlock Text="MB" FontSize="13" VerticalAlignment="Center"

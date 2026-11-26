@@ -23,7 +23,8 @@ public partial class SettingsView : UserControl
 
     private void OnCacheLimitRowSizeChanged(object? sender, SizeChangedEventArgs e)
     {
-        if (sender is Grid row)
-            row.Classes.Set("compact", e.NewSize.Width < 360);
+        if (sender is not Grid row) return;
+        row.Classes.Set("compact", e.NewSize.Width < 360);
+        row.Classes.Set("minimal", e.NewSize.Width < 232);
     }
 }

@@ -176,10 +176,12 @@ internal static class UserRelationsProbe
         // —— 页内 Tabs:切到粉丝再切回关注,两份名单各自保留 ——
         var tabs = view.FindControl<ListBox>("RelationTabs")!;
         Check(tabs.ItemCount == 2, "关系页顶部有两个 Tab");
+        CheckTabIndicator(tabs);
         tabs.SelectedIndex = 1;
         await Task.Delay(200);
         Check(relations.SelectedTabIndex == 1 && relations.Users.Count == FollowerTotal,
             "切到「粉丝」Tab 拉到粉丝名单");
+        CheckTabIndicator(tabs);
         Check(window.GetVisualDescendants().OfType<TextBlock>()
             .Any(text => text.Text is { } fan && fan.StartsWith("听众", StringComparison.Ordinal)),
             "粉丝名单行已渲染");
@@ -429,6 +431,16 @@ internal static class UserRelationsProbe
             new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height), new Vector(96, 96));
         bitmap.Render(window);
         bitmap.Save(Path.Combine(root, state + ".png"), PngBitmapEncoderOptions.Default);
+    }
+
+    private static void CheckTabIndicator(ListBox tabs)
+    {
+        var tab = (ListBoxItem)tabs.ContainerFromIndex(tabs.SelectedIndex)!;
+        var visuals = tab.GetVisualDescendants().OfType<Control>().ToArray();
+        Check(visuals.OfType<Border>().Any(b => b.Classes.Contains("tab-indicator") && b.IsEffectivelyVisible
+                  && b.Background is Avalonia.Media.ISolidColorBrush brush && brush.Color.A > 0)
+              && !visuals.Any(c => c.Name == "SelectionIndicator" && c.IsEffectivelyVisible),
+            $"第 {tabs.SelectedIndex + 1} 个标签仅显示底部选中线");
     }
 
     private static void Check(bool condition, string message)

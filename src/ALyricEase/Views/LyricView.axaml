@@ -213,6 +213,10 @@
                  显式置 null 才能压掉基样式那条 Radius="5";只写空 Setter 不行。 -->
             <Setter Property="Effect" Value="{x:Null}" />
         </Style>
+        <!-- 详情页用歌词本身的高亮标示当前句。 -->
+        <Style Selector="views|LyricView.detail ListBoxItem:selected /template/ Rectangle#SelectionIndicator">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
         <!-- 原版 Present 状态没有持久选中底色；压掉 Fluent ListBoxItem 的强调色背景，
              仅在真实 pointerover/pressed 时显示交互底色。 -->
         <Style Selector="views|LyricView.detail ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
@@ -240,7 +244,7 @@
              ⚠ `AutoScrollToSelectedItem="False"` 是手动滚动暂停跟随(4 秒)的**前置条件**:
              默认 true 时,选中项变化会由 **ListBox 自己** ScrollIntoView,完全绕过 LyricView 的
              抑制逻辑(探针实测:滚轮打标生效、补间已掐,列表仍被框架拽回新句)。
-             居中滚动只允许由 OnSelectionChanged → Recenter 一条路径驱动。 -->
+             自动切句和点击歌词的居中滚动由 LyricView 统一处理。 -->
         <ListBox x:Name="LyricList" ItemsSource="{Binding Lines}"
                  SelectedIndex="{Binding CurrentIndex, Mode=OneWay}"
                  AutoScrollToSelectedItem="False"
@@ -248,6 +252,7 @@
                  Background="Transparent" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                 SizeChanged="OnLyricListSizeChanged"
                  SelectionChanged="OnSelectionChanged">
         </ListBox>
         <TextBlock Text="{Binding Message}" TextWrapping="Wrap" TextAlignment="Center"

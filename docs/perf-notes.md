@@ -798,6 +798,31 @@ UI 线程 27.7% + 另一条线程 32%，4 秒里分配 **245MB**（主页没有�
 要比就比 **⑤ 每帧开销**（已除掉帧数）或 **① 的"滚动−静止"差值**（两档含同一份底噪）。
 
 
+## Avalonia 12.2 的 Windows 呈现与切歌换色
+
+Windows 10、RX 5700、165 Hz，主窗口为 1100 × 680 DIP。真窗口探针使用固定歌词和两张本地合成封面，每轮切换六次，每次分别采样换色的前 500 ms 和随后稳定的 500 ms。桌面歌词通过独立透明窗口显示。
+
+| 使用原有换色过渡 | 关闭合成交换链 | 开启合成交换链 |
+|---|---:|---:|
+| 双窗口时专用显存，两轮阶段中位数 | 66.7 MiB | 63.7 MiB |
+| 双窗口时共享 GPU 内存，两轮阶段中位数 | 11.6 MiB | 11.6 MiB |
+| 双窗口屏幕帧间隔 P95，两轮 | 6.4 / 6.5 ms | 6.4 / 6.6 ms |
+
+另外通过原生窗口右边框做了两轮往返拖动，宽度从 1100 降到 1020 DIP 再恢复。每移动 8 DIP，约 16 ms 后按 Win32 客户区边界取一个像素检查内容标记。关闭交换链时两轮各有 13/20、18/20 次尚未对齐，开启时均为 2/20。四次松手后都恢复对齐。这个采样只反映该机器在拖动过程中的瞬态。
+
+屏幕帧间隔由独立的桌面复制采样器读取测试窗口内的单像素帧序号计算，排除了采集端积压的区间。显存来自独立一轮相同场景的进程 GPU 计数器。交换链开关按相反顺序复测，当前保留框架默认选择。该实验测量显示帧间隔，输入到显示的延迟仍待单独测量。
+
+用相同的封面另测了 500 ms 的合成画刷换色。默认呈现路径上，两轮切换期间，原有过渡观察到跳号 0/975，合成画刷为 0/967，屏幕帧间隔 P95 分别为 6.4–6.6 ms 和 6.4–6.7 ms。保留现有的 `BrushTransition`。
+
+### 复测
+
+在 PowerShell 中分别运行以下两行。环境变量只传给子进程。探针输出各阶段的 QPC 时间范围、UI 帧回调间隔以及程序调整宽度时内容右缘的像素检查结果。普通 Windows 入口也支持同一交换链开关。
+
+```powershell
+cmd /c "set ALY_NP_MODE=presentation&& set ALY_NP_SIZE=1100x680&& set ALY_COMPOSITION_SWAP_CHAIN=0&& dotnet run -c Release --project src/ALyricEase.Headless -- --np-gpu-real"
+cmd /c "set ALY_NP_MODE=presentation&& set ALY_NP_SIZE=1100x680&& set ALY_COMPOSITION_SWAP_CHAIN=1&& dotnet run -c Release --project src/ALyricEase.Headless -- --np-gpu-real"
+```
+
 ## 附：headless 探针的环境
 
 要开真窗口（建 TopLevel / 验证窗口行为）时，注册 AppBuilder 必须用 `.UsePlatformDetect()`；

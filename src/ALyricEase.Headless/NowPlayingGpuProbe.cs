@@ -195,6 +195,23 @@ internal static class NowPlayingGpuProbe
             Log($"装配: 详情页={Describe(refs.NowPlaying)} 封面背景={Describe(refs.Backdrop)} " +
                 $"底部动画器={Describe(refs.BarAnimator)} 详情页动画器={Describe(refs.NowPlayingAnimator)}");
 
+            if (Env("ALY_NP_MODE") == "presentation")
+            {
+                try
+                {
+                    main.OpenNowPlayingCommand.Execute(null);
+                    main.NowPlayingPanel = NowPlayingPanel.Lyrics;
+                    await Task.Delay(1200);
+                    await PresentationProbe.RunAsync(window, main.Player, Log);
+                }
+                finally
+                {
+                    StopPositionReporting();
+                    window.Close();
+                }
+                return 0;
+            }
+
             await WarmUpAsync(refs);
             if (refs.BarAnimator is null)
                 Log("[np-gpu] ⚠ 底部进度动画器仍未找到 —— 「停进度循环」那一列只关掉了详情页那个,判读时按半个变量算");

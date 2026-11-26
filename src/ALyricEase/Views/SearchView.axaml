@@ -32,7 +32,7 @@
             <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="FontSize" Value="14" />
-            <Setter Property="Watermark" Value="搜索歌曲、歌手、专辑" />
+            <Setter Property="PlaceholderText" Value="搜索歌曲、歌手、专辑" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <Style Selector="TextBox.search-box:pointerover /template/ Border#PART_BorderElement">

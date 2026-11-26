@@ -31,7 +31,7 @@ namespace ALyricEase.Controls;
 /// 暂停(<see cref="IsPlaying"/>=false)立即停泵,不继续外推。
 /// </para>
 /// </summary>
-public sealed class KaraokeText : Control
+public sealed partial class KaraokeText : Control
 {
     private static readonly IBrush DefaultDim = new ImmutableSolidColorBrush(Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF));
     private static readonly IBrush DefaultAccent = Brushes.White;
@@ -48,23 +48,23 @@ public sealed class KaraokeText : Control
     /// <summary>超前时每帧吸收的偏差比例(≈3s 时间常数)。慢到不可察觉,只为不让领先量长期累积。</summary>
     private const double EaseBackRate = 0.005;
 
-    public static readonly StyledProperty<string?> TextProperty =
-        AvaloniaProperty.Register<KaraokeText, string?>(nameof(Text));
+    [GeneratedStyledProperty]
+    public partial string? Text { get; set; }
 
     /// <summary>逐字时间轴。null/空 = 这一行没有逐字数据,控件退化为单色文本。</summary>
-    public static readonly StyledProperty<IReadOnlyList<LyricWord>?> WordsProperty =
-        AvaloniaProperty.Register<KaraokeText, IReadOnlyList<LyricWord>?>(nameof(Words));
+    [GeneratedStyledProperty]
+    public partial IReadOnlyList<LyricWord>? Words { get; set; }
 
     /// <summary>歌词时间轴上的位置(已叠加 offset,单位 ms)。</summary>
-    public static readonly StyledProperty<long> PositionMsProperty =
-        AvaloniaProperty.Register<KaraokeText, long>(nameof(PositionMs));
+    [GeneratedStyledProperty]
+    public partial long PositionMs { get; set; }
 
     /// <summary>这一行是不是"正在唱"的那行。只有它为 true 才会按帧推进与双色渲染。</summary>
-    public static readonly StyledProperty<bool> IsActiveProperty =
-        AvaloniaProperty.Register<KaraokeText, bool>(nameof(IsActive));
+    [GeneratedStyledProperty]
+    public partial bool IsActive { get; set; }
 
-    public static readonly StyledProperty<bool> IsPlayingProperty =
-        AvaloniaProperty.Register<KaraokeText, bool>(nameof(IsPlaying), defaultValue: true);
+    [GeneratedStyledProperty(DefaultValue = true)]
+    public partial bool IsPlaying { get; set; }
 
     /// <summary>未唱部分的颜色(当前行默认 35% 白;40% 会和下一行的整体亮度撞上)。</summary>
     public static readonly StyledProperty<IBrush?> DimBrushProperty =
@@ -102,14 +102,9 @@ public sealed class KaraokeText : Control
 
     /// <summary>所在页面是否处于可呈现状态。详情页是靠 RenderTransform 平移出窗的,
     /// `IsVisible` 全程为 true ⇒ 逐字帧循环必须靠这个开关停泵,否则收起后仍在跑。</summary>
-    public static readonly StyledProperty<bool> IsPageActiveProperty =
-        AvaloniaProperty.Register<KaraokeText, bool>(nameof(IsPageActive), defaultValue: true);
+    [GeneratedStyledProperty(DefaultValue = true)]
+    public partial bool IsPageActive { get; set; }
 
-    public string? Text { get => GetValue(TextProperty); set => SetValue(TextProperty, value); }
-    public IReadOnlyList<LyricWord>? Words { get => GetValue(WordsProperty); set => SetValue(WordsProperty, value); }
-    public long PositionMs { get => GetValue(PositionMsProperty); set => SetValue(PositionMsProperty, value); }
-    public bool IsActive { get => GetValue(IsActiveProperty); set => SetValue(IsActiveProperty, value); }
-    public bool IsPlaying { get => GetValue(IsPlayingProperty); set => SetValue(IsPlayingProperty, value); }
     public IBrush? DimBrush { get => GetValue(DimBrushProperty); set => SetValue(DimBrushProperty, value); }
     public IBrush? AccentBrush { get => GetValue(AccentBrushProperty); set => SetValue(AccentBrushProperty, value); }
     public double FontSize { get => GetValue(FontSizeProperty); set => SetValue(FontSizeProperty, value); }
@@ -119,7 +114,6 @@ public sealed class KaraokeText : Control
     public TextTrimming TextTrimming { get => GetValue(TextTrimmingProperty); set => SetValue(TextTrimmingProperty, value); }
     public int MaxLines { get => GetValue(MaxLinesProperty); set => SetValue(MaxLinesProperty, value); }
     public double MaxTextHeight { get => GetValue(MaxTextHeightProperty); set => SetValue(MaxTextHeightProperty, value); }
-    public bool IsPageActive { get => GetValue(IsPageActiveProperty); set => SetValue(IsPageActiveProperty, value); }
 
     /// <summary>只给探针读:当前实际画出来的歌词位置(ms)。见 <c>--karaoke-smooth</c>。</summary>
     internal double RenderedPositionMsForProbe => _renderedMs;

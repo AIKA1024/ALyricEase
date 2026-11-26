@@ -299,6 +299,7 @@ class Program
     AppLogging.ConnectAvalonia();
     return AppBuilder.Configure<App>()
       .UsePlatformDetect()
+      .WithCompositionSwapChainOverride()
       .WithInterFont();
   }
 }

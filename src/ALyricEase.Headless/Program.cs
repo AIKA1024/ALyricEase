@@ -747,7 +747,8 @@ public static class Program
         if (args.Length > 0 && args[0] == "--np-gpu-real")
         {
             var gpuBuilder = AppBuilder.Configure<HeadlessApp>()
-                .UsePlatformDetect();
+                .UsePlatformDetect()
+                .WithCompositionSwapChainOverride();
             HeadlessApp.ConfigureServices();
             var gpuExitCode = 1;
             Dispatcher.UIThread.Post(async () =>

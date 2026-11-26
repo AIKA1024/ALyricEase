@@ -5,7 +5,7 @@ using ALyricEase.Services.Taskbar;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Themes.Fluent;
+using Avalonia.Themes.Fluent2;
 using Avalonia.Threading;
 
 namespace ALyricEase;
@@ -119,7 +119,7 @@ internal static class TaskbarThumbButtonsProbe
         public override void Initialize()
         {
             Avalonia.Platform.AssetLoader.SetDefaultAssembly(typeof(ALyricEase.ViewModels.PlayerViewModel).Assembly);
-            Styles.Add(new FluentTheme());
+            Styles.Add(new Fluent2Theme());
         }
     }
 

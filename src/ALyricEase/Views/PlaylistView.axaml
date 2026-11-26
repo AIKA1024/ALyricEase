@@ -158,7 +158,7 @@
                             ToolTip.Tip="更多操作" AutomationProperties.Name="更多歌单操作">
                       <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
                       <Button.Flyout>
-                        <MenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
+                        <controls:InAppMenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
                           <MenuItem Header="分享" Click="OnSharePlaylistClick">
                             <MenuItem.Icon>
                               <TextBlock Text="{DynamicResource IconShare}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
@@ -175,7 +175,7 @@
                               <TextBlock Text="{DynamicResource IconCopyLink}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
                             </MenuItem.Icon>
                           </MenuItem>
-                        </MenuFlyout>
+                        </controls:InAppMenuFlyout>
                       </Button.Flyout>
                     </Button>
                   </StackPanel>
@@ -238,7 +238,7 @@
                           ToolTip.Tip="更多操作" AutomationProperties.Name="更多歌单操作">
                     <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
                     <Button.Flyout>
-                      <MenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
+                      <controls:InAppMenuFlyout Placement="BottomEdgeAlignedRight" ShowMode="Transient">
                         <MenuItem Header="分享" Click="OnSharePlaylistClick">
                           <MenuItem.Icon>
                             <TextBlock Text="{DynamicResource IconShare}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
@@ -254,7 +254,7 @@
                             <TextBlock Text="{DynamicResource IconCopyLink}" FontFamily="{DynamicResource LyricEaseIconsOriginal}" FontSize="14" />
                           </MenuItem.Icon>
                         </MenuItem>
-                      </MenuFlyout>
+                      </controls:InAppMenuFlyout>
                     </Button.Flyout>
                   </Button>
                 </StackPanel>

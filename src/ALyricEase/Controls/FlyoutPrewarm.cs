@@ -44,7 +44,7 @@ internal static class FlyoutPrewarm
         }
 
         _menuWarmed = true;
-        Warm(anchor, "MenuFlyout", new MenuFlyout(), m => m.Items.Add(new MenuItem { Header = "预" }));
+        Warm(anchor, "MenuFlyout", new InAppMenuFlyout(), m => m.Items.Add(new MenuItem { Header = "预" }));
     }
 
     /// <summary>预热普通 Flyout(FlyoutPresenter —— 音量、歌词字号等走这条路径,模板与菜单不同)。</summary>

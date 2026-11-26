@@ -4,6 +4,7 @@ using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.Services.NetEase;
 using ALyricEase.ViewModels;
+using ALyricEase.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -24,7 +25,7 @@ internal static class PlaylistContextMenu
 
     public static MenuFlyout Create(Visual anchor, PlaylistItemViewModel playlist)
     {
-        var menu = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
+        var menu = new InAppMenuFlyout { ShowMode = FlyoutShowMode.Transient };
         menu.FlyoutPresenterClasses.Add("player-song-menu");
 
         menu.Items.Add(new MenuItem

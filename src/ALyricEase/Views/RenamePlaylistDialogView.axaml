@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:ALyricEase.Controls"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:MainViewModel"
@@ -9,27 +10,51 @@
              x:Class="ALyricEase.Views.RenamePlaylistDialogView">
     <!-- 重命名歌单对话框(与 CreatePlaylistDialogView 同款骨架):烟雾层盖住整窗拦截输入 +
          居中卡片。Esc=取消;Enter=确认。动画由壳层统一协调,code-behind 只负责聚焦输入框。 -->
-    <Grid x:Name="Root">
+    <Grid x:Name="Root" Container.Name="renameViewport" Container.Sizing="WidthAndHeight">
+        <Grid.Styles>
+            <Style Selector="Border#DialogCard">
+                <Setter Property="MinWidth" Value="340" />
+                <Setter Property="Margin" Value="24" />
+                <Setter Property="Padding" Value="24" />
+            </Style>
+            <ContainerQuery Name="renameViewport" Query="max-width:400">
+                <Style Selector="Border#DialogCard">
+                    <Setter Property="MinWidth" Value="0" />
+                    <Setter Property="Margin" Value="8" />
+                    <Setter Property="Padding" Value="12" />
+                </Style>
+            </ContainerQuery>
+            <ContainerQuery Name="renameViewport" Query="max-height:240">
+                <Style Selector="Border#DialogCard">
+                    <Setter Property="Margin" Value="8,0" />
+                    <Setter Property="Padding" Value="12,4" />
+                </Style>
+            </ContainerQuery>
+        </Grid.Styles>
         <Panel Background="#99000000" />
         <Grid DataContext="{Binding RenamePlaylistDialog}" x:DataType="vm:RenamePlaylistDialogViewModel"
               HorizontalAlignment="Center" VerticalAlignment="Center">
             <Grid.KeyBindings>
                 <KeyBinding Gesture="Enter" Command="{Binding ConfirmCommand}" />
             </Grid.KeyBindings>
-            <Border MaxWidth="440" MinWidth="340" Margin="24" Padding="24" CornerRadius="8"
+            <Border MaxWidth="440" CornerRadius="8"
                     Background="{DynamicResource AppSurface}"
                     BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
                     x:Name="DialogCard" BoxShadow="0 32 64 #66000000">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="{Binding SourceLabel, StringFormat='重命名{0}歌单'}"
-                               FontSize="20" FontWeight="SemiBold" />
-                    <TextBox x:Name="NameBox" PlaceholderText="歌单名称"
-                             Text="{Binding Name}" MaxLength="40" />
-                    <!-- 失败文案:留在框内,红字显示服务端/网络错误 -->
-                    <TextBlock Text="{Binding Message}" FontSize="13" TextWrapping="Wrap"
-                               Foreground="#FFE74C3C"
-                               IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <Grid RowDefinitions="*,Auto" RowSpacing="12">
+                    <controls:DialogFormScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="{Binding SourceLabel, StringFormat='重命名{0}歌单'}"
+                                       FontSize="20" FontWeight="SemiBold" />
+                            <TextBox x:Name="NameBox" PlaceholderText="歌单名称"
+                                     Text="{Binding Name}" MaxLength="40" />
+                            <!-- 失败文案:留在框内,红字显示服务端/网络错误 -->
+                            <TextBlock Text="{Binding Message}" FontSize="13" TextWrapping="Wrap"
+                                       Foreground="#FFE74C3C"
+                                       IsVisible="{Binding Message, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </StackPanel>
+                    </controls:DialogFormScrollViewer>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Grid.Column="0" FontSize="12" VerticalAlignment="Center"
                                    Foreground="{DynamicResource TextTertiary}"
                                    Text="新名字将同步到侧栏与歌单详情页" />
@@ -41,7 +66,7 @@
                                 Command="{Binding ConfirmCommand}"
                                 MinWidth="96" Height="32" IsEnabled="{Binding CanConfirm}" />
                     </Grid>
-                </StackPanel>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

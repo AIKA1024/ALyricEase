@@ -56,8 +56,9 @@
                                                Grid.Row="1" ZIndex="200" />
 
         <!-- 重命名歌单对话框(侧栏歌单子项右键/长按;同层,声明在聚合设置弹层之后) -->
-        <views:RenamePlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsRenamePlaylistDialogOpen}"
-                                        Grid.Row="1" ZIndex="200" />
+        <InputPaneAwareDecorator Grid.RowSpan="2" ZIndex="200" Behavior="Resize">
+            <views:RenamePlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsRenamePlaylistDialogOpen}" />
+        </InputPaneAwareDecorator>
 
         <!-- 删除歌单确认对话框(侧栏歌单子项右键/长按;同层,声明在重命名弹层之后) -->
         <views:DeletePlaylistDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsDeletePlaylistDialogOpen}"
@@ -71,8 +72,9 @@
         <views:AudioDeviceDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsAudioDeviceDialogOpen}"
                                      Grid.Row="1" ZIndex="200" />
         <!-- 应用网络代理弹窗(设置页;紧随设备弹层 → 同时可见时盖在其上) -->
-        <views:ProxySettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsProxySettingsDialogOpen}"
-                                       Grid.Row="1" ZIndex="200" />
+        <InputPaneAwareDecorator Grid.RowSpan="2" ZIndex="200" Behavior="Resize">
+            <views:ProxySettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsProxySettingsDialogOpen}" />
+        </InputPaneAwareDecorator>
         <views:DesktopLyricSettingsDialogView IsVisible="False" infra:ModalVisibilityTransition.IsOpen="{Binding IsDesktopLyricDialogOpen}"
                                      Grid.Row="1" ZIndex="200" />
 

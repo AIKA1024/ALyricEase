@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ctrl="using:ALyricEase.Controls"
              xmlns:infra="using:ALyricEase.Infrastructure"
              xmlns:vm="using:ALyricEase.ViewModels"
              xmlns:views="using:ALyricEase.Views"
@@ -67,102 +68,103 @@
     </Style>
   </UserControl.Styles>
 
-  <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}" ClipToBounds="False">
-    <ExperimentalAcrylicBorder Material="{DynamicResource PlayerAcrylicMaterial}" ClipToBounds="False">
-      <Grid x:Name="PlayerRoot" ClipToBounds="False" Background="Transparent"
-            ContextRequested="OnPlayerContextRequested">
-        <!-- hover 背景 -->
-        <Border x:Name="HoverBg" Margin="-12,0" />
-        <!-- 进度条 -->
-        <views:PlayerProgressBar Height="28" VerticalAlignment="Top" Margin="0,-14,0,0" ZIndex="1"
-                                 ShowBubble="True"
-                                 ScrubPositionMs="{Binding ScrubPositionMs}"
-                                 DurationMs="{Binding DurationMs}"
-                                 IsVisible="{Binding HasProgress}" />
+  <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderStrong}"
+          BackdropEffect="{StaticResource AcrylicBackdropBlur}"
+          BackdropEffectCache="Retained" ClipToBounds="False">
+    <Grid x:Name="PlayerRoot" ClipToBounds="False" Background="Transparent"
+          ContextRequested="OnPlayerContextRequested">
+      <ctrl:ChromeAcrylicLayer />
+      <!-- hover 背景 -->
+      <Border x:Name="HoverBg" Margin="-12,0" />
+      <!-- 进度条 -->
+      <views:PlayerProgressBar Height="28" VerticalAlignment="Top" Margin="0,-14,0,0" ZIndex="1"
+                               ShowBubble="True"
+                               ScrubPositionMs="{Binding ScrubPositionMs}"
+                               DurationMs="{Binding DurationMs}"
+                               IsVisible="{Binding HasProgress}" />
 
-        <Border Padding="12,0" Background="Transparent" Tapped="OnTrackAreaTap">
-          <Grid ColumnDefinitions="70,*,Auto" ColumnSpacing="4" VerticalAlignment="Center">
-            <!-- 封面 -->
-            <Border x:Name="CoverContainer" Grid.Column="0" CornerRadius="4" ClipToBounds="True"
-                    Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center"
-                    VerticalAlignment="Center">
-              <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
-                     Stretch="UniformToFill" />
-            </Border>
-            <!-- 标题/歌手 -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-              <TextBlock Classes="track-title" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" />
-              <TextBlock Classes="track-subtitle" Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis" />
-            </StackPanel>
-            <!-- 按钮区 -->
-            <StackPanel x:Name="ButtonPanel" Grid.Column="2" Orientation="Horizontal"
-                        VerticalAlignment="Center" HorizontalAlignment="Right"
-                        IsVisible="{Binding HasProgress}">
-              <!-- 红心(本地歌曲没有平台红心,隐藏) -->
-              <Button Classes="player-button like-button" RenderTransform="none" Width="40" Height="40"
-                      Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心"
-                      IsVisible="{Binding ShowLikeButton}">
-                <Grid>
-                  <TextBlock Text="{DynamicResource IconHeartFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}" FontSize="20"
-                             Foreground="#FFE74C3C" IsVisible="{Binding IsCurrentLiked}" />
-                  <TextBlock Text="{DynamicResource IconHeartOutline}" FontFamily="{DynamicResource LyricEaseIconsOutline}" FontSize="20"
-                             IsVisible="{Binding !IsCurrentLiked}" />
-                </Grid>
-              </Button>
-              <!-- 上一曲 -->
-              <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
-                      Command="{Binding PlayPreviousCommand}" ToolTip.Tip="上一曲">
-                <TextBlock Text="{DynamicResource IconPrevious}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
-              </Button>
-              <!-- 播放/暂停 -->
-              <Button x:Name="PlayButton" Classes="player-button" RenderTransform="none"
-                      Command="{Binding TogglePlayPauseCommand}">
-                <Grid>
-                  <TextBlock x:Name="PauseIcon" Text="{DynamicResource IconPause}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
-                             IsVisible="{Binding ShowPauseIcon}" />
-                  <TextBlock x:Name="PlayIcon" Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
-                             IsVisible="{Binding ShowPlayIcon}" />
-                  <TextBlock x:Name="LoadingIcon" Text="•••" IsVisible="{Binding ShowLoadingIcon}" />
-                </Grid>
-              </Button>
-              <!-- 下一曲 -->
-              <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
-                      Command="{Binding PlayNextCommand}" ToolTip.Tip="下一曲">
-                <TextBlock Text="{DynamicResource IconNext}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
-              </Button>
-              <!-- 播放模式 -->
-              <Button Classes="player-button mode-button" RenderTransform="none" Width="40" Height="40"
-                      Command="{Binding TogglePlaybackModeCommand}"
-                      ToolTip.Tip="{Binding PlaybackModeName}">
-                <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}"
-                           FontSize="16" />
-              </Button>
-              <!-- 音量 -->
-              <Button Classes="player-button volume-button" RenderTransform="none" Width="40" Height="40" ToolTip.Tip="音量">
-                <TextBlock Text="{DynamicResource IconVolume}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
-                <Button.Flyout>
-                  <Flyout Placement="Top">
-                    <StackPanel Spacing="8" Margin="4">
-                      <!-- WinUI3 风格滑块 + 刻度(每 20 一格);模板列宽非星号,拉伸会贴左,须按内容宽居中 -->
-                      <Slider Theme="{StaticResource WinUISliderTheme}"
-                              Value="{Binding Volume}" Minimum="0" Maximum="100"
-                              Height="150" Orientation="Vertical"
-                              HorizontalAlignment="Center"
-                              TickPlacement="Outside" TickFrequency="20" />
-                      <TextBlock Text="{Binding Volume}" HorizontalAlignment="Center" />
-                    </StackPanel>
-                  </Flyout>
-                </Button.Flyout>
-              </Button>
-              <!-- 更多:点击弹出当前歌曲菜单(与整条右键/长按同一份;narrow 模式隐藏) -->
-              <Button x:Name="MoreButton" Classes="player-button more-button" RenderTransform="none"
-                      Width="40" Height="40" ToolTip.Tip="更多操作">
-                <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
-              </Button>
-            </StackPanel>
-          </Grid>
-        </Border>
-      </Grid>
-    </ExperimentalAcrylicBorder>
+      <Border Padding="12,0" Background="Transparent" Tapped="OnTrackAreaTap">
+        <Grid ColumnDefinitions="70,*,Auto" ColumnSpacing="4" VerticalAlignment="Center">
+          <!-- 封面 -->
+          <Border x:Name="CoverContainer" Grid.Column="0" CornerRadius="4" ClipToBounds="True"
+                  Background="{DynamicResource ArtFallback}" HorizontalAlignment="Center"
+                  VerticalAlignment="Center">
+            <Image Source="{Binding Cover, Converter={x:Static infra:CoverImageConverter.Instance}}"
+                   Stretch="UniformToFill" />
+          </Border>
+          <!-- 标题/歌手 -->
+          <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+            <TextBlock Classes="track-title" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="track-subtitle" Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <!-- 按钮区 -->
+          <StackPanel x:Name="ButtonPanel" Grid.Column="2" Orientation="Horizontal"
+                      VerticalAlignment="Center" HorizontalAlignment="Right"
+                      IsVisible="{Binding HasProgress}">
+            <!-- 红心(本地歌曲没有平台红心,隐藏) -->
+            <Button Classes="player-button like-button" RenderTransform="none" Width="40" Height="40"
+                    Command="{Binding ToggleLikeCommand}" ToolTip.Tip="红心"
+                    IsVisible="{Binding ShowLikeButton}">
+              <Grid>
+                <TextBlock Text="{DynamicResource IconHeartFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}" FontSize="20"
+                           Foreground="#FFE74C3C" IsVisible="{Binding IsCurrentLiked}" />
+                <TextBlock Text="{DynamicResource IconHeartOutline}" FontFamily="{DynamicResource LyricEaseIconsOutline}" FontSize="20"
+                           IsVisible="{Binding !IsCurrentLiked}" />
+              </Grid>
+            </Button>
+            <!-- 上一曲 -->
+            <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                    Command="{Binding PlayPreviousCommand}" ToolTip.Tip="上一曲">
+              <TextBlock Text="{DynamicResource IconPrevious}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+            </Button>
+            <!-- 播放/暂停 -->
+            <Button x:Name="PlayButton" Classes="player-button" RenderTransform="none"
+                    Command="{Binding TogglePlayPauseCommand}">
+              <Grid>
+                <TextBlock x:Name="PauseIcon" Text="{DynamicResource IconPause}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                           IsVisible="{Binding ShowPauseIcon}" />
+                <TextBlock x:Name="PlayIcon" Text="{DynamicResource IconPlayFilled}" FontFamily="{DynamicResource LyricEaseIconsFilled}"
+                           IsVisible="{Binding ShowPlayIcon}" />
+                <TextBlock x:Name="LoadingIcon" Text="•••" IsVisible="{Binding ShowLoadingIcon}" />
+              </Grid>
+            </Button>
+            <!-- 下一曲 -->
+            <Button Classes="player-button" RenderTransform="none" Width="40" Height="40"
+                    Command="{Binding PlayNextCommand}" ToolTip.Tip="下一曲">
+              <TextBlock Text="{DynamicResource IconNext}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="16" />
+            </Button>
+            <!-- 播放模式 -->
+            <Button Classes="player-button mode-button" RenderTransform="none" Width="40" Height="40"
+                    Command="{Binding TogglePlaybackModeCommand}"
+                    ToolTip.Tip="{Binding PlaybackModeName}">
+              <TextBlock Text="{Binding PlaybackModeGlyph}" FontFamily="{DynamicResource LyricEaseIcons}"
+                         FontSize="16" />
+            </Button>
+            <!-- 音量 -->
+            <Button Classes="player-button volume-button" RenderTransform="none" Width="40" Height="40" ToolTip.Tip="音量">
+              <TextBlock Text="{DynamicResource IconVolume}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="17" />
+              <Button.Flyout>
+                <Flyout Placement="Top">
+                  <StackPanel Spacing="8" Margin="4">
+                    <!-- WinUI3 风格滑块 + 刻度(每 20 一格);模板列宽非星号,拉伸会贴左,须按内容宽居中 -->
+                    <Slider Theme="{StaticResource WinUISliderTheme}"
+                            Value="{Binding Volume}" Minimum="0" Maximum="100"
+                            Height="150" Orientation="Vertical"
+                            HorizontalAlignment="Center"
+                            TickPlacement="Outside" TickFrequency="20" />
+                    <TextBlock Text="{Binding Volume}" HorizontalAlignment="Center" />
+                  </StackPanel>
+                </Flyout>
+              </Button.Flyout>
+            </Button>
+            <!-- 更多:点击弹出当前歌曲菜单(与整条右键/长按同一份;narrow 模式隐藏) -->
+            <Button x:Name="MoreButton" Classes="player-button more-button" RenderTransform="none"
+                    Width="40" Height="40" ToolTip.Tip="更多操作">
+              <TextBlock Text="{DynamicResource IconMore}" FontFamily="{DynamicResource LyricEaseIcons}" FontSize="20" />
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
   </Border>
 </UserControl>

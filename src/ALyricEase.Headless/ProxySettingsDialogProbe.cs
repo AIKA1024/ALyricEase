@@ -95,6 +95,7 @@ internal static class ProxySettingsDialogProbe
         Expect(ref failures, card.Bounds.Height <= 560 - 40,
             $"小窗口下卡片应被 MaxHeight 收住(实际 {card.Bounds.Height:F0})");
         Render(window, "small");
+        DialogInputPaneProbe.Run(vm);
 
         Console.WriteLine(failures == 0
             ? "[proxydialog] PASS 展开/收起均走合成伸展,复位与内容可见性正常"

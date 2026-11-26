@@ -5,7 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
-using Avalonia.Themes.Fluent;
+using Avalonia.Themes.Fluent2;
 using Avalonia.VisualTree;
 using ALyricEase.Infrastructure;
 
@@ -136,6 +136,6 @@ internal static class PageTransitionProbe
 
     public sealed class ProbeApp : Application
     {
-        public override void Initialize() => Styles.Add(new FluentTheme());
+        public override void Initialize() => Styles.Add(new Fluent2Theme());
     }
 }

@@ -65,20 +65,13 @@
             <SolidColorBrush x:Key="ArtFallback" Color="#E5E5E5" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#C8F3F3F3" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#10000000" />
-            <SolidColorBrush x:Key="PlayerBarBackground" Color="#E6FFFFFF" />
             <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5F3F3F3" />
             <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
                                          BackgroundSource="Digger"
-                                         TintColor="#FFFFFF"
+                                         TintColor="{OnPlatform Default='#FFFFFF', Android='#E3E5E7'}"
                                          TintOpacity="1"
-                                         MaterialOpacity=".2"
+                                         MaterialOpacity="{OnPlatform Default=0.2, Android=1}"
                                          FallbackColor="#F3F3F3" />
-            <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
-                                         BackgroundSource="None"
-                                         TintColor="#E8E8E8"
-                                         TintOpacity="0.8"
-                                         MaterialOpacity="0.9"
-                                         FallbackColor="#E8E8E8" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="AppBackground" Color="#141516" />
@@ -140,23 +133,18 @@
             <SolidColorBrush x:Key="ArtFallback" Color="#3A3A3A" />
             <SolidColorBrush x:Key="NavigationPaneBackground" Color="#D0181818" />
             <SolidColorBrush x:Key="NavigationSelected" Color="#12FFFFFF" />
-            <SolidColorBrush x:Key="PlayerBarBackground" Color="#EB333333" />
             <SolidColorBrush x:Key="StickyHeaderBackground" Color="#F5202020" />
             <ExperimentalAcrylicMaterial x:Key="AppAcrylicMaterial"
                                          BackgroundSource="Digger"
                                          TintColor="#000000"
                                          TintOpacity="1"
-                                         MaterialOpacity=".2"
+                                         MaterialOpacity="{OnPlatform Default=0.2, Android=1}"
                                          FallbackColor="#141516" />
-            <ExperimentalAcrylicMaterial x:Key="PlayerAcrylicMaterial"
-                                         BackgroundSource="None"
-                                         TintColor="#000000"
-                                         TintOpacity="1"
-                                         MaterialOpacity="0.9"
-                                         FallbackColor="#282828" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
+    <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="Transparent" />
+    <BlurEffect x:Key="AcrylicBackdropBlur" Radius="18" />
     <Color x:Key="LyricEaseRedColor">#EC4141</Color>
     <Color x:Key="LyricEaseRedHoverColor">#CF3131</Color>
     <Color x:Key="LyricEaseRedPressedColor">#B22222</Color>

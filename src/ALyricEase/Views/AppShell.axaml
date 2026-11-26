@@ -265,7 +265,6 @@
                 <infra:CompositionPageTransition Duration="0:0:0.3" />
               </TransitioningContentControl.PageTransition>
             </TransitioningContentControl>
-            <!-- 应用内毛玻璃曾用 VisualBrush+BlurEffect,但 Avalonia 12.1.1 的 BlurEffect 不实际渲染(见诊断),已移除 -->
             <views:PlayerBarView DataContext="{Binding Player}" VerticalAlignment="Bottom" ZIndex="1" />
           </Grid>
         </Border>

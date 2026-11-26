@@ -7,7 +7,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform;
-using Avalonia.Themes.Fluent;
+using Avalonia.Themes.Fluent2;
 using Avalonia.Threading;
 
 namespace ALyricEase.Headless;
@@ -153,7 +153,7 @@ internal static class TrayRestoreProbe
         public override void Initialize()
         {
             AssetLoader.SetDefaultAssembly(typeof(PlayerViewModel).Assembly);
-            Styles.Add(new FluentTheme());
+            Styles.Add(new Fluent2Theme());
         }
     }
 

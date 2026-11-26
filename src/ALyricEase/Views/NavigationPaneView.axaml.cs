@@ -1,4 +1,5 @@
 using System.Linq;
+using ALyricEase.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -53,7 +54,7 @@ public partial class NavigationPaneView : UserControl
     /// (红心集合不允许重命名/删除)。构造与 ShowAt 分离是为了让无头探针能直接验分支与命令接线。</summary>
     internal static MenuFlyout? BuildContextMenu(NavItemViewModel nav, MainViewModel vm)
     {
-        var menu = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
+        var menu = new InAppMenuFlyout { ShowMode = FlyoutShowMode.Transient };
 
         if (nav.Playlist is { } item)
         {

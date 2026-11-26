@@ -41,7 +41,6 @@
       <Setter Property="Grid.Column" Value="1" />
       <Setter Property="Grid.Row" Value="1" />
       <Setter Property="Grid.ColumnSpan" Value="2" />
-      <Setter Property="HorizontalAlignment" Value="Left" />
       <Setter Property="Margin" Value="0,8,0,0" />
     </Style>
     <!-- "关于该选项"青色下划线链接(悬停提示说明) -->
@@ -93,20 +92,24 @@
     <Style Selector="HyperlinkButton.link:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Foreground" Value="{DynamicResource LinkForegroundPressed}" />
     </Style>
-    <!-- 设置卡片式 Expander:外观与 setting-card 一致,展开箭头/动画用内置实现 -->
+    <!-- 卡片式 Expander:和 Border.setting-card 同款外观;箭头(PathIcon+展开旋转动画)、
+         行头/内容边框、hover 态全部由 Fluent2 主题自带,这里只擦掉"外框描边"以对齐扁平卡片 -->
     <Style Selector="Expander.setting-expander">
       <Setter Property="Background" Value="{DynamicResource AppSurface}" />
       <Setter Property="BorderBrush" Value="Transparent" />
-      <Setter Property="CornerRadius" Value="4" />
       <Setter Property="MinHeight" Value="64" />
       <Setter Property="Padding" Value="16,10" />
       <Setter Property="Margin" Value="0,0,0,8" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
-    <!-- 展开内容容器(#ExpanderContent)不带描边:主题默认画刷有可见描边,且 BorderThickness 被
-         方向样式(:down 等,StyleTrigger 优先级)按 DynamicResource 改写 ⇒ 用同伪类把粗细压成 0 -->
+    <!-- 展开内容容器(#ExpanderContent):方向样式(:down 等,StyleTrigger 优先级)会按 DynamicResource
+         改写粗细 ⇒ 用同伪类自己接管。
+         只留"上边"这 1px 当行头与展开内容之间的分隔线,画刷用主题的 ExpanderContentBorderBrush
+         (=CardStrokeColorDefault,WinUI 3 卡片描边:暗色是在页面底色上压 10% 黑,实测 #1D1D1D)。
+         左右下三边压成 0,否则内容区会比行头窄 1px。 -->
     <Style Selector="Expander.setting-expander:down /template/ Border#ExpanderContent">
-      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ExpanderContentBorderBrush}" />
     </Style>
     <!-- 行头整行是内置的展开切换钮:底色走主题键 SettingsExpanderHeader(暗=#242424 对齐原版)。
          底色写在 ToggleButton 上经模板 TemplateBinding 生效;主题在 :pointerover/:pressed
@@ -114,6 +117,10 @@
     <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader">
       <Setter Property="Background" Value="{DynamicResource SettingsExpanderHeader}" />
       <Setter Property="BorderBrush" Value="Transparent" />
+      <!-- Fluent 2 的按钮模板是 BorderThickness=1 + BackgroundSizing=InnerBorderEdge ⇒ 底色内缩 1px,
+           而展开容器(#ExpanderContent)是我们把 BorderThickness 压成 0 后铺满整宽的,
+           两边差出 2px(用户实测: 内容 13..429 / 行头 14..428)⇒ 行头边框也压成 0 -->
+      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
     </Style>
     <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pointerover /template/ Border#ToggleButtonBackground">
@@ -123,19 +130,6 @@
     <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pressed /template/ Border#ToggleButtonBackground">
       <Setter Property="Background" Value="{DynamicResource SettingsExpanderHeader}" />
       <Setter Property="BorderBrush" Value="Transparent" />
-    </Style>
-    <!-- 右侧箭头块:hover/pressed 底色只随行头状态变(主题键 HeaderHover/HeaderPressed),默认与行头同色;
-         缩放挂在 Border 的 RenderTransform 上 —— 箭头 Path 的 RenderTransform 被展开旋转动画占用,不能碰 -->
-    <Style Selector="Expander.setting-expander /template/ Border#ExpandCollapseChevronBorder">
-      <Setter Property="Background" Value="{DynamicResource SettingsExpanderHeader}" />
-      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
-      <Setter Property="RenderTransform" Value="scale(0.7)" />
-    </Style>
-    <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pointerover /template/ Border#ExpandCollapseChevronBorder">
-      <Setter Property="Background" Value="{DynamicResource SettingsExpanderHeaderHover}" />
-    </Style>
-    <Style Selector="Expander.setting-expander /template/ ToggleButton#ExpanderHeader:pressed /template/ Border#ExpandCollapseChevronBorder">
-      <Setter Property="Background" Value="{DynamicResource SettingsExpanderHeaderPressed}" />
     </Style>
     <!-- 展开指示 chevron:展开时旋转 180° 朝上(与侧栏分组箭头同款过渡) -->
     <Style Selector="TextBlock.setting-chevron">
@@ -338,25 +332,24 @@
           </Grid>
           <!-- 开启后展开"淡化时长"行(原版 = 同一卡片内的子行:图标 + 标题 + 时长 + 滑杆);
                行间距由上方 StackPanel 的 Spacing 提供,这里不再写 Margin -->
-          <!-- 时长文本 MinWidth+右对齐(Fluent2 设置行惯例):值列宽恒定,拖动时数字
-               "3s"→"3.5s"→"11.5s" 变宽只在本列内换字,不挤滑杆列、不触发任何 reflow
-               —— 此前 Auto 列宽随数字伸缩,与 code-behind 的滑杆定宽快照错位,行内
-               元素左右振荡。右对齐让数字变化时右缘(贴滑杆侧)不动 -->
-          <!-- 滑杆宽度由 code-behind 按行宽动态设置(= min(280, 行宽-固定件)):
-               写死 Width 窄屏溢出卡片;Stretch+MaxWidth 会在宽屏被居中(实测)都不行 -->
-          <Grid x:Name="CrossfadeRow" IsVisible="{Binding Crossfade}" ColumnDefinitions="Auto,Auto,Auto,*"
-                SizeChanged="OnCrossfadeRowSizeChanged">
-            <TextBlock x:Name="CrossfadeIcon" Classes="setting-icon" Text="{DynamicResource IconRecents}" />
-            <TextBlock x:Name="CrossfadeTitle" Grid.Column="1" Classes="setting-title" Text="淡化时长"
-                       VerticalAlignment="Center" />
-            <TextBlock x:Name="CrossfadeSecondsText" Grid.Column="2" Text="{Binding CrossfadeSecondsText}"
-                       FontSize="13" Foreground="{DynamicResource TextSecondary}"
-                       VerticalAlignment="Center" Margin="0,0,20,0"
-                       MinWidth="36" TextAlignment="Right" />
-            <Slider x:Name="CrossfadeSlider" Grid.Column="3" HorizontalAlignment="Right"
-                    Minimum="0" Maximum="12" TickFrequency="0.5"
-                    Value="{Binding CrossfadeSeconds}" VerticalAlignment="Center" />
-          </Grid>
+          <FlexPanel x:Name="CrossfadeRow" IsVisible="{Binding Crossfade}" Direction="Row"
+                     Wrap="Wrap" AlignItems="Center">
+            <StackPanel Orientation="Horizontal" Flex.Shrink="0" VerticalAlignment="Center">
+              <TextBlock Classes="setting-icon" Text="{DynamicResource IconRecents}" />
+              <TextBlock x:Name="CrossfadeTitle" Classes="setting-title" Text="淡化时长" VerticalAlignment="Center" />
+              <!-- 按最长时长预留文字宽度，大字号下拖动滑杆也不会挤动轨道。 -->
+              <Grid x:Name="CrossfadeValueCell" TextElement.FontSize="13" Margin="0,0,20,0" MinWidth="36" VerticalAlignment="Center">
+                <TextBlock Text="10.5s" Opacity="0" IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock x:Name="CrossfadeSecondsText" Text="{Binding CrossfadeSecondsText}" TextAlignment="Right"
+                           Foreground="{DynamicResource TextSecondary}" />
+              </Grid>
+            </StackPanel>
+            <!-- 剩余空间不足 80 时滑杆独占下一行，宽屏最多占右侧 280。 -->
+            <FlexPanel Flex.Basis="80" Flex.Grow="1" JustifyContent="FlexEnd">
+              <Slider x:Name="CrossfadeSlider" Flex.Basis="280" Flex.Shrink="1" MinWidth="0"
+                      Minimum="0" Maximum="12" TickFrequency="0.5" Value="{Binding CrossfadeSeconds}" />
+            </FlexPanel>
+          </FlexPanel>
         </StackPanel>
       </Border>
 

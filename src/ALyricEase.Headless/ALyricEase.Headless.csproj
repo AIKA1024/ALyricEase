@@ -18,6 +18,7 @@
     <Compile Include="..\ALyricEase.Windows\Services\DesktopLyricController.cs" Link="DesktopLyricController.cs" />
     <ProjectReference Include="..\ALyricEase\ALyricEase.csproj" />
     <PackageReference Include="Avalonia.Headless" Version="12.2.0" />
+    <PackageReference Include="Avalonia.Themes.Fluent2" Version="12.2.0" />
     <PackageReference Include="Avalonia.Skia" Version="12.2.0" /><!-- TEMP-DIAG:真实渲染截图 -->
     <PackageReference Include="Avalonia.Desktop" Version="12.2.0" /><!-- TEMP-DIAG:真窗口探针 UsePlatformDetect -->
   </ItemGroup>

@@ -31,6 +31,20 @@ public static class Program
             DesktopLyricProbe.Run();
             return;
         }
+        if (args.Length > 0 && args[0] == "--longpress-click")
+        {
+            AppBuilder.Configure<HeadlessApp>().UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .SetupWithoutStarting();
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try { await LongPressClickProbe.RunAsync(); }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 1; }
+                finally { Dispatcher.UIThread.InvokeShutdown(); }
+            });
+            Dispatcher.UIThread.MainLoop(CancellationToken.None);
+            return;
+        }
         if (args.Length > 0 && args[0] == "--logging")
         {
             LoggingProbe.Run();
@@ -186,9 +200,10 @@ public static class Program
             return;
         }
 
-        // 滑杆对齐行为探针(--slideralign):量 *列+MaxWidth 下 Slider 的实际排布。
+        // 滑杆对齐行为探针(--slideralign):验证设置页不同时长、字号和宽度下的实际排布。
         if (args.Length > 0 && args[0] == "--slideralign")
-        {            var alignBuilder = AppBuilder.Configure<HeadlessApp>()
+        {
+            var alignBuilder = AppBuilder.Configure<HeadlessApp>()
                 .UseSkia()
                 .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
             HeadlessApp.ConfigureServices();

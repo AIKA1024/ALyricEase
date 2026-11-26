@@ -11,6 +11,8 @@ public partial class RecommendView : UserControl
     public RecommendView()
     {
         InitializeComponent();
+        // 长按弹菜单后松手不再触发卡片 Button 的 OpenCommand(见 LongPressClickGuard)
+        LongPressClickGuard.Attach(this);
         SizeChanged += (_, e) => ResponsiveClasses.ApplyByWindow(this);
         AttachedToVisualTree += (_, _) => ResponsiveClasses.ApplyByWindow(this);
     }
@@ -44,11 +46,12 @@ public partial class RecommendView : UserControl
 
     /// <summary>歌单卡右键(桌面)/长按(触摸)弹出同一份 more 菜单,贴指针弹出。
     /// 菜单每次即时构造 —— 不用 ContextFlyout 静态实例(所有卡片共用一份会绑定错行)。
-    /// 歌曲卡没有歌单数据,不弹菜单。</summary>
+    /// 歌曲卡没有歌单数据,不弹菜单。长按成立时先放弃指针捕获,否则松手会顺带执行卡片的 OpenCommand。</summary>
     private void OnCardContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (sender is not Button { DataContext: RecommendCardViewModel { Playlist: { } playlist } } button) return;
         e.Handled = true;
+        LongPressClickGuard.CancelPress(this);
         PlaylistContextMenu.Create(button, playlist).ShowAt(button, true);
     }
 }

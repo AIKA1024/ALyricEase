@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Linq;
+using ALyricEase.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -211,7 +212,7 @@ public partial class SearchView : UserControl
         TabItems.HorizontalAlignment = HorizontalAlignment.Left;
 
         if (!overflow) return;
-        var flyout = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
+        var flyout = new InAppMenuFlyout { ShowMode = FlyoutShowMode.Transient };
         for (var i = 0; i < tabs.Count; i++)
         {
             if (visible[i]) continue;

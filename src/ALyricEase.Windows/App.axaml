@@ -1,4 +1,5 @@
 <Application xmlns="https://github.com/avaloniaui"
+             xmlns:fluent2="using:Avalonia.Themes.Fluent2"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="ALyricEase.App"
              RequestedThemeVariant="Default">
@@ -15,11 +16,14 @@
             <!-- 一级 MenuFlyout 的根 Border 绑的是 FlyoutBorderThemePadding;子菜单圆角绑 OverlayCornerRadius -->
             <Thickness x:Key="FlyoutBorderThemePadding">4</Thickness>
             <CornerRadius x:Key="OverlayCornerRadius">12</CornerRadius>
+            <!-- Fluent 2 给 ToggleSwitch 模板留了 154px 的 MinWidth(WinUI 3 为 On/Off 文案预留),
+                 本项目所有开关都是纯开关、右侧对齐,留着会把整列撑宽 154px ⇒ 压回 Fluent 1 的 0 -->
+            <x:Double x:Key="ToggleSwitchThemeMinWidth">0</x:Double>
         </ResourceDictionary>
     </Application.Resources>
 
     <Application.Styles>
-        <FluentTheme />
+        <fluent2:Fluent2Theme />
         <!-- ComboBox 统一外观(WinUI 弹出层边距/定位/展开动画);必须在 FluentTheme 之后 -->
         <StyleInclude Source="avares://ALyricEase/Styles/Controls/FluentComboBox.axaml" />
         <StyleInclude Source="avares://ALyricEase/Styles/Foundation/Typography.axaml" />

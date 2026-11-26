@@ -2334,3 +2334,244 @@ state.json 往返、聚合成员/空聚合清理、详情页引用与复位、�
 `AddPlaylist` 参数(`dirShow=2`),以及自己创建的私密歌单不被"他人隐私"判据误伤;
 后两项都不联网、不写账号。
 探针用反射把 DI 单例 `AppStateStore._path` 改到临时文件,不碰用户 state.json。
+
+## 2026-11-23 升 Avalonia 12.1.6 → 12.2.0
+
+**改了什么**
+
+- 四个工程全家桶 `12.2.0`;`Avalonia.Controls.WebView` 12.1.1 → **12.1.2**(该包没有 12.2.0,
+  12.1.2 是 11-12 的 servicing 版,依赖区间仍是 `Avalonia >= 12.0.0`);
+  `Xaml.Behaviors.Avalonia` 仍 **12.1.5**(同样没有 12.2)。
+- 唯一必须改的 API:`TextBox.Watermark` 在 12.2 标 `[Obsolete]`(XAML 报 **AVLN5001**)⇒ 换
+  **`PlaceholderText`**。三处:`ProxySettingsDialogView.axaml` 两个输入框、`SearchView.axaml`
+  的 `Style Selector="TextBox.search-box"` setter。名字变了但仍是 StyledProperty,Style setter 照常可用。
+- **Fluent 2 不是默认主题**:12.2 新增的 Fluent 2 是独立包 `Avalonia.Themes.Fluent2`,
+  `<FluentTheme />` 仍是 Fluent 1 ⇒ 不主动换包就不会有观感漂移(别被 release note 里
+  "updated default theme" 那句带跑)。
+
+**12.2 里对这类 app 有实际影响的框架变更**(升级时重点看,不是都要改)
+
+- `LayoutManager` 新增一次 **`BringIntoView` pass**(#22002)——所有靠滚动位置/`ScrollIntoView`
+  时序的逻辑都值得回归一遍。
+- **TwoWay 绑定不再把"刚发布的值"回写给源**(#22679)——双向绑定的写入次数会变少。
+- Fluent 的**尺寸类 ControlTheme setter 改成 `DynamicResource`**(#21403)+ 控件资源并入主题字典
+  (#22637):`App.axaml` 里用 `<Thickness x:Key="MenuFlyoutPresenterThemePadding">` 这类
+  **覆盖主题资源**的写法更可靠了,但也意味着"样式 setter 压不过主题"的老结论要重新验。
+
+**验证(本机实测)**
+
+- Debug:core / Windows / Headless / Android 四个工程 0 错误,AVLN 警告清零。
+- UI 回归:`--pagereserve` PASS(4 页 × 3 断点,底部预留 120 全中)、`--pagescroll` PASS、
+  `--menustyle` 渲染正常、`--combobox` 弹出层/动画数值与 12.1 一致、
+  `--realwin`(真实窗口)shell 1200×672、overlay 1200×720、取样像素为应用深色底(46,31,22)。
+- 发布形态:NativeAOT win-x64 = **38.67 MB**(12.1.6 时 37.45 MB,+3.3%);Android arm64 Release
+  APK = 39.39 MB(12.1.6 时 39.37 MB,基本持平)。trim 警告与 12.1.6 同一批(IL3000 ×3 + Serilog IL2072),
+  没有新增。
+- ⚠ 验证 AOT/Apk 时**别往 `artifacts/aot-win-x64` 覆盖**:已装版本常驻运行会锁文件。用 `-o` 另开目录。
+
+## 2026-11-23 默认主题换成 Fluent 2(同日晚)
+
+**怎么写的**
+
+```xml
+<Application xmlns:fluent2="using:Avalonia.Themes.Fluent2" ...>
+  <Application.Styles>
+    <fluent2:Fluent2Theme />   <!-- 替换原来的 <FluentTheme /> -->
+```
+
+- 包:`Avalonia.Themes.Fluent2` 12.2.0,**同时把 `Avalonia.Themes.Fluent` 从三个 csproj 删掉**。
+  实测(见下)删前删后截图**逐字节相同** ⇒ Fluent2 主题一上,旧 Fluent 包里没有任何东西还在被解析,
+  留着只是白背一个程序集。**别以为"两个都引着更保险"**,它不会兜底:样式里只 include 了 Fluent2Theme。
+- 代码里 `new FluentTheme()` 的三处探针(`PageTransitionProbe` / `TrayRestoreProbe` /
+  `Windows/TaskbarThumbButtonsProbe`)要一起换成 `new Fluent2Theme()`(参数less ctor 有,XML 只文档了
+  `(IServiceProvider)` 那个,别被误导成"只能在 XAML 里用")。
+- **Fluent 2 不是 12.2 的默认值**,是独立包 `<Fluent2Theme />` + 独立 xmlns;不换包就是老观感。
+
+**实测影响面:只有"走默认样式"的控件变**
+
+| 位置 | Fluent 1 | Fluent 2 |
+|---|---|---|
+| 明暗底色(主题给的 base) | `#FFFFFF` / `#000000` | `#F3F3F3` / `#202020` |
+| Button(未自定义的) | 灰底填充 | 白底/透明 + 细描边,圆角更大 |
+| ToggleSwitch | 小滑块 | WinUI 3 样式(大滑块、描边轨道) |
+| 强调色(浅色) | `#0078D4` 系 | 更深(`#0F548C` 系) |
+
+- **深色主界面基本没动**:`--realwin` 四处取样像素与 Fluent1 **完全一致**(46,31,22 / 52,27,33 / 89,77,70)
+  —— 因为 `AppShell.axaml` 的内容根写死了 `Background="{DynamicResource AppBackground}"`,
+  主题的 base 色只在裸 `Window`(探针窗口)里露出来。**别拿探针窗口的底色判断真机**。
+- 浅色页面上能看到的差异:设置页卡片(`AppSurface` 白)在 `#F3F3F3` 底色上终于有对比;
+  按钮从灰底变描边;侧栏/弹窗的默认按钮同理。
+- **本项目自己的东西全部照常**:`--combobox` 弹层几何与 Fluent1 完全相同(202×190、item 190×32
+  @(6,79)、aligned=True),`--menustyle` 菜单盒尺寸不变(App.axaml 里覆盖的
+  `MenuFlyoutPresenterThemePadding` / `FlyoutBorderThemePadding` / `OverlayCornerRadius` 仍命中);
+  `--pagereserve` / `--pagescroll` / `--artist-follow`(明暗双色)全 PASS。
+
+**风险:模板部件选择器会静默失效**
+
+`SettingsView.axaml` 里有一批 `/template/ Border#ToggleButtonBackground`、
+`Border#ExpandCollapseChevronBorder`、`Border#ExpanderContent` 这样的选择器,是按 **Fluent 1 的 Expander
+模板**写的。Fluent2 换了模板的话这些 setter 不会报错、也不会生效(原版症状是"悬停色/展开区描边又回来了")。
+已核对没问题的:ComboBox(自绘模板)、菜单、设置页普通行;`Expander` 的悬停/展开态**还没人工看过**,
+动设置页之前先在真机上过一眼。
+
+**回退**
+
+三处 `App.axaml` 把 `<fluent2:Fluent2Theme />` 换回 `<FluentTheme />`(xmlns 可留可删),
+包引用换回 `Avalonia.Themes.Fluent`;三处探针 `new Fluent2Theme()` 换回 `new FluentTheme()`。
+
+### 换主题后用户当天报的两处塌陷(已修)
+
+**① ToggleSwitch 不再贴右(`ToggleSwitchThemeMinWidth` 154)**
+
+- Fluent2 的 `ToggleSwitch.axaml` 把 `ToggleSwitchThemeMinWidth` 定成 **154**(Fluent1 是 **0**),
+  模板里那个网格是 `MinWidth=154 + HorizontalAlignment=Left`,开关只画在最左边 ⇒
+  **控件 154 宽、右边空 114px**,`ColumnDefinitions="*,Auto"` 的行里 `Auto` 列被吃掉 154px,
+  文字列被挤窄到换行("…效果" 的"果"单独一行)。
+- 修法:三处 `App.axaml` 的 `Application.Resources` 覆盖
+  `<x:Double x:Key="ToggleSwitchThemeMinWidth">0</x:Double>`(应用资源优先于主题字典,和
+  `MenuFlyoutPresenterThemePadding` 同一套机制)。
+- 实测:`控件宽 154 → 52`,可见开关右缘距卡片右缘 `115px → 16px`(卡片 Padding 16;
+  模板里还有一列 `Width="12" MaxWidth="12"` 的 Spacer,Fluent1 也有,所以开关离卡片边比 ComboBox
+  多 12px 是**原有几何,不是这次坏的**,别顺手再改)。
+
+**② Expander 展开后容器比 header 宽 2px(行头底色内缩 1px)**
+
+- Fluent2 的 Button/ToggleButton 模板是 `BackgroundSizing="InnerBorderEdge"` + `BorderThickness=1`。
+  行头我们只把 `BorderBrush` 设成 Transparent,**1px 透明边框仍把底色内缩 1px**;
+  而内容 Border 早被我们压成 `BorderThickness=0` 铺满整宽 ⇒ 展开区左右各多 1px。
+- 修法:`SettingsView.axaml` 的 `ToggleButton#ExpanderHeader` 样式加 `BorderThickness=0`。
+- A/B 实测(900 宽,`--accountview` 新增的几何行 + 像素扫描):`BorderThickness=1` 时
+  行头底色 `[29,546]`、内容 `[28,547]`;改 0 后两边都是 `[28,547]`。
+  **`Bounds` 量不出这 1px**(元素边界没变,变的是 Border 里被画的填充),必须量像素或看截图。
+
+**回归线(新增)**:`--accountview` 渲染完设置页会滚到底、展开所有 `.setting-expander`,
+打印 `[geom:toggle]`(卡片右缘/控件宽/可见开关区间/距卡片像素)与 `[geom:expander]`
+(header 与 content 的左右边界差),并输出 `%TEMP%\aly-settings-expanded.png`。
+判据:开关 `控件宽=52`、`可见右缘距卡片=16`;expander `左差=0 右差=0`。
+
+**③ 修完 ② 之后"行头和内容中间那条线不见了"(同晚,已修)**
+
+- 那条"线"**从来不是设计**,是 ② 里那 1px 透明边框的副产物:行头底色被内缩 1px,
+  缝里透出的是页面底色(暗 `#141516` / 浅 `#F3F3F3`),看起来像一条分隔线。
+  把行头 `BorderThickness` 压成 0 之后缝隙合拢,行头与内容(暗主题都是 `#242424`)连成一整块。
+- 处置:**保留这条线的观感,但改成显式画出来的**——
+  `Expander.setting-expander:down /template/ Border#ExpanderContent` 设
+  `BorderThickness="0,1,0,0"` + `BorderBrush="{DynamicResource ExpanderContentBorderBrush}"`。
+  只留上边那 1px,左右下为 0 ⇒ 分隔线贯通卡片全宽、且内容区不会比行头窄。
+- **颜色别再自己发明**:主题的 `ExpanderContentBorderBrush` 就是 `CardStrokeColorDefault`,
+  暗色是"页面底色上压 10% 黑",这正是 WinUI 3 分隔线的颜色。对着 WinUI 的截图量:
+  页面 `#202020`、卡片描边/分隔线 `#1D1D1D`、行头 `#2B2B2B`、内容 `#272727`;
+  我们用主题画刷后实测接缝 `(29,29,29)` = `#1D1D1D`,**与 WinUI 完全一致**。
+  ⚠ 中途试过 `AppBorder`(暗 `#14FFFFFF`,是"白色半透明"的亮描边)→ 量出来 `(50,50,50)`,
+  比卡片还亮,和 WinUI 不是一回事;**`AppBorder` 是给边框用的,不是给分隔线/卡片描边用的**。
+- WinUI 的行头(`#2B2B2B`)比内容(`#272727`)亮一档;本项目两块都是 `#242424`(扁平卡片语义,
+  `SettingsExpanderHeader` 令牌就是按"同面"设计的)。想要 WinUI 那种双色:
+  把行头 style 的 `Background` 换成 `AppSurfaceElevated`(暗 `#2B2B2B`)即可,
+  实测 header `(43,43,43)` / content `(36,36,36)` / 接缝 `(29,29,29)`。
+- 判据:`[geom:expander]` 末尾会打印 `内容边框 上1/左0/右0/下0 画刷=#0f000000`
+  (暗主题是 `#19000000`;浅主题 `#0f000000`)。
+
+⚠ 顺带记一笔无头渲染的坑:`RenderTargetBitmap` 里 Expander 的 chevron(行头右侧箭头)
+只画出一个小碎片(看起来像 `L`/`/`),真窗口里是完整的 `⌃`。`scale(0.7)` 的
+`RenderTransform` 在无头合成下会被裁——**别拿无头截图判断这个箭头坏没坏**。
+(这条 `scale(0.7)` 已随下面的精简删掉,但坑本身对任何 `RenderTransform` 都成立。)
+
+### Fluent2 的 Expander 到底送了什么(2026-11-23 精简)
+
+翻 12.2.0 的 `src/Avalonia.Themes.Fluent2/Controls/Expander.axaml` 确认,主题**自带**:
+
+- **右侧 chevron 整套**:`Border#ExpandCollapseChevronBorder`(32×32,`ExpanderChevronButtonSize`)+
+  内含 `PathIcon#ExpandCollapseChevron`(8×8),`TransformOperationsTransition` 0.2s 旋转,
+  `[Tag=expanded]` 时 `rotate(180deg)`;hover/pressed 各自有 `ExpanderChevronBackground*`(SubtleFill)。
+- **边框/分隔线**:行头 `Border#ToggleButtonBackground` 是 `BorderThickness=1` +
+  `BackgroundSizing=InnerBorderEdge`;内容 `ExpanderContentDownBorderThickness="1,0,1,1"` +
+  `CardStrokeColorDefaultBrush`。行头的 1px 底边本来就是"行头↔内容"的分隔线。
+- **三态配色**:`ExpanderHeaderBackground/PointerOver/Pressed`(Fluent2 里三者同色,即行头 hover 不变色)。
+
+⇒ 我们原先针对 chevron 的 3 条覆盖(`Background`、两态 hover、`scale(0.7)`)是 Fluent1 时代的补丁,
+**已全部删除**;顺带删了冗余的 `CornerRadius=4`(主题 `ControlCornerRadius` 就是 4)。
+删前删后同条件截图只差 **16 个像素**(全在原 chevron 区域,就是那个无头渲染会裁的碎片)。
+
+**留下的 5 条仍需要**,理由各自不同:
+
+| 覆盖 | 为什么留 |
+|---|---|
+| `Expander.setting-expander` 布局(Background/MinHeight 64/Padding 16,10/Margin/HAlign=Stretch) | 主题是 MinHeight 48、HAlign=Left、底色 CardBackground,与页面里的扁平 `Border.setting-card` 不一致 |
+| `Border#ExpanderContent` 只留上边 1px(`AppBorder`) | 主题给的是四周 1px 描边;要保持扁平卡片,只能自己接管,顺便把分隔线放在内容顶边 |
+| `ToggleButton#ExpanderHeader`(Background/BorderThickness=0/Foreground) | 行头底色要对齐 `SettingsExpanderHeader`;`BorderThickness=1` 会让底色内缩 1px(见上一条塌陷) |
+| 两条 `:pointerover/:pressed → Border#ToggleButtonBackground` | 主题 hover 会把底色改成 `CardBackgroundFillColorDefault`(暗 #2B2B2B),与我们的 #242424 不同;要保持"行头 hover 不变色"就得压回 |
+
+**想更彻底地删**:把上面 4 类全换成"完全原生外观"(只留布局 5 个 setter)也能跑,视觉变成标准
+WinUI 3 卡片——整卡 1px 描边、行头底色 #2B2B2B、分隔线由行头底边提供。代价是与页面里其它扁平卡片不一致。
+试验截图留在 `tmp_f2/variantA-expanded-dark.png`(未采用)。
+
+### Fluent2 的 ComboBox:**没有**动画/阴影/选中项对齐(2026-11-24 实测)
+
+`src/Avalonia.Themes.Fluent2/Controls/ComboBox.axaml` 通读 + A/B 实测的结论。主题**自带**:
+
+- item 几何:`Margin="5,2,5,2"`、`ComboBoxItemCornerRadius=3`、`ComboBoxItemPill`(3×16 选中条,
+  带高度动画)、hover/pressed 色、`OverlayCornerRadius` 弹层圆角;
+- popup:`MinWidth` 绑定控件宽、`Margin="0,-0.5,0,-1"`(与控件轻微重叠)、`PlacementTarget="Background"`。
+
+主题**没有**:
+
+| 效果 | 证据 |
+|---|---|
+| 展开动画 | 全文件只有触发器 `Background` 的 `BrushTransition`,Popup 无 Transition |
+| 阴影 | `WindowManagerAddShadowHint="False"` + 没有任何 `BoxShadow` |
+| 选中项对齐 | 没有 `Placement`/`PlacementConstraintAdjustment`/offset 逻辑;弹层永远从第 1 项开始往下排 |
+
+A/B 做法:临时注释掉 `HeadlessApp.axaml` 里的 `FluentComboBox` StyleInclude 后跑 `--combobox` ——
+探针输出的 `aligned=False vOffset=0.0 reveal=-1 shadow=-1`(`-1` = 找不到 `RevealBorder` /
+`PART_DropDownShadow`,本身即"主题没有这套东西"的证据);截图里弹层贴在控件下沿、选中项(Courier New,
+第 3 项)仍停在原位,控件也没被盖住。
+
+⇒ **`FluentComboBox.axaml`(277 行)+ `PickerPopupReveal.cs`(501 行)+ `RevealBorder.cs`(70 行)
+不是重复造轮子**。能精简的只有"外观复刻"那一层:
+
+- 触发器模板(Background/HighlightBackground/DropDownGlyph/TextBox)和 item 主题,主题已自带同款几何;
+- 但**阴影**必须在弹层窗口里额外留 Margin(弹窗窗口按内容尺寸裁剪),所以自定义模板整体删不掉;
+- 折中方案:删掉 `FluentPickerItemTheme`(~60 行),让 item 走主题原生(代价:选中条从 teal 变主题 accent、
+  圆角 4→3)。**未执行**,等需要时再做。
+
+**A/B 复原**:改回后 `--combobox` 必须重新出现 `aligned=True vOffset=-111 reveal 0→1 shadow 0→1`,
+否则说明 StyleInclude 没恢复。
+
+---
+
+## 触控长按弹菜单后,松手又点了一次控件(2026-11-24)
+
+**症状**:安卓上长按专辑卡/浏览卡弹出 `MenuFlyout`,手指一松,页面跳走了(卡片根 `Button` 的
+`OpenCommand` 执行)。
+
+**根因是两条互不相通的通道**,不是用法错误:
+
+- 手势层(`Avalonia.Base/Input/Gestures.cs` 的 `PointerReleased`)区分得很清楚:长按进入
+  `GestureStateType.Holding` 后抬手只发 `Holding.Completed` + `RightTapped`,
+  普通分支才发 `Tapped`。所以**订阅 `Tapped` 的控件天生安全**(`TrackRow` 的行激活就是)。
+- 但 `Button.Click` 完全不参与手势层:`Button.OnPointerReleased` 只看自己的 `IsPressed`,
+  长按期间 `IsPressed` 一直是 true ⇒ 抬手照走 `OnClick()` → `Click` → `Command`。
+  Avalonia 12.2 的 `Button.cs` 里 `Context` / `Holding` / `Tapped` **零引用**,
+  ⇒ 官方没有开关,**换 `ContextFlyout` 属性也一样**(Button 不关心菜单是谁弹的)。
+- 顺序差异解释了为什么只有触屏犯:`InputElement.OnPreviewHolding` 在 `Holding.Started`
+  就发 `ContextRequested`(松手之前);桌面右键的 `ContextRequested` 在
+  `Control.OnPointerReleased` 里(松手之后),而 Button 只认左键,所以桌面不犯。
+
+**修法**(`Infrastructure/LongPressClickGuard.cs`):长按成立时主动放弃指针捕获
+`pointer.Capture(null)` → `PointerCaptureLost` → `Button.OnPointerCaptureLost` 把
+`IsPressed = false` → 抬手进不了 `OnClick()`。必须在**弹菜单之前**调(菜单构造/拉数据可能是异步的,
+松手会落在 await 里)。`ContextRequestedEventArgs` 不公开 `Pointer`(只有 internal 的
+`PointerType`/`IsHolding`),所以护栏在 `PointerPressed` 时记录指针,且必须
+`handledEventsToo: true` —— Button 会先把该事件标 Handled。鼠标右键跳过(桌面本来不犯)。
+
+`PreventGestureRecognition()` 没用:它只短路 `_gestureRecognizers`(滚动/拖拽),压不住 Button。
+
+**落点**:`AlbumCard`、`BrowseView` 卡片、`RecommendView` 卡片(三处根 Button 都挂 `Command`);
+`TrackRow` 的红心(多音源时长按弹"选择音源",否则松手会顺带 `LikeCommand` 点亮)。
+**`PersonalHomeView` / `CollectedPlaylistsView` / `UserProfileView` 不用改** —— 那些行是
+`Tapped` 激活,手势层已经挡住。
+
+**回归**:`--longpress-click`(无头触摸按下 → 空转 700ms 让 Holding 计时器到点 → 抬起)。
+未护栏 `ContextRequested=1 Click=1`,加护栏 `Click=0`。
+写这类探针要注意:**`Dispatcher.UIThread.RunJobs()` 泵不到 `DispatcherTimer`**,按住期间必须
+`await Task.Delay(...)` 把主循环让开,否则 Holding 永远不发(第一次跑就踩到,`timerFired=False`)。

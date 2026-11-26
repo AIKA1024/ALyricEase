@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:ALyricEase.Controls"
         xmlns:infra="using:ALyricEase.Infrastructure"
         xmlns:vm="using:ALyricEase.ViewModels"
         xmlns:views="using:ALyricEase.Views"
@@ -83,7 +84,7 @@
                   <Button.Resources>
                     <!-- MenuFlyout:原生 hover 子菜单/延迟/定位(多歌手"表演者"子项),不再手写计时器;
                          菜单项/弹层观感走全局 MenuItem/MenuFlyoutPresenter 默认样式(同侧栏右键菜单) -->
-                    <MenuFlyout x:Key="TrackMenuFlyout" ShowMode="Transient">
+                    <controls:InAppMenuFlyout x:Key="TrackMenuFlyout" ShowMode="Transient">
                       <!-- 单歌手:直接跳歌手页 -->
                       <MenuItem Header="{Binding Artist, StringFormat='表演者: {0}'}"
                                 Command="{Binding OpenArtistCommand}"
@@ -120,7 +121,7 @@
                                      FontSize="14" />
                         </MenuItem.Icon>
                       </MenuItem>
-                    </MenuFlyout>
+                    </controls:InAppMenuFlyout>
                   </Button.Resources>
                 </Button>
               </StackPanel>
@@ -202,7 +203,7 @@
                              TextTrimming="CharacterEllipsis" />
                   <Button.Resources>
                     <!-- 与原 Search 主题同一份菜单(多歌手"表演者"子项);TrackRow.OnApplyTemplate 按名找 ArtistAlbumButton -->
-                    <MenuFlyout x:Key="TrackMenuFlyout" ShowMode="Transient">
+                    <controls:InAppMenuFlyout x:Key="TrackMenuFlyout" ShowMode="Transient">
                       <MenuItem Header="{Binding Artist, StringFormat='表演者: {0}'}"
                                 Command="{Binding OpenArtistCommand}"
                                 IsEnabled="{Binding HasArtist}"
@@ -236,7 +237,7 @@
                                      FontSize="14" />
                         </MenuItem.Icon>
                       </MenuItem>
-                    </MenuFlyout>
+                    </controls:InAppMenuFlyout>
                   </Button.Resources>
                 </Button>
               </StackPanel>
@@ -322,9 +323,9 @@
                 </StackPanel>
                 <Button.Resources>
                   <!-- 多歌手菜单:点击歌手按钮直接平铺歌手名(仅表演者,不设"表演者>"分级),逐项跳对应歌手页 -->
-                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" FlyoutPresenterClasses="track-menu-presenter"
+                  <controls:InAppMenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" FlyoutPresenterClasses="track-menu-presenter"
                               ItemsSource="{Binding Artists}">
-                    <MenuFlyout.ItemContainerTheme>
+                    <controls:InAppMenuFlyout.ItemContainerTheme>
                       <!-- 仅绑定每项的路由数据;观感走全局 MenuItem 默认样式(同 track-menu 项) -->
                       <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
                                     BasedOn="{StaticResource {x:Type MenuItem}}">
@@ -333,8 +334,8 @@
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
                         <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
                       </ControlTheme>
-                    </MenuFlyout.ItemContainerTheme>
-                  </MenuFlyout>
+                    </controls:InAppMenuFlyout.ItemContainerTheme>
+                  </controls:InAppMenuFlyout>
                 </Button.Resources>
               </Button>
               <!-- 专辑:可点击 → 专辑页(仿原版 AlbumButton)。
@@ -423,8 +424,8 @@
                              TextTrimming="CharacterEllipsis" />
                 </StackPanel>
                 <Button.Resources>
-                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
-                    <MenuFlyout.ItemContainerTheme>
+                  <controls:InAppMenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
+                    <controls:InAppMenuFlyout.ItemContainerTheme>
                       <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
                                     BasedOn="{StaticResource {x:Type MenuItem}}">
                         <Setter Property="Header" Value="{Binding Name}" />
@@ -432,8 +433,8 @@
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
                         <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
                       </ControlTheme>
-                    </MenuFlyout.ItemContainerTheme>
-                  </MenuFlyout>
+                    </controls:InAppMenuFlyout.ItemContainerTheme>
+                  </controls:InAppMenuFlyout>
                 </Button.Resources>
               </Button>
               <!-- 时长 + 更多 -->
@@ -479,8 +480,8 @@
                 <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                            TextTrimming="CharacterEllipsis" />
                 <Button.Resources>
-                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
-                    <MenuFlyout.ItemContainerTheme>
+                  <controls:InAppMenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
+                    <controls:InAppMenuFlyout.ItemContainerTheme>
                       <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
                                     BasedOn="{StaticResource {x:Type MenuItem}}">
                         <Setter Property="Header" Value="{Binding Name}" />
@@ -488,8 +489,8 @@
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
                         <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
                       </ControlTheme>
-                    </MenuFlyout.ItemContainerTheme>
-                  </MenuFlyout>
+                    </controls:InAppMenuFlyout.ItemContainerTheme>
+                  </controls:InAppMenuFlyout>
                 </Button.Resources>
               </Button>
               <Button Grid.Column="4" Classes="row-link"
@@ -527,8 +528,8 @@
                 <TextBlock Text="{Binding Artist}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                            TextTrimming="CharacterEllipsis" />
                 <Button.Resources>
-                  <MenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
-                    <MenuFlyout.ItemContainerTheme>
+                  <controls:InAppMenuFlyout x:Key="ArtistMenuFlyout" ShowMode="Transient" ItemsSource="{Binding Artists}">
+                    <controls:InAppMenuFlyout.ItemContainerTheme>
                       <ControlTheme TargetType="MenuItem" x:DataType="vm:ArtistNavItem"
                                     BasedOn="{StaticResource {x:Type MenuItem}}">
                         <Setter Property="Header" Value="{Binding Name}" />
@@ -536,8 +537,8 @@
                         <Setter Property="CommandParameter" Value="{Binding Id}" />
                         <Setter Property="IsEnabled" Value="{Binding HasTarget}" />
                       </ControlTheme>
-                    </MenuFlyout.ItemContainerTheme>
-                  </MenuFlyout>
+                    </controls:InAppMenuFlyout.ItemContainerTheme>
+                  </controls:InAppMenuFlyout>
                 </Button.Resources>
               </Button>
               <TextBlock Grid.Column="3" Text="{Binding DurationText}" FontSize="12"

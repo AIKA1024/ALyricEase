@@ -99,19 +99,28 @@
     <Style Selector="MenuFlyoutPresenter.player-song-menu">
         <Setter Property="MinWidth" Value="240" />
     </Style>
-    <Style Selector="MenuFlyoutPresenter /template/ Border">
-        <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
+    <Style Selector="MenuItem /template/ Popup#PART_Popup">
+        <Setter Property="ShouldUseOverlayLayer" Value="True" />
+    </Style>
+    <Style Selector="MenuFlyoutPresenter /template/ Border#LayoutRoot, MenuItem /template/ Popup#PART_Popup > Border">
+        <Setter Property="ctrl:MenuAcrylic.IsEnabled" Value="True" />
+        <Setter Property="BackdropEffect" Value="{StaticResource AcrylicBackdropBlur}" />
+        <Setter Property="ClipToBounds" Value="True" />
+        <!-- 模糊裁在菜单圆角内，外侧投影跟随同一表面的合成位移。 -->
+        <Setter Property="AdornerLayer.Adorner">
+            <Template>
+                <Border IsHitTestVisible="False" AdornerLayer.IsClipEnabled="False"
+                        CornerRadius="{DynamicResource OverlayCornerRadius}" BoxShadow="0 4 10 0 #66000000" />
+            </Template>
+        </Setter>
         <Setter Property="Margin" Value="4 0 4 14" />
         <Setter Property="Padding" Value="4" />
     </Style>
 
     <!-- 子菜单容器:MenuItem 模板里 Popup#PART_Popup 的 Border(子菜单不是 MenuFlyoutPresenter,是这里承载;
          给它阴影/圆角/内边距,一级二级外观统一)。打开动画同样走 ctrl:FlyoutOpenAnimation -->
-    <Style Selector="MenuItem /template/ Popup#PART_Popup Border">
-        <Setter Property="BoxShadow" Value="0 4 10 0 #66000000" />
-        <Setter Property="Margin" Value="4 0 4 14" />
+    <Style Selector="MenuItem /template/ Popup#PART_Popup > Border">
         <Setter Property="CornerRadius" Value="12" />
-        <Setter Property="Padding" Value="4" />
         <Setter Property="ctrl:FlyoutOpenAnimation.IsEnabled" Value="True" />
     </Style>
     <!-- 子菜单内边距均衡:清掉模板里 ItemsPresenter 的 MenuFlyoutScrollerMargin(左右不对称),只留 Border 的 Padding=4 -->

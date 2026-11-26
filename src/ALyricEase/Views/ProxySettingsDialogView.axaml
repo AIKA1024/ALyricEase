@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:ALyricEase.Controls"
              xmlns:views="using:ALyricEase.Views"
              xmlns:vm="using:ALyricEase.ViewModels"
              x:DataType="vm:MainViewModel"
@@ -13,16 +14,35 @@
          标题下间距 12 / 按钮间距 8;标题与按钮固定,中间内容可滚动(最小窗口 560 下按钮不被裁)。
          模式用 ComboBox 而非单选组:选项只有三个且名称自明,下拉最省高度;
          需要"每项带说明"时再回到单选组(取舍见 docs/network-proxy.md §六)。 -->
-    <Grid x:Name="Root">
+    <Grid x:Name="Root" Container.Name="proxyViewport" Container.Sizing="WidthAndHeight">
+        <Grid.Styles>
+            <Style Selector="Grid#ModalHost"><Setter Property="Margin" Value="24" /></Style>
+            <Style Selector="Border#DialogCard"><Setter Property="MinWidth" Value="360" /></Style>
+            <Style Selector="Border.form"><Setter Property="Padding" Value="24" /></Style>
+            <Style Selector="Grid#DialogContent"><Setter Property="RowSpacing" Value="12" /></Style>
+            <Style Selector="Grid.actions > Button"><Setter Property="MinWidth" Value="96" /></Style>
+            <ContainerQuery Name="proxyViewport" Query="max-width:420">
+                <Style Selector="Grid#ModalHost"><Setter Property="Margin" Value="8" /></Style>
+                <Style Selector="Border#DialogCard"><Setter Property="MinWidth" Value="0" /></Style>
+                <Style Selector="Border.form"><Setter Property="Padding" Value="12" /></Style>
+                <Style Selector="Grid.actions > Button"><Setter Property="MinWidth" Value="68" /></Style>
+            </ContainerQuery>
+            <ContainerQuery Name="proxyViewport" Query="max-height:240">
+                <Style Selector="Grid#ModalHost"><Setter Property="Margin" Value="8,0" /></Style>
+                <Style Selector="Border.form"><Setter Property="Padding" Value="12,4" /></Style>
+                <Style Selector="Grid#DialogContent"><Setter Property="RowSpacing" Value="4" /></Style>
+                <Style Selector="TextBlock.description"><Setter Property="IsVisible" Value="False" /></Style>
+            </ContainerQuery>
+        </Grid.Styles>
         <!-- 烟雾层(WinUI ContentDialog smoke fill,不支持点击空白关闭) -->
         <Panel Background="#99000000" />
-        <!-- 外层 Grid 铺满内容区并留 24 边距:Margin 已在父级,子元素的可用高度就是它的 Bounds,
+        <!-- 外层 Grid 铺满可用区域:Margin 已在父级,子元素的可用高度就是它的 Bounds,
              于是弹窗高度上限能跟着窗口走,不用写死像素(小窗口下靠内部 ScrollViewer 滚动)。 -->
-        <Grid x:Name="ModalHost" DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel" Margin="24">
+        <Grid x:Name="ModalHost" DataContext="{Binding Settings}" x:DataType="vm:SettingsViewModel">
             <!-- 背景与内容分层:切到"手动配置"时卡片高度变化,只让背景层做合成缩放伸展,
                  文字保持正常比例(与 DownloadSongDialogView 同一套做法,避免逐帧改 Height 触发布局)。
                  DialogCard 这个外壳同时还是 ModalVisibilityTransition 开合缩放(1.05)的目标。 -->
-            <Border MaxWidth="520" MinWidth="360"
+            <Border MaxWidth="520"
                     MaxHeight="{Binding #ModalHost.Bounds.Height, FallbackValue=520}"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     x:Name="DialogCard">
@@ -31,16 +51,16 @@
                             Background="{DynamicResource AppSurface}"
                             BorderThickness="1" BorderBrush="{DynamicResource AppBorderStrong}"
                             BoxShadow="0 32 64 #66000000" IsHitTestVisible="False" />
-                    <Border Padding="24" BorderThickness="1">
-                        <Grid x:Name="DialogContent" RowDefinitions="Auto,*,Auto" RowSpacing="12">
+                    <Border Classes="form" BorderThickness="1">
+                        <Grid x:Name="DialogContent" RowDefinitions="Auto,*,Auto">
                             <StackPanel Grid.Row="0" Spacing="4">
                                 <TextBlock Text="应用网络代理" FontSize="20" FontWeight="SemiBold" />
-                                <TextBlock Text="只影响本应用的网络请求(接口、封面、更新检查);正在播放的音频不受影响。"
+                                <TextBlock Classes="description" Text="只影响本应用的网络请求(接口、封面、更新检查);正在播放的音频不受影响。"
                                            FontSize="13" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextSecondary}" />
                             </StackPanel>
 
-                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                            <controls:DialogFormScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
                                 <StackPanel Spacing="12">
                                     <!-- 模式:ComboBox 单选。Fluent 的下拉项固定 32px 单行,放不下每项说明,
@@ -90,18 +110,18 @@
                                                IsVisible="{Binding ProxyStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                                Foreground="{DynamicResource TextSecondary}" />
                                 </StackPanel>
-                            </ScrollViewer>
+                            </controls:DialogFormScrollViewer>
 
                             <!-- 命令区上边距比内容行距多一点(12 + 6),让"操作"和"表单"分开;Fluent 的
                                  ContentDialog 是 24,这里内容矮,取 18 更紧凑 -->
-                            <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" Margin="0,6,0,0">
-                                <Button Content="测试连接" MinWidth="96" Height="32"
+                            <Grid Classes="actions" Grid.Row="2" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" Margin="0,6,0,0">
+                                <Button Content="测试连接" Height="32"
                                         IsEnabled="{Binding !IsProxyTesting}"
                                         Command="{Binding TestProxyCommand}" />
-                                <Button Grid.Column="2" Content="取消" MinWidth="96" Height="32"
+                                <Button Grid.Column="2" Content="取消" Height="32"
                                         HotKeyManager.HotKey="Escape"
                                         Command="{Binding $parent[views:ProxySettingsDialogView].((vm:MainViewModel)DataContext).CloseProxySettingsDialogCommand}" />
-                                <Button Grid.Column="3" Classes="accent" Content="保存" MinWidth="96" Height="32"
+                                <Button Grid.Column="3" Classes="accent" Content="保存" Height="32"
                                         Command="{Binding SaveProxySettingsCommand}" />
                             </Grid>
                         </Grid>

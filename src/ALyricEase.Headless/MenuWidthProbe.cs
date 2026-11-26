@@ -1,4 +1,5 @@
 using System.IO;
+using ALyricEase.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -60,7 +61,7 @@ public static class MenuWidthProbe
         Flush();
 
         var surface = presenter.GetVisualDescendants().OfType<Border>().Single(x => x.Name == "LayoutRoot");
-        var scroller = surface.Child as ScrollViewer ?? throw new InvalidOperationException("没有菜单滚动容器");
+        var scroller = GetMenuScroller(surface);
         Assert(!overlay || popup.IsUsingOverlayLayer, "没有使用 overlay 宿主");
         Assert(!requireNative || !popup.IsUsingOverlayLayer, "没有使用桌面原生弹窗宿主");
         Assert(scroller.Extent.Width <= scroller.Viewport.Width + 1,
@@ -80,7 +81,7 @@ public static class MenuWidthProbe
         artist.IsSubMenuOpen = true;
         Flush();
         var subSurface = subPopup.Child as Border ?? throw new InvalidOperationException("没有子菜单表面");
-        var subScroller = subSurface.Child as ScrollViewer ?? throw new InvalidOperationException("没有子菜单滚动容器");
+        var subScroller = GetMenuScroller(subSurface);
         Assert(subScroller.Extent.Width <= subScroller.Viewport.Width + 1,
             $"二级菜单横向溢出: extent={subScroller.Extent.Width}, viewport={subScroller.Viewport.Width}");
         Assert(child.Bounds.Width <= subScroller.Viewport.Width + 1, "长歌手名撑宽二级菜单项");
@@ -112,6 +113,12 @@ public static class MenuWidthProbe
         popup.IsOpen = false;
         window.Close();
         Flush();
+    }
+
+    private static ScrollViewer GetMenuScroller(Border surface)
+    {
+        if (surface.Child is Panel { Children: [ChromeAcrylicLayer, ScrollViewer scroller] }) return scroller;
+        throw new InvalidOperationException("[menuwidth] 菜单应在同一表面内依次绘制窗口亚克力和滚动内容");
     }
 
     private static void CheckHeader(MenuItem item, bool longTitle)

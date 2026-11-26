@@ -5,6 +5,7 @@ using ALyricEase.Infrastructure;
 using ALyricEase.Models;
 using ALyricEase.Services;
 using ALyricEase.ViewModels;
+using ALyricEase.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -30,7 +31,7 @@ internal static class AlbumCardContextMenu
     public static MenuFlyout Create(
         Visual anchor, string title, IReadOnlyList<Song> songs, Func<Task>? playAction)
     {
-        var menu = new MenuFlyout { ShowMode = FlyoutShowMode.Transient };
+        var menu = new InAppMenuFlyout { ShowMode = FlyoutShowMode.Transient };
         menu.FlyoutPresenterClasses.Add("player-song-menu");
 
         var lead = songs[0];

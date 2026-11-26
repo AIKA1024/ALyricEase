@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using ALyricEase.Infrastructure;
 using ALyricEase.ViewModels;
 using ALyricEase.Views;
 using Avalonia.Controls;
@@ -11,7 +12,12 @@ namespace ALyricEase.Controls;
 /// <see cref="AlbumCardContextMenu"/>。曲目按需拉(卡片 VM 缓存),拉不到就不弹菜单。</summary>
 public partial class AlbumCard : UserControl
 {
-    public AlbumCard() => InitializeComponent();
+    public AlbumCard()
+    {
+        InitializeComponent();
+        // 长按弹菜单后松手不再触发根 Button 的 OpenCommand(见 LongPressClickGuard)
+        LongPressClickGuard.Attach(this);
+    }
 
     private async void OnPlayClick(object? sender, RoutedEventArgs e)
     {
@@ -27,11 +33,14 @@ public partial class AlbumCard : UserControl
             await ShowMenuAsync(button, card, fromContextRequest: false);
     }
 
-    /// <summary>桌面右键 / 触摸长按:与 ••• 同一份菜单,贴指针弹出。</summary>
+    /// <summary>桌面右键 / 触摸长按:与 ••• 同一份菜单,贴指针弹出。
+    /// 长按成立时先放弃指针捕获(退出按下态),否则松手会顺带触发根 Button 的 OpenCommand ——
+    /// Button.Click 不参与手势层的 Holding 判定,换 ContextFlyout 也一样。</summary>
     private async void OnContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (sender is not Button button || DataContext is not AlbumCardViewModel card) return;
         e.Handled = true;
+        LongPressClickGuard.CancelPress(this); // 必须在 await 之前:松手可能落在弹菜单的等待里
         await ShowMenuAsync(button, card, fromContextRequest: true);
     }
 

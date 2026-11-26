@@ -41,6 +41,9 @@ public class TrackRow : TemplatedControl
 
         // 右键(桌面)/长按(触控)统一走 ContextRequested:弹歌曲菜单(与播放条同一份)
         AddHandler(InputElement.ContextRequestedEvent, OnRowContextRequested, RoutingStrategies.Bubble);
+
+        // 长按红心弹"选择音源"后松手不再顺带执行 LikeCommand(见 LongPressClickGuard)
+        LongPressClickGuard.Attach(this);
     }
 
     /// <summary>整行右键(桌面)/长按(触控)→ 弹歌曲菜单(与播放条同一份,构造见 SongContextMenu)。
@@ -122,12 +125,15 @@ public class TrackRow : TemplatedControl
         button.RemoveHandler(InputElement.ContextRequestedEvent, OnLikeButtonContextRequested);
     }
 
-    /// <summary>合并结果在红心上右键/长按始终打开同一个平台选择模态层。</summary>
+    /// <summary>合并结果在红心上右键/长按始终打开同一个平台选择模态层。
+    /// 长按成立时先放弃指针捕获:否则松手会让红心走完 Button.Click → LikeCommand,弹窗和点亮同时发生。</summary>
     private static void OnLikeButtonContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (sender is not Button { DataContext: SongItemViewModel { HasMultipleLikeSources: true } song })
+        if (sender is not Button { DataContext: SongItemViewModel { HasMultipleLikeSources: true } } button)
             return;
-        TryOpenLikeSourceDialog(song);
+        if (button.FindAncestorOfType<TrackRow>() is { } row)
+            LongPressClickGuard.CancelPress(row);
+        TryOpenLikeSourceDialog((SongItemViewModel)button.DataContext);
         e.Handled = true;
     }
 

@@ -13,6 +13,8 @@ public partial class BrowseView : UserControl
     public BrowseView()
     {
         InitializeComponent();
+        // 长按弹菜单后松手不再触发卡片 Button 的 OpenCommand(见 LongPressClickGuard)
+        LongPressClickGuard.Attach(this);
         // 浏览页视图每次切回都会新建,滚动位置靠 VM 里的快照恢复(详见 BrowseViewModel.RestoreScrollPosition)。
         _ = new DetailPageScrollController(this, PageScroller);
         SizeChanged += (_, _) => ResponsiveClasses.ApplyByWindow(this);
@@ -53,12 +55,14 @@ public partial class BrowseView : UserControl
             ShowCardMenu(button, card, fromContextRequest: false);
     }
 
-    /// <summary>右键(桌面)或长按(触摸):与 ••• 同一份即时构造的菜单,贴指针弹出。</summary>
+    /// <summary>右键(桌面)或长按(触摸):与 ••• 同一份即时构造的菜单,贴指针弹出。
+    /// 长按成立时先放弃指针捕获(退出按下态),否则松手会顺带执行卡片的 OpenCommand。</summary>
     private void OnCardContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (sender is not Button { DataContext: BrowseCardViewModel card } button) return;
         if (card.Playlist is null && card.Song is null && card.AlbumSongs is null) return;
         e.Handled = true;
+        LongPressClickGuard.CancelPress(this);
         ShowCardMenu(button, card, fromContextRequest: true);
     }
 
